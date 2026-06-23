@@ -1,4 +1,4 @@
-# 10. Security
+﻿# 10. Security
 
 > Status: **Documented**  -  MASTER reference depth for all sub-topics below.
 
@@ -239,10 +239,10 @@ Roles:
 
 ```mermaid
 sequenceDiagram
-    participant  as "User / Browser"
+    participant U as "User / Browser"
     participant C as Client App
     participant AS as Authorization Server
-    participant  as "Resource Server (API)"
+    participant RS as "Resource Server (API)"
 
     C->>C: Generate code_verifier + code_challenge (S256)
     C->>U: Redirect to /authorize

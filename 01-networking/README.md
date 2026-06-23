@@ -1,4 +1,4 @@
-# 1. Networking
+﻿# 1. Networking
 
 > Status: **Documented**  -  master reference
 
@@ -749,10 +749,10 @@ A slow or blocking `getaddrinfo()` can **stall an entire event loop** in Node.js
 sequenceDiagram
     participant Browser
     participant OS as OS stub resolver
-    participant  as "Recursive resolver / (8.8.8.8)"
+    participant Rec as "Recursive resolver (8.8.8.8)"
     participant Root as Root DNS
     participant TLD as .com TLD
-    participant  as "Authoritative NS / (example.com)"
+    participant Auth as "Authoritative NS (example.com)"
 
     Browser->>Browser: Check browser DNS cache
     Browser->>OS: getaddrinfo(api.example.com)

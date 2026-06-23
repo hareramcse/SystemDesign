@@ -1,4 +1,4 @@
-# 2. Databases
+﻿# 2. Databases
 
 > Status: **Documented**  -  master reference
 
@@ -616,9 +616,9 @@ sequenceDiagram
     participant T1
     participant T2
     T1->>T1: BEGIN RR snapshot
-    T1->>T1: SELECT id=1 -> 100
-    T2->>T2: UPDATE id=1 -> 50, COMMIT
-    T1->>T1: SELECT id=1 -> 100 (still snapshot)
+    T1->>T1: SELECT id=1 returns 100
+    T2->>T2: UPDATE id=1 to 50 COMMIT
+    T1->>T1: SELECT id=1 returns 100 still snapshot
     T1->>T1: COMMIT
 ```
 
@@ -743,16 +743,16 @@ Txn 200 UPDATE balance=80:
 
 ```mermaid
 sequenceDiagram
-    participant  as "Txn 100 (reader)"
-    participant  as "Txn 200 (writer)"
+    participant T100 as "Txn 100 (reader)"
+    participant T200 as "Txn 200 (writer)"
     participant Heap as Table heap
 
-    T100->>Heap: BEGIN; snapshot at xid 100
-    T100->>Heap: SELECT id=1 -> balance 100 (v1 visible)
+    T100->>Heap: BEGIN snapshot xid 100
+    T100->>Heap: SELECT id=1 balance 100 v1 visible
     T200->>Heap: BEGIN
-    T200->>Heap: UPDATE id=1 -> v2 inserted, v1 xmax=200
+    T200->>Heap: UPDATE id=1 v2 inserted v1 xmax=200
     T200->>Heap: COMMIT
-    T100->>Heap: SELECT id=1 -> still 100 (v2 xmin=200 after snap)
+    T100->>Heap: SELECT id=1 still 100 v2 xmin=200 after snap
     T100->>Heap: COMMIT
 ```
 

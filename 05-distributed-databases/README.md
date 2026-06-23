@@ -1,4 +1,4 @@
-# 5. Distributed Databases
+﻿# 5. Distributed Databases
 
 > Status: **Documented**
 
@@ -1453,8 +1453,8 @@ The textbook answer for cross-node atomicity — and a **cautionary tale** for b
 ```mermaid
 sequenceDiagram
     participant TC as Coordinator
-    participant  as "Participant 1 (Shard A)"
-    participant  as "Participant 2 (Shard B)"
+    participant P1 as "Participant 1 (Shard A)"
+    participant P2 as "Participant 2 (Shard B)"
     TC->>TC: write decision log (START)
     TC->>P1: PREPARE(txn_id)
     TC->>P2: PREPARE(txn_id)

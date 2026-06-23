@@ -198,7 +198,7 @@ Use **problem+json** (`application/problem+json`) for consistent error bodies:
 sequenceDiagram
     participant C as Client
     participant API as REST API
-    participant  as "CDN / Cache"
+    participant CDN as "CDN / Cache"
 
     C->>CDN: GET /users/42 (If-None-Match: "etag-xyz")
     alt cache hit

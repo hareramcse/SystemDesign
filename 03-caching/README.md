@@ -1,4 +1,4 @@
-# 3. Caching
+﻿# 3. Caching
 
 > Status: **Documented**  -  master reference
 
@@ -749,8 +749,8 @@ flowchart TB
 
 ```mermaid
 sequenceDiagram
-    participant  as "Thread 1 (read)"
-    participant  as "Thread 2 (write)"
+    participant T1 as "Thread 1 (read)"
+    participant T2 as "Thread 2 (write)"
     participant Cache
     participant DB
     T2->>DB: UPDATE name=Alice

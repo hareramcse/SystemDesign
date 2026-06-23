@@ -1,4 +1,4 @@
-# 11. Cloud & Kubernetes
+﻿# 11. Cloud & Kubernetes
 
 > Status: **Documented**  -  MASTER reference depth for all sub-topics below.
 
@@ -1235,13 +1235,13 @@ Interview focus: explain **control plane components individually**, how a pod ge
 
 ```mermaid
 sequenceDiagram
-    participant  as "kubectl / User"
+    participant U as "kubectl / User"
     participant API as API Server
     participant ETCD as etcd
     participant CM as Controller Manager
     participant SCH as Scheduler
     participant K as kubelet
-    participant  as "containerd/runc"
+    participant RT as "containerd/runc"
 
     U->>API: POST Deployment
     API->>ETCD: persist desired state
@@ -1502,7 +1502,7 @@ flowchart TB
 
 ```mermaid
 sequenceDiagram
-    participant  as "User / CI"
+    participant U as "User / CI"
     participant D as Deployment Controller
     participant RS as New ReplicaSet
     participant P as Pods
