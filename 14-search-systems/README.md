@@ -1,159 +1,494 @@
 ﻿# 14. Search Systems
 
-> Status: **Done** — concise notes for all sub-topics below.
+> Status: **Documented** — self-contained master reference for full-text search, indexing, ranking, and production search engines.
 
 [← Back to master index](../README.md)
-
----
-
-## At a glance
-
-```mermaid
-flowchart LR
-    Docs[Documents] --> Index[Inverted Index]
-    Index --> Query[Search Query]
-    Query --> Rank[Ranked Results]
-```
 
 ---
 
 ## Sub-topics
 
-| # | Sub-topic |
-|---|-----------|
-| 14.1 | [Full Text Search](#141-full-text-search) |
-| 14.2 | [Inverted Index](#142-inverted-index) |
-| 14.3 | [Elasticsearch](#143-elasticsearch) |
-| 14.4 | [Lucene](#144-lucene) |
-| 14.5 | [Ranking](#145-ranking) |
-| 14.6 | [Relevance Scoring](#146-relevance-scoring) |
-| 14.7 | [Faceted Search](#147-faceted-search) |
-| 14.8 | [Autocomplete](#148-autocomplete) |
-| 14.9 | [Fuzzy Search](#149-fuzzy-search) |
+| # | Sub-topic | Status |
+|---|-----------|--------|
+| 14.1 | [Full Text Search](#141-full-text-search) | Documented |
+| 14.2 | [Inverted Index](#142-inverted-index) | Documented |
+| 14.3 | [Elasticsearch](#143-elasticsearch) | Documented |
+| 14.4 | [Lucene](#144-lucene) | Documented |
+| 14.5 | [Ranking](#145-ranking) | Documented |
+| 14.6 | [Relevance Scoring](#146-relevance-scoring) | Documented |
+| 14.7 | [Faceted Search](#147-faceted-search) | Documented |
+| 14.8 | [Autocomplete](#148-autocomplete) | Documented |
+| 14.9 | [Fuzzy Search](#149-fuzzy-search) | Documented |
+
+```mermaid
+flowchart LR
+    Docs[Documents] --> Index[Inverted Index]
+    Query[User Query] --> Parse[Query Parser]
+    Parse --> Index
+    Index --> Rank[Scoring / Ranking]
+    Rank --> Results[Ranked Results]
+```
 
 ---
 
 ## 14.1 Full Text Search
 
-**Summary:** Finding documents containing words or phrases from natural-language queries — not just exact key lookups.
+### What is it
 
-- Tokenizes text, applies stemming/stop words, matches against an index
-- Supports boolean queries, phrases, wildcards, and relevance ranking
-- Complements primary DB — search engines optimize read patterns DBs handle poorly
+**Full-text search** retrieves documents containing natural-language terms from large corpora — matching words, phrases, and variants across unstructured text fields, not just exact key lookups.
 
-**References:** _None yet._
+### Why it matters
+
+Users expect Google-quality search inside products (e-commerce, support portals, logs). SQL `LIKE '%term%'` scans entire tables and cannot rank by relevance — dedicated search engines scale to billions of documents with sub-second latency.
+
+### How it works
+
+1. **Ingest:** tokenize text → normalize (lowercase, stem) → build inverted index (term → doc IDs + positions).
+2. **Query:** parse user input (boolean, phrase, fuzzy) → fetch posting lists for terms.
+3. **Score:** compute relevance per document (TF-IDF, BM25, boosts).
+4. **Return:** top-K hits with highlights, facets, and aggregations.
+
+### Key details
+
+- **Tokenization** language-dependent — CJK requires segmentation; European languages use stemming/lemmatization.
+- **Analyzed vs not_analyzed fields:** `text` (tokenized) vs `keyword` (exact match) in Elasticsearch.
+- **Near real-time (NRT):** index refreshes every 1s by default in ES — not instant but fast enough for most apps.
+- Contrast **full-text** vs **semantic/vector search** — modern systems combine BM25 + embeddings (hybrid search).
+
+### When to use
+
+- Product catalogs, knowledge bases, log exploration, legal/medical document search.
+- Any user-facing search box over unstructured or semi-structured text.
+- When ranking and phrase matching matter, not just filter predicates.
+
+### Trade-offs
+
+| Pros | Cons |
+|------|------|
+| Fast relevance-ranked retrieval | Index size 20–50% of source text |
+| Rich query syntax (phrase, fuzzy, bool) | Eventually consistent indexing |
+| Horizontal scale (sharding) | Operational complexity vs SQL |
+| Facets and aggregations built-in | Tuning relevance is iterative |
+
+### References
+
+- _Add links from [System Design Fundamentals.xlsx](../System%20Design%20Fundamentals.xlsx) as you collect them._
 
 ---
 
 ## 14.2 Inverted Index
 
-**Summary:** Core search structure mapping each term → list of documents (postings) containing it.
+### What is it
 
-- Query "quick fox" → intersect postings lists for "quick" and "fox"
-- Each posting stores doc ID, term frequency, and positions for phrase/proximity
-- Built at index time; updates require reindex or near-real-time segments
+An **inverted index** maps each **term** to a **posting list** of documents (and optionally positions, frequencies) containing that term — the core data structure behind every major search engine.
 
-**References:** _None yet._
+### Why it matters
+
+Scanning every document for every query is O(documents). Inverted indexes make lookup O(posting list size) — often milliseconds over billions of docs. Understanding postings is essential for interview search design.
+
+### How it works
+
+```mermaid
+flowchart TB
+    subgraph Build["Index Build"]
+        D1["Doc1: 'quick brown fox'"]
+        D2["Doc2: 'quick blue sky'"]
+        D1 --> Tok[Tokenize + Normalize]
+        D2 --> Tok
+        Tok --> Inv[(Inverted Index)]
+    end
+    subgraph Index["Inverted Index Structure"]
+        Inv --> quick["quick → [(D1, pos1), (D2, pos1)]"]
+        Inv --> brown["brown → [(D1, pos2)]"]
+        Inv --> fox["fox → [(D1, pos3)]"]
+        Inv --> blue["blue → [(D2, pos2)]"]
+    end
+    subgraph Query["Query: 'quick fox'"]
+        Q[Intersect posting lists] --> Score[Score + Rank]
+    end
+```
+
+1. **Forward index:** doc → terms (for storage). **Inverted index:** term → docs (for search).
+2. Each posting stores `doc_id`, optionally `term frequency`, `positions` (for phrase queries).
+3. **Query execution:** fetch lists for each term → intersect/union (boolean) → score survivors.
+4. Posting lists are often **sorted by doc ID** — efficient merge-intersect.
+
+### Key details
+
+- **Skip lists** on posting lists accelerate AND operations.
+- **Compression:** variable-byte, PForDelta, Roaring bitmaps shrink index size 3–10×.
+- **Phrase query:** verify term positions within sliding window in merged postings.
+- Stored fields vs index-only — `_source` in ES stores original JSON for highlighting.
+
+### When to use
+
+- Foundation for any keyword search system — build or buy (Lucene).
+- Log indexing (Elasticsearch, OpenSearch), e-commerce search, code search.
+- Combined with forward index for retrieval of full document body.
+
+### Trade-offs
+
+| Pros | Cons |
+|------|------|
+| O(1) term lookup | Rebuild/update on every doc change |
+| Efficient boolean combinations | Phrase/geo queries add complexity |
+| Compressible posting lists | Stemming can reduce precision |
+
+### References
+
+- _Add links from [System Design Fundamentals.xlsx](../System%20Design%20Fundamentals.xlsx) as you collect them._
 
 ---
 
 ## 14.3 Elasticsearch
 
-**Summary:** Distributed search and analytics engine built on Lucene — REST API, JSON docs, horizontal scale.
+### What is it
 
-- Index → shards → replicas; cluster coordination via elected master
-- Near-real-time: documents searchable ~1s after index request
-- Use for log analytics (ELK), product search, and full-text over JSON documents
+**Elasticsearch** is a distributed, RESTful search and analytics engine built on **Apache Lucene**. It shards indices across nodes, replicates for HA, and exposes rich query DSL, aggregations, and near-real-time indexing.
 
-**References:** _None yet._
+### Why it matters
+
+De facto standard for operational search, log analytics (ELK/EFK stack), and metrics. Interview designs for "search service" or "log platform" almost always reference ES concepts — shards, replicas, segments, refresh.
+
+### How it works
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant Coord as Coordinating Node
+    participant Shard1 as Primary Shard
+    participant Shard2 as Replica Shard
+    participant Lucene as Lucene Segments
+
+    Note over Client,Lucene: Write Path
+    Client->>Coord: POST /index/_doc
+    Coord->>Shard1: Route by routing key
+    Shard1->>Lucene: Buffer in memory → refresh → segment
+    Shard1-->>Shard2: Replicate
+
+    Note over Client,Lucene: Search Path
+    Client->>Coord: GET /index/_search?q=...
+    Coord->>Shard1: Query phase (scoring, top-K)
+    Coord->>Shard2: Query phase
+    Shard1-->>Coord: Doc IDs + scores
+    Shard2-->>Coord: Doc IDs + scores
+    Coord->>Coord: Merge, global top-K
+    Coord->>Shard1: Fetch phase (load _source)
+    Coord-->>Client: Ranked JSON hits
+```
+
+1. **Cluster:** nodes hold shards; one primary + N replicas per shard.
+2. **Index → shards:** hash `_id` or custom routing key to shard.
+3. **Write:** primary indexes → replicate to replicas → refresh makes visible.
+4. **Search:** coordinating node fans out query → merge scores → fetch phase for `_source`.
+
+### Key details
+
+- **Segment immutability:** Lucene segments merge in background; deletes are tombstones until merge.
+- **Refresh interval:** default 1s — trade indexing throughput vs search freshness.
+- **Mapping:** schema defines field types; changing mapping often requires reindex.
+- **Aggregations:** bucket (terms, date histogram) + metric (sum, avg) — analytics without separate DB.
+- Alternatives: **OpenSearch** (AWS fork), **Solr** (similar Lucene core), managed **Elastic Cloud**.
+
+### When to use
+
+- Full-text search, log/metric analytics, security SIEM, APM trace storage.
+- Faceted e-commerce browse, autocomplete backends, geo search.
+- When team needs managed search without building inverted indexes from scratch.
+
+### Trade-offs
+
+| Pros | Cons |
+|------|------|
+| Horizontal scale, mature ecosystem | JVM heap tuning; GC pauses at scale |
+| Rich DSL + aggregations | Split-brain risk without proper quorum |
+| Near real-time | Deep pagination expensive (use search_after) |
+| Strong ops tooling (Kibana) | License/cost considerations (Elastic vs OpenSearch) |
+
+### References
+
+- _Add links from [System Design Fundamentals.xlsx](../System%20Design%20Fundamentals.xlsx) as you collect them._
 
 ---
 
 ## 14.4 Lucene
 
-**Summary:** Java search library powering Elasticsearch, Solr — segments, analyzers, and scoring at the core.
+### What is it
 
-- Immutable segments merged in background; deletes marked, compacted later
-- Analyzers chain tokenizers + filters (lowercase, stem, synonym)
-- Understanding Lucene explains ES shard behavior and tuning knobs
+**Apache Lucene** is the open-source Java library implementing inverted indexes, analyzers, scoring, and segment management — the engine inside Elasticsearch, Solr, and many embedded search products.
 
-**References:** _None yet._
+### Why it matters
+
+Elasticsearch interviews often reduce to Lucene concepts: segments, merges, analyzers, BM25. Understanding Lucene explains *why* ES behaves as it does (refresh, near-real-time, immutability).
+
+### How it works
+
+1. **Documents** added to `IndexWriter` → analyzed → in-memory buffer.
+2. **Refresh** (or `commit`) flushes buffer to immutable **on-disk segment**.
+3. **Segment merge** policy combines small segments into larger ones; purges deleted docs.
+4. **IndexSearcher** queries across all segments; results merged by score.
+
+### Key details
+
+- **Analyzer chain:** `CharFilter` → `Tokenizer` → `TokenFilter` (lowercase, stop, stem).
+- **Similarity:** BM25 default since Lucene 7; TF-IDF legacy.
+- **Doc values:** column-stride stored fields for sorting, aggregations, facets — separate from inverted index.
+- **Near-real-time reader:** reopen `IndexReader` to see new segments without full restart.
+
+### When to use
+
+- Embedded search in Java applications without full ES cluster overhead.
+- Custom search appliances; understanding layer under Elasticsearch/Solr.
+- Building specialized indexes (code search, scientific literature) with custom analyzers.
+
+### Trade-offs
+
+| Pros | Cons |
+|------|------|
+| Battle-tested, extensible | Java-centric; embedded ops burden |
+| Fine-grained tuning | No built-in distributed layer |
+| BM25, payloads, joins (limited) | Segment merge I/O spikes |
+
+### References
+
+- _Add links from [System Design Fundamentals.xlsx](../System%20Design%20Fundamentals.xlsx) as you collect them._
 
 ---
 
 ## 14.5 Ranking
 
-**Summary:** Ordering search results so the most useful documents appear first.
+### What is it
 
-- Combines textual relevance, business signals (popularity, recency), and personalization
-- Learning-to-rank models refine order from click-through data
-- Balance precision (top results correct) vs recall (find all relevant docs)
+**Ranking** orders search results by estimated relevance to the query — turning a set of matching documents into a user-trustworthy ordered list. Combines textual relevance, business rules, and personalization.
 
-**References:** _None yet._
+### Why it matters
+
+Users rarely look past the first page. Poor ranking destroys product value even with perfect recall. System design interviews ask how you'd improve "quality" beyond boolean match.
+
+### How it works
+
+1. **Retrieval:** cheaply fetch candidate set (inverted index, maybe 1000s of docs).
+2. **Scoring:** compute relevance score per candidate (BM25, vector similarity).
+3. **Re-ranking:** ML model (LTR — Learning to Rank) on richer features — click history, freshness, popularity.
+4. **Business boosts:** pin sponsored, demote out-of-stock, diversify results.
+
+### Key details
+
+- **Two-stage retrieval:** bi-encoder (fast, broad) → cross-encoder (slow, precise top-N).
+- **Learning to Rank:** features like BM25 score, PageRank, query-document click-through rate.
+- **Freshness decay:** Gaussian or exponential boost for recent content (news, social).
+- **Diversity:** MMR (Maximal Marginal Relevance) reduces near-duplicate results.
+
+### When to use
+
+- Any user-facing search where order matters — e-commerce, media, enterprise search.
+- When boolean match returns too many equally-plausible hits.
+- After baseline BM25, when product metrics (CTR, conversion) need optimization.
+
+### Trade-offs
+
+| Pros | Cons |
+|------|------|
+| Dramatically better UX | ML rankers need training data |
+| Tunable via boosts and functions | Latency increases with re-rank stage |
+| A/B testable | Over-personalization creates filter bubbles |
+
+### References
+
+- _Add links from [System Design Fundamentals.xlsx](../System%20Design%20Fundamentals.xlsx) as you collect them._
 
 ---
 
 ## 14.6 Relevance Scoring
 
-**Summary:** Numerical score measuring how well a document matches a query — classic: TF-IDF, BM25.
+### What is it
 
-- **TF-IDF:** term frequency × inverse document frequency — rare terms weigh more
-- **BM25:** probabilistic improvement over TF-IDF; default in Lucene/ES
-- Field boosts (`title^2`) and function scores adjust ranking at query time
+**Relevance scoring** assigns a numeric score measuring how well a document matches a query. Lucene/Elasticsearch default: **BM25** (Best Matching 25) — probabilistic improvement over TF-IDF.
 
-**References:** _None yet._
+### Why it matters
+
+Interviewers ask "how does Elasticsearch score documents?" BM25's saturation and length normalization explain why repeating keywords or stuffing long docs doesn't dominate results.
+
+### How it works
+
+**BM25 formula (conceptual):**
+
+```
+score(D,Q) = Σ IDF(qi) · (f(qi,D) · (k1+1)) / (f(qi,D) + k1·(1−b+b·|D|/avgdl))
+```
+
+- `f(qi,D)` — term frequency in document
+- `|D|` — document length; `avgdl` — average doc length
+- `k1` — term frequency saturation (default 1.2)
+- `b` — length normalization (default 0.75)
+- `IDF` — rare terms weigh more
+
+### Key details
+
+- **Field boosts:** `title^3` multiplies score — title matches rank higher.
+- **Function score:** combine BM25 with `log(popularity)`, `gauss(date)`, script scores.
+- **Explain API:** `/_explain` shows term-by-term score breakdown — essential for debugging.
+- **Vector search:** `kNN` with HNSW index — cosine similarity score merged with BM25 (hybrid).
+
+### When to use
+
+- Default text relevance in Lucene/ES — tune `k1`, `b` only with evaluation data.
+- Custom scoring when product signals (sales rank, rating) should blend with text match.
+- Debugging "why is this doc #1?" in production search quality incidents.
+
+### Trade-offs
+
+| Pros | Cons |
+|------|------|
+| Strong baseline without ML | Ignores semantics ("laptop" vs "notebook") |
+| Interpretable term weights | Field boost tuning is manual |
+| Fast at query time | IDF stale until index refresh |
+
+### References
+
+- _Add links from [System Design Fundamentals.xlsx](../System%20Design%20Fundamentals.xlsx) as you collect them._
 
 ---
 
 ## 14.7 Faceted Search
 
-**Summary:** Aggregated filters (facets) alongside results — e.g., brand, price range, category counts.
+### What is it
 
-- Terms aggregation buckets documents by field value with counts
-- Users narrow results without rewriting query — common in e-commerce
-- Requires keyword or properly mapped fields for efficient aggregation
+**Faceted search** (guided navigation) returns **aggregated counts** alongside search results — e.g., "Brand: Nike (42), Adidas (31)" — letting users filter by category, price range, color without leaving the search experience.
 
-**References:** _None yet._
+### Why it matters
+
+E-commerce and enterprise catalogs with heterogeneous attributes need browse + filter UX. Facets turn search into exploration and dramatically improve conversion vs plain keyword lists.
+
+### How it works
+
+1. Index **facet fields** as `keyword` with **doc values** enabled (column storage).
+2. On search request, add **aggregations** (ES `terms`, `range`, `date_histogram`).
+3. Query runs once; hits + facet buckets returned in parallel.
+4. User selects facet → query adds `filter` clause (filters don't affect facet counts unless using `post_filter`).
+
+### Key details
+
+- **`post_filter` vs `filter`:** filter in query context affects scoring; post_filter applies after aggregations — choose based on whether facet counts should narrow with filters.
+- **Cardinality agg:** approximate unique counts (HyperLogLog++) for "distinct brands."
+- **Nested/object facets:** require `nested` aggregation for arrays of objects.
+- Performance: facet fields should be low-cardinality keywords where possible.
+
+### When to use
+
+- E-commerce (category, brand, price, rating), job boards (location, salary band).
+- Any search UI with left-rail or top-chip filters.
+- Analytics dashboards sharing same index as search.
+
+### Trade-offs
+
+| Pros | Cons |
+|------|------|
+| Better discovery UX | High-cardinality facets are expensive |
+| Single query for hits + counts | Complex nested docs complicate aggs |
+| Real-time filter reflection | post_filter semantics confuse beginners |
+
+### References
+
+- _Add links from [System Design Fundamentals.xlsx](../System%20Design%20Fundamentals.xlsx) as you collect them._
 
 ---
 
 ## 14.8 Autocomplete
 
-**Summary:** Suggest completions as the user types — prefix matching on indexed terms.
+### What is it
 
-- Edge n-grams or completion suggester index prefixes at index time
-- `search_as_you_type` field type in Elasticsearch
-- Rank suggestions by popularity, recency, or personalized history
+**Autocomplete** (type-ahead, search-as-you-type) suggests completions as the user types — prefix matching on titles, past queries, or entity names with low latency (< 50 ms).
 
-**References:** _None yet._
+### Why it matters
+
+Search boxes are the primary navigation for large catalogs. Fast suggestions reduce friction, correct typos early, and surface popular queries — measurably increasing search usage and conversion.
+
+### How it works
+
+1. **Completion suggester (ES):** FST-based in-memory structure built from indexed suggestions with weights.
+2. **Edge n-grams:** index `"quick"` as `q, qu, qui, quic, quick` — prefix queries match instantly.
+3. **Phrase suggester:** correct whole query terms based on indexed corpus statistics.
+4. **Architecture:** dedicated lightweight index or Redis trie for hot prefixes; debounce client requests.
+
+### Key details
+
+- **Completion field** in ES uses finite state transducer — fast but rebuild on update.
+- **Edge n-gram analyzer** on `text` field — simpler but larger index.
+- **Popular queries log:** aggregate search logs → boost trending suggestions.
+- **Highlight matching prefix** in UI; limit to top 5–10 suggestions.
+
+### When to use
+
+- Search bars, address forms, tag pickers, command palettes.
+- When prefix latency must be < 100 ms under load.
+- Combining product titles + query log suggestions.
+
+### Trade-offs
+
+| Pros | Cons |
+|------|------|
+| Dramatically better search UX | Extra index maintenance |
+| Reduces null-result queries | Edge n-grams inflate index size |
+| Can personalize per user | Completion index stale until refresh |
+
+### References
+
+- _Add links from [System Design Fundamentals.xlsx](../System%20Design%20Fundamentals.xlsx) as you collect them._
 
 ---
 
 ## 14.9 Fuzzy Search
 
-**Summary:** Tolerates typos and spelling variations via edit distance (Levenshtein).
+### What is it
 
-- `fuzziness: AUTO` in Elasticsearch matches within 1–2 edits depending on term length
-- Trade-off: more typos caught vs slower queries and false matches
-- Combine with boosting exact matches above fuzzy ones
+**Fuzzy search** finds terms similar to the query string within an **edit distance** threshold (Levenshtein) — tolerating typos (`"laptop"` matches `"laptpo"`).
 
-**References:** _None yet._
+### Why it matters
+
+Mobile keyboards and fast typing produce typos; strict term matching returns zero results. Fuzzy matching recovers recall without full semantic search infrastructure.
+
+### How it works
+
+1. **Levenshtein distance:** minimum single-char insert/delete/substitute operations between strings.
+2. **ES `fuzziness`:** `AUTO` allows 1 edit for 3–5 char terms, 2 for longer; uses Damerau-Levenshtein (includes transpositions).
+3. **Implementation:** expand query to all terms within edit distance in index dictionary — expensive at high fuzziness.
+4. **Phonetic filters:** Metaphone/Soundex for name search ("Smith" ≈ "Smyth").
+
+### Key details
+
+- High `fuzziness` on short terms causes false positives (`"cat"` → `"car"`).
+- **Prefix length** parameter: require first N chars exact before fuzzy — reduces noise.
+- **N-gram + fuzzy** hybrid common in production.
+- Contrast fuzzy (character-level) vs semantic (embedding-level) mismatch handling.
+
+### When to use
+
+- User-facing search with typo tolerance — names, product titles, addresses.
+- `did_you_mean` suggestions on zero-result pages.
+- Not for exact identifiers (order IDs, SKUs) — use exact `keyword` match.
+
+### Trade-offs
+
+| Pros | Cons |
+|------|------|
+| Recovers typo traffic | CPU expensive at scale |
+| Simple to enable in ES | False positives on short terms |
+| Complements spellcheck | Slower than exact term query |
+
+### References
+
+- _Add links from [System Design Fundamentals.xlsx](../System%20Design%20Fundamentals.xlsx) as you collect them._
 
 ---
 
 ## Quick Reference
 
-| Sub-topic | Core idea | Typical tool |
-|-----------|-----------|--------------|
-| **Full Text Search** | Natural language lookup | ES, Solr, OpenSearch |
-| **Inverted Index** | term → documents | Lucene segments |
-| **Elasticsearch** | Distributed search cluster | REST + JSON |
-| **Lucene** | Search library core | Analyzers, BM25 |
-| **Ranking / Scoring** | Order by relevance | BM25 + boosts |
-| **Faceted Search** | Filter + count buckets | Aggregations |
-| **Autocomplete** | Prefix suggestions | Edge n-grams |
-| **Fuzzy Search** | Typo tolerance | Edit distance |
-
----
-
-[← Back to master index](../README.md)
+| Concept | Core mechanism | ES feature |
+|---------|----------------|------------|
+| Full-text | Tokenize + inverted index | `match` query |
+| Inverted index | term → postings | Lucene core |
+| Ranking | BM25 + boosts + LTR | `function_score` |
+| Facets | doc values + aggs | `terms` aggregation |
+| Autocomplete | FST / edge n-grams | `completion` suggester |
+| Fuzzy | Edit distance | `fuzziness: AUTO` |

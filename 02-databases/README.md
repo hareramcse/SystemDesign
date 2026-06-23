@@ -1,319 +1,1049 @@
 ﻿# 2. Databases
 
-> Status: **Documented**
+> Status: **Documented** — master reference
 
 [← Back to master index](../README.md)
 
----
-
-## Sub-topics
+## Sub-topics table
 
 | # | Sub-topic | Status |
 |---|-----------|--------|
-| 2.1 | [Isolation Levels](#isolation-levels) | Done |
-| 2.2 | [Indexing](#indexing) | Done |
-| 2.3 | [Normalization/Denormalizatio](#normalization-denormalizatio) | Done |
-| 2.4 | [Views/ Materialized View](#views-materialized-view) | Done |
-| 2.5 | [Query Planner/ optimizer](#query-planner-optimizer) | Done |
-| 2.6 | [B Tree/B+ Tree](#b-tree-b-tree) | Done |
-| 2.7 | [LSM Tree/SSTables/WAL](#lsm-tree-sstables-wal) | Done |
-| 2.8 | [MVCC](#mvcc) | Done |
-| 2.9 | [Page Cache](#page-cache) | Done |
-| 2.10 | [Redo/undo/bin Logs](#redo-undo-bin-logs) | Done |
-| 2.11 | [Vacuum Process](#vacuum-process) | Done |
-| 2.12 | [Key Value Stores](#key-value-stores) | Done |
-| 2.13 | [Document Databases](#document-databases) | Done |
-| 2.14 | [Wide Column Databases](#wide-column-databases) | Done |
-| 2.15 | [Graph Databases](#graph-databases) | Done |
-| 2.16 | [Time Series Databases](#time-series-databases) | Done |
-| 2.17 | [Search Databases](#search-databases) | Done |
-| 2.18 | [Vector Databases](#vector-databases) | Done |
-| 2.19 | [Multi Model Databases](#multi-model-databases) | Done |
+| 2.1 | [Isolation Levels](#21-isolation-levels) | Done |
+| 2.2 | [Indexing](#22-indexing) | Done |
+| 2.3 | [Normalization/Denormalizatio](#23-normalizationdenormalizatio) | Done |
+| 2.4 | [Views/ Materialized View](#24-views-materialized-view) | Done |
+| 2.5 | [Query Planner/ optimizer](#25-query-planner-optimizer) | Done |
+| 2.6 | [B Tree/B+ Tree](#26-b-treeb-tree) | Done |
+| 2.7 | [LSM Tree/SSTables/WAL](#27-lsm-treesstableswal) | Done |
+| 2.8 | [MVCC](#28-mvcc) | Done |
+| 2.9 | [Page Cache](#29-page-cache) | Done |
+| 2.10 | [Redo/undo/bin Logs](#210-redoundobin-logs) | Done |
+| 2.11 | [Vacuum Process](#211-vacuum-process) | Done |
+| 2.12 | [Key Value Stores](#212-key-value-stores) | Done |
+| 2.13 | [Document Databases](#213-document-databases) | Done |
+| 2.14 | [Wide Column Databases](#214-wide-column-databases) | Done |
+| 2.15 | [Graph Databases](#215-graph-databases) | Done |
+| 2.16 | [Time Series Databases](#216-time-series-databases) | Done |
+| 2.17 | [Search Databases](#217-search-databases) | Done |
+| 2.18 | [Vector Databases](#218-vector-databases) | Done |
+| 2.19 | [Multi Model Databases](#219-multi-model-databases) | Done |
+
+## Topic Overview
+
+Databases are the persistent foundation of nearly every application: they store state, enforce constraints, and execute queries at scale. System design interviews and production architecture both require understanding **how databases work internally**—not just SQL syntax—including storage engines, indexing structures, transaction isolation, and the trade-offs between relational, document, wide-column, graph, and specialized stores.
+
+Choosing and tuning a database means matching **access patterns** (point lookups vs. scans vs. graph traversals) to the right **data model** and **storage engine** (B-tree vs. LSM). Operational concerns—WAL durability, vacuum, page cache, query planning—determine whether a database stays fast and reliable under load or becomes the system bottleneck.
 
 ```mermaid
-flowchart LR
-    Query --> Planner
-    Planner --> Index
-    Index --> Storage
+flowchart TB
+    App[Application] --> QP[Query Planner]
+    QP --> Idx[Index / B-tree]
+    Idx --> PC[Page Cache]
+    PC --> Disk[(Disk + WAL)]
 ```
+
+## Related topics
+
+- [Caching](../03-caching/README.md) — reducing DB read load
+- [Distributed Databases](../05-distributed-databases/README.md) — sharding, replication, consensus
+- [Distributed System](../04-distributed-system/README.md) — consistency, durability, CAP
+- [Search Systems](../14-search-systems/README.md) — inverted indexes, Elasticsearch
 
 ---
 
 ## 2.1 Isolation Levels
 
-**Summary:** Define how concurrent transactions interact—what anomalies (dirty read, phantom read) are permitted. Higher isolation reduces anomalies but increases locking and aborts.
+### What is it?
 
-**Key points:**
-- Read Uncommitted → Serializable: increasing strictness, decreasing concurrency
-- PostgreSQL default READ COMMITTED; SERIALIZABLE uses SSI for full isolation
-- Choose lowest level that preserves correctness for your workload
+**Transaction isolation levels** define how much concurrent transactions interfere with each other—what anomalies (dirty reads, non-repeatable reads, phantom reads) are permitted. SQL defines four standard levels: READ UNCOMMITTED, READ COMMITTED, REPEATABLE READ, SERIALIZABLE.
 
-**References:**
-- [Video](https://www.youtube.com/watch?v=89YYHMYfymk)
+### Why it matters
+
+Too weak isolation causes data corruption visible to users (double booking, wrong balances). Too strong isolation increases lock contention and kills throughput. Production systems default to READ COMMITTED (PostgreSQL) or REPEATABLE READ (MySQL InnoDB) with application-level handling of edge cases.
+
+### How it works
+
+1. Transaction begins; isolation level set per session or globally.
+2. Reads may use shared locks, snapshot (MVCC), or no locks depending on level.
+3. Writes acquire exclusive locks or create new row versions.
+4. Conflicts detected at read, write, or commit time (optimistic vs. pessimistic).
+5. Scheduler produces a history equivalent to some serial order (serializable) or allows defined anomalies.
+
+```mermaid
+flowchart TB
+    RU[Read Uncommitted] --> RC[Read Committed]
+    RC --> RR[Repeatable Read]
+    RR --> Ser[Serializable]
+```
+
+### Key details
+
+| Level | Dirty read | Non-repeatable | Phantom |
+|-------|------------|----------------|---------|
+| Read Uncommitted | Yes | Yes | Yes |
+| Read Committed | No | Yes | Yes |
+| Repeatable Read | No | No | Yes* |
+| Serializable | No | No | No |
+
+*PostgreSQL RR prevents phantoms; standard SQL definition may differ.
+
+- **Snapshot isolation** (MVCC) common implementation of RR
+- **Serializable snapshot isolation (SSI)** in PostgreSQL 9.1+ for true serializable
+
+### When to use
+
+- READ COMMITTED: default for most OLTP web apps
+- REPEATABLE READ: reports within one transaction needing stable snapshot
+- SERIALIZABLE: financial invariants where application locking is error-prone
+
+### Trade-offs / Pitfalls
+
+- Higher isolation → more rollbacks and retries
+- ORM default isolation may not match DB default
+- Distributed transactions across DBs don't inherit single-DB isolation
+- "Serializable" in one DB ≠ same guarantees in another
+
+### References
+
+- [Isolation Levels — database concurrency video](https://www.youtube.com/watch?v=89YYHMYfymk)
 
 ---
 
 ## 2.2 Indexing
 
-**Summary:** Auxiliary data structures that avoid full table scans by mapping lookup keys to row locations. The primary lever for read performance—and write overhead.
+### What is it?
 
-**Key points:**
-- B-tree default for range/equality; hash for exact match only
-- Composite indexes: leftmost prefix rule; column order matters
-- Covering indexes eliminate table lookups; watch write amplification
+An **index** is a secondary data structure that speeds lookups by key or column value without scanning the entire table. Indexes trade **extra storage and write overhead** for **faster reads** on indexed columns.
+
+### Why it matters
+
+A sequential scan on a billion-row table is unusable at interactive latency. Proper indexing is often the largest single DB performance lever. Wrong indexes waste disk and slow every INSERT/UPDATE.
+
+### How it works
+
+1. Query planner evaluates WHERE/JOIN/ORDER BY clauses.
+2. If useful index exists, planner chooses **index scan** or **index-only scan**.
+3. Index stores sorted keys + pointers (row IDs or primary key) to heap rows.
+4. On write, index entries inserted/updated alongside row (maintains invariant).
+5. Composite indexes support multi-column predicates (left-prefix rule).
+
+```mermaid
+flowchart LR
+    Query[SELECT WHERE col=X] --> Plan{Index exists?}
+    Plan -->|Yes| Idx[Index seek O log n]
+    Plan -->|No| Scan[Seq scan O n]
+```
+
+### Key details
+
+- **Clustered index:** row data stored in index order (InnoDB PK)
+- **Covering index:** includes all columns needed—avoids heap lookup
+- **Selectivity:** high-cardinality columns benefit most
+- Types: B-tree (default), hash, GIN/GiST (PostgreSQL), full-text, partial indexes
+
+### When to use
+
+- Columns in WHERE, JOIN, ORDER BY with high selectivity
+- Foreign keys (join performance)
+- Avoid over-indexing low-cardinality columns alone (gender flag)
+
+### Trade-offs / Pitfalls
+
+- Every index slows writes and consumes space
+- Wrong composite column order wastes index
+- Index bloat requires maintenance (REINDEX, VACUUM)
+- Function on indexed column prevents index use unless expression index
 
 ---
 
 ## 2.3 Normalization/Denormalizatio
 
-**Summary:** Normalization removes redundancy via table decomposition (1NF→3NF); denormalization duplicates data to speed reads. Trade storage integrity for query performance.
+### What is it?
 
-**Key points:**
-- 3NF eliminates transitive dependencies; reduces update anomalies
-- Denormalize for read-heavy dashboards, aggregations, or join-heavy paths
-- Eventual consistency acceptable when denormalized copies lag source
+**Normalization** organizes data into related tables to eliminate redundancy and update anomalies, following normal forms (1NF through 5NF). **Denormalization** intentionally duplicates data across tables or documents to optimize read performance at the cost of write complexity.
+
+### Why it matters
+
+Normalized schemas preserve integrity and simplify updates; denormalized schemas reduce JOINs and speed reads at scale. Most production systems normalize the OLTP core and denormalize read models (CQRS, materialized views).
+
+### How it works
+
+**Normalization:**
+1. Split repeating groups into separate tables (1NF).
+2. Remove partial dependencies on composite keys (2NF).
+3. Remove transitive dependencies (3NF)—most OLTP targets 3NF.
+4. Enforce relationships via foreign keys.
+
+**Denormalization:**
+1. Identify hot read paths with expensive JOINs.
+2. Duplicate columns or embed documents (e.g., order line items in order doc).
+3. Update all copies on write or accept eventual consistency via events.
+
+```mermaid
+flowchart TB
+    Norm[Normalized OLTP] -->|events| Denorm[Denormalized read model]
+    Denorm --> Fast[Fast reads]
+    Norm --> Consistent[Write consistency]
+```
+
+### Key details
+
+- 3NF: every non-key attribute depends only on the key
+- Denormalization common in analytics, caches, and NoSQL document stores
+- **Star schema** in warehouses denormalizes dimensions around facts
+- Trade update anomalies for read speed consciously
+
+### When to use
+
+- Normalize: transactional systems, frequently updated data
+- Denormalize: read-heavy dashboards, search indexes, embedded documents
+
+### Trade-offs / Pitfalls
+
+- Denormalized data drifts if update paths missed
+- Over-normalization causes JOIN explosion
+- BCNF/4NF rarely needed in practice—diminishing returns
+- Microservices often denormalize across service boundaries via events
 
 ---
 
 ## 2.4 Views/ Materialized View
 
-**Summary:** Views are virtual queries; materialized views persist query results to disk. MVs trade freshness for precomputed read speed.
+### What is it?
 
-**Key points:**
-- Regular views always reflect current data; no storage cost
-- Materialized views need refresh strategy: on commit, schedule, or trigger
-- Index materialized views for further query acceleration
+A **view** is a stored SQL query acting as a virtual table—no data stored, computed on each access. A **materialized view** physically stores the query result and must be refreshed to reflect base table changes.
 
-**References:**
-- [Video](https://www.youtube.com/watch?v=XI1rk1Uaf7U)
+### Why it matters
+
+Views simplify complex queries and enforce access control. Materialized views accelerate expensive aggregations (dashboards, reports) without hitting raw tables every time.
+
+### How it works
+
+**View:**
+1. `CREATE VIEW v AS SELECT ...`
+2. Queries against `v` expand to underlying SQL at plan time.
+3. Optimizer may push predicates through to base tables.
+
+**Materialized view:**
+1. `CREATE MATERIALIZED VIEW mv AS SELECT ...`
+2. Result stored on disk like a table.
+3. `REFRESH MATERIALIZED VIEW` (full or concurrent) updates snapshot.
+
+```mermaid
+flowchart LR
+    Base[(Base tables)] --> MV[Materialized View]
+    MV --> App[Fast reads]
+    Base -.->|refresh| MV
+```
+
+### Key details
+
+- PostgreSQL supports concurrent refresh (unique index required)
+- Incremental refresh possible in some systems (Oracle, SQL Server indexed views)
+- Views can be **updatable** if simple enough (single table, no aggregation)
+- Staleness window between refreshes
+
+### When to use
+
+- View: security abstraction, query simplification
+- Materialized view: heavy aggregations, pre-computed joins for BI
+
+### Trade-offs / Pitfalls
+
+- Materialized view storage cost and refresh load
+- Full refresh locks reads in some DBs without CONCURRENTLY
+- Stale MV misleads users if refresh lag unmonitored
+- Complex views may prevent predicate pushdown
+
+### References
+
+- [Views and Materialized Views — SQL video](https://www.youtube.com/watch?v=XI1rk1Uaf7U)
 
 ---
 
 ## 2.5 Query Planner/ optimizer
 
-**Summary:** Cost-based optimizer chooses execution plan (join order, index scan vs seq scan) from statistics. Bad stats or stale plans cause catastrophic slow queries.
+### What is it?
 
-**Key points:**
-- EXPLAIN ANALYZE reveals actual vs estimated row counts
-- Statistics histograms drive cost estimates—run ANALYZE after bulk loads
-- Index hints and plan freezing are last resorts; fix stats first
+The **query planner** (optimizer) chooses how to execute a SQL statement—join order, index vs. scan, parallel workers—based on **statistics**, **cost model**, and **available indexes**. Goal: minimize estimated total cost (I/O + CPU).
 
-**References:**
-- [Video](https://www.youtube.com/watch?v=fj9pK8isRA4)
+### Why it matters
+
+Identical SQL can run in milliseconds or minutes depending on plan chosen. Understanding planners explains why `EXPLAIN` matters and why statistics must be current.
+
+### How it works
+
+1. Parse SQL into query tree.
+2. Generate candidate plans (join algorithms: nested loop, hash, merge).
+3. Estimate row counts using table statistics (histograms, ndistinct).
+4. Assign cost to each plan; pick lowest estimated cost.
+5. Execute plan; optionally adapt (adaptive join in SQL Server, etc.).
+
+```mermaid
+flowchart TB
+    SQL[SQL query] --> Parse[Parse]
+    Parse --> Plans[Generate plans]
+    Stats[(Statistics)] --> Plans
+    Plans --> Cost[Cost estimate]
+    Cost --> Best[Execute best plan]
+```
+
+### Key details
+
+- **EXPLAIN ANALYZE** compares estimate vs. actual rows—detects stale stats
+- **Parameter sniffing:** plan cached for first parameter values may be wrong for others
+- Hints available but discouraged (optimizer usually smarter with good stats)
+- Correlated subqueries sometimes optimized to joins (decorrelation)
+
+### When to use
+
+- Debugging slow queries (always EXPLAIN first)
+- After large data changes (run ANALYZE)
+- Index design validation
+
+### Trade-offs / Pitfalls
+
+- Bad statistics → catastrophic plan (nested loop on huge table)
+- Overly complex SQL defeats optimizer
+- OR conditions often prevent index use
+- Cost models differ per DB—tuning knowledge doesn't fully transfer
+
+### References
+
+- [Query Planner and Optimizer — video](https://www.youtube.com/watch?v=fj9pK8isRA4)
 
 ---
 
 ## 2.6 B Tree/B+ Tree
 
-**Summary:** Balanced tree index keeping data sorted; B+ trees store all values in leaves with linked sibling pointers. Default index structure for most RDBMS.
+### What is it?
 
-**Key points:**
-- O(log n) lookups, range scans via leaf traversal
-- B+ tree: internal nodes keys-only; leaves hold data + next pointer
-- Page-sized nodes align with disk block I/O—typically 4–16 KB
+**B-trees** and **B+ trees** are balanced tree structures storing sorted keys in pages, optimized for **disk I/O** (wide nodes, shallow height). B+ trees keep all values in leaf nodes linked for range scans; internal nodes only route. Default index structure in PostgreSQL, MySQL InnoDB, SQLite.
+
+### Why it matters
+
+Most OLTP index lookups and range queries go through B+ trees. Understanding page splits, fill factor, and seek vs. scan explains index performance limits.
+
+### How it works
+
+1. Root-to-leaf search: O(log n) page reads.
+2. Leaf pages contain keys + row pointers (or row data if clustered).
+3. Insert: find leaf; if full, **split** page and propagate key up.
+4. Delete may **merge** underfilled pages.
+5. Range query: scan linked leaf pages sequentially.
 
 ```mermaid
-flowchart LR
-    Root --> Internal
-    Internal --> Leaf1[Leaf Pages]
-    Leaf1 --> Leaf2[Linked Leaves]
+flowchart TB
+    Root[Root internal] --> I1[Internal]
+    Root --> I2[Internal]
+    I1 --> L1[Leaf linked list]
+    L1 --> L2[Leaf]
 ```
 
-**References:**
-- [Video](https://www.youtube.com/watch?v=aZjYr87r1b8)
+### Key details
+
+- Typical fanout 100–500 keys per page → 4 levels for billions of rows
+- **Clustered B+ tree:** leaf = row data (InnoDB PK)
+- **Secondary index:** leaf stores PK values for lookup
+- Random inserts cause page splits (write amplification)
+
+### When to use
+
+- Default for relational indexes
+- Range queries, ORDER BY, prefix LIKE 'abc%'
+- Moderate write rates with read-heavy mix
+
+### Trade-offs / Pitfalls
+
+- Poor for very high write throughput (splits) vs. LSM
+- UUID primary keys cause random insert hotspots (page splits)
+- Wide rows reduce fanout, deepen tree
+- Not ideal for full-table sequential scan workloads
+
+### References
+
+- [B-Tree and B+ Tree — data structures video](https://www.youtube.com/watch?v=aZjYr87r1b8)
 
 ---
 
 ## 2.7 LSM Tree/SSTables/WAL
 
-**Summary:** Log-Structured Merge trees buffer writes in memory, flush immutable SSTables to disk, and periodically compact. Optimized for write-heavy workloads.
+### What is it?
 
-**Key points:**
-- WAL ensures durability before memtable flush; crash recovery replays log
-- SSTables are immutable sorted files; compaction merges and deduplicates
-- Read path checks memtable → bloom filter → SSTable levels
+**Log-Structured Merge (LSM) trees** buffer writes in memory (**memtable**), flush immutable **SSTables** (Sorted String Tables) to disk, and periodically **compact** overlapping files. **WAL** (write-ahead log) ensures durability before memtable ack. Used in RocksDB, LevelDB, Cassandra, HBase, DynamoDB.
 
-**References:**
-- [Video](https://www.youtube.com/watch?v=P2xtlLymqqI)
-- [Article](https://medium.com/@dwivedi.ankit21/lsm-trees-the-go-to-data-structure-for-databases-search-engines-and-more-c3a48fa469d2)
+### Why it matters
+
+LSM excels at **high write throughput** and sequential I/O—ideal for time-series, messaging metadata, and write-heavy KV stores. Trade-off: read amplification and compaction overhead.
+
+### How it works
+
+1. Write appended to WAL, then memtable (in-memory sorted structure).
+2. Memtable full → flush to disk as new SSTable (sorted, immutable).
+3. Read checks memtable + SSTables (bloom filters skip irrelevant files).
+4. **Compaction** merges SSTables, discards tombstones, reduces read amplification.
+5. Levels (L0, L1, …) organize size-tiered or leveled compaction.
+
+```mermaid
+flowchart LR
+    W[Write] --> WAL[WAL]
+    WAL --> Mem[Memtable]
+    Mem --> SST[SSTable flush]
+    SST --> Comp[Compaction]
+    R[Read] --> Mem
+    R --> SST
+```
+
+### Key details
+
+- **Write amplification:** rewriting data during compaction
+- **Read amplification:** checking multiple SSTables per read
+- **Bloom filter:** probabilistic "key not in this file" skip
+- Tombstones mark deletes until compaction purges
+
+### When to use
+
+- Write-heavy workloads (logging, IoT, counters)
+- Key-value and wide-column stores
+- When sequential write bandwidth matters
+
+### Trade-offs / Pitfalls
+
+- Read latency less predictable than B-tree
+- Compaction can cause latency spikes (I/O contention)
+- Space amplification until compaction runs
+- Range delete expensive (many tombstones)
+
+### References
+
+- [LSM Trees — video overview](https://www.youtube.com/watch?v=P2xtlLymqqI)
+- [LSM Trees deep dive — Medium article](https://medium.com/@dwivedi.ankit21/lsm-trees-the-go-to-data-structure-for-databases-search-engines-and-more-c3a48fa469d2)
 
 ---
 
 ## 2.8 MVCC
 
-**Summary:** Multi-Version Concurrency Control lets readers see snapshot versions without blocking writers. Each transaction sees a consistent point-in-time view.
+### What is it?
 
-**Key points:**
-- Writes create new row versions; old versions retained until vacuum
-- No read locks needed—high read concurrency
-- Transaction ID visibility rules determine which version is visible
+**Multi-Version Concurrency Control (MVCC)** keeps multiple versions of each row; readers see a **snapshot** as of transaction start without blocking writers. Writers create new versions; old versions garbage-collected later (vacuum).
 
-**References:**
-- [Video](https://www.youtube.com/watch?v=TBmDBw1IIoY)
+### Why it matters
+
+MVCC enables high read concurrency in PostgreSQL, InnoDB, Oracle—readers don't acquire blocking locks on row data. Foundation for snapshot isolation and repeatable read.
+
+### How it works
+
+1. Each transaction assigned **transaction ID (xid)**.
+2. Row versions tagged with `xmin` (creating xid) and `xmax` (deleting xid).
+3. Read visibility rule: version visible if created before snapshot and not deleted before snapshot.
+4. UPDATE = insert new version + mark old deleted.
+5. Vacuum removes dead versions no longer visible to any transaction.
+
+```mermaid
+sequenceDiagram
+    participant T1 as Txn 1
+    participant T2 as Txn 2
+    T1->>T1: read snapshot v1
+    T2->>T2: write v2
+    T1->>T1: still sees v1
+```
+
+### Key details
+
+- **Snapshot isolation:** each statement or transaction sees consistent snapshot
+- Long transactions block vacuum → table bloat
+- **Transaction ID wraparound** requires aggressive vacuum (PostgreSQL)
+- Conflicts detected on commit for serializable variants (SSI)
+
+### When to use
+
+- Built into PostgreSQL, InnoDB—understand defaults
+- Choosing isolation and connection pool timeouts
+- Debugging bloat and vacuum issues
+
+### Trade-offs / Pitfalls
+
+- Storage overhead from dead row versions
+- Write skew possible under snapshot isolation (needs SSI or app logic)
+- Index-only scans must verify visibility map
+- ORM long sessions hold snapshots unintentionally
+
+### References
+
+- [MVCC — multi-version concurrency video](https://www.youtube.com/watch?v=TBmDBw1IIoY)
 
 ---
 
 ## 2.9 Page Cache
 
-**Summary:** In-memory buffer pool caching database pages (typically 8 KB). Avoids disk I/O on hot data—often the biggest performance factor.
+### What is it?
 
-**Key points:**
-- LRU or clock eviction when cache exceeds `shared_buffers`/buffer pool size
-- Cache hit ratio > 99% is target for OLTP; monitor buffer pool metrics
-- OS page cache also caches files—double buffering can waste RAM
+The **page cache** (buffer pool) is DB-managed memory holding frequently accessed **disk pages** (typically 8–16 KB) in RAM. Reads hit cache avoid disk; dirty pages flushed asynchronously.
 
-**References:**
-- [Video](https://www.youtube.com/watch?v=syPEMXQwaYQ)
+### Why it matters
+
+Disk is 1000× slower than RAM. Cache hit ratio dominates OLTP performance. Sizing buffer pool correctly is primary DB tuning knob.
+
+### How it works
+
+1. Read request for page ID.
+2. Cache lookup; **hit** → return from memory.
+3. **Miss** → read from disk, insert into cache (evict LRU/LFU page if full).
+4. Write modifies page in cache; marks dirty.
+5. Background writer/checkpointer flushes dirty pages; WAL ensures durability before ack.
+
+```mermaid
+flowchart TB
+    Query --> Cache{In buffer pool?}
+    Cache -->|Hit| RAM[Return page]
+    Cache -->|Miss| Disk[(Disk read)]
+    Disk --> RAM
+```
+
+### Key details
+
+- PostgreSQL: `shared_buffers`; InnoDB: `innodb_buffer_pool_size`
+- Target 70–80% of RAM on dedicated DB server (leave OS cache room)
+- **Double buffering:** OS page cache + DB cache—some DBs use direct I/O
+- Cold cache after restart causes temporary slow period
+
+### When to use
+
+- Sizing any dedicated database server
+- Explaining post-restart performance dip
+- Distinguishing DB cache from OS cache in troubleshooting
+
+### Trade-offs / Pitfalls
+
+- Too small → excessive disk I/O
+- Too large → memory pressure, swapping kills performance
+- Full table scan evicts hot pages (scan pollution)
+- Monitoring hit ratio alone misses query efficiency
+
+### References
+
+- [Page Cache — database memory video](https://www.youtube.com/watch?v=syPEMXQwaYQ)
 
 ---
 
 ## 2.10 Redo/undo/bin Logs
 
-**Summary:** WAL (redo log) records changes before applying to pages for crash recovery. Undo log rolls back uncommitted transactions; binlog enables replication.
+### What is it?
 
-**Key points:**
-- Write-ahead logging: log first, then data page—durability guarantee
-- Redo replays committed changes after crash; undo discards in-flight txns
-- Binary log (MySQL) or WAL shipping (PostgreSQL) feeds replicas
+Database **logs** ensure durability and recoverability: **redo log** (WAL) records changes to reapply after crash; **undo log** records old values to rollback uncommitted transactions; **binlog** (MySQL) streams changes for replication and CDC.
 
-**References:**
-- [Video](https://www.youtube.com/watch?v=47LvbDGD4cc)
+### Why it matters
+
+Without WAL, committed transactions lost on crash. Without undo, rollback impossible. Binlog enables replicas and event-driven architectures.
+
+### How it works
+
+1. Transaction modifies pages in memory.
+2. **WAL/redo** record written and fsynced **before** commit ack.
+3. Dirty pages flushed later (checkpoint).
+4. Crash recovery: redo committed, undo in-flight transactions.
+5. Binlog written for replication (may be sync or async with redo).
+
+```mermaid
+flowchart LR
+    Txn[Transaction] --> WAL[Redo / WAL fsync]
+    Txn --> Undo[Undo log]
+    WAL --> Recovery[Crash recovery]
+    WAL --> Binlog[Binlog → replicas]
+```
+
+### Key details
+
+- **Write-ahead logging:** log before data page on disk
+- PostgreSQL WAL segments; InnoDB redo log files circular
+- **Group commit** batches fsync for throughput
+- Logical vs. physical redo differs per DB
+
+### When to use
+
+- Understanding commit latency (fsync bound)
+- Replication lag troubleshooting
+- CDC pipelines (Debezium reads binlog/WAL)
+
+### Trade-offs / Pitfalls
+
+- Sync binlog + sync redo = highest durability, slowest commits
+- WAL disk full stops all writes
+- Long-running txn prevents undo log purge
+- Confusing redo (physical) with binlog (logical) in MySQL
+
+### References
+
+- [Redo, Undo, and Bin Logs — video](https://www.youtube.com/watch?v=47LvbDGD4cc)
 
 ---
 
 ## 2.11 Vacuum Process
 
-**Summary:** Reclaims dead tuple space from MVCC updates and prevents transaction ID wraparound. Critical maintenance for PostgreSQL-style engines.
+### What is it?
 
-**Key points:**
-- UPDATE/DELETE leave dead rows until vacuum marks space reusable
-- Autovacuum triggers on dead tuple threshold; tune for write-heavy tables
-- Freeze old XIDs to prevent catastrophic wraparound shutdown
+**VACUUM** (PostgreSQL terminology; similar concepts elsewhere) reclaims space from dead row versions left by MVCC updates/deletes, updates visibility map, and prevents transaction ID wraparound.
 
-**References:**
-- [Video](https://www.youtube.com/watch?v=fTl8-pnaJCE)
+### Why it matters
+
+Without vacuum, tables bloat (disk grows, scans slow) and PostgreSQL risks **xid wraparound** shutdown. Autovacuum is critical background maintenance.
+
+### How it works
+
+1. MVCC leaves dead tuples when rows updated/deleted.
+2. Vacuum scans pages marking dead space reusable.
+3. **Autovacuum** triggers based on dead tuple count threshold.
+4. **VACUUM FULL** rewrites table compactly (exclusive lock).
+5. Freezes old xids to prevent wraparound.
+
+```mermaid
+flowchart TB
+    DML[UPDATE/DELETE] --> Dead[Dead tuples]
+    Dead --> Auto[Autovacuum]
+    Auto --> Reclaim[Space reusable]
+    Auto --> Freeze[XID freeze]
+```
+
+### Key details
+
+- Long transactions block vacuum (dead tuples accumulate)
+- Visibility map enables index-only scans after vacuum
+- Bloat measurable via `pg_stat_user_tables`, pgstattuple
+- Tune `autovacuum_vacuum_scale_factor` for high-churn tables
+
+### When to use
+
+- PostgreSQL operational maintenance
+- Investigating table growth without row count growth
+- After bulk deletes (manual VACUUM ANALYZE)
+
+### Trade-offs / Pitfalls
+
+- VACUUM FULL downtime on large tables
+- Aggressive autovacuum increases I/O
+- Not all dead space returned to OS (only marked reusable)
+- Replication slots can block WAL removal similarly
+
+### References
+
+- [Vacuum Process — PostgreSQL maintenance video](https://www.youtube.com/watch?v=fTl8-pnaJCE)
 
 ---
 
 ## 2.12 Key Value Stores
 
-**Summary:** Simple get/put/delete by key—no joins, no schema. Extreme throughput and horizontal scale for caching, sessions, and feature flags.
+### What is it?
 
-**Key points:**
-- Redis: in-memory with persistence options; rich data structures
-- DynamoDB/Riak: distributed, partition-tolerant at scale
-- No ad-hoc queries—design access patterns around key structure
+**Key-value stores** map opaque keys to blob values with simple get/put/delete operations—no query language, no joins. Examples: Redis, DynamoDB, Riak, etcd (with consistency features).
 
-**References:**
-- [Video](https://www.youtube.com/watch?v=VfcRxtBKI54)
+### Why it matters
+
+Simplest data model enables extreme scale, low latency, and flexible schema. Foundation for caching, session stores, feature flags, and Dynamo-style distributed systems.
+
+### How it works
+
+1. Client sends key (and optional value) via API.
+2. Store hashes key to partition/shard.
+3. Single-key read/write typically O(1) with hash table or LSM backend.
+4. Optional TTL on keys; eviction policies in memory stores.
+5. Distributed KV adds replication and quorum consistency.
+
+```mermaid
+flowchart LR
+    Client -->|GET k| KV[(KV Store)]
+    Client -->|PUT k,v| KV
+    KV --> Part[Partition by hash]
+```
+
+### Key details
+
+- Redis: in-memory, rich types, pub/sub, persistence optional
+- DynamoDB: managed, partition key + sort key, on-demand capacity
+- Consistency tunable (strong vs. eventual read in Dynamo)
+- No ad-hoc queries—access pattern must be key-known upfront
+
+### When to use
+
+- Session cache, rate limiting, leaderboards (Redis sorted sets)
+- User preferences keyed by user ID
+- High-scale simple lookups at known key
+
+### Trade-offs / Pitfalls
+
+- Secondary access patterns need duplicate keys or separate index
+- Large values hurt performance and cost
+- In-memory stores need persistence strategy for durability
+- Hot keys limit partition throughput
+
+### References
+
+- [Key-Value Stores — system design video](https://www.youtube.com/watch?v=VfcRxtBKI54)
 
 ---
 
 ## 2.13 Document Databases
 
-**Summary:** Store semi-structured JSON/BSON documents with flexible schema. Natural fit for content, catalogs, and rapid iteration without migrations.
+### What is it?
 
-**Key points:**
-- MongoDB, CouchDB: document = row; nested objects avoid joins
-- Index embedded fields; aggregation pipeline for analytics
-- Schema validation optional—enforce at application or DB level
+**Document databases** store semi-structured **JSON/BSON documents** with flexible schema, indexed fields, and query languages (MongoDB Query API, CouchDB views). Documents can embed arrays and nested objects.
 
-**References:**
-- [Video](https://www.youtube.com/watch?v=cODCpXtPHbQ)
+### Why it matters
+
+Matches object-oriented and event payloads naturally; schema evolution without migrations. Good for catalogs, content management, user profiles with varying attributes.
+
+### How it works
+
+1. Application inserts document with `_id` (often ObjectId).
+2. Store persists BSON/JSON with optional schema validation.
+3. Indexes on nested fields (e.g., `address.city`).
+4. Queries filter, project, aggregate via pipeline.
+5. Sharding by shard key distributes collections.
+
+```mermaid
+flowchart TB
+    App --> Doc[(Document DB)]
+    Doc --> Embed[Embedded arrays]
+    Doc --> Idx[Field indexes]
+```
+
+### Key details
+
+- MongoDB: replica sets, sharded clusters, aggregation framework
+- Embedding vs. referencing trade-off (1: few → embed; many → reference)
+- **Schema validation** optional JSON Schema in MongoDB 3.6+
+- Change streams for CDC
+
+### When to use
+
+- Heterogeneous records (products with different attributes)
+- Rapid prototyping with evolving schema
+- Read-heavy document retrieval by ID or indexed fields
+
+### Trade-offs / Pitfalls
+
+- Unbounded document growth (16 MB limit in MongoDB)
+- Joins (`$lookup`) expensive—denormalize preferred
+- Wrong shard key → jumbo chunks, unbalanceable
+- Transaction support added but cross-shard costly
+
+### References
+
+- [Document Databases — MongoDB overview video](https://www.youtube.com/watch?v=cODCpXtPHbQ)
 
 ---
 
 ## 2.14 Wide Column Databases
 
-**Summary:** Column-family storage optimized for sparse, wide rows and massive scale. Reads/writes target column groups, not full rows.
+### What is it?
 
-**Key points:**
-- Cassandra, HBase: partition key determines node; clustering key sorts within
-- Tunable consistency per query; eventual consistency default
-- Excellent for time-series, IoT, and write-heavy append workloads
+**Wide-column stores** (column-family) organize data by row key with **dynamic columns** grouped in families—sparse tables with billions of rows. Examples: Cassandra, HBase, ScyllaDB. Inspired by Google's Bigtable.
+
+### Why it matters
+
+Optimized for **massive scale writes**, time-series, and access by known row key + column qualifier. Linear scale-out on commodity hardware.
+
+### How it works
+
+1. Row key determines partition (hash or range).
+2. Within row, columns sorted by name (wide rows possible).
+3. Column families stored separately on disk (LSM backend).
+4. Tunable consistency per query (ONE, QUORUM, ALL).
+5. CQL (Cassandra) provides SQL-like interface.
+
+```mermaid
+flowchart TB
+    RK[Row key] --> P[Partition]
+    P --> CF1[Column family: profile]
+    P --> CF2[Column family: activity]
+```
+
+### Key details
+
+- **Partition key** choice critical—avoid hotspots
+- **Clustering columns** define sort order within partition
+- No joins, no multi-partition ACID transactions (lightweight transactions limited)
+- **TTL** on columns for automatic expiry
+
+### When to use
+
+- Time-series metrics, IoT sensor data
+- High write throughput event logging
+- Known access pattern: row key + column range scan
+
+### Trade-offs / Pitfalls
+
+- Secondary indexes weak (local index per node)
+- Large partitions cause memory pressure and repair issues
+- Data modeling inverted from relational (query-first design)
+- Eventual consistency requires application idempotency
 
 ---
 
 ## 2.15 Graph Databases
 
-**Summary:** Native storage for nodes and edges with index-free adjacency. Traversals (friends-of-friends, shortest path) are O(edges) not O(rows).
+### What is it?
 
-**Key points:**
-- Neo4j, Neptune: Cypher/Gremlin query languages for pattern matching
-- Relationship properties stored on edges—no expensive join tables
-- Poor fit for bulk analytics; excels at deep link traversal
+**Graph databases** store **nodes** (entities) and **edges** (relationships) as first-class citizens, optimized for traversals—friends-of-friends, shortest path, pattern matching. Examples: Neo4j, Amazon Neptune, JanusGraph.
+
+### Why it matters
+
+Relational JOINs explode for deep graph queries (6-hop friends). Native graph stores index adjacency for millisecond traversals on connected data.
+
+### How it works
+
+1. Create nodes with labels and properties.
+2. Create directed/undirected edges with types and properties.
+3. Query with graph language (Cypher, Gremlin, SPARQL).
+4. Index-free adjacency: each node points to neighbors.
+5. Traversal follows pointers without expensive JOINs.
+
+```mermaid
+flowchart LR
+    A[User A] -->|FOLLOWS| B[User B]
+    B -->|FOLLOWS| C[User C]
+    Query[2-hop followers] --> A
+```
+
+### Key details
+
+- **Property graph** (Neo4j) vs. **RDF triple store** (semantic web)
+- Depth-first traversal native; shallow wide queries also fast
+- Sharding graphs harder than KV (min-cut partitioning)
+- ACID transactions on subgraph in Neo4j
+
+### When to use
+
+- Social networks, recommendation "people also bought"
+- Fraud ring detection, knowledge graphs, dependency maps
+- When queries are primarily relationship traversals
+
+### Trade-offs / Pitfalls
+
+- Poor for bulk analytics aggregating entire graph
+- Not a general-purpose OLTP replacement
+- Horizontal scaling more complex than Cassandra
+- Supernodes (celebrity with billion edges) need modeling tricks
 
 ---
 
 ## 2.16 Time Series Databases
 
-**Summary:** Optimized for timestamped metrics with high ingest and range queries. Built-in downsampling, retention policies, and compression.
+### What is it?
 
-**Key points:**
-- InfluxDB, TimescaleDB, Prometheus: append-mostly, time-range scans
-- Compression exploits temporal locality and value similarity
-- Downsampling aggregates old data to save storage
+**Time-series databases (TSDB)** optimize storage and queries for **timestamped metrics**—append-mostly writes, time-range scans, downsampling, retention policies. Examples: InfluxDB, TimescaleDB, Prometheus, QuestDB.
+
+### Why it matters
+
+Metrics, monitoring, IoT, and financial ticks generate enormous append-only streams. General RDBMS struggle with compression and time-range query efficiency at this scale.
+
+### How it works
+
+1. Data points: (timestamp, metric name, tags, value).
+2. Writes batched and compressed by time block.
+3. Queries aggregate over time windows (avg, p99 last 1h).
+4. **Retention policies** drop or downsample old data.
+5. Often paired with Grafana for visualization.
+
+```mermaid
+flowchart LR
+    Agents[Metrics agents] --> TSDB[(TSDB)]
+    TSDB --> Ret[Retention / rollup]
+    TSDB --> Grafana[Dashboards]
+```
+
+### Key details
+
+- **TimescaleDB:** PostgreSQL extension—hypertables chunk by time
+- **Prometheus:** pull model, PromQL, local TSDB
+- Compression ratios 10:1 common with gorilla encoding
+- High cardinality tags (unique per request) kill performance
+
+### When to use
+
+- Application and infrastructure monitoring
+- IoT sensor history
+- Financial OHLCV bars, analytics on time-ordered events
+
+### Trade-offs / Pitfalls
+
+- Updates/deletes uncommon and often unsupported efficiently
+- Cardinality explosion from bad label design
+- Long-term storage cost needs downsampling tiering
+- Not suited for general transactional workloads
 
 ---
 
 ## 2.17 Search Databases
 
-**Summary:** Full-text and faceted search engines built on inverted indexes. Ranked relevance scoring beyond SQL `LIKE` capabilities.
+### What is it?
 
-**Key points:**
-- Elasticsearch/OpenSearch: distributed inverted index with analyzers
-- Tokenization, stemming, and scoring (BM25) drive relevance
-- Near-real-time indexing; refresh interval affects search latency
+**Search databases** (Elasticsearch, OpenSearch, Solr) build **inverted indexes** mapping terms to document IDs, enabling full-text search, fuzzy matching, faceting, and relevance ranking at scale.
+
+### Why it matters
+
+SQL `LIKE '%term%'` cannot scale. Search engines power product search, log analytics (ELK), and autocomplete with sub-second response on billions of documents.
+
+### How it works
+
+1. Documents indexed with analyzed text (tokenized, stemmed, lowercased).
+2. Inverted index: term → posting list (doc IDs + positions).
+3. Query parsed; boolean/phrase/scoring applied (BM25 default).
+4. Results ranked by relevance score + filters/aggregations.
+5. Distributed as shards with replicas for scale and HA.
+
+```mermaid
+flowchart TB
+    Docs[Documents] --> Analyze[Analyzer]
+    Analyze --> InvIdx[Inverted index]
+    Query[Search query] --> InvIdx
+    InvIdx --> Rank[Score + rank]
+```
+
+### Key details
+
+- Near-real-time: refresh interval before searchable
+- **Sharding** by hash; **replicas** for read scale
+- Mapping defines field types (keyword vs. text)
+- ELK stack: Elasticsearch + Logstash + Kibana
+
+### When to use
+
+- Product/site search with facets
+- Log and trace analytics
+- Autocomplete and fuzzy name matching
+
+### Trade-offs / Pitfalls
+
+- Not a system of record—sync from primary DB via CDC
+- Reindex required for breaking mapping changes
+- Split-brain and yellow cluster states in ops
+- Heavy aggregations memory-intensive
 
 ---
 
 ## 2.18 Vector Databases
 
-**Summary:** Store and query high-dimensional embeddings for similarity search. Powers semantic search, RAG, and recommendation systems.
+### What is it?
 
-**Key points:**
-- Approximate nearest neighbor (HNSW, IVF) trades accuracy for speed
-- Pinecone, Weaviate, pgvector: cosine/dot-product distance metrics
-- Combine with metadata filters for hybrid search
+**Vector databases** store **embeddings** (high-dimensional float arrays) and support **similarity search** (nearest neighbors) via indexes like HNSW, IVF, or PQ. Examples: Pinecone, Weaviate, Milvus, pgvector extension.
+
+### Why it matters
+
+LLM applications need semantic search, RAG (retrieval-augmented generation), and recommendation by meaning not keywords. Vector DBs make billion-scale similarity queries practical.
+
+### How it works
+
+1. Embed text/image via model (OpenAI, sentence-transformers).
+2. Store vector + metadata payload in collection.
+3. Build ANN (approximate nearest neighbor) index.
+4. Query: embed question → find top-k similar vectors.
+5. Return associated documents to LLM context.
+
+```mermaid
+flowchart LR
+    Text[User query] --> Embed[Embedding model]
+    Embed --> VDB[(Vector DB)]
+    VDB --> TopK[Top-k neighbors]
+    TopK --> LLM[LLM context]
+```
+
+### Key details
+
+- **HNSW:** graph-based ANN, high recall, memory heavy
+- **Cosine vs. L2 vs. dot product**—must match training normalization
+- Hybrid search: vector + keyword filter (metadata pre-filter)
+- pgvector brings vectors into PostgreSQL for simpler ops
+
+### When to use
+
+- Semantic document search, RAG chatbots
+- Image similarity, duplicate detection
+- Recommendation by content embedding
+
+### Trade-offs / Pitfalls
+
+- Approximate index → missed relevant results
+- Embedding model change requires full re-index
+- High dimensionality (1536+) memory cost
+- Stale embeddings if source documents change
 
 ---
 
 ## 2.19 Multi Model Databases
 
-**Summary:** Single engine supporting document, graph, key-value, and relational models. Reduces operational overhead for polyglot persistence needs.
+### What is it?
 
-**Key points:**
-- ArangoDB, Azure Cosmos DB: unified query across models
-- Choose when team wants one ops stack for varied access patterns
-- May not match best-of-breed performance per model
+**Multi-model databases** support multiple data models—document, graph, key-value, relational—in one engine with unified query and storage. Examples: ArangoDB, Azure Cosmos DB, FaunaDB.
 
-**References:**
-- [Video](https://www.youtube.com/watch?v=hwYadL33HdI)
+### Why it matters
+
+Reduces operational overhead of running separate Mongo, Neo4j, and Redis clusters when application needs multiple paradigms on overlapping data.
+
+### How it works
+
+1. Single cluster stores documents that may embed graph edges.
+2. Query languages expose graph traversals, document filters, KV access.
+3. Unified replication, backup, and security model.
+4. Storage layer may use document store with graph index overlay.
+5. API choice per access pattern on same data.
+
+```mermaid
+flowchart TB
+    App --> MM[(Multi-model DB)]
+    MM --> Doc[Document API]
+    MM --> Graph[Graph API]
+    MM --> KV[Key-Value API]
+```
+
+### Key details
+
+- Cosmos DB: API-compatible layers (SQL, Mongo, Cassandra, Gremlin)
+- Trade-off: jack-of-all-trades vs. best-in-class per model
+- Operational simplicity vs. feature depth
+- Licensing and vendor lock-in considerations
+
+### When to use
+
+- Startup reducing ops burden before scale forces specialization
+- Applications genuinely needing graph + document on same entities
+- Cloud-managed multi-API (Cosmos) for global distribution
+
+### Trade-offs / Pitfalls
+
+- None match peak performance of specialized DB per model
+- Query language complexity across paradigms
+- Cosmos RU pricing requires careful modeling
+- Migration out harder with proprietary APIs
+
+### References
+
+- [Multi-Model Databases — overview video](https://www.youtube.com/watch?v=hwYadL33HdI)
 
 ---
 
 ## Quick Reference
 
-| # | Sub-topic | One-liner |
-|---|-----------|-----------|
-| 2.1 | Isolation Levels | Concurrency anomaly trade-offs |
-| 2.2 | Indexing | Fast lookups at write cost |
-| 2.3 | Normalization/Denormalizatio | Reduce redundancy vs speed reads |
-| 2.4 | Views/ Materialized View | Virtual vs persisted query results |
-| 2.5 | Query Planner/ optimizer | Cost-based execution plan selection |
-| 2.6 | B Tree/B+ Tree | Sorted balanced tree index |
-| 2.7 | LSM Tree/SSTables/WAL | Write-optimized log-structured storage |
-| 2.8 | MVCC | Snapshot reads without blocking writes |
-| 2.9 | Page Cache | In-memory buffer pool for hot pages |
-| 2.10 | Redo/undo/bin Logs | WAL recovery + replication logs |
-| 2.11 | Vacuum Process | Reclaim dead MVCC tuple space |
-| 2.12 | Key Value Stores | Simple key→value at massive scale |
-| 2.13 | Document Databases | Flexible JSON document storage |
-| 2.14 | Wide Column Databases | Column-family for sparse wide rows |
-| 2.15 | Graph Databases | Native node/edge traversal |
-| 2.16 | Time Series Databases | Timestamped metrics at high ingest |
-| 2.17 | Search Databases | Inverted index full-text search |
-| 2.18 | Vector Databases | Embedding similarity search |
-| 2.19 | Multi Model Databases | Multiple data models in one engine |
+| Topic | Core idea | Typical examples |
+|-------|-----------|------------------|
+| Isolation levels | Concurrency anomaly control | RC, RR, Serializable |
+| Indexing | Faster lookups via secondary structure | B-tree indexes |
+| Normalization | Reduce redundancy | 3NF OLTP |
+| Denormalization | Duplicate for read speed | CQRS read models |
+| Materialized view | Stored query snapshot | Dashboard aggregates |
+| Query planner | Cost-based execution choice | EXPLAIN ANALYZE |
+| B+ tree | Disk-friendly balanced tree | PostgreSQL, InnoDB |
+| LSM tree | Log-structured writes + compaction | RocksDB, Cassandra |
+| MVCC | Version snapshots for readers | PostgreSQL, InnoDB |
+| Page cache | RAM buffer for disk pages | shared_buffers |
+| WAL/redo | Durability log before page write | Crash recovery |
+| Vacuum | Reclaim MVCC dead tuples | PostgreSQL autovacuum |
+| KV store | Simple key → value | Redis, DynamoDB |
+| Document DB | JSON documents | MongoDB |
+| Wide column | Row key + column families | Cassandra, HBase |
+| Graph DB | Nodes + edges traversals | Neo4j |
+| TSDB | Timestamp-optimized metrics | Prometheus, TimescaleDB |
+| Search DB | Inverted index full-text | Elasticsearch |
+| Vector DB | Embedding similarity search | Pinecone, pgvector |
+| Multi-model | Multiple paradigms one engine | Cosmos DB, ArangoDB |
 
 [← Back to master index](../README.md)
