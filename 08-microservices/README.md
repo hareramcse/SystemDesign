@@ -1,6 +1,6 @@
-﻿# 8. MicroServices
+﻿# 8. Microservices
 
-> Status: **Scaffold** — sub-topic sections are placeholders; content will be added progressively.
+> Status: **Documented** — cheat-sheet reference for all sub-topics below.
 
 [← Back to master index](../README.md)
 
@@ -10,405 +10,279 @@
 
 | # | Sub-topic | Status |
 |---|-----------|--------|
-| 8.1 | [Monolith](#monolith) | Pending |
-| 8.2 | [Modular Monolith](#modular-monolith) | Pending |
-| 8.3 | [Microservices](#microservices) | Pending |
-| 8.4 | [Service Registry](#service-registry) | Pending |
-| 8.5 | [Service Discovery](#service-discovery) | Pending |
-| 8.6 | [Service Mesh](#service-mesh) | Pending |
-| 8.7 | [Sidecar Pattern](#sidecar-pattern) | Pending |
-| 8.8 | [Circuit Breaker](#circuit-breaker) | Pending |
-| 8.9 | [Retry Pattern](#retry-pattern) | Pending |
-| 8.10 | [Bulkhead Pattern](#bulkhead-pattern) | Pending |
-| 8.11 | [Saga Pattern](#saga-pattern) | Pending |
-| 8.12 | [Choreography](#choreography) | Pending |
-| 8.13 | [Orchestration](#orchestration) | Pending |
-| 8.14 | [BFF Pattern](#bff-pattern) | Pending |
-| 8.15 | [Strangler Pattern](#strangler-pattern) | Pending |
-| 8.16 | [DDD](#ddd) | Pending |
-| 8.17 | [Bounded Context](#bounded-context) | Pending |
-| 8.18 | [Hexagonal Architecture](#hexagonal-architecture) | Pending |
-| 8.19 | [Clean Architecture](#clean-architecture) | Pending |
-| 8.20 | [Onion Architecture](#onion-architecture) | Pending |
-| 8.21 | [Dependency Injection](#dependency-injection) | Pending |
+| 8.1 | [Monolith](#81-monolith) | Done |
+| 8.2 | [Modular Monolith](#82-modular-monolith) | Done |
+| 8.3 | [Microservices](#83-microservices) | Done |
+| 8.4 | [Service Registry](#84-service-registry) | Done |
+| 8.5 | [Service Discovery](#85-service-discovery) | Done |
+| 8.6 | [Service Mesh](#86-service-mesh) | Done |
+| 8.7 | [Sidecar Pattern](#87-sidecar-pattern) | Done |
+| 8.8 | [Circuit Breaker](#88-circuit-breaker) | Done |
+| 8.9 | [Retry Pattern](#89-retry-pattern) | Done |
+| 8.10 | [Bulkhead Pattern](#810-bulkhead-pattern) | Done |
+| 8.11 | [Saga Pattern](#811-saga-pattern) | Done |
+| 8.12 | [Choreography](#812-choreography) | Done |
+| 8.13 | [Orchestration](#813-orchestration) | Done |
+| 8.14 | [BFF Pattern](#814-bff-pattern) | Done |
+| 8.15 | [Strangler Pattern](#815-strangler-pattern) | Done |
+| 8.16 | [DDD](#816-ddd) | Done |
+| 8.17 | [Bounded Context](#817-bounded-context) | Done |
+| 8.18 | [Hexagonal Architecture](#818-hexagonal-architecture) | Done |
+| 8.19 | [Clean Architecture](#819-clean-architecture) | Done |
+| 8.20 | [Onion Architecture](#820-onion-architecture) | Done |
+| 8.21 | [Dependency Injection](#821-dependency-injection) | Done |
+
+---
+
+## Overview
+
+Microservices decompose an application into independently deployable services aligned to business capabilities, connected by network calls and async events.
+
+```mermaid
+flowchart LR
+    U[User] --> GW[Gateway]
+    GW --> A[Order Svc]
+    GW --> B[Payment Svc]
+    A --> Q[Event Bus]
+```
 
 ---
 
 ## 8.1 Monolith
 
-<!-- Content to be added -->
+**Summary:** Single deployable unit containing all features, sharing one codebase and database. Simple to build and operate early on.
 
-### Overview
-
-_Coming soon._
-
-### Key Points
-
-- 
-
-### References
-
-_None yet._
+- **Single process** — one build, one deploy
+- **Shared DB** — easy joins; schema coupling grows over time
+- **Scale** — vertical or replicate entire app
 
 ---
 
 ## 8.2 Modular Monolith
 
-<!-- Content to be added -->
+**Summary:** Monolith with strict internal module boundaries (packages, DB schemas per module). Extract to microservices later without big-bang rewrite.
 
-### Overview
-
-_Coming soon._
-
-### Key Points
-
-- 
-
-### References
-
-_None yet._
+- **Module APIs** — no direct cross-module DB access
+- **Compile-time boundaries** — ArchUnit, package-private
+- **Best of both** — operational simplicity + domain separation
 
 ---
 
 ## 8.3 Microservices
 
-<!-- Content to be added -->
+**Summary:** Independently deployable services owning their data, communicating via APIs and events. Enables team autonomy and targeted scaling.
 
-### Overview
-
-_Coming soon._
-
-### Key Points
-
-- 
-
-### References
-
-_None yet._
+- **Database per service** — no shared tables across services
+- **Distributed complexity** — network, consistency, observability
+- **Team alignment** — Conway's Law; one team per service
 
 ---
 
 ## 8.4 Service Registry
 
-<!-- Content to be added -->
+**Summary:** Central catalog of service instances and their network locations. Eureka, Consul, and etcd are common implementations.
 
-### Overview
-
-_Coming soon._
-
-### Key Points
-
-- 
-
-### References
-
-_None yet._
+- **Registration** — services heartbeat on startup/shutdown
+- **Health-aware** — deregister unhealthy instances
+- **Metadata** — version, zone, weight for routing
 
 ---
 
 ## 8.5 Service Discovery
 
-<!-- Content to be added -->
+**Summary:** Clients or load balancers resolve logical service name to live instance addresses. Client-side (Ribbon) vs server-side (K8s DNS).
 
-### Overview
-
-_Coming soon._
-
-### Key Points
-
-- 
-
-### References
-
-_None yet._
+- **DNS-based** — Kubernetes Service names
+- **Client-side LB** — client picks instance from registry
+- **Service mesh** — sidecar handles discovery transparently
 
 ---
 
 ## 8.6 Service Mesh
 
-<!-- Content to be added -->
+**Summary:** Infrastructure layer (Istio, Linkerd) handling service-to-service traffic: mTLS, retries, metrics, tracing without app code changes.
 
-### Overview
-
-_Coming soon._
-
-### Key Points
-
-- 
-
-### References
-
-_None yet._
+- **Data plane** — sidecar proxies intercept traffic
+- **Control plane** — policies, certs, routing rules
+- **Observability** — uniform metrics/traces across all services
 
 ---
 
 ## 8.7 Sidecar Pattern
 
-<!-- Content to be added -->
+**Summary:** Helper container/process deployed alongside the main app container sharing network namespace. Offloads cross-cutting concerns.
 
-### Overview
-
-_Coming soon._
-
-### Key Points
-
-- 
-
-### References
-
-_None yet._
+- **Same pod** — K8s sidecar pattern (app + envoy)
+- **Transparent proxy** — no SDK in application code
+- **Logging/mTLS** — sidecar handles uniformly
 
 ---
 
 ## 8.8 Circuit Breaker
 
-<!-- Content to be added -->
+**Summary:** Stop calling a failing downstream after threshold; fail fast and allow recovery. Prevents cascade failures.
 
-### Overview
+- **States** — Closed → Open → Half-Open
+- **Fallback** — cached response or degraded mode
+- **Libraries** — Resilience4j, Polly, Istio outlier detection
 
-_Coming soon._
-
-### Key Points
-
-- 
-
-### References
-
-_None yet._
+```mermaid
+flowchart LR
+    A[Caller] -->|failures| CB{Circuit}
+    CB -->|open| FB[Fallback]
+    CB -->|closed| B[Downstream]
+```
 
 ---
 
 ## 8.9 Retry Pattern
 
-<!-- Content to be added -->
+**Summary:** Automatically retry transient failures with backoff and jitter. Must combine with idempotency and circuit breaker.
 
-### Overview
-
-_Coming soon._
-
-### Key Points
-
-- 
-
-### References
-
-_None yet._
+- **Transient only** — retry 5xx/timeouts, not 4xx
+- **Exponential backoff + jitter** — avoid retry storms
+- **Max attempts** — cap retries; escalate to DLQ
 
 ---
 
 ## 8.10 Bulkhead Pattern
 
-<!-- Content to be added -->
+**Summary:** Isolate resources (thread pools, connections) per dependency so one slow service can't exhaust all resources.
 
-### Overview
-
-_Coming soon._
-
-### Key Points
-
-- 
-
-### References
-
-_None yet._
+- **Thread pool per downstream** — failure containment
+- **Connection limits** — cap concurrent calls per service
+- **Named after ship compartments** — flood one, others float
 
 ---
 
 ## 8.11 Saga Pattern
 
-<!-- Content to be added -->
+**Summary:** Distributed transaction as a sequence of local transactions with compensating actions on failure. Alternative to 2PC across services.
 
-### Overview
+- **Choreography** — services react to events
+- **Orchestration** — central coordinator drives steps
+- **Compensation** — undo prior steps (cancel reservation, refund)
 
-_Coming soon._
-
-### Key Points
-
-- 
-
-### References
-
-_None yet._
+```mermaid
+flowchart LR
+    O[Order] --> P[Payment]
+    P --> I[Inventory]
+    P -.->|fail| C[Compensate]
+```
 
 ---
 
 ## 8.12 Choreography
 
-<!-- Content to be added -->
+**Summary:** Saga without central coordinator; each service publishes events and reacts to others. Decentralized, loosely coupled.
 
-### Overview
-
-_Coming soon._
-
-### Key Points
-
-- 
-
-### References
-
-_None yet._
+- **Event-driven** — no single point of failure
+- **Harder to trace** — flow spread across services
+- **Risk of cycles** — careful event design needed
 
 ---
 
 ## 8.13 Orchestration
 
-<!-- Content to be added -->
+**Summary:** Central saga orchestrator calls each service in sequence and triggers compensations on failure. Explicit workflow, easier to reason about.
 
-### Overview
-
-_Coming soon._
-
-### Key Points
-
-- 
-
-### References
-
-_None yet._
+- **Orchestrator service** — owns saga state machine
+- **Commands** — tell each participant what to do
+- **Visibility** — single place to monitor saga progress
 
 ---
 
 ## 8.14 BFF Pattern
 
-<!-- Content to be added -->
+**Summary:** Backend-for-Frontend: dedicated API layer per client type (mobile, web) shaping responses and aggregating calls.
 
-### Overview
-
-_Coming soon._
-
-### Key Points
-
-- 
-
-### References
-
-_None yet._
+- **Client-optimized** — mobile gets lean payloads
+- **Decouples UI from microservices** — frontend teams own BFF
+- **Not a god service** — one BFF per client persona
 
 ---
 
 ## 8.15 Strangler Pattern
 
-<!-- Content to be added -->
+**Summary:** Incrementally replace monolith functionality by routing traffic to new services while old system shrinks. Low-risk migration path.
 
-### Overview
-
-_Coming soon._
-
-### Key Points
-
-- 
-
-### References
-
-_None yet._
+- **Facade/proxy** — route new features to new service
+- **Peel off domains** — extract one bounded context at a time
+- **Dual-run** — validate parity before cutover
 
 ---
 
 ## 8.16 DDD
 
-<!-- Content to be added -->
+**Summary:** Domain-Driven Design aligns software structure with business domain using ubiquitous language, aggregates, and bounded contexts.
 
-### Overview
-
-_Coming soon._
-
-### Key Points
-
-- 
-
-### References
-
-_None yet._
+- **Ubiquitous language** — devs and domain experts share terms
+- **Aggregates** — consistency boundary for transactions
+- **Anti-corruption layer** — translate external models at boundaries
 
 ---
 
 ## 8.17 Bounded Context
 
-<!-- Content to be added -->
+**Summary:** Explicit boundary where a domain model is defined and consistent. Maps directly to microservice candidates.
 
-### Overview
-
-_Coming soon._
-
-### Key Points
-
-- 
-
-### References
-
-_None yet._
+- **One model per context** — "Customer" differs in Sales vs Support
+- **Context map** — relationships between contexts (ACL, shared kernel)
+- **Service boundary** — don't share DB across contexts
 
 ---
 
 ## 8.18 Hexagonal Architecture
 
-<!-- Content to be added -->
+**Summary:** Ports and adapters: core domain isolated from infrastructure via interfaces. DB, HTTP, messaging are interchangeable adapters.
 
-### Overview
-
-_Coming soon._
-
-### Key Points
-
-- 
-
-### References
-
-_None yet._
+- **Ports** — interfaces the domain defines
+- **Adapters** — infrastructure implements ports
+- **Testability** — swap real DB for in-memory in tests
 
 ---
 
 ## 8.19 Clean Architecture
 
-<!-- Content to be added -->
+**Summary:** Concentric layers: entities → use cases → adapters → frameworks. Dependencies point inward only.
 
-### Overview
-
-_Coming soon._
-
-### Key Points
-
-- 
-
-### References
-
-_None yet._
+- **Use cases** — application business rules
+- **Frameworks outermost** — Spring, DB, UI are details
+- **Uncle Bob** — Robert C. Martin's layered approach
 
 ---
 
 ## 8.20 Onion Architecture
 
-<!-- Content to be added -->
+**Summary:** Similar to hexagonal/clean: domain model at center, application services around it, infrastructure on the outside.
 
-### Overview
-
-_Coming soon._
-
-### Key Points
-
-- 
-
-### References
-
-_None yet._
+- **Domain services** — core logic, no infra imports
+- **Application layer** — orchestrates domain objects
+- **Infrastructure** — persistence, messaging implementations
 
 ---
 
 ## 8.21 Dependency Injection
 
-<!-- Content to be added -->
+**Summary:** Invert control: dependencies provided externally (constructor injection) rather than created inside classes. Enables testing and swapping implementations.
 
-### Overview
-
-_Coming soon._
-
-### Key Points
-
-- 
-
-### References
-
-_None yet._
+- **Constructor injection** — preferred; immutable, explicit
+- **IoC container** — Spring, Guice wire dependencies
+- **Interface-based** — depend on abstractions, not concretions
 
 ---
 
+## Quick Reference
+
+| Pattern | Problem solved | Key trade-off |
+|---------|----------------|---------------|
+| Monolith | Simplicity | Scaling & team coupling |
+| Modular monolith | Future extraction | Discipline required |
+| Microservices | Autonomy, scale | Distributed ops cost |
+| Circuit breaker | Cascade failure | False opens |
+| Retry + bulkhead | Transient errors, isolation | Latency, complexity |
+| Saga | Distributed transactions | Compensation logic |
+| BFF | Client-specific APIs | More services to maintain |
+| Strangler | Monolith migration | Dual-system period |
+| DDD + bounded context | Service boundaries | Upfront domain work |
+| Hexagonal/Clean/Onion | Testable domain core | Boilerplate layers |

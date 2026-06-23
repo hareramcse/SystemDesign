@@ -1,6 +1,6 @@
 ﻿# 9. Observability
 
-> Status: **Scaffold** — sub-topic sections are placeholders; content will be added progressively.
+> Status: **Documented** — cheat-sheet reference for all sub-topics below.
 
 [← Back to master index](../README.md)
 
@@ -10,291 +10,210 @@
 
 | # | Sub-topic | Status |
 |---|-----------|--------|
-| 9.1 | [Logging](#logging) | Pending |
-| 9.2 | [Structured Logging](#structured-logging) | Pending |
-| 9.3 | [Metrics](#metrics) | Pending |
-| 9.4 | [Monitoring](#monitoring) | Pending |
-| 9.5 | [Distributed Tracing](#distributed-tracing) | Pending |
-| 9.6 | [OpenTelemetry](#opentelemetry) | Pending |
-| 9.7 | [Correlation IDs](#correlation-ids) | Pending |
-| 9.8 | [Alerting](#alerting) | Pending |
-| 9.9 | [Dashboards](#dashboards) | Pending |
-| 9.10 | [Health Checks](#health-checks) | Pending |
-| 9.11 | [Synthetic Monitoring](#synthetic-monitoring) | Pending |
-| 9.12 | [Error Budgets](#error-budgets) | Pending |
-| 9.13 | [SLA](#sla) | Pending |
-| 9.14 | [SLO](#slo) | Pending |
-| 9.15 | [SLI](#sli) | Pending |
+| 9.1 | [Logging](#91-logging) | Done |
+| 9.2 | [Structured Logging](#92-structured-logging) | Done |
+| 9.3 | [Metrics](#93-metrics) | Done |
+| 9.4 | [Monitoring](#94-monitoring) | Done |
+| 9.5 | [Distributed Tracing](#95-distributed-tracing) | Done |
+| 9.6 | [OpenTelemetry](#96-opentelemetry) | Done |
+| 9.7 | [Correlation IDs](#97-correlation-ids) | Done |
+| 9.8 | [Alerting](#98-alerting) | Done |
+| 9.9 | [Dashboards](#99-dashboards) | Done |
+| 9.10 | [Health Checks](#910-health-checks) | Done |
+| 9.11 | [Synthetic Monitoring](#911-synthetic-monitoring) | Done |
+| 9.12 | [Error Budgets](#912-error-budgets) | Done |
+| 9.13 | [SLA](#913-sla) | Done |
+| 9.14 | [SLO](#914-slo) | Done |
+| 9.15 | [SLI](#915-sli) | Done |
+
+---
+
+## Overview
+
+Observability answers "why is the system broken?" using logs, metrics, and traces — the three pillars of production insight.
+
+```mermaid
+flowchart LR
+    S[Service] --> L[Logs]
+    S --> M[Metrics]
+    S --> T[Traces]
+```
 
 ---
 
 ## 9.1 Logging
 
-<!-- Content to be added -->
+**Summary:** Immutable timestamped records of discrete events (errors, requests, state changes). Primary tool for debugging specific failures.
 
-### Overview
-
-_Coming soon._
-
-### Key Points
-
-- 
-
-### References
-
-_None yet._
+- **Levels** — ERROR, WARN, INFO, DEBUG; tune per environment
+- **Centralized** — ship to ELK, Loki, CloudWatch; don't rely on local disks
+- **PII caution** — never log secrets, tokens, or raw passwords
 
 ---
 
 ## 9.2 Structured Logging
 
-<!-- Content to be added -->
+**Summary:** Logs as key-value JSON instead of free text. Enables filtering, aggregation, and correlation in log platforms.
 
-### Overview
-
-_Coming soon._
-
-### Key Points
-
-- 
-
-### References
-
-_None yet._
+- **Fields** — `timestamp`, `level`, `message`, `traceId`, `userId`
+- **Parse-free queries** — `level=ERROR AND service=payment`
+- **Libraries** — Logback JSON, structlog, winston with JSON formatter
 
 ---
 
 ## 9.3 Metrics
 
-<!-- Content to be added -->
+**Summary:** Numeric time-series measurements aggregated over time (counters, gauges, histograms). Best for trends, capacity, and alerting.
 
-### Overview
-
-_Coming soon._
-
-### Key Points
-
-- 
-
-### References
-
-_None yet._
+- **Counter** — monotonically increasing (requests total)
+- **Gauge** — point-in-time value (queue depth, memory)
+- **Histogram** — distribution (latency percentiles)
 
 ---
 
 ## 9.4 Monitoring
 
-<!-- Content to be added -->
+**Summary:** Continuous observation of system health against defined thresholds. Combines metrics collection, dashboards, and alerts.
 
-### Overview
-
-_Coming soon._
-
-### Key Points
-
-- 
-
-### References
-
-_None yet._
+- **RED method** — Rate, Errors, Duration for services
+- **USE method** — Utilization, Saturation, Errors for resources
+- **Proactive** — detect degradation before user impact
 
 ---
 
 ## 9.5 Distributed Tracing
 
-<!-- Content to be added -->
+**Summary:** Track a single request across multiple services with parent-child spans. Shows where latency and errors occur in the call chain.
 
-### Overview
+- **Trace** — full request journey; **span** — one operation
+- **Context propagation** — trace ID passed via HTTP headers
+- **Sampling** — trace 1–10% in high traffic; 100% on errors
 
-_Coming soon._
-
-### Key Points
-
-- 
-
-### References
-
-_None yet._
+```mermaid
+flowchart LR
+    A[API GW] --> B[Order]
+    B --> C[Payment]
+    B --> D[Inventory]
+```
 
 ---
 
 ## 9.6 OpenTelemetry
 
-<!-- Content to be added -->
+**Summary:** Vendor-neutral standard for traces, metrics, and logs instrumentation. Single SDK exports to Jaeger, Prometheus, Datadog, etc.
 
-### Overview
-
-_Coming soon._
-
-### Key Points
-
-- 
-
-### References
-
-_None yet._
+- **OTel SDK** — auto + manual instrumentation
+- **Collector** — receive, process, export telemetry
+- **Semantic conventions** — standard attribute names across languages
 
 ---
 
 ## 9.7 Correlation IDs
 
-<!-- Content to be added -->
+**Summary:** Unique ID attached to a request and propagated across all services and log entries. Ties together logs, traces, and support tickets.
 
-### Overview
-
-_Coming soon._
-
-### Key Points
-
-- 
-
-### References
-
-_None yet._
+- **Header** — `X-Request-ID` or `traceparent` (W3C)
+- **Generate at edge** — gateway creates ID if missing
+- **Log every line** — include correlation ID in all log records
 
 ---
 
 ## 9.8 Alerting
 
-<!-- Content to be added -->
+**Summary:** Notify on-call when metrics breach thresholds or anomalies detected. Alerts must be actionable, not noisy.
 
-### Overview
-
-_Coming soon._
-
-### Key Points
-
-- 
-
-### References
-
-_None yet._
+- **Symptom-based** — alert on user impact (error rate), not causes (CPU)
+- **Severity tiers** — P1 page, P2 ticket, P3 dashboard
+- **Runbooks** — every alert links to remediation steps
 
 ---
 
 ## 9.9 Dashboards
 
-<!-- Content to be added -->
+**Summary:** Visual panels of key metrics for real-time system overview. One dashboard per service + one golden-signals overview.
 
-### Overview
-
-_Coming soon._
-
-### Key Points
-
-- 
-
-### References
-
-_None yet._
+- **Golden signals** — latency, traffic, errors, saturation
+- **Drill-down** — overview → service → instance
+- **Avoid vanity metrics** — chart what drives decisions
 
 ---
 
 ## 9.10 Health Checks
 
-<!-- Content to be added -->
+**Summary:** Endpoints reporting service readiness and liveness. Orchestrators use them for routing and restart decisions.
 
-### Overview
-
-_Coming soon._
-
-### Key Points
-
-- 
-
-### References
-
-_None yet._
+- **Liveness** — process alive? Restart if fails
+- **Readiness** — can accept traffic? Remove from LB if fails
+- **Deep vs shallow** — `/health` (up) vs `/ready` (DB connected)
 
 ---
 
 ## 9.11 Synthetic Monitoring
 
-<!-- Content to be added -->
+**Summary:** Automated probes simulating user journeys from outside the system. Detects outages before real users report them.
 
-### Overview
-
-_Coming soon._
-
-### Key Points
-
-- 
-
-### References
-
-_None yet._
+- **Black-box** — ping URLs, run scripts every N minutes
+- **Multi-region** — test from geographic vantage points
+- **SLO input** — synthetic uptime feeds availability SLI
 
 ---
 
 ## 9.12 Error Budgets
 
-<!-- Content to be added -->
+**Summary:** Allowed unreliability derived from SLO (e.g., 99.9% = 43 min/month downtime budget). Balances velocity vs stability.
 
-### Overview
-
-_Coming soon._
-
-### Key Points
-
-- 
-
-### References
-
-_None yet._
+- **Budget consumed** — by incidents, deploys, experiments
+- **Policy** — budget exhausted → freeze features, focus on reliability
+- **Google SRE** — error budget drives release decisions
 
 ---
 
 ## 9.13 SLA
 
-<!-- Content to be added -->
+**Summary:** Service Level Agreement — contractual commitment to customers with financial penalties for breach. External-facing promise.
 
-### Overview
-
-_Coming soon._
-
-### Key Points
-
-- 
-
-### References
-
-_None yet._
+- **Legal binding** — credits/refunds on miss
+- **Conservative** — set below internal SLO (buffer)
+- **Example** — 99.95% monthly uptime
 
 ---
 
 ## 9.14 SLO
 
-<!-- Content to be added -->
+**Summary:** Service Level Objective — internal reliability target the team commits to engineering. Drives error budgets and prioritization.
 
-### Overview
-
-_Coming soon._
-
-### Key Points
-
-- 
-
-### References
-
-_None yet._
+- **Measurable** — "99.9% of requests < 200ms over 30 days"
+- **User-centric** — measure what users experience
+- **Few SLOs** — 3–5 per service, not dozens
 
 ---
 
 ## 9.15 SLI
 
-<!-- Content to be added -->
+**Summary:** Service Level Indicator — the actual measured metric underlying an SLO (availability, latency, throughput, correctness).
 
-### Overview
+- **Availability SLI** — successful requests / total requests
+- **Latency SLI** — % requests under threshold (p99 < 500ms)
+- **Good events / valid events** — define "good" precisely
 
-_Coming soon._
-
-### Key Points
-
-- 
-
-### References
-
-_None yet._
+```mermaid
+flowchart LR
+    SLI[SLI measure] --> SLO[Internal target]
+    SLO --> SLA[Customer contract]
+    SLO --> EB[Error Budget]
+```
 
 ---
 
+## Quick Reference
+
+| Pillar | Answers | Tools | Best for |
+|--------|---------|-------|----------|
+| Logs | What happened? | ELK, Loki, CloudWatch | Debugging specific errors |
+| Metrics | How much/how fast? | Prometheus, Datadog | Trends, alerting, capacity |
+| Traces | Where did time go? | Jaeger, Tempo, Zipkin | Latency across services |
+| Correlation ID | Which request? | Headers + structured logs | End-to-end request tracking |
+| Health checks | Is it up? | K8s probes, LB checks | Auto-healing, routing |
+| SLI → SLO → SLA | How reliable? | Error budgets | Release vs reliability trade-off |
+| RED | Service health | Rate, Errors, Duration | Request-driven services |
+| USE | Resource health | Utilization, Saturation, Errors | CPU, disk, network |

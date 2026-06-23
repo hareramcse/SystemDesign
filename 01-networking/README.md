@@ -1,6 +1,6 @@
 ﻿# 1. Networking
 
-> Status: **Scaffold** — sub-topic sections are placeholders; content will be added progressively.
+> Status: **Documented**
 
 [← Back to master index](../README.md)
 
@@ -10,424 +10,378 @@
 
 | # | Sub-topic | Status |
 |---|-----------|--------|
-| 1.1 | [OSI Model](#osi-model) | Pending |
-| 1.2 | [TCP/IP](#tcp-ip) | Pending |
-| 1.3 | [TCP Handshake](#tcp-handshake) | Pending |
-| 1.4 | [UDP](#udp) | Pending |
-| 1.5 | [IP Addressing/Subnetting](#ip-addressing-subnetting) | Pending |
-| 1.6 | [CIDR](#cidr) | Pending |
-| 1.7 | [DNS](#dns) | Pending |
-| 1.8 | [DNS Resolution](#dns-resolution) | Pending |
-| 1.9 | [HTTP/HTTPS](#http-https) | Pending |
-| 1.10 | [SSL/TLS](#ssl-tls) | Pending |
-| 1.11 | [HTTP2 & HTTP3](#http2-http3) | Pending |
-| 1.12 | [QUIC](#quic) | Pending |
-| 1.13 | [Forward & Reverse Proxy](#forward-reverse-proxy) | Pending |
-| 1.14 | [NAT](#nat) | Pending |
-| 1.15 | [VPN](#vpn) | Pending |
-| 1.16 | [SSE & Polling & Websocets](#sse-polling-websocets) | Pending |
-| 1.17 | [CDN](#cdn) | Pending |
-| 1.18 | [Anycast/Multicast/Broadcast](#anycast-multicast-broadcast) | Pending |
-| 1.19 | [Load Balancer](#load-balancer) | Pending |
-| 1.20 | [Load Balancer Algorithm](#load-balancer-algorithm) | Pending |
-| 1.21 | [MTU](#mtu) | Pending |
-| 1.22 | [Keep Alive Connections](#keep-alive-connections) | Pending |
+| 1.1 | [OSI Model](#osi-model) | Done |
+| 1.2 | [TCP/IP](#tcp-ip) | Done |
+| 1.3 | [TCP Handshake](#tcp-handshake) | Done |
+| 1.4 | [UDP](#udp) | Done |
+| 1.5 | [IP Addressing/Subnetting](#ip-addressing-subnetting) | Done |
+| 1.6 | [CIDR](#cidr) | Done |
+| 1.7 | [DNS](#dns) | Done |
+| 1.8 | [DNS Resolution](#dns-resolution) | Done |
+| 1.9 | [HTTP/HTTPS](#http-https) | Done |
+| 1.10 | [SSL/TLS](#ssl-tls) | Done |
+| 1.11 | [HTTP2 & HTTP3](#http2-http3) | Done |
+| 1.12 | [QUIC](#quic) | Done |
+| 1.13 | [Forward & Reverse Proxy](#forward-reverse-proxy) | Done |
+| 1.14 | [NAT](#nat) | Done |
+| 1.15 | [VPN](#vpn) | Done |
+| 1.16 | [SSE & Polling & Websocets](#sse-polling-websocets) | Done |
+| 1.17 | [CDN](#cdn) | Done |
+| 1.18 | [Anycast/Multicast/Broadcast](#anycast-multicast-broadcast) | Done |
+| 1.19 | [Load Balancer](#load-balancer) | Done |
+| 1.20 | [Load Balancer Algorithm](#load-balancer-algorithm) | Done |
+| 1.21 | [MTU](#mtu) | Done |
+| 1.22 | [Keep Alive Connections](#keep-alive-connections) | Done |
+
+```mermaid
+flowchart LR
+    Client --> DNS
+    DNS --> LB[Load Balancer]
+    LB --> Server
+```
 
 ---
 
 ## 1.1 OSI Model
 
-<!-- Content to be added -->
+**Summary:** Seven-layer reference model separating networking concerns from physical transmission to application semantics. Essential for diagnosing where failures and optimizations occur in the stack.
 
-### Overview
+**Key points:**
+- Layers 1–4 (Physical→Transport) handle delivery; 5–7 (Session→Application) handle data meaning
+- Each layer talks only to adjacent layers via well-defined interfaces
+- Real protocols (TCP/IP) map imperfectly—use OSI as a mental map, not a spec
 
-_Coming soon._
-
-### Key Points
-
-- 
-
-### References
-
-- [https://www.youtube.com/playlist?list=PLxCzCOWd7aiGFBD2-2joCpWOLUrDLvVV_](https://www.youtube.com/playlist?list=PLxCzCOWd7aiGFBD2-2joCpWOLUrDLvVV_)
+**References:**
+- [Video Playlist](https://www.youtube.com/playlist?list=PLxCzCOWd7aiGFBD2-2joCpWOLUrDLvVV_)
 
 ---
 
 ## 1.2 TCP/IP
 
-<!-- Content to be added -->
+**Summary:** The de-facto internet protocol suite combining IP (routing) with TCP/UDP (transport). Foundation for virtually all modern networked services.
 
-### Overview
+**Key points:**
+- IP provides best-effort packet delivery; no guaranteed order or delivery
+- TCP adds reliability, ordering, and flow control; UDP trades that for speed
+- Four layers: Link → Internet (IP) → Transport → Application
 
-_Coming soon._
-
-### Key Points
-
-- 
-
-### References
-
-- [https://www.youtube.com/watch?v=2QGgEk20RXM](https://www.youtube.com/watch?v=2QGgEk20RXM)
+**References:**
+- [Video](https://www.youtube.com/watch?v=2QGgEk20RXM)
 
 ---
 
 ## 1.3 TCP Handshake
 
-<!-- Content to be added -->
+**Summary:** Three-way SYN-SYN/ACK-ACK exchange establishes a TCP connection with agreed sequence numbers before data transfer. Prevents stale packets from hijacking sessions.
 
-### Overview
+**Key points:**
+- Client sends SYN; server replies SYN+ACK; client sends ACK—connection open
+- Each side picks initial sequence numbers to detect duplicate/old segments
+- Four-way FIN handshake (with TIME_WAIT) cleanly tears down connections
 
-_Coming soon._
+```mermaid
+flowchart LR
+    C[Client SYN] --> S[Server SYN-ACK]
+    S --> C2[Client ACK]
+    C2 --> Data[Data Transfer]
+```
 
-### Key Points
-
-- 
-
-### References
-
-- [https://www.youtube.com/watch?v=2QGgEk20RXM](https://www.youtube.com/watch?v=2QGgEk20RXM)
+**References:**
+- [Video](https://www.youtube.com/watch?v=2QGgEk20RXM)
 
 ---
 
 ## 1.4 UDP
 
-<!-- Content to be added -->
+**Summary:** Connectionless transport with minimal overhead—no handshake, no retransmission, no ordering guarantees. Ideal for latency-sensitive or loss-tolerant workloads.
 
-### Overview
+**Key points:**
+- Header is only 8 bytes; no congestion control built in
+- Used by DNS, VoIP, gaming, and QUIC (which adds reliability on top)
+- Application must handle packet loss, ordering, and fragmentation limits
 
-_Coming soon._
-
-### Key Points
-
-- 
-
-### References
-
-- [https://www.youtube.com/watch?v=2QGgEk20RXM](https://www.youtube.com/watch?v=2QGgEk20RXM)
+**References:**
+- [Video](https://www.youtube.com/watch?v=2QGgEk20RXM)
 
 ---
 
 ## 1.5 IP Addressing/Subnetting
 
-<!-- Content to be added -->
+**Summary:** Divides IPv4/IPv6 address space into network and host portions so routers forward packets efficiently. Subnetting controls broadcast domains and security boundaries.
 
-### Overview
+**Key points:**
+- IPv4: 32-bit dotted decimal; private ranges 10.x, 172.16–31.x, 192.168.x
+- Subnet mask defines which bits identify network vs host
+- Plan subnets for growth, isolation, and minimal routing tables
 
-_Coming soon._
-
-### Key Points
-
-- 
-
-### References
-
-- [https://www.youtube.com/watch?v=eWb35_xIKho](https://www.youtube.com/watch?v=eWb35_xIKho)
+**References:**
+- [Video](https://www.youtube.com/watch?v=eWb35_xIKho)
 
 ---
 
 ## 1.6 CIDR
 
-<!-- Content to be added -->
+**Summary:** Classless Inter-Domain Routing replaces fixed class A/B/C with flexible prefix notation (e.g., `/24`). Enables efficient global route aggregation.
 
-### Overview
+**Key points:**
+- Notation: `192.168.1.0/24` = 256 addresses, 254 usable hosts
+- `/prefix` length determines network size: hosts = 2^(32-prefix) − 2
+- ISPs aggregate routes (supernetting) to keep BGP tables manageable
 
-_Coming soon._
-
-### Key Points
-
-- 
-
-### References
-
-- [https://www.youtube.com/watch?v=7u0XnqS-5xs](https://www.youtube.com/watch?v=7u0XnqS-5xs)
+**References:**
+- [Video](https://www.youtube.com/watch?v=7u0XnqS-5xs)
 
 ---
 
 ## 1.7 DNS
 
-<!-- Content to be added -->
+**Summary:** Hierarchical distributed naming system translating human-readable domain names to IP addresses. Critical single point of dependency for nearly all services.
 
-### Overview
+**Key points:**
+- Tree structure: root → TLD (.com) → authoritative nameservers
+- Record types: A/AAAA (IP), CNAME (alias), MX (mail), TXT (verification)
+- TTL controls cache duration; low TTL enables faster failover
 
-_Coming soon._
-
-### Key Points
-
-- 
-
-### References
-
-- [https://www.youtube.com/watch?v=vhfRArT11jc](https://www.youtube.com/watch?v=vhfRArT11jc)
+**References:**
+- [Video](https://www.youtube.com/watch?v=vhfRArT11jc)
 
 ---
 
 ## 1.8 DNS Resolution
 
-<!-- Content to be added -->
+**Summary:** Multi-step lookup from stub resolver through recursive resolver to authoritative servers. Caching at every layer dramatically reduces latency and load.
 
-### Overview
+**Key points:**
+- Recursive resolver queries root → TLD → authoritative if not cached
+- Browser/OS cache → ISP resolver → global anycast resolvers (8.8.8.8)
+- Failures cause cascading outages—monitor resolver health and TTL strategy
 
-_Coming soon._
-
-### Key Points
-
-- 
-
-### References
-
-- [https://www.youtube.com/watch?v=BZISxpdl4lQ](https://www.youtube.com/watch?v=BZISxpdl4lQ)
+**References:**
+- [Video](https://www.youtube.com/watch?v=BZISxpdl4lQ)
 
 ---
 
 ## 1.9 HTTP/HTTPS
 
-<!-- Content to be added -->
+**Summary:** Stateless request-response protocol for web resources. HTTPS wraps HTTP in TLS for encryption, integrity, and server authentication.
 
-### Overview
+**Key points:**
+- Methods: GET (read), POST (create), PUT/PATCH (update), DELETE
+- Status codes: 2xx success, 4xx client error, 5xx server error
+- Headers carry metadata: caching, auth, content-type, cookies
 
-_Coming soon._
-
-### Key Points
-
-- 
-
-### References
-
-- [https://www.youtube.com/watch?v=FmgIQBQ87fo](https://www.youtube.com/watch?v=FmgIQBQ87fo)
+**References:**
+- [Video](https://www.youtube.com/watch?v=FmgIQBQ87fo)
 
 ---
 
 ## 1.10 SSL/TLS
 
-<!-- Content to be added -->
+**Summary:** Cryptographic protocol securing transport-layer communication. TLS 1.2+ is standard; deprecated versions (SSL, TLS 1.0/1.1) must be disabled.
 
-### Overview
+**Key points:**
+- Handshake negotiates cipher suite, verifies certificate chain, exchanges keys
+- Forward secrecy (ECDHE) protects past sessions if private key leaks
+- Certificate pinning and HSTS prevent downgrade and MITM attacks
 
-_Coming soon._
-
-### Key Points
-
-- 
-
-### References
-
-- [https://www.youtube.com/watch?v=LJDsdSh1CYM](https://www.youtube.com/watch?v=LJDsdSh1CYM)
+**References:**
+- [Video](https://www.youtube.com/watch?v=LJDsdSh1CYM)
 
 ---
 
 ## 1.11 HTTP2 & HTTP3
 
-<!-- Content to be added -->
+**Summary:** HTTP/2 multiplexes streams over one TCP connection with header compression. HTTP/3 moves transport to QUIC over UDP, eliminating head-of-line blocking.
 
-### Overview
+**Key points:**
+- HTTP/2: binary framing, server push (rarely used), HPACK compression
+- HTTP/2 still suffers TCP-level HOL blocking on packet loss
+- HTTP/3: independent streams, 0-RTT reconnect, built-in encryption
 
-_Coming soon._
-
-### Key Points
-
-- 
-
-### References
-
-- [https://www.youtube.com/watch?v=UMwQjFzTQXw](https://www.youtube.com/watch?v=UMwQjFzTQXw)
+**References:**
+- [Video](https://www.youtube.com/watch?v=UMwQjFzTQXw)
 
 ---
 
 ## 1.12 QUIC
 
-<!-- Content to be added -->
+**Summary:** UDP-based transport with integrated TLS 1.3, multiplexed streams, and connection migration. Powers HTTP/3 and reduces latency on lossy networks.
 
-### Overview
+**Key points:**
+- Combines transport + crypto handshake into ~1 RTT (0-RTT on reconnect)
+- Stream-level flow control; one lost packet doesn't block other streams
+- Connection ID allows seamless handoff between Wi-Fi and cellular
 
-_Coming soon._
-
-### Key Points
-
-- 
-
-### References
-
-- [https://www.youtube.com/watch?v=HnDsMehSSY4](https://www.youtube.com/watch?v=HnDsMehSSY4)
+**References:**
+- [Video](https://www.youtube.com/watch?v=HnDsMehSSY4)
 
 ---
 
 ## 1.13 Forward & Reverse Proxy
 
-<!-- Content to be added -->
+**Summary:** Forward proxy acts for clients (egress filtering, caching); reverse proxy sits before servers (load balancing, TLS termination, WAF). Both intercept and forward traffic.
 
-### Overview
+**Key points:**
+- Forward: client knows proxy; used for corporate egress, anonymity
+- Reverse: client sees proxy as origin; hides backend topology
+- Reverse proxies enable SSL offload, rate limiting, and path routing
 
-_Coming soon._
-
-### Key Points
-
-- 
-
-### References
-
-- [https://www.youtube.com/watch?v=xo5V9g9joFs](https://www.youtube.com/watch?v=xo5V9g9joFs)
+**References:**
+- [Video](https://www.youtube.com/watch?v=xo5V9g9joFs)
 
 ---
 
 ## 1.14 NAT
 
-<!-- Content to be added -->
+**Summary:** Network Address Translation maps private IPs to public IPs, conserving IPv4 space and hiding internal topology. Introduces stateful connection tracking.
 
-### Overview
+**Key points:**
+- SNAT: many internal hosts share one public IP via port mapping
+- Breaks end-to-end connectivity—complicates P2P, VPN, and passive FTP
+- CGNAT stacks NAT layers, making inbound connections nearly impossible
 
-_Coming soon._
-
-### Key Points
-
-- 
-
-### References
-
-- [https://www.youtube.com/watch?v=FTUV0t6JaDA](https://www.youtube.com/watch?v=FTUV0t6JaDA)
+**References:**
+- [Video](https://www.youtube.com/watch?v=FTUV0t6JaDA)
 
 ---
 
 ## 1.15 VPN
 
-<!-- Content to be added -->
+**Summary:** Encrypted tunnel over public networks creating a private logical network. Used for remote access, site-to-site links, and zero-trust segmentation.
 
-### Overview
+**Key points:**
+- Protocols: IPsec (L3), OpenVPN/WireGuard (flexible), SSL VPN (browser)
+- Split tunnel: only corporate traffic through VPN; full tunnel: all traffic
+- Performance overhead from encryption; choose cipher and MTU carefully
 
-_Coming soon._
-
-### Key Points
-
-- 
-
-### References
-
-- [https://www.youtube.com/watch?v=R-JUOpCgTZc](https://www.youtube.com/watch?v=R-JUOpCgTZc)
+**References:**
+- [Video](https://www.youtube.com/watch?v=R-JUOpCgTZc)
 
 ---
 
 ## 1.16 SSE & Polling & Websocets
 
-<!-- Content to be added -->
+**Summary:** Three patterns for server-to-client updates. Polling is simplest; SSE is one-way push over HTTP; WebSockets enable full-duplex persistent channels.
 
-### Overview
+**Key points:**
+- Long polling: hold request open until event—better than short polling
+- SSE: text/event-stream over HTTP; auto-reconnect, unidirectional
+- WebSockets: upgrade handshake, low overhead, bidirectional—ideal for chat/gaming
 
-_Coming soon._
-
-### Key Points
-
-- 
-
-### References
-
-- [https://www.youtube.com/watch?v=WS352jTTkPU](https://www.youtube.com/watch?v=WS352jTTkPU)
+**References:**
+- [Video](https://www.youtube.com/watch?v=WS352jTTkPU)
 
 ---
 
 ## 1.17 CDN
 
-<!-- Content to be added -->
+**Summary:** Geographically distributed edge servers cache static and dynamic content close to users. Reduces latency, origin load, and bandwidth costs at scale.
 
-### Overview
+**Key points:**
+- Edge PoPs serve cached assets; cache miss fetches from origin
+- Cache keys based on URL, headers, query params—misconfiguration causes stale content
+- Dynamic acceleration and DDoS absorption are key enterprise features
 
-_Coming soon._
-
-### Key Points
-
-- 
-
-### References
-
-- [https://www.youtube.com/watch?v=ouqqU0FJjhQ](https://www.youtube.com/watch?v=ouqqU0FJjhQ)
+**References:**
+- [Video](https://www.youtube.com/watch?v=ouqqU0FJjhQ)
 
 ---
 
 ## 1.18 Anycast/Multicast/Broadcast
 
-<!-- Content to be added -->
+**Summary:** Three IP delivery modes. Broadcast (one-to-all subnet), multicast (one-to-group), anycast (one-to-nearest replica)—each suits different traffic patterns.
 
-### Overview
+**Key points:**
+- Broadcast limited to L2 domains; largely replaced by multicast/anycast
+- Multicast: efficient for streaming to groups; sparse deployment on internet
+- Anycast: same IP on multiple locations; BGP routes to closest—used by DNS/CDN
 
-_Coming soon._
-
-### Key Points
-
-- 
-
-### References
-
-- [https://www.youtube.com/watch?v=EcWhJbEWxHU](https://www.youtube.com/watch?v=EcWhJbEWxHU)
+**References:**
+- [Video](https://www.youtube.com/watch?v=EcWhJbEWxHU)
 
 ---
 
 ## 1.19 Load Balancer
 
-<!-- Content to be added -->
+**Summary:** Distributes incoming traffic across backend servers for capacity and availability. Operates at L4 (TCP/UDP) or L7 (HTTP) with different feature sets.
 
-### Overview
+**Key points:**
+- L4: fast, connection-based; L7: content-aware routing, TLS, caching
+- Health checks remove unhealthy backends automatically
+- Sticky sessions (session affinity) trade even distribution for state locality
 
-_Coming soon._
-
-### Key Points
-
-- 
-
-### References
-
-- [https://www.youtube.com/watch?v=TavIqNcnwSA](https://www.youtube.com/watch?v=TavIqNcnwSA)
+**References:**
+- [Video](https://www.youtube.com/watch?v=TavIqNcnwSA)
 
 ---
 
 ## 1.20 Load Balancer Algorithm
 
-<!-- Content to be added -->
+**Summary:** Algorithm choice determines traffic distribution fairness and resilience. Match algorithm to session state and backend homogeneity.
 
-### Overview
+**Key points:**
+- Round robin: simple, even spread; ignores server load
+- Least connections: better for long-lived, uneven workloads
+- Weighted/consistent hash: capacity-aware; hash preserves session affinity
 
-_Coming soon._
-
-### Key Points
-
-- 
-
-### References
-
-- [https://www.youtube.com/watch?v=1fN2UDbtGDQ](https://www.youtube.com/watch?v=1fN2UDbtGDQ)
+**References:**
+- [Video](https://www.youtube.com/watch?v=1fN2UDbtGDQ)
 
 ---
 
 ## 1.21 MTU
 
-<!-- Content to be added -->
+**Summary:** Maximum Transmission Unit is the largest IP packet size on a link (typically 1500 bytes Ethernet). Mismatch causes fragmentation or silent black holes.
 
-### Overview
+**Key points:**
+- Path MTU discovery finds end-to-end limit; blocked ICMP breaks this
+- TCP MSS clamping prevents fragmentation on VPN/tunnel interfaces
+- Jumbo frames (9000B) improve throughput in data centers but need end-to-end support
 
-_Coming soon._
-
-### Key Points
-
-- 
-
-### References
-
-- [https://www.youtube.com/watch?v=XMcYwr-yJGA](https://www.youtube.com/watch?v=XMcYwr-yJGA)
+**References:**
+- [Video](https://www.youtube.com/watch?v=XMcYwr-yJGA)
 
 ---
 
 ## 1.22 Keep Alive Connections
 
-<!-- Content to be added -->
+**Summary:** HTTP persistent connections reuse TCP sockets for multiple requests, avoiding repeated handshakes. Critical for HTTP/1.1 performance and connection pool sizing.
 
-### Overview
+**Key points:**
+- `Connection: keep-alive` default in HTTP/1.1; idle timeout closes socket
+- Pool size must match expected concurrency—too few causes queueing
+- HTTP/2 multiplexing reduces need for many parallel TCP connections
 
-_Coming soon._
-
-### Key Points
-
-- 
-
-### References
-
-- [https://www.youtube.com/watch?v=zRUdSu3JlK8](https://www.youtube.com/watch?v=zRUdSu3JlK8)
+**References:**
+- [Video](https://www.youtube.com/watch?v=zRUdSu3JlK8)
 
 ---
 
+## Quick Reference
+
+| # | Sub-topic | One-liner |
+|---|-----------|-----------|
+| 1.1 | OSI Model | 7-layer reference for network troubleshooting |
+| 1.2 | TCP/IP | Internet protocol suite: IP + TCP/UDP |
+| 1.3 | TCP Handshake | SYN-SYN/ACK-ACK establishes reliable connection |
+| 1.4 | UDP | Fast, connectionless, no guarantees |
+| 1.5 | IP Addressing/Subnetting | Split address space into routable networks |
+| 1.6 | CIDR | Flexible `/prefix` notation for IP blocks |
+| 1.7 | DNS | Domain name → IP translation hierarchy |
+| 1.8 | DNS Resolution | Recursive lookup with multi-layer caching |
+| 1.9 | HTTP/HTTPS | Stateless web protocol over TLS |
+| 1.10 | SSL/TLS | Encrypted transport with certificate auth |
+| 1.11 | HTTP2 & HTTP3 | Multiplexed HTTP; v3 uses QUIC/UDP |
+| 1.12 | QUIC | UDP transport with built-in TLS and streams |
+| 1.13 | Forward & Reverse Proxy | Client-side vs server-side traffic intermediary |
+| 1.14 | NAT | Private-to-public IP address mapping |
+| 1.15 | VPN | Encrypted tunnel for private network access |
+| 1.16 | SSE & Polling & Websocets | Real-time update delivery patterns |
+| 1.17 | CDN | Edge caching for low-latency content delivery |
+| 1.18 | Anycast/Multicast/Broadcast | One-to-nearest, group, and subnet delivery |
+| 1.19 | Load Balancer | Traffic distribution across backends |
+| 1.20 | Load Balancer Algorithm | Round robin, least conn, consistent hash |
+| 1.21 | MTU | Max packet size; fragmentation risk if mismatched |
+| 1.22 | Keep Alive Connections | Reuse TCP sockets for HTTP efficiency |
+
+[← Back to master index](../README.md)

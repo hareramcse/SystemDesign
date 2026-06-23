@@ -1,205 +1,173 @@
 ﻿# 12. Reliability Engineering
 
-> Status: **Scaffold** — sub-topic sections are placeholders; content will be added progressively.
+> Status: **Done** — concise notes for all sub-topics below.
 
 [← Back to master index](../README.md)
 
 ---
 
+## At a glance
+
+```mermaid
+flowchart LR
+    Monitor[Monitor] --> SLO[SLO / Error Budget]
+    SLO --> DR[Disaster Recovery]
+    DR --> HA[High Availability]
+```
+
+---
+
 ## Sub-topics
 
-| # | Sub-topic | Status |
-|---|-----------|--------|
-| 12.1 | [Chaos Engineering](#chaos-engineering) | Pending |
-| 12.2 | [Disaster Recovery](#disaster-recovery) | Pending |
-| 12.3 | [Backup Strategy](#backup-strategy) | Pending |
-| 12.4 | [Restore Strategy](#restore-strategy) | Pending |
-| 12.5 | [RPO](#rpo) | Pending |
-| 12.6 | [RTO](#rto) | Pending |
-| 12.7 | [High Availability](#high-availability) | Pending |
-| 12.8 | [Active Active](#active-active) | Pending |
-| 12.9 | [Active Passive](#active-passive) | Pending |
-| 12.10 | [Fault Injection](#fault-injection) | Pending |
+| # | Sub-topic |
+|---|-----------|
+| 12.1 | [Chaos Engineering](#121-chaos-engineering) |
+| 12.2 | [Disaster Recovery](#122-disaster-recovery) |
+| 12.3 | [Backup Strategy](#123-backup-strategy) |
+| 12.4 | [Restore Strategy](#124-restore-strategy) |
+| 12.5 | [RPO](#125-rpo) |
+| 12.6 | [RTO](#126-rto) |
+| 12.7 | [High Availability](#127-high-availability) |
+| 12.8 | [Active Active](#128-active-active) |
+| 12.9 | [Active Passive](#129-active-passive) |
+| 12.10 | [Fault Injection](#1210-fault-injection) |
 
 ---
 
 ## 12.1 Chaos Engineering
 
-<!-- Content to be added -->
+**Summary:** Deliberately inject failures in production-like environments to discover weaknesses before real outages.
 
-### Overview
+- Start with a steady-state hypothesis: "If X fails, users still succeed"
+- Run controlled experiments with blast-radius limits and rollback plans
+- Netflix Chaos Monkey pioneered the practice; tools include Litmus, Gremlin
 
-_Coming soon._
-
-### Key Points
-
-- 
-
-### References
-
-_None yet._
+**References:** _None yet._
 
 ---
 
 ## 12.2 Disaster Recovery
 
-<!-- Content to be added -->
+**Summary:** Processes and infrastructure to restore systems after catastrophic failure (region loss, ransomware, data corruption).
 
-### Overview
+- DR plan covers people, runbooks, failover, and communication
+- Tiers: backup-restore, pilot light, warm standby, hot standby, active-active
+- Test DR regularly — untested plans fail when needed most
 
-_Coming soon._
-
-### Key Points
-
-- 
-
-### References
-
-_None yet._
+**References:** _None yet._
 
 ---
 
 ## 12.3 Backup Strategy
 
-<!-- Content to be added -->
+**Summary:** Regular copies of data and config so you can recover from loss or corruption.
 
-### Overview
+- 3-2-1 rule: 3 copies, 2 media types, 1 offsite
+- Full + incremental/differential schedules balance cost and recovery speed
+- Encrypt backups; verify restore integrity with periodic test restores
 
-_Coming soon._
-
-### Key Points
-
-- 
-
-### References
-
-_None yet._
+**References:** _None yet._
 
 ---
 
 ## 12.4 Restore Strategy
 
-<!-- Content to be added -->
+**Summary:** Defined steps to recover data and services from backups within target timeframes.
 
-### Overview
+- Document RTO/RPO per system; prioritize critical paths first
+- Automate restore where possible; manual runbooks for edge cases
+- Practice game days — measure actual restore time vs targets
 
-_Coming soon._
-
-### Key Points
-
-- 
-
-### References
-
-_None yet._
+**References:** _None yet._
 
 ---
 
 ## 12.5 RPO
 
-<!-- Content to be added -->
+**Summary:** Recovery Point Objective — maximum acceptable data loss measured in time.
 
-### Overview
+- RPO = 0 requires synchronous replication (expensive, latency cost)
+- RPO = 1 hour means backups/replication at least hourly
+- Drives backup frequency and replication topology decisions
 
-_Coming soon._
-
-### Key Points
-
-- 
-
-### References
-
-_None yet._
+**References:** _None yet._
 
 ---
 
 ## 12.6 RTO
 
-<!-- Content to be added -->
+**Summary:** Recovery Time Objective — maximum acceptable downtime before service is restored.
 
-### Overview
+- Includes detection, failover, and validation — not just data restore
+- Lower RTO requires hot standby, automation, and pre-provisioned capacity
+- Trade cost of standby infrastructure against business impact of downtime
 
-_Coming soon._
-
-### Key Points
-
-- 
-
-### References
-
-_None yet._
+**References:** _None yet._
 
 ---
 
 ## 12.7 High Availability
 
-<!-- Content to be added -->
+**Summary:** Designing systems to remain operational despite component failures — typically 99.9%+ uptime.
 
-### Overview
+- Eliminate single points of failure via redundancy and health checks
+- Automatic failover beats manual intervention for speed
+- HA ≠ zero downtime — plan for maintenance and cascading failures
 
-_Coming soon._
-
-### Key Points
-
-- 
-
-### References
-
-_None yet._
+**References:** _None yet._
 
 ---
 
 ## 12.8 Active Active
 
-<!-- Content to be added -->
+**Summary:** Multiple sites serve traffic simultaneously; both handle reads and writes (with conflict handling).
 
-### Overview
+- Lowest RTO/RPO — no warm-up on failover
+- Requires data replication, split-brain prevention, and conflict resolution
+- Best for global users needing low latency from nearest region
 
-_Coming soon._
-
-### Key Points
-
-- 
-
-### References
-
-_None yet._
+**References:** _None yet._
 
 ---
 
 ## 12.9 Active Passive
 
-<!-- Content to be added -->
+**Summary:** Primary site handles traffic; standby site activates only on failure.
 
-### Overview
+- Simpler consistency — single writer at a time
+- Standby can be cold (slow RTO), warm (faster), or hot (near-instant)
+- Lower cost than active-active; higher failover latency
 
-_Coming soon._
-
-### Key Points
-
-- 
-
-### References
-
-_None yet._
+**References:** _None yet._
 
 ---
 
 ## 12.10 Fault Injection
 
-<!-- Content to be added -->
+**Summary:** Introducing specific failures (latency, errors, killed pods) to test resilience mechanisms.
 
-### Overview
+- Validates circuit breakers, retries, timeouts, and graceful degradation
+- Can run in staging or controlled production (chaos engineering subset)
+- Measure impact: error rate, latency, and user-facing SLOs during injection
 
-_Coming soon._
-
-### Key Points
-
-- 
-
-### References
-
-_None yet._
+**References:** _None yet._
 
 ---
 
+## Quick Reference
+
+| Sub-topic | Metric / Focus | Key question |
+|-----------|----------------|--------------|
+| **Chaos Engineering** | Proactive failure discovery | What breaks first? |
+| **Disaster Recovery** | Full recovery plan | Can we survive region loss? |
+| **Backup / Restore** | Data recovery | How old / how fast? |
+| **RPO** | Max data loss (time) | How much can we lose? |
+| **RTO** | Max downtime (time) | How fast must we recover? |
+| **High Availability** | Uptime design | What if a node dies? |
+| **Active Active** | Dual live sites | Who resolves write conflicts? |
+| **Active Passive** | Primary + standby | How fast can standby take over? |
+| **Fault Injection** | Controlled failure tests | Do our defenses actually work? |
+
+---
+
+[← Back to master index](../README.md)
