@@ -1,18 +1,18 @@
-﻿# 7. API Design
+# 7. API Design
 
 > Status: **Documented**
 
-[← Back to master index](../README.md)
+[<- Back to master index](../README.md)
 
 ---
 
 ## Overview
 
-API design defines how services expose capabilities to clients and each other—shaping developer experience, evolvability, performance, and security. Modern systems choose among **REST** (resource-oriented HTTP), **GraphQL** (client-driven queries), **gRPC** (binary RPC over HTTP/2), and legacy **SOAP** based on audience, latency needs, and contract rigor.
+API design defines how services expose capabilities to clients and each other - shaping developer experience, evolvability, performance, and security. Modern systems choose among **REST** (resource-oriented HTTP), **GraphQL** (client-driven queries), **gRPC** (binary RPC over HTTP/2), and legacy **SOAP** based on audience, latency needs, and contract rigor.
 
 Beyond protocol choice, production APIs need **gateways** for cross-cutting concerns (auth, rate limits, routing), consistent **pagination and filtering**, explicit **versioning**, and **idempotency** for safe retries. Poor API design creates coupling, outage amplification, and breaking changes that stall client teams.
 
-This chapter covers protocol trade-offs, gateway patterns, query conventions, documentation (OpenAPI/Swagger), security, traffic control, and contract testing—everything needed to design and defend API decisions in system design interviews.
+This chapter covers protocol trade-offs, gateway patterns, query conventions, documentation (OpenAPI/Swagger), security, traffic control, and contract testing - everything needed to design and defend API decisions in system design interviews.
 
 ---
 
@@ -20,27 +20,31 @@ This chapter covers protocol trade-offs, gateway patterns, query conventions, do
 
 | # | Sub-topic | Status |
 |---|-----------|--------|
-| 7.1 | [REST](#rest) | Done |
-| 7.2 | [GraphQL](#graphql) | Done |
-| 7.3 | [gRPC](#grpc) | Done |
-| 7.4 | [SOAP](#soap) | Done |
-| 7.5 | [API Gateway](#api-gateway) | Done |
-| 7.6 | [API Aggregation](#api-aggregation) | Done |
-| 7.7 | [API Composition](#api-composition) | Done |
-| 7.8 | [API Versioning](#api-versioning) | Done |
-| 7.9 | [Pagination](#pagination) | Done |
-| 7.10 | [Filtering](#filtering) | Done |
-| 7.11 | [Sorting](#sorting) | Done |
-| 7.12 | [OpenAPI](#openapi) | Done |
-| 7.13 | [Swagger](#swagger) | Done |
-| 7.14 | [Request Validation](#request-validation) | Done |
-| 7.15 | [API Security](#api-security) | Done |
-| 7.16 | [Webhooks](#webhooks) | Done |
-| 7.17 | [Rate Limiting](#rate-limiting) | Done |
-| 7.18 | [Throttling](#throttling) | Done |
-| 7.19 | [Idempotency](#idempotency) | Done |
-| 7.20 | [Idempotency Keys](#idempotency-keys) | Done |
-| 7.21 | [Contract Testing](#contract-testing) | Done |
+| 7.1 | [REST](#71-rest) | Done |
+| 7.2 | [GraphQL](#72-graphql) | Done |
+| 7.3 | [gRPC](#73-grpc) | Done |
+| 7.4 | [SOAP](#74-soap) | Done |
+| 7.5 | [API Gateway](#75-api-gateway) | Done |
+| 7.6 | [API Aggregation](#76-api-aggregation) | Done |
+| 7.7 | [API Composition](#77-api-composition) | Done |
+| 7.8 | [API Versioning](#78-api-versioning) | Done |
+| 7.9 | [Pagination](#79-pagination) | Done |
+| 7.10 | [Filtering](#710-filtering) | Done |
+| 7.11 | [Sorting](#711-sorting) | Done |
+| 7.12 | [OpenAPI](#712-openapi) | Done |
+| 7.13 | [Swagger](#713-swagger) | Done |
+| 7.14 | [Request Validation](#714-request-validation) | Done |
+| 7.15 | [Contract Testing](#715-contract-testing) | Done |
+| 7.16 | [API Security](#716-api-security) | Done |
+| 7.17 | [Webhooks](#717-webhooks) | Done |
+| 7.18 | [Rate Limiting](#718-rate-limiting) | Done |
+| 7.19 | [Throttling](#719-throttling) | Done |
+| 7.20 | [Idempotency](#720-idempotency) | Done |
+| 7.21 | [Idempotency Keys](#721-idempotency-keys) | Done |
+
+
+
+
 
 ```mermaid
 flowchart LR
@@ -52,7 +56,24 @@ flowchart LR
 
 ---
 
+
+## Reading order
+
+Sub-topics are sequenced for progressive learning: foundations first, then related concepts, then specialized topics.
+
+| Group | Sections | Focus |
+|-------|----------|-------|
+| **1. Protocols** | 7.1-7.4 | REST, GraphQL, gRPC, SOAP |
+| **2. Gateway and composition** | 7.5-7.7 | Gateway, aggregation, composition |
+| **3. API design** | 7.8-7.11 | Versioning, pagination, filtering, sorting |
+| **4. Contracts and quality** | 7.12-7.15 | OpenAPI, Swagger, validation, contract tests |
+| **5. Production concerns** | 7.16-7.21 | Security, webhooks, limits, idempotency |
+
+---
+---
+
 ## 7.1 REST
+
 
 ### What is it?
 
@@ -99,7 +120,7 @@ sequenceDiagram
 
 ### Trade-offs / Pitfalls
 
-- Over-fetching and under-fetching → multiple round trips or bloated payloads.
+- Over-fetching and under-fetching -> multiple round trips or bloated payloads.
 - "REST-ish" RPC disguised as REST (`POST /getUser`) loses verb semantics.
 - N+1 client calls without aggregation/BFF.
 
@@ -109,7 +130,9 @@ sequenceDiagram
 
 ---
 
+
 ## 7.2 GraphQL
+
 
 ### What is it?
 
@@ -123,7 +146,7 @@ Solves over/under-fetching for diverse clients (mobile vs web); single endpoint;
 
 1. Server exposes GraphQL schema (types, resolvers).
 2. Client sends query document specifying nested fields.
-3. Server resolves fields—potentially N+1 without DataLoader batching.
+3. Server resolves fields - potentially N+1 without DataLoader batching.
 4. Mutations for writes; subscriptions for push updates.
 5. Validation rejects unknown fields before execution.
 
@@ -150,7 +173,7 @@ flowchart LR
 
 ### Trade-offs / Pitfalls
 
-- Expensive queries can DOS server—rate limit and analyze complexity.
+- Expensive queries can DOS server - rate limit and analyze complexity.
 - File upload and caching require extra patterns.
 - Error handling and HTTP status mapping less crisp than REST.
 
@@ -160,15 +183,17 @@ flowchart LR
 
 ---
 
+
 ## 7.3 gRPC
+
 
 ### What is it?
 
-**gRPC** is a high-performance RPC framework using **Protocol Buffers** over HTTP/2—strongly typed contracts, bidirectional streaming, and low latency binary serialization.
+**gRPC** is a high-performance RPC framework using **Protocol Buffers** over HTTP/2 - strongly typed contracts, bidirectional streaming, and low latency binary serialization.
 
 ### Why it matters
 
-Default for internal service-to-service communication where browsers aren't clients—efficient, contract-first, supports streaming.
+Default for internal service-to-service communication where browsers aren't clients - efficient, contract-first, supports streaming.
 
 ### How it works
 
@@ -208,7 +233,7 @@ sequenceDiagram
 ### Trade-offs / Pitfalls
 
 - Not human-debuggable without tooling (grpcurl).
-- Browser-native limitations—grpc-web adds hop.
+- Browser-native limitations - grpc-web adds hop.
 - Breaking proto changes need careful field numbering discipline.
 
 ### References
@@ -217,7 +242,9 @@ sequenceDiagram
 
 ---
 
+
 ## 7.4 SOAP
+
 
 ### What is it?
 
@@ -225,7 +252,7 @@ sequenceDiagram
 
 ### Why it matters
 
-Still present in banking, telecom, and government integrations—understanding SOAP helps maintain and wrap legacy systems behind modern APIs.
+Still present in banking, telecom, and government integrations - understanding SOAP helps maintain and wrap legacy systems behind modern APIs.
 
 ### How it works
 
@@ -268,11 +295,13 @@ sequenceDiagram
 
 ---
 
+
 ## 7.5 API Gateway
+
 
 ### What is it?
 
-An **API gateway** is a reverse proxy at the edge routing client requests to backend services—centralizing auth, TLS termination, rate limiting, routing, and protocol translation.
+An **API gateway** is a reverse proxy at the edge routing client requests to backend services - centralizing auth, TLS termination, rate limiting, routing, and protocol translation.
 
 ### Why it matters
 
@@ -283,7 +312,7 @@ Single front door for clients simplifies security and observability; hides inter
 1. Client calls `api.example.com/v1/...`.
 2. Gateway validates JWT/API key, applies rate limit.
 3. Routes to service via path/host rules (Kong, NGINX, AWS API Gateway, Envoy).
-4. Optional request/response transformation (REST → gRPC).
+4. Optional request/response transformation (REST -> gRPC).
 5. Logs metrics, traces with correlation ID injection.
 
 ### Diagram
@@ -303,7 +332,7 @@ flowchart TB
 |---------|---------|
 | TLS termination | Central cert management |
 | JWT validation | Offload from every service |
-| Path routing | `/users` → user cluster |
+| Path routing | `/users` -> user cluster |
 | WAF integration | Edge security |
 
 ### When to use
@@ -314,9 +343,9 @@ flowchart TB
 
 ### Trade-offs / Pitfalls
 
-- Gateway becomes critical SPOF and scaling bottleneck—must be HA.
+- Gateway becomes critical SPOF and scaling bottleneck - must be HA.
 - Business logic creep into gateway ("smart gateway" anti-pattern).
-- Extra network hop adds latency—co-locate with services when possible.
+- Extra network hop adds latency - co-locate with services when possible.
 
 ### References
 
@@ -324,11 +353,13 @@ flowchart TB
 
 ---
 
+
 ## 7.6 API Aggregation
+
 
 ### What is it?
 
-**API aggregation** combines data from multiple backend services into **one response** for the client—reducing round trips (mobile on slow networks).
+**API aggregation** combines data from multiple backend services into **one response** for the client - reducing round trips (mobile on slow networks).
 
 ### Why it matters
 
@@ -367,7 +398,7 @@ flowchart LR
 
 ### Trade-offs / Pitfalls
 
-- Aggregator couples to backend schemas—changes ripple.
+- Aggregator couples to backend schemas - changes ripple.
 - Tail latency = slowest dependency; set per-call deadlines.
 - Without caching, aggregator amplifies load on backends.
 
@@ -377,11 +408,13 @@ flowchart LR
 
 ---
 
+
 ## 7.7 API Composition
+
 
 ### What is it?
 
-**API composition** (choreographed aggregation) builds a response by **sequentially** calling services when later calls depend on earlier results—e.g., get user, then orders for that user.
+**API composition** (choreographed aggregation) builds a response by **sequentially** calling services when later calls depend on earlier results - e.g., get user, then orders for that user.
 
 ### Why it matters
 
@@ -390,7 +423,7 @@ Differs from parallel aggregation; necessary when data dependencies exist. Commo
 ### How it works
 
 1. Receive client request.
-2. Call service A → extract ID needed for B.
+2. Call service A -> extract ID needed for B.
 3. Call service B with ID from A.
 4. Optionally call C with combined context.
 5. Compose final response; handle any step failure.
@@ -410,7 +443,7 @@ sequenceDiagram
 
 ### Key details
 
-- Latency sums across sequential hops—minimize chain depth.
+- Latency sums across sequential hops - minimize chain depth.
 - Cache intermediate results when keys repeat.
 - Circuit breakers per hop prevent cascade.
 
@@ -421,8 +454,8 @@ sequenceDiagram
 
 ### Trade-offs / Pitfalls
 
-- Deep chains fragile—prefer event-carried state or denormalized read models.
-- Error in step 2 wastes step 1 work—compensate or return partial.
+- Deep chains fragile - prefer event-carried state or denormalized read models.
+- Error in step 2 wastes step 1 work - compensate or return partial.
 - Testing requires mocking full chain.
 
 ### References
@@ -431,11 +464,13 @@ sequenceDiagram
 
 ---
 
+
 ## 7.8 API Versioning
+
 
 ### What is it?
 
-**API versioning** manages breaking changes without stranding existing clients—via URL path (`/v2/`), headers (`Accept-Version`), query param, or content negotiation.
+**API versioning** manages breaking changes without stranding existing clients - via URL path (`/v2/`), headers (`Accept-Version`), query param, or content negotiation.
 
 ### Why it matters
 
@@ -475,7 +510,7 @@ flowchart LR
 ### Trade-offs / Pitfalls
 
 - Maintaining N versions doubles test matrix.
-- "Version everything" for internal APIs may be overkill—use compatibility discipline instead.
+- "Version everything" for internal APIs may be overkill - use compatibility discipline instead.
 - Forgetting sunset dates leaves eternal v1 debt.
 
 ### References
@@ -484,11 +519,13 @@ flowchart LR
 
 ---
 
+
 ## 7.9 Pagination
+
 
 ### What is it?
 
-**Pagination** splits large result sets into pages—via **offset/limit**, **cursor/keyset**, or **seek** methods—protecting server and client from unbounded responses.
+**Pagination** splits large result sets into pages - via **offset/limit**, **cursor/keyset**, or **seek** methods - protecting server and client from unbounded responses.
 
 ### Why it matters
 
@@ -532,7 +569,7 @@ flowchart LR
 
 - Offset pagination inconsistent if rows inserted/deleted during browsing.
 - Omitting max `limit` allows `limit=999999` abuse.
-- Total count queries expensive—make optional.
+- Total count queries expensive - make optional.
 
 ### References
 
@@ -540,11 +577,13 @@ flowchart LR
 
 ---
 
+
 ## 7.10 Filtering
+
 
 ### What is it?
 
-**Filtering** lets clients narrow collections with query parameters—`?status=active&role=admin`—translated to safe database/API predicates.
+**Filtering** lets clients narrow collections with query parameters - `?status=active&role=admin` - translated to safe database/API predicates.
 
 ### Why it matters
 
@@ -553,7 +592,7 @@ Clients need subsets without downloading full collections; filtering must be ind
 ### How it works
 
 1. Define allowed filter fields whitelist in API contract.
-2. Parse query params → AST or SQL WHERE clauses (parameterized).
+2. Parse query params -> AST or SQL WHERE clauses (parameterized).
 3. Reject unknown fields with 400.
 4. Ensure DB indexes match common filter combinations.
 5. Document operators: `eq`, `gt`, `in`, `like` (RSQL/FIQL patterns).
@@ -569,7 +608,7 @@ flowchart LR
 
 ### Key details
 
-- Never concatenate user input into SQL—parameterized queries only.
+- Never concatenate user input into SQL - parameterized queries only.
 - Composite indexes for multi-filter queries.
 - GraphQL: arguments on list fields serve same role.
 
@@ -581,7 +620,7 @@ flowchart LR
 ### Trade-offs / Pitfalls
 
 - Unindexed filters cause full table scans.
-- Overly flexible filter DSL enables expensive queries—complexity limits needed.
+- Overly flexible filter DSL enables expensive queries - complexity limits needed.
 - Filter + sort + pagination interaction must be documented.
 
 ### References
@@ -590,11 +629,13 @@ flowchart LR
 
 ---
 
+
 ## 7.11 Sorting
+
 
 ### What is it?
 
-**Sorting** orders results by one or more fields—`?sort=created_at:desc,name:asc`—with whitelist validation and index backing.
+**Sorting** orders results by one or more fields - `?sort=created_at:desc,name:asc` - with whitelist validation and index backing.
 
 ### Why it matters
 
@@ -630,7 +671,7 @@ flowchart LR
 
 ### Trade-offs / Pitfalls
 
-- Sorting + filtering on different indexes → planner may fail to use index.
+- Sorting + filtering on different indexes -> planner may fail to use index.
 - Changing default sort is breaking for cursor clients.
 - Random sort (`ORDER BY RAND()`) doesn't scale.
 
@@ -640,15 +681,17 @@ flowchart LR
 
 ---
 
+
 ## 7.12 OpenAPI
+
 
 ### What is it?
 
-**OpenAPI Specification (OAS)** is a machine-readable YAML/JSON format describing REST API paths, parameters, request/response schemas, and security schemes—language-agnostic contract.
+**OpenAPI Specification (OAS)** is a machine-readable YAML/JSON format describing REST API paths, parameters, request/response schemas, and security schemes - language-agnostic contract.
 
 ### Why it matters
 
-Single source of truth for codegen, documentation, mock servers, contract tests, and gateway import—API-first design enabler.
+Single source of truth for codegen, documentation, mock servers, contract tests, and gateway import - API-first design enabler.
 
 ### How it works
 
@@ -691,11 +734,13 @@ flowchart LR
 
 ---
 
+
 ## 7.13 Swagger
+
 
 ### What is it?
 
-**Swagger** is the tooling ecosystem around OpenAPI—Swagger UI (interactive docs), Swagger Editor, and historical name for the spec before OpenAPI 3 rebranding.
+**Swagger** is the tooling ecosystem around OpenAPI - Swagger UI (interactive docs), Swagger Editor, and historical name for the spec before OpenAPI 3 rebranding.
 
 ### Why it matters
 
@@ -730,7 +775,7 @@ flowchart LR
 ### Trade-offs / Pitfalls
 
 - Production exposure leaks full API surface to attackers.
-- "Try it out" against prod risky—disable or protect.
+- "Try it out" against prod risky - disable or protect.
 - Confusion between Swagger 2.0 and OpenAPI 3.x feature sets.
 
 ### References
@@ -739,11 +784,13 @@ flowchart LR
 
 ---
 
+
 ## 7.14 Request Validation
+
 
 ### What is it?
 
-**Request validation** checks incoming payloads against schema—types, required fields, formats, bounds—before business logic runs, returning `400 Bad Request` with field-level errors.
+**Request validation** checks incoming payloads against schema - types, required fields, formats, bounds - before business logic runs, returning `400 Bad Request` with field-level errors.
 
 ### Why it matters
 
@@ -754,7 +801,7 @@ First defense against injection, malformed data, and confusing 500 errors; shift
 1. Define JSON Schema / OpenAPI / bean validation rules.
 2. Middleware validates body, query, path params on entry.
 3. Reject with structured error: `{ "field": "email", "error": "invalid format" }`.
-4. Pass validated DTO to handler—no raw map parsing in business code.
+4. Pass validated DTO to handler - no raw map parsing in business code.
 5. Validate content-type and payload size limits.
 
 ### Diagram
@@ -774,7 +821,7 @@ flowchart LR
 
 ### When to use
 
-- Every production API boundary—non-negotiable baseline.
+- Every production API boundary - non-negotiable baseline.
 - Especially public APIs with untrusted clients.
 
 ### Trade-offs / Pitfalls
@@ -789,7 +836,63 @@ flowchart LR
 
 ---
 
-## 7.15 API Security
+
+## 7.15 Contract Testing
+
+
+### What is it?
+
+**Contract testing** verifies consumer and provider agree on API shape and behavior without full end-to-end tests - consumer-driven contracts (Pact) or schema validation against OpenAPI.
+
+### Why it matters
+
+Microservices break when provider changes response without notice; contract tests catch incompatibilities in CI before deploy.
+
+### How it works
+
+**Pact (consumer-driven):**
+
+1. Consumer test defines expected request/response mock (pact file).
+2. Pact file published to broker.
+3. Provider CI verifies it can satisfy all consumer pacts.
+4. Breaking change fails provider build before production.
+
+### Diagram
+
+```mermaid
+flowchart LR
+    Consumer --> Pact[Pact File]
+    Pact --> Broker[Pact Broker]
+    Broker --> Provider[Provider Verify]
+```
+
+### Key details
+
+- Consumer-driven: consumers define needs; avoids gold-plated provider APIs.
+- OpenAPI diff: provider spec vs consumer expectations.
+- Not replacement for E2E - tests contract slice only.
+
+### When to use
+
+- Many microservices with independent deploy cycles.
+- Public APIs with external consumers publishing pacts.
+- Preventing "works on my machine" integration failures.
+
+### Trade-offs / Pitfalls
+
+- Pact maintenance overhead for large consumer counts.
+- Contracts don't test latency, auth integration, or side effects.
+- False confidence if provider verifies against stale pacts.
+
+### References
+
+*(No curated references for this sub-topic in `_topics.json`.)*
+
+---
+
+
+## 7.16 API Security
+
 
 ### What is it?
 
@@ -797,7 +900,7 @@ flowchart LR
 
 ### Why it matters
 
-APIs are the primary attack surface—OWASP API Security Top 10 (BOLA, broken auth, unbounded consumption) targets API-specific failures.
+APIs are the primary attack surface - OWASP API Security Top 10 (BOLA, broken auth, unbounded consumption) targets API-specific failures.
 
 ### How it works
 
@@ -828,12 +931,12 @@ flowchart TB
 
 ### When to use
 
-Always—from design phase, not bolted on after launch.
+Always - from design phase, not bolted on after launch.
 
 ### Trade-offs / Pitfalls
 
-- JWT in localStorage → XSS theft; prefer HttpOnly cookies or short-lived tokens.
-- API keys in repos—use secret managers.
+- JWT in localStorage -> XSS theft; prefer HttpOnly cookies or short-lived tokens.
+- API keys in repos - use secret managers.
 - Security theater: auth without authorization checks per object.
 
 ### References
@@ -842,11 +945,13 @@ Always—from design phase, not bolted on after launch.
 
 ---
 
-## 7.16 Webhooks
+
+## 7.17 Webhooks
+
 
 ### What is it?
 
-**Webhooks** are HTTP callbacks: when an event occurs, the API **POSTs** a payload to a subscriber-configured URL—inverse of polling.
+**Webhooks** are HTTP callbacks: when an event occurs, the API **POSTs** a payload to a subscriber-configured URL - inverse of polling.
 
 ### Why it matters
 
@@ -884,9 +989,9 @@ sequenceDiagram
 
 ### Trade-offs / Pitfalls
 
-- Subscriber downtime → retry queues backlog at provider.
-- SSRF risk if provider fetches user-supplied URLs—validate allowlists.
-- Ordering not guaranteed—use sequence numbers.
+- Subscriber downtime -> retry queues backlog at provider.
+- SSRF risk if provider fetches user-supplied URLs - validate allowlists.
+- Ordering not guaranteed - use sequence numbers.
 
 ### References
 
@@ -894,11 +999,13 @@ sequenceDiagram
 
 ---
 
-## 7.17 Rate Limiting
+
+## 7.18 Rate Limiting
+
 
 ### What is it?
 
-**Rate limiting** caps requests per client/IP/API key over a time window—protecting backends from abuse, ensuring fair tenancy, and enforcing SLA tiers.
+**Rate limiting** caps requests per client/IP/API key over a time window - protecting backends from abuse, ensuring fair tenancy, and enforcing SLA tiers.
 
 ### Why it matters
 
@@ -940,7 +1047,7 @@ flowchart LR
 
 ### Trade-offs / Pitfalls
 
-- Distributed rate limiting needs Redis—not per-instance counters.
+- Distributed rate limiting needs Redis - not per-instance counters.
 - Shared NAT IPs block innocent users behind same corporate IP.
 - 429 without `Retry-After` frustrates well-behaved clients.
 
@@ -950,15 +1057,17 @@ flowchart LR
 
 ---
 
-## 7.18 Throttling
+
+## 7.19 Throttling
+
 
 ### What is it?
 
-**Throttling** slows or queues requests when load exceeds capacity—graceful degradation vs hard reject (rate limit). May delay responses or shed low-priority traffic.
+**Throttling** slows or queues requests when load exceeds capacity - graceful degradation vs hard reject (rate limit). May delay responses or shed low-priority traffic.
 
 ### Why it matters
 
-Keeps system alive under overload—returns slower responses instead of cascading failures and OOM crashes.
+Keeps system alive under overload - returns slower responses instead of cascading failures and OOM crashes.
 
 ### How it works
 
@@ -991,9 +1100,9 @@ flowchart LR
 
 ### Trade-offs / Pitfalls
 
-- Queues increase tail latency—clients may timeout anyway.
+- Queues increase tail latency - clients may timeout anyway.
 - Without autoscaling, throttling masks capacity debt.
-- User frustration if throttling opaque—return meaningful status.
+- User frustration if throttling opaque - return meaningful status.
 
 ### References
 
@@ -1001,11 +1110,13 @@ flowchart LR
 
 ---
 
-## 7.19 Idempotency
+
+## 7.20 Idempotency
+
 
 ### What is it?
 
-An operation is **idempotent** if performing it multiple times has the same effect as once—critical for safe retries on unreliable networks.
+An operation is **idempotent** if performing it multiple times has the same effect as once - critical for safe retries on unreliable networks.
 
 ### Why it matters
 
@@ -1043,7 +1154,7 @@ sequenceDiagram
 
 ### Key details
 
-- `POST` is NOT idempotent by default—must design explicitly.
+- `POST` is NOT idempotent by default - must design explicitly.
 - Side effects outside DB (email) need outbox + dedup.
 - Time-bound idempotency windows (24h) limit storage.
 
@@ -1055,8 +1166,8 @@ sequenceDiagram
 
 ### Trade-offs / Pitfalls
 
-- Storing every idempotency record grows storage—TTL and archive.
-- Concurrent duplicate requests race—use DB unique constraint or lock.
+- Storing every idempotency record grows storage - TTL and archive.
+- Concurrent duplicate requests race - use DB unique constraint or lock.
 - Returning different HTTP status on replay vs first call confuses clients.
 
 ### References
@@ -1065,7 +1176,9 @@ sequenceDiagram
 
 ---
 
-## 7.20 Idempotency Keys
+
+## 7.21 Idempotency Keys
+
 
 ### What is it?
 
@@ -1073,7 +1186,7 @@ An **idempotency key** is a client-generated unique token (UUID) sent in header 
 
 ### Why it matters
 
-Standard pattern (Stripe, PayPal) for POST idempotency—clients retry safely on `504 Gateway Timeout` without double charge.
+Standard pattern (Stripe, PayPal) for POST idempotency - clients retry safely on `504 Gateway Timeout` without double charge.
 
 ### How it works
 
@@ -1097,9 +1210,9 @@ sequenceDiagram
 
 ### Key details
 
-- Stripe: 24-hour key retention; same key + different body → 409 conflict.
+- Stripe: 24-hour key retention; same key + different body -> 409 conflict.
 - Store HTTP status + body for faithful replay.
-- Keys must be unguessable (UUID v4)—not sequential integers.
+- Keys must be unguessable (UUID v4) - not sequential integers.
 
 ### When to use
 
@@ -1109,7 +1222,7 @@ sequenceDiagram
 
 ### Trade-offs / Pitfalls
 
-- Client forgetting key on retry → duplicate operations.
+- Client forgetting key on retry -> duplicate operations.
 - Server must hash request body with key to detect misuse.
 - Distributed store for keys must be strongly consistent for correctness.
 
@@ -1119,85 +1232,33 @@ sequenceDiagram
 
 ---
 
-## 7.21 Contract Testing
-
-### What is it?
-
-**Contract testing** verifies consumer and provider agree on API shape and behavior without full end-to-end tests—consumer-driven contracts (Pact) or schema validation against OpenAPI.
-
-### Why it matters
-
-Microservices break when provider changes response without notice; contract tests catch incompatibilities in CI before deploy.
-
-### How it works
-
-**Pact (consumer-driven):**
-
-1. Consumer test defines expected request/response mock (pact file).
-2. Pact file published to broker.
-3. Provider CI verifies it can satisfy all consumer pacts.
-4. Breaking change fails provider build before production.
-
-### Diagram
-
-```mermaid
-flowchart LR
-    Consumer --> Pact[Pact File]
-    Pact --> Broker[Pact Broker]
-    Broker --> Provider[Provider Verify]
-```
-
-### Key details
-
-- Consumer-driven: consumers define needs; avoids gold-plated provider APIs.
-- OpenAPI diff: provider spec vs consumer expectations.
-- Not replacement for E2E—tests contract slice only.
-
-### When to use
-
-- Many microservices with independent deploy cycles.
-- Public APIs with external consumers publishing pacts.
-- Preventing "works on my machine" integration failures.
-
-### Trade-offs / Pitfalls
-
-- Pact maintenance overhead for large consumer counts.
-- Contracts don't test latency, auth integration, or side effects.
-- False confidence if provider verifies against stale pacts.
-
-### References
-
-*(No curated references for this sub-topic in `_topics.json`.)*
-
----
 
 ## Quick Reference
 
-| Topic | Choose when | Watch out for |
-|-------|-------------|---------------|
-| REST | Public HTTP, caching, simplicity | Over-fetching, chatty clients |
-| GraphQL | Varied client shapes, aggregation | Query cost, caching |
-| gRPC | Internal RPC, streaming, perf | Browser, human debugging |
-| API Gateway | Edge auth, routing, limits | Smart gateway anti-pattern |
-| Cursor pagination | Large/churning datasets | No random page jump |
-| Offset pagination | Small/admin lists | Deep offset slow |
-| Rate limiting | Abuse protection, tiers | Distributed counter state |
-| Idempotency keys | POST retries safe | 24h storage, body mismatch |
-| OpenAPI | Contract-first REST | Spec drift |
-| Contract tests | Independent deploys | Not full E2E substitute |
+| # | Topic | Summary |
+|---|-------|---------|
+| 7.1 | REST | **REST** (Representational State Transfer) models APIs as **resources** (noun... |
+| 7.2 | GraphQL | **GraphQL** is a query language and runtime where clients request exactly the... |
+| 7.3 | gRPC | **gRPC** is a high-performance RPC framework using **Protocol Buffers** over ... |
+| 7.4 | SOAP | **SOAP** (Simple Object Access Protocol) is an XML-based messaging protocol w... |
+| 7.5 | API Gateway | An **API gateway** is a reverse proxy at the edge routing client requests to ... |
+| 7.6 | API Aggregation | **API aggregation** combines data from multiple backend services into **one r... |
+| 7.7 | API Composition | **API composition** (choreographed aggregation) builds a response by **sequen... |
+| 7.8 | API Versioning | **API versioning** manages breaking changes without stranding existing client... |
+| 7.9 | Pagination | **Pagination** splits large result sets into pages - via **offset/limit**, **cu... |
+| 7.10 | Filtering | **Filtering** lets clients narrow collections with query parameters - `?status=... |
+| 7.11 | Sorting | **Sorting** orders results by one or more fields - `?sort=created_at:desc,name:... |
+| 7.12 | OpenAPI | **OpenAPI Specification (OAS)** is a machine-readable YAML/JSON format descri... |
+| 7.13 | Swagger | **Swagger** is the tooling ecosystem around OpenAPI - Swagger UI (interactive d... |
+| 7.14 | Request Validation | **Request validation** checks incoming payloads against schema - types, require... |
+| 7.15 | Contract Testing | **Contract testing** verifies consumer and provider agree on API shape and be... |
+| 7.16 | API Security | **API security** encompasses authentication (who), authorization (what), tran... |
+| 7.17 | Webhooks | **Webhooks** are HTTP callbacks: when an event occurs, the API **POSTs** a pa... |
+| 7.18 | Rate Limiting | **Rate limiting** caps requests per client/IP/API key over a time window - prot... |
+| 7.19 | Throttling | **Throttling** slows or queues requests when load exceeds capacity - graceful d... |
+| 7.20 | Idempotency | An operation is **idempotent** if performing it multiple times has the same e... |
+| 7.21 | Idempotency Keys | An **idempotency key** is a client-generated unique token (UUID) sent in head... |
 
-### REST vs gRPC (interview snapshot)
+---
 
-```mermaid
-flowchart TB
-    subgraph REST
-        R1[JSON over HTTP/1.1 or HTTP/2]
-        R2[Human readable]
-        R3[Browser native]
-    end
-    subgraph gRPC
-        G1[Protobuf over HTTP/2]
-        G2[Codegen contracts]
-        G3[Streaming first-class]
-    end
-```
+[Ã¢ - Â Back to master index](../README.md)

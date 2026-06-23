@@ -1,8 +1,8 @@
-﻿# 10. Security
+# 10. Security
 
-> Status: **Documented** — MASTER reference depth for all sub-topics below.
+> Status: **Documented**  -  MASTER reference depth for all sub-topics below.
 
-[← Back to master index](../README.md)
+[<- Back to master index](../README.md)
 
 ---
 
@@ -20,8 +20,8 @@
 | 10.8 | [ABAC](#108-abac) | Done |
 | 10.9 | [Encryption at Rest](#109-encryption-at-rest) | Done |
 | 10.10 | [Encryption in Transit](#1010-encryption-in-transit) | Done |
-| 10.11 | [Secret Management](#1011-secret-management) | Done |
-| 10.12 | [KMS](#1012-kms) | Done |
+| 10.11 | [KMS](#1011-kms) | Done |
+| 10.12 | [Secret Management](#1012-secret-management) | Done |
 | 10.13 | [CSRF](#1013-csrf) | Done |
 | 10.14 | [XSS](#1014-xss) | Done |
 | 10.15 | [SQL Injection](#1015-sql-injection) | Done |
@@ -32,11 +32,15 @@
 | 10.20 | [Zero Trust Security](#1020-zero-trust-security) | Done |
 | 10.21 | [Audit Logging](#1021-audit-logging) | Done |
 
+
+
+
+
 ---
 
 ## Overview
 
-Security in distributed systems spans identity (who), access control (what they can do), data protection (at rest and in transit), and defense against abuse. A layered model—perimeter, application, data, and operational controls—reduces blast radius when any single control fails.
+Security in distributed systems spans identity (who), access control (what they can do), data protection (at rest and in transit), and defense against abuse. A layered model - perimeter, application, data, and operational controls - reduces blast radius when any single control fails.
 
 ```mermaid
 flowchart TB
@@ -69,11 +73,28 @@ flowchart TB
 
 ---
 
+
+## Reading order
+
+Sub-topics are sequenced for progressive learning: foundations first, then related concepts, then specialized topics.
+
+| Group | Sections | Focus |
+|-------|----------|-------|
+| **1. Identity** | 10.1-10.6 | AuthN, AuthZ, OAuth, OIDC, JWT, sessions |
+| **2. Access control** | 10.7-10.8 | RBAC, ABAC |
+| **3. Cryptography and secrets** | 10.9-10.12 | Encryption, KMS, secret management |
+| **4. Application threats** | 10.13-10.17 | OWASP-class attacks |
+| **5. Perimeter and governance** | 10.18-10.21 | DDoS, WAF, zero trust, audit |
+
+---
+---
+
 ## 10.1 Authentication
+
 
 ### What is it
 
-The process of verifying **identity**—proving a user, service, or device is who they claim to be before granting access.
+The process of verifying **identity** - proving a user, service, or device is who they claim to be before granting access.
 
 ### Why it matters
 
@@ -120,11 +141,13 @@ flowchart LR
 
 ---
 
+
 ## 10.2 Authorization
+
 
 ### What is it
 
-Determining **what an authenticated principal is allowed to do**—which resources, actions, and data they may access.
+Determining **what an authenticated principal is allowed to do** - which resources, actions, and data they may access.
 
 ### Why it matters
 
@@ -150,7 +173,7 @@ flowchart TB
 - Separate authn from authz in code and architecture
 - Deny by default; explicit grants only
 - Centralize policy where possible (OPA, Cedar, cloud IAM)
-- Re-check authorization on every request—never trust client
+- Re-check authorization on every request - never trust client
 
 ### When to use
 
@@ -171,21 +194,23 @@ flowchart TB
 
 ---
 
+
 ## 10.3 OAuth2
+
 
 ### What is it
 
-An authorization **framework** (RFC 6749) enabling third-party applications to obtain limited access to user resources without sharing passwords—via access tokens issued by an authorization server.
+An authorization **framework** (RFC 6749) enabling third-party applications to obtain limited access to user resources without sharing passwords - via access tokens issued by an authorization server.
 
 ### Why it matters
 
-OAuth2 is the industry standard for delegated access—"Login with Google," API access on behalf of users, and machine-to-machine authorization.
+OAuth2 is the industry standard for delegated access - "Login with Google," API access on behalf of users, and machine-to-machine authorization.
 
 ### How it works
 
 **Authorization Code flow** (most secure for web/mobile): client redirects user to authorization server; user consents; server returns code; client exchanges code for access token (and optionally refresh token) using client secret or PKCE. Resource server validates token on each API call.
 
-### Diagram — OAuth2 Authorization Code Flow
+### Diagram  -  OAuth2 Authorization Code Flow
 
 ```mermaid
 sequenceDiagram
@@ -228,16 +253,18 @@ sequenceDiagram
 
 ### References
 
-- [RFC 6749 — OAuth 2.0](https://datatracker.ietf.org/doc/html/rfc6749)
+- [RFC 6749  -  OAuth 2.0](https://datatracker.ietf.org/doc/html/rfc6749)
 - [OAuth 2.0 Security BCP](https://datatracker.ietf.org/doc/html/rfc9700)
 
 ---
 
+
 ## 10.4 OpenID Connect
+
 
 ### What is it
 
-Identity layer on top of OAuth2 (OIDC) that adds **authentication**—standardized ID tokens and UserInfo endpoint proving who the user is.
+Identity layer on top of OAuth2 (OIDC) that adds **authentication** - standardized ID tokens and UserInfo endpoint proving who the user is.
 
 ### Why it matters
 
@@ -269,7 +296,7 @@ flowchart LR
 
 - Enterprise SSO (Azure AD, Okta, Keycloak)
 - Consumer login (Google, Apple)
-- Any "Sign in with …" feature
+- Any "Sign in with  - " feature
 
 ### Trade-offs
 
@@ -285,21 +312,23 @@ flowchart LR
 
 ---
 
+
 ## 10.5 JWT
+
 
 ### What is it
 
-**JSON Web Token**—a compact, signed (or signed+encrypted) token format (`header.payload.signature`) carrying claims between parties.
+**JSON Web Token** - a compact, signed (or signed+encrypted) token format (`header.payload.signature`) carrying claims between parties.
 
 ### Why it matters
 
-JWTs enable stateless authentication: resource servers verify signature locally without calling the auth server every request—critical for scalable microservices.
+JWTs enable stateless authentication: resource servers verify signature locally without calling the auth server every request - critical for scalable microservices.
 
 ### How it works
 
 Issuer creates payload (claims: `sub`, `exp`, `roles`). Signs with HMAC (shared secret) or asymmetric key (RS256/ES256). Client sends `Authorization: Bearer <jwt>`. Verifier checks signature, `exp`, `iss`, `aud`, and extracts claims for authorization.
 
-### Diagram — JWT Structure
+### Diagram  -  JWT Structure
 
 ```mermaid
 flowchart LR
@@ -318,7 +347,7 @@ flowchart LR
 - Always validate `exp`, `iss`, `aud`; reject `alg: none`
 - Prefer RS256/ES256 over HS256 in distributed systems
 - Short TTL; use refresh tokens for long sessions
-- JWTs are **credentials**—never store in localStorage if XSS risk; HttpOnly cookies alternative
+- JWTs are **credentials** - never store in localStorage if XSS risk; HttpOnly cookies alternative
 
 ### When to use
 
@@ -336,16 +365,18 @@ flowchart LR
 
 ### References
 
-- [RFC 7519 — JWT](https://datatracker.ietf.org/doc/html/rfc7519)
+- [RFC 7519  -  JWT](https://datatracker.ietf.org/doc/html/rfc7519)
 - [JWT Best Practices](https://datatracker.ietf.org/doc/html/rfc8725)
 
 ---
 
+
 ## 10.6 Session Management
+
 
 ### What is it
 
-Server-side or client-side mechanisms maintaining authenticated state across HTTP requests—typically via session IDs in HttpOnly cookies.
+Server-side or client-side mechanisms maintaining authenticated state across HTTP requests - typically via session IDs in HttpOnly cookies.
 
 ### Why it matters
 
@@ -399,11 +430,13 @@ sequenceDiagram
 
 ---
 
+
 ## 10.7 RBAC
+
 
 ### What is it
 
-**Role-Based Access Control**—permissions assigned to roles; users inherit permissions by role membership (`admin`, `editor`, `viewer`).
+**Role-Based Access Control** - permissions assigned to roles; users inherit permissions by role membership (`admin`, `editor`, `viewer`).
 
 ### Why it matters
 
@@ -413,7 +446,7 @@ RBAC simplifies authorization at scale: manage dozens of roles instead of thousa
 
 Define roles and permission sets. Assign users to roles (directly or via groups). On each request, check `user.roles` contains a role with required permission. Hierarchical roles can inherit sub-role permissions.
 
-### Diagram — RBAC Model
+### Diagram  -  RBAC Model
 
 ```mermaid
 flowchart TB
@@ -453,11 +486,13 @@ flowchart TB
 
 ---
 
+
 ## 10.8 ABAC
+
 
 ### What is it
 
-**Attribute-Based Access Control**—access decisions from attributes of user, resource, action, and environment (`department`, `classification`, `time`, `IP`).
+**Attribute-Based Access Control** - access decisions from attributes of user, resource, action, and environment (`department`, `classification`, `time`, `IP`).
 
 ### Why it matters
 
@@ -484,7 +519,7 @@ flowchart LR
 
 ### Key details
 
-- Policies as code—version, test, review in CI
+- Policies as code - version, test, review in CI
 - Attribute source of truth must be reliable
 - Start with RBAC; add ABAC for exceptions
 - Performance: cache decisions where safe
@@ -509,11 +544,13 @@ flowchart LR
 
 ---
 
+
 ## 10.9 Encryption at Rest
+
 
 ### What is it
 
-Encrypting stored data—databases, disks, backups, object storage—so physical theft or unauthorized disk access does not expose plaintext.
+Encrypting stored data - databases, disks, backups, object storage - so physical theft or unauthorized disk access does not expose plaintext.
 
 ### Why it matters
 
@@ -560,11 +597,13 @@ flowchart LR
 
 ---
 
+
 ## 10.10 Encryption in Transit
+
 
 ### What is it
 
-Encrypting data while moving across networks—TLS/SSL for HTTP, mTLS for service-to-service, VPN/IPsec for network tunnels.
+Encrypting data while moving across networks - TLS/SSL for HTTP, mTLS for service-to-service, VPN/IPsec for network tunnels.
 
 ### Why it matters
 
@@ -574,7 +613,7 @@ Unencrypted traffic is readable by anyone on the path (ISP, compromised Wi-Fi, m
 
 TLS handshake negotiates cipher suite, authenticates server (certificate), establishes session keys. Application data encrypted symmetrically. **mTLS** adds client certificate for mutual authentication. Internal meshes (Istio) automate mTLS between pods.
 
-### Diagram — Encryption in Transit
+### Diagram  -  Encryption in Transit
 
 ```mermaid
 sequenceDiagram
@@ -618,64 +657,13 @@ sequenceDiagram
 
 ---
 
-## 10.11 Secret Management
+
+## 10.11 KMS
+
 
 ### What is it
 
-Secure storage, distribution, rotation, and audit of sensitive values—API keys, DB passwords, certificates, encryption keys—not hardcoded in source or config.
-
-### Why it matters
-
-Leaked secrets in Git are a top breach vector. Centralized secret management enables rotation, access control, and audit without redeploying entire applications.
-
-### How it works
-
-Secrets stored in a vault (HashiCorp Vault, AWS Secrets Manager, K8s Secrets + external secrets operator). Apps fetch at runtime via IAM-authenticated API or injected as env/volume mounts. Rotation updates vault; apps reload or restart.
-
-### Diagram
-
-```mermaid
-flowchart LR
-    Dev[Developer] -->|never commit| Git[Git Repo]
-    Vault[Secret Vault] -->|inject| Pod[Application Pod]
-    IAM[IAM Role] -->|auth| Pod
-    Pod -->|fetch| Vault
-    Admin[Admin] -->|rotate| Vault
-```
-
-### Key details
-
-- Never commit secrets; scan repos (gitleaks, trufflehog)
-- Short-lived credentials over long-lived API keys
-- K8s Secrets are base64, not encrypted by default—use Sealed Secrets or ESO
-- Audit every secret access
-
-### When to use
-
-- Every production environment
-- CI/CD pipeline credentials
-- Database and third-party API keys
-
-### Trade-offs
-
-| Pros | Cons |
-|------|------|
-| Central rotation and audit | Vault becomes critical dependency |
-| Removes secrets from code | Operational complexity |
-| Dynamic secrets possible | Misconfigured IAM leaks access |
-
-### References
-
-- [HashiCorp Vault](https://developer.hashicorp.com/vault/docs)
-- [OWASP Secrets Management](https://cheatsheetseries.owasp.org/cheatsheets/Secrets_Management_Cheat_Sheet.html)
-
----
-
-## 10.12 KMS
-
-### What is it
-
-**Key Management Service**—managed system for creating, storing, rotating, and using cryptographic keys with hardware security module (HSM) backing.
+**Key Management Service** - managed system for creating, storing, rotating, and using cryptographic keys with hardware security module (HSM) backing.
 
 ### Why it matters
 
@@ -722,11 +710,68 @@ flowchart TB
 
 ---
 
-## 10.13 CSRF
+
+## 10.12 Secret Management
+
 
 ### What is it
 
-**Cross-Site Request Forgery**—an attack tricking a logged-in user's browser into submitting unwanted requests to a site where they are authenticated.
+Secure storage, distribution, rotation, and audit of sensitive values - API keys, DB passwords, certificates, encryption keys - not hardcoded in source or config.
+
+### Why it matters
+
+Leaked secrets in Git are a top breach vector. Centralized secret management enables rotation, access control, and audit without redeploying entire applications.
+
+### How it works
+
+Secrets stored in a vault (HashiCorp Vault, AWS Secrets Manager, K8s Secrets + external secrets operator). Apps fetch at runtime via IAM-authenticated API or injected as env/volume mounts. Rotation updates vault; apps reload or restart.
+
+### Diagram
+
+```mermaid
+flowchart LR
+    Dev[Developer] -->|never commit| Git[Git Repo]
+    Vault[Secret Vault] -->|inject| Pod[Application Pod]
+    IAM[IAM Role] -->|auth| Pod
+    Pod -->|fetch| Vault
+    Admin[Admin] -->|rotate| Vault
+```
+
+### Key details
+
+- Never commit secrets; scan repos (gitleaks, trufflehog)
+- Short-lived credentials over long-lived API keys
+- K8s Secrets are base64, not encrypted by default - use Sealed Secrets or ESO
+- Audit every secret access
+
+### When to use
+
+- Every production environment
+- CI/CD pipeline credentials
+- Database and third-party API keys
+
+### Trade-offs
+
+| Pros | Cons |
+|------|------|
+| Central rotation and audit | Vault becomes critical dependency |
+| Removes secrets from code | Operational complexity |
+| Dynamic secrets possible | Misconfigured IAM leaks access |
+
+### References
+
+- [HashiCorp Vault](https://developer.hashicorp.com/vault/docs)
+- [OWASP Secrets Management](https://cheatsheetseries.owasp.org/cheatsheets/Secrets_Management_Cheat_Sheet.html)
+
+---
+
+
+## 10.13 CSRF
+
+
+### What is it
+
+**Cross-Site Request Forgery** - an attack tricking a logged-in user's browser into submitting unwanted requests to a site where they are authenticated.
 
 ### Why it matters
 
@@ -771,11 +816,13 @@ flowchart LR
 
 ---
 
+
 ## 10.14 XSS
+
 
 ### What is it
 
-**Cross-Site Scripting**—injecting malicious JavaScript into pages viewed by other users, executing in the victim's browser with their session context.
+**Cross-Site Scripting** - injecting malicious JavaScript into pages viewed by other users, executing in the victim's browser with their session context.
 
 ### Why it matters
 
@@ -821,7 +868,9 @@ flowchart LR
 
 ---
 
+
 ## 10.15 SQL Injection
+
 
 ### What is it
 
@@ -829,11 +878,11 @@ Inserting malicious SQL into application queries via unsanitized user input, all
 
 ### Why it matters
 
-SQLi can exfiltrate entire databases, bypass authentication, and execute admin operations—one of the most damaging and common injection flaws.
+SQLi can exfiltrate entire databases, bypass authentication, and execute admin operations - one of the most damaging and common injection flaws.
 
 ### How it works
 
-Input like `' OR '1'='1` appended to query string changes logic. Attackers use UNION SELECT, blind timing attacks, or stacked queries. Defense: **parameterized queries/prepared statements**—never concatenate user input into SQL.
+Input like `' OR '1'='1` appended to query string changes logic. Attackers use UNION SELECT, blind timing attacks, or stacked queries. Defense: **parameterized queries/prepared statements** - never concatenate user input into SQL.
 
 ### Diagram
 
@@ -854,7 +903,7 @@ flowchart LR
 
 ### When to use defenses
 
-- Every SQL-touching application—no exceptions
+- Every SQL-touching application - no exceptions
 
 ### Trade-offs
 
@@ -869,11 +918,13 @@ flowchart LR
 
 ---
 
+
 ## 10.16 SSRF
+
 
 ### What is it
 
-**Server-Side Request Forgery**—tricking a server into making HTTP requests to attacker-chosen URLs, often reaching internal services not exposed to the internet.
+**Server-Side Request Forgery** - tricking a server into making HTTP requests to attacker-chosen URLs, often reaching internal services not exposed to the internet.
 
 ### Why it matters
 
@@ -917,7 +968,9 @@ flowchart LR
 
 ---
 
+
 ## 10.17 Clickjacking
+
 
 ### What is it
 
@@ -969,11 +1022,13 @@ flowchart TB
 
 ---
 
+
 ## 10.18 DDoS Protection
+
 
 ### What is it
 
-Defenses against **Distributed Denial of Service** attacks—overwhelming systems with traffic volume to exhaust bandwidth, connections, or compute.
+Defenses against **Distributed Denial of Service** attacks - overwhelming systems with traffic volume to exhaust bandwidth, connections, or compute.
 
 ### Why it matters
 
@@ -996,7 +1051,7 @@ flowchart LR
 
 - Anycast + global edge absorbs volumetric attacks
 - Rate limiting per IP/API key
-- Autoscale handles flash crowds; DDoS exceeds scale—need scrubbing
+- Autoscale handles flash crowds; DDoS exceeds scale - need scrubbing
 - Runbooks for L3/L4 vs L7 attacks
 
 ### When to use
@@ -1018,15 +1073,17 @@ flowchart LR
 
 ---
 
+
 ## 10.19 WAF
+
 
 ### What is it
 
-**Web Application Firewall**—inspects HTTP/HTTPS traffic and blocks requests matching known attack signatures or custom rules (OWASP Core Rule Set).
+**Web Application Firewall** - inspects HTTP/HTTPS traffic and blocks requests matching known attack signatures or custom rules (OWASP Core Rule Set).
 
 ### Why it matters
 
-WAF filters SQLi, XSS, and bot traffic at the edge before it reaches application code—defense in depth for apps not yet fully hardened.
+WAF filters SQLi, XSS, and bot traffic at the edge before it reaches application code - defense in depth for apps not yet fully hardened.
 
 ### How it works
 
@@ -1047,7 +1104,7 @@ flowchart LR
 - AWS WAF, Cloudflare, Azure Front Door, ModSecurity
 - Start in count/log mode before block
 - Tune false positives per application
-- Complement—not replace—secure coding
+- Complement - not replace - secure coding
 
 ### When to use
 
@@ -1069,11 +1126,13 @@ flowchart LR
 
 ---
 
+
 ## 10.20 Zero Trust Security
+
 
 ### What is it
 
-Security model assuming **no implicit trust** based on network location—every user, device, and service must authenticate and authorize every access attempt.
+Security model assuming **no implicit trust** based on network location - every user, device, and service must authenticate and authorize every access attempt.
 
 ### Why it matters
 
@@ -1081,7 +1140,7 @@ Perimeter VPN models fail when attackers breach the network or workloads move to
 
 ### How it works
 
-Verify identity (MFA), device health, and context for each request. Micro-segmentation restricts east-west traffic. mTLS between services. Policy engine (ABAC) decides access. No "trusted internal network"—treat all traffic as hostile.
+Verify identity (MFA), device health, and context for each request. Micro-segmentation restricts east-west traffic. mTLS between services. Policy engine (ABAC) decides access. No "trusted internal network" - treat all traffic as hostile.
 
 ### Diagram
 
@@ -1120,11 +1179,13 @@ flowchart TB
 
 ---
 
+
 ## 10.21 Audit Logging
+
 
 ### What is it
 
-Tamper-evident records of security-relevant events—authentication, authorization decisions, admin actions, data access—for compliance and forensic investigation.
+Tamper-evident records of security-relevant events - authentication, authorization decisions, admin actions, data access - for compliance and forensic investigation.
 
 ### Why it matters
 
@@ -1173,16 +1234,33 @@ flowchart LR
 
 ---
 
+
 ## Quick Reference
 
-| Topic | Primary defense | Common tools |
-|-------|-----------------|--------------|
-| Authn | MFA + federated IdP | OIDC, Keycloak, Azure AD |
-| Authz | Least privilege | RBAC, OPA, IAM |
-| OAuth2/OIDC | Auth Code + PKCE | Keycloak, Auth0, Okta |
-| JWT | Short TTL + RS256 | JWKS validation |
-| Encryption transit | TLS 1.3, mTLS | cert-manager, Istio |
-| Encryption rest | KMS envelope | AWS KMS, Vault |
-| Injection | Parameterized queries | ORM, input validation |
-| XSS | CSP + encoding | DOMPurify |
-| DDoS/WAF | Edge scrubbing | Cloudflare, AWS Shield |
+| # | Topic | Summary |
+|---|-------|---------|
+| 10.1 | Authentication | Authentication |
+| 10.2 | Authorization | Authorization |
+| 10.3 | OAuth2 | OAuth2 |
+| 10.4 | OpenID Connect | OpenID Connect |
+| 10.5 | JWT | JWT |
+| 10.6 | Session Management | Session Management |
+| 10.7 | RBAC | RBAC |
+| 10.8 | ABAC | ABAC |
+| 10.9 | Encryption at Rest | Encryption at Rest |
+| 10.10 | Encryption in Transit | Encryption in Transit |
+| 10.11 | KMS | KMS |
+| 10.12 | Secret Management | Secret Management |
+| 10.13 | CSRF | CSRF |
+| 10.14 | XSS | XSS |
+| 10.15 | SQL Injection | SQL Injection |
+| 10.16 | SSRF | SSRF |
+| 10.17 | Clickjacking | Clickjacking |
+| 10.18 | DDoS Protection | DDoS Protection |
+| 10.19 | WAF | WAF |
+| 10.20 | Zero Trust Security | Zero Trust Security |
+| 10.21 | Audit Logging | Audit Logging |
+
+---
+
+[Ã¢ - Â Back to master index](../README.md)

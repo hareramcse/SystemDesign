@@ -1,14 +1,14 @@
-﻿# 8. Microservices
+# 8. Microservices
 
 > Status: **Documented**
 
-[← Back to master index](../README.md)
+[<- Back to master index](../README.md)
 
 ---
 
 ## Overview
 
-**Microservices** decompose an application into independently deployable services aligned to business capabilities—each owning its data, scaling on its own cadence, and communicating over networks (HTTP, gRPC, events). The alternative spectrum runs from **monoliths** (single deployable) through **modular monoliths** (logical modules, physical unity) to fine-grained services.
+**Microservices** decompose an application into independently deployable services aligned to business capabilities - each owning its data, scaling on its own cadence, and communicating over networks (HTTP, gRPC, events). The alternative spectrum runs from **monoliths** (single deployable) through **modular monoliths** (logical modules, physical unity) to fine-grained services.
 
 Success requires more than splitting code: **service discovery**, **resilience patterns** (circuit breaker, bulkhead, retry), **distributed workflows** (saga), and **observability** become mandatory. **Domain-Driven Design (DDD)** and architectural styles (hexagonal, clean, onion) guide boundaries so services don't become distributed balls of mud.
 
@@ -20,27 +20,31 @@ This chapter covers when to split, how services find each other, mesh-based infr
 
 | # | Sub-topic | Status |
 |---|-----------|--------|
-| 8.1 | [Monolith](#monolith) | Done |
-| 8.2 | [Modular Monolith](#modular-monolith) | Done |
-| 8.3 | [Microservices](#microservices) | Done |
-| 8.4 | [Service Registry](#service-registry) | Done |
-| 8.5 | [Service Discovery](#service-discovery) | Done |
-| 8.6 | [Service Mesh](#service-mesh) | Done |
-| 8.7 | [Sidecar Pattern](#sidecar-pattern) | Done |
-| 8.8 | [Circuit Breaker](#circuit-breaker) | Done |
-| 8.9 | [Retry Pattern](#retry-pattern) | Done |
-| 8.10 | [Bulkhead Pattern](#bulkhead-pattern) | Done |
-| 8.11 | [Saga Pattern](#saga-pattern) | Done |
-| 8.12 | [Choreography](#choreography) | Done |
-| 8.13 | [Orchestration](#orchestration) | Done |
-| 8.14 | [BFF Pattern](#bff-pattern) | Done |
-| 8.15 | [Strangler Pattern](#strangler-pattern) | Done |
-| 8.16 | [DDD](#ddd) | Done |
-| 8.17 | [Bounded Context](#bounded-context) | Done |
-| 8.18 | [Hexagonal Architecture](#hexagonal-architecture) | Done |
-| 8.19 | [Clean Architecture](#clean-architecture) | Done |
-| 8.20 | [Onion Architecture](#onion-architecture) | Done |
-| 8.21 | [Dependency Injection](#dependency-injection) | Done |
+| 8.1 | [Monolith](#81-monolith) | Done |
+| 8.2 | [Modular Monolith](#82-modular-monolith) | Done |
+| 8.3 | [Microservices](#83-microservices) | Done |
+| 8.4 | [Strangler Pattern](#84-strangler-pattern) | Done |
+| 8.5 | [BFF Pattern](#85-bff-pattern) | Done |
+| 8.6 | [DDD](#86-ddd) | Done |
+| 8.7 | [Bounded Context](#87-bounded-context) | Done |
+| 8.8 | [Hexagonal Architecture](#88-hexagonal-architecture) | Done |
+| 8.9 | [Clean Architecture](#89-clean-architecture) | Done |
+| 8.10 | [Onion Architecture](#810-onion-architecture) | Done |
+| 8.11 | [Dependency Injection](#811-dependency-injection) | Done |
+| 8.12 | [Service Registry](#812-service-registry) | Done |
+| 8.13 | [Service Discovery](#813-service-discovery) | Done |
+| 8.14 | [Service Mesh](#814-service-mesh) | Done |
+| 8.15 | [Sidecar Pattern](#815-sidecar-pattern) | Done |
+| 8.16 | [Circuit Breaker](#816-circuit-breaker) | Done |
+| 8.17 | [Retry Pattern](#817-retry-pattern) | Done |
+| 8.18 | [Bulkhead Pattern](#818-bulkhead-pattern) | Done |
+| 8.19 | [Saga Pattern](#819-saga-pattern) | Done |
+| 8.20 | [Choreography](#820-choreography) | Done |
+| 8.21 | [Orchestration](#821-orchestration) | Done |
+
+
+
+
 
 ```mermaid
 flowchart TB
@@ -55,11 +59,27 @@ flowchart TB
 
 ---
 
+
+## Reading order
+
+Sub-topics are sequenced for progressive learning: foundations first, then related concepts, then specialized topics.
+
+| Group | Sections | Focus |
+|-------|----------|-------|
+| **1. Architecture evolution** | 8.1-8.5 | Monolith -> microservices, strangler, BFF |
+| **2. Domain design** | 8.6-8.11 | DDD, bounded context, layered architectures |
+| **3. Runtime platform** | 8.12-8.15 | Discovery, mesh, sidecar |
+| **4. Resilience and sagas** | 8.16-8.21 | Breaker, retry, bulkhead, saga patterns |
+
+---
+---
+
 ## 8.1 Monolith
+
 
 ### What is it?
 
-A **monolith** is a single deployable unit containing all application functionality—one codebase, one process (or clustered replicas of the same binary), typically one shared database.
+A **monolith** is a single deployable unit containing all application functionality - one codebase, one process (or clustered replicas of the same binary), typically one shared database.
 
 ### Why it matters
 
@@ -96,11 +116,11 @@ flowchart TB
 
 - New products and startups proving product-market fit.
 - Small teams (< 10 engineers) without clear domain splits.
-- Low operational maturity—avoid microservices tax.
+- Low operational maturity - avoid microservices tax.
 
 ### Trade-offs / Pitfalls
 
-- Codebase grows → compile times, cognitive load, "big ball of mud".
+- Codebase grows -> compile times, cognitive load, "big ball of mud".
 - One slow module can starve threads for entire app.
 - Premature microservice split is worse than disciplined monolith.
 
@@ -110,11 +130,13 @@ flowchart TB
 
 ---
 
+
 ## 8.2 Modular Monolith
+
 
 ### What is it?
 
-A **modular monolith** keeps one deployable but enforces **strict module boundaries**—packages with explicit APIs, no cross-module DB access, potential to extract modules into services later.
+A **modular monolith** keeps one deployable but enforces **strict module boundaries** - packages with explicit APIs, no cross-module DB access, potential to extract modules into services later.
 
 ### Why it matters
 
@@ -155,7 +177,7 @@ flowchart TB
 
 ### Trade-offs / Pitfalls
 
-- Boundaries erode without tooling enforcement—becomes "folders monolith".
+- Boundaries erode without tooling enforcement - becomes "folders monolith".
 - Still single scaling unit; can't scale billing independently yet.
 - Extraction requires finishing modularization debt first.
 
@@ -165,7 +187,9 @@ flowchart TB
 
 ---
 
+
 ## 8.3 Microservices
+
 
 ### What is it?
 
@@ -173,7 +197,7 @@ flowchart TB
 
 ### Why it matters
 
-Enables team autonomy, polyglot stacks, independent scaling, and fault isolation—when organizational scale and operational maturity justify distributed complexity.
+Enables team autonomy, polyglot stacks, independent scaling, and fault isolation - when organizational scale and operational maturity justify distributed complexity.
 
 ### How it works
 
@@ -198,7 +222,7 @@ flowchart LR
 ### Key details
 
 - Conway's Law: service boundaries mirror team structure.
-- Distributed transactions avoided—sagas and eventual consistency.
+- Distributed transactions avoided - sagas and eventual consistency.
 - "Micro" refers to scope of responsibility, not lines of code.
 
 ### When to use
@@ -211,7 +235,7 @@ flowchart LR
 
 - Distributed debugging, data consistency, and integration testing harder.
 - Latency and partial failure on every cross-service call.
-- Nano-services anti-pattern: too many tiny services → ops nightmare.
+- Nano-services anti-pattern: too many tiny services -> ops nightmare.
 
 ### References
 
@@ -219,11 +243,439 @@ flowchart LR
 
 ---
 
-## 8.4 Service Registry
+
+## 8.4 Strangler Pattern
+
 
 ### What is it?
 
-A **service registry** is a database of running service instances—host, port, health, metadata—where services **register** on startup and **deregister** on shutdown.
+The **strangler fig pattern** incrementally replaces a legacy monolith by routing slices of traffic to new microservices - growing new system around old until monolith can be decommissioned.
+
+### Why it matters
+
+Low-risk migration path vs big-bang rewrite; delivers value incrementally while legacy still runs.
+
+### How it works
+
+1. Place facade/proxy (API gateway) in front of monolith.
+2. Implement new service for one feature (e.g., notifications).
+3. Gateway routes `/notifications/*` to new service; rest to monolith.
+4. Repeat feature by feature; extract data via CDC or dual-write.
+5. Retire monolith modules when traffic and data fully migrated.
+
+### Diagram
+
+```mermaid
+flowchart LR
+    Client --> GW[Gateway]
+    GW -->|new paths| MS[New Microservice]
+    GW -->|legacy paths| Mono[Monolith]
+```
+
+### Key details
+
+- Anti-corruption layer translates between old and new models.
+- Data sync hardest part - CDC, strangler data pump, or temporary dual-write.
+- Feature flags control routing percentage for canary extraction.
+
+### When to use
+
+- Large legacy system unmaintainable but business cannot stop.
+- Gradual modernization with measurable milestones.
+- Team learning microservices while shipping features.
+
+### Trade-offs / Pitfalls
+
+- Long transition period maintaining two systems.
+- Data inconsistency during dual-running phase.
+- "Strangler" never finishes if scope creep adds features to monolith.
+
+### References
+
+*(No curated references for this sub-topic in `_topics.json`.)*
+
+---
+
+
+## 8.5 BFF Pattern
+
+
+### What is it?
+
+**Backend for Frontend (BFF)** is a dedicated API layer per client type (web, mobile, IoT) that aggregates and shapes backend microservice responses for that client's specific needs.
+
+### Why it matters
+
+Mobile and web need different payloads and aggregation; one generic API forces compromises. BFF keeps core services client-agnostic.
+
+### How it works
+
+1. Mobile BFF and Web BFF deploy as separate services.
+2. Each calls internal microservices (gRPC/REST).
+3. Aggregates parallel fetches; trims fields for mobile bandwidth.
+4. Handles client-specific auth token exchange.
+5. Core domain services expose generic contracts, not UI-driven shapes.
+
+### Diagram
+
+```mermaid
+flowchart TB
+    Mobile --> MobileBFF[Mobile BFF]
+    Web --> WebBFF[Web BFF]
+    MobileBFF --> Core[Core Services]
+    WebBFF --> Core
+```
+
+### Key details
+
+- Not a god-service - thin orchestration only, no domain ownership.
+- GraphQL can serve BFF role with single graph per client.
+- Team ownership often follows client team (mobile team owns mobile BFF).
+
+### When to use
+
+- Multiple client platforms with diverging API needs.
+- Reduce chatty client calls via server-side aggregation.
+- Different release cadence for client-specific API tweaks.
+
+### Trade-offs / Pitfalls
+
+- N BFFs -> duplication risk; share aggregation libraries.
+- BFF becomes dumping ground for business logic - enforce thin boundary.
+- Extra hop adds latency - co-locate with gateway or services.
+
+### References
+
+*(No curated references for this sub-topic in `_topics.json`.)*
+
+---
+
+
+## 8.6 DDD
+
+
+### What is it?
+
+**Domain-Driven Design (DDD)** is an approach aligning software structure with business domain - ubiquitous language, bounded contexts, aggregates, and strategic design for complex domains.
+
+### Why it matters
+
+Microservice boundaries drawn around org chart fail; DDD draws them around **domain** boundaries where language and rules are cohesive.
+
+### How it works
+
+1. Collaborate with domain experts; define ubiquitous language.
+2. Identify bounded contexts (sales, shipping, billing).
+3. Model aggregates as consistency boundaries inside contexts.
+4. Map context relationships (shared kernel, anti-corruption layer).
+5. Implement each bounded context as module or service.
+
+### Diagram
+
+```mermaid
+flowchart TB
+    subgraph Sales Context
+        Order[Order Aggregate]
+    end
+    subgraph Shipping Context
+        Shipment[Shipment Aggregate]
+    end
+    Order -->|domain events| Shipment
+```
+
+### Key details
+
+- **Tactical:** entities, value objects, aggregates, repositories, domain events.
+- **Strategic:** context map, subdomain classification (core/supporting/generic).
+- Not every project needs full DDD ceremony - scale rigor to complexity.
+
+### When to use
+
+- Complex business rules with expert stakeholders.
+- Defining microservice boundaries in ambiguous domains.
+- Legacy modernization needing shared vocabulary.
+
+### Trade-offs / Pitfalls
+
+- Over-engineering simple CRUD with DDD patterns.
+- Bounded contexts misidentified -> wrong service splits.
+- Requires ongoing domain expert access - not one-time workshop.
+
+### References
+
+*(No curated references for this sub-topic in `_topics.json`.)*
+
+---
+
+
+## 8.7 Bounded Context
+
+
+### What is it?
+
+A **bounded context** is a boundary within which a domain model and ubiquitous language are consistent. Same word ("customer") may mean different things in different contexts.
+
+### Why it matters
+
+Primary unit for microservice decomposition - one bounded context -> one service (ideally). Prevents leaky shared models across domains.
+
+### How it works
+
+1. Map business capabilities and team ownership.
+2. Draw context boundaries where terminology or rules diverge.
+3. Define integration: published language, ACL for legacy.
+4. Each context owns its persistence and APIs.
+5. Sync via events or explicit translation at boundaries.
+
+### Diagram
+
+```mermaid
+flowchart LR
+    BC1[Catalog Context] --> ACL[Anti-Corruption Layer]
+    ACL --> BC2[Checkout Context]
+```
+
+### Key details
+
+- Context map documents relationships: upstream/downstream, conformist, ACL.
+- Shared kernel only for truly stable tiny shared model - use sparingly.
+- "Customer" in CRM â‰  "Customer" in billing - don't unify prematurely.
+
+### When to use
+
+- Any microservice boundary discussion.
+- Resolving "should this be one service or two?" debates.
+
+### Trade-offs / Pitfalls
+
+- Contexts too large -> mini-monolith; too small -> distributed mud.
+- Ignoring context map -> accidental tight coupling via shared DB.
+- Integration without ACL spreads legacy model corruption.
+
+### References
+
+*(No curated references for this sub-topic in `_topics.json`.)*
+
+---
+
+
+## 8.8 Hexagonal Architecture
+
+
+### What is it?
+
+**Hexagonal architecture** (ports and adapters) places **domain logic at the center**, surrounded by **ports** (interfaces) and **adapters** (implementations) for HTTP, DB, messaging.
+
+### Why it matters
+
+Testable domain without framework coupling; swap infrastructure (Postgres -> Mongo, REST -> gRPC) without touching business rules.
+
+### How it works
+
+1. Define domain entities and use cases in core (no framework imports).
+2. **Inbound ports:** application service interfaces called by controllers.
+3. **Outbound ports:** repository, event publisher interfaces.
+4. **Adapters:** REST controller, JPA repository implement ports.
+5. Dependency direction always points inward toward domain.
+
+### Diagram
+
+```mermaid
+flowchart TB
+    HTTP[HTTP Adapter] --> InPort[Inbound Port]
+    InPort --> Domain[Domain Core]
+    Domain --> OutPort[Outbound Port]
+    OutPort --> DB[DB Adapter]
+```
+
+### Key details
+
+- Same idea as clean/onion - terminology differs (ports/adapters).
+- Enables contract tests on domain without spinning HTTP server.
+- Anti-corruption layer is outbound adapter translating external models.
+
+### When to use
+
+- Services with non-trivial domain logic worth isolating.
+- Multiple inbound channels (REST + events + CLI) sharing core.
+- Long-lived services expecting infrastructure churn.
+
+### Trade-offs / Pitfalls
+
+- Boilerplate interfaces for simple CRUD services - YAGNI risk.
+- Team must discipline against domain importing Spring annotations.
+- Mapping between domain and DTOs adds code.
+
+### References
+
+*(No curated references for this sub-topic in `_topics.json`.)*
+
+---
+
+
+## 8.9 Clean Architecture
+
+
+### What is it?
+
+**Clean architecture** (Uncle Bob) organizes code in concentric rings: entities -> use cases -> interface adapters -> frameworks. Dependency rule: inner layers know nothing of outer layers.
+
+### Why it matters
+
+Framework-agnostic business logic; microservices benefit from testable use cases independent of HTTP and ORM details.
+
+### How it works
+
+1. **Entities:** enterprise business rules.
+2. **Use cases:** application-specific orchestration (interactors).
+3. **Interface adapters:** controllers, presenters, gateways.
+4. **Frameworks:** Spring, DB drivers at outer edge.
+5. Data crosses boundaries via simple DTOs or domain objects - not framework types.
+
+### Diagram
+
+```mermaid
+flowchart TB
+    FW[Frameworks] --> Adapters[Interface Adapters]
+    Adapters --> UC[Use Cases]
+    UC --> Ent[Entities]
+```
+
+### Key details
+
+- Use case class per application operation (`PlaceOrderUseCase`).
+- Presenter pattern formats output for HTTP vs CLI.
+- Overlaps heavily with hexagonal - often used interchangeably in practice.
+
+### When to use
+
+- Complex application logic deserving isolated unit tests.
+- Teams following Uncle Bob / SOLID training.
+- Services expected to outlive specific framework versions.
+
+### Trade-offs / Pitfalls
+
+- Ceremony for simple services - judge by domain complexity.
+- Anemic domain model if use cases hold all logic and entities are bags.
+- Circular dependency fights if dependency rule not enforced in reviews.
+
+### References
+
+*(No curated references for this sub-topic in `_topics.json`.)*
+
+---
+
+
+## 8.10 Onion Architecture
+
+
+### What is it?
+
+**Onion architecture** layers application around domain model: domain model center -> domain services -> application services -> infrastructure (ORM, HTTP) on outside.
+
+### Why it matters
+
+Similar to hexagonal/clean - emphasizes rich domain model at core rather than anemic entities; infrastructure is pluggable shell.
+
+### How it works
+
+1. **Domain model:** entities, value objects, domain services, repository interfaces.
+2. **Application services:** coordinate use cases, transactions, security.
+3. **Infrastructure:** ORM mappings, REST controllers, message listeners.
+4. Interfaces defined inward; implementations outward.
+5. Application depends on domain abstractions only.
+
+### Diagram
+
+```mermaid
+flowchart TB
+    Infra[Infrastructure Layer] --> App[Application Services]
+    App --> Domain[Domain Model]
+```
+
+### Key details
+
+- Repository interface in domain; implementation in infrastructure.
+- Domain events raised by aggregates, handled in application/infrastructure.
+- Often combined with DDD tactical patterns.
+
+### When to use
+
+- DDD projects wanting explicit layering naming.
+- Teams preferring "layers" mental model over "ports/adapters" vocabulary.
+
+### Trade-offs / Pitfalls
+
+- Layer bypass (controller -> repository) erodes architecture - ArchUnit enforcement helps.
+- Duplicate concepts with hexagonal - pick one vocabulary per team.
+- Thick application layer -> anemic domain smell.
+
+### References
+
+*(No curated references for this sub-topic in `_topics.json`.)*
+
+---
+
+
+## 8.11 Dependency Injection
+
+
+### What is it?
+
+**Dependency injection (DI)** provides a component's dependencies from outside rather than self-constructing them - via constructor injection, enabling testability and loose coupling.
+
+### Why it matters
+
+Foundation of Spring, NestJS, and modern frameworks; essential for swapping real adapters with mocks in tests and wiring hexagonal ports to adapters.
+
+### How it works
+
+1. Class declares dependencies via constructor parameters (interfaces).
+2. DI container (Spring ApplicationContext) instantiates graph at startup.
+3. Container resolves interface -> implementation bindings from config.
+4. Scopes: singleton (default), prototype, request-scoped.
+5. Tests override bindings with `@MockBean` or manual constructor injection.
+
+### Diagram
+
+```mermaid
+flowchart LR
+    Container[DI Container] --> Svc[OrderService]
+    Container --> Repo[OrderRepository]
+    Svc --> Repo
+```
+
+### Key details
+
+- Prefer constructor injection over field injection (testability, immutability).
+- `@Configuration` classes define bean wiring in Spring.
+- Pure DI without framework: manual composition root in `main()`.
+
+### When to use
+
+- Essentially all structured service applications.
+- Hexagonal/clean architectures wiring ports to adapters.
+- Unit testing with mocked outbound dependencies.
+
+### Trade-offs / Pitfalls
+
+- Magic container failures at runtime if bean missing - not compile-time.
+- Over-injection of tiny dependencies -> constructor with 15 parameters (code smell).
+- Service locator anti-pattern bypasses explicit dependencies.
+
+### References
+
+*(No curated references for this sub-topic in `_topics.json`.)*
+
+---
+
+
+## 8.12 Service Registry
+
+
+### What is it?
+
+A **service registry** is a database of running service instances - host, port, health, metadata - where services **register** on startup and **deregister** on shutdown.
 
 ### Why it matters
 
@@ -232,7 +684,7 @@ Dynamic environments (Kubernetes, autoscaling) change instance addresses constan
 ### How it works
 
 1. Service starts, registers `order-service:10.0.1.5:8080` with registry (Consul, Eureka, etcd).
-2. Sends periodic heartbeats; missed heartbeats → unhealthy.
+2. Sends periodic heartbeats; missed heartbeats -> unhealthy.
 3. Clients or load balancers query registry for healthy instances.
 4. On shutdown, graceful deregister or TTL expiry removes stale entries.
 
@@ -259,8 +711,8 @@ flowchart LR
 
 ### Trade-offs / Pitfalls
 
-- Registry outage blocks new discoveries—not always existing connections.
-- Stale registrations → requests to dead instances without health checks.
+- Registry outage blocks new discoveries - not always existing connections.
+- Stale registrations -> requests to dead instances without health checks.
 - Prefer platform-native discovery (K8s DNS) over custom Eureka when possible.
 
 ### References
@@ -269,11 +721,13 @@ flowchart LR
 
 ---
 
-## 8.5 Service Discovery
+
+## 8.13 Service Discovery
+
 
 ### What is it?
 
-**Service discovery** is the client or platform mechanism to **find** available instances of a service name—via registry lookup, DNS, or service mesh control plane.
+**Service discovery** is the client or platform mechanism to **find** available instances of a service name - via registry lookup, DNS, or service mesh control plane.
 
 ### Why it matters
 
@@ -326,15 +780,17 @@ flowchart TB
 
 ---
 
-## 8.6 Service Mesh
+
+## 8.14 Service Mesh
+
 
 ### What is it?
 
-A **service mesh** is infrastructure layer handling service-to-service traffic—mTLS, retries, metrics, tracing, circuit breaking—via **sidecar proxies** (Envoy) controlled by a central plane (Istio, Linkerd).
+A **service mesh** is infrastructure layer handling service-to-service traffic - mTLS, retries, metrics, tracing, circuit breaking - via **sidecar proxies** (Envoy) controlled by a central plane (Istio, Linkerd).
 
 ### Why it matters
 
-Moves cross-cutting networking concerns out of application code into uniform platform policy—consistent security and observability across polyglot services.
+Moves cross-cutting networking concerns out of application code into uniform platform policy - consistent security and observability across polyglot services.
 
 ### How it works
 
@@ -373,9 +829,9 @@ flowchart TB
 
 ### Trade-offs / Pitfalls
 
-- Operational complexity—debugging requires mesh expertise.
+- Operational complexity - debugging requires mesh expertise.
 - Sidecar resource overhead at high pod density.
-- Overkill for small service counts—start with gateway + good libraries.
+- Overkill for small service counts - start with gateway + good libraries.
 
 ### References
 
@@ -383,15 +839,17 @@ flowchart TB
 
 ---
 
-## 8.7 Sidecar Pattern
+
+## 8.15 Sidecar Pattern
+
 
 ### What is it?
 
-The **sidecar pattern** deploys a helper process alongside the main application container in the same pod—sharing network namespace, extending functionality without changing app code.
+The **sidecar pattern** deploys a helper process alongside the main application container in the same pod - sharing network namespace, extending functionality without changing app code.
 
 ### Why it matters
 
-Foundation of service mesh, log shipping (Fluent Bit), and proxy-based security—separation of concerns between app logic and platform plumbing.
+Foundation of service mesh, log shipping (Fluent Bit), and proxy-based security - separation of concerns between app logic and platform plumbing.
 
 ### How it works
 
@@ -399,7 +857,7 @@ Foundation of service mesh, log shipping (Fluent Bit), and proxy-based security�
 2. Sidecar intercepts traffic via `iptables` (istio-init) or eBPF redirect.
 3. App may call `localhost:15001` unaware of mesh routing.
 4. Sidecar handles TLS, retries, metrics export.
-5. Lifecycle tied—sidecar starts/stops with app pod.
+5. Lifecycle tied - sidecar starts/stops with app pod.
 
 ### Diagram
 
@@ -415,9 +873,9 @@ flowchart LR
 
 ### Key details
 
-- Ambient mesh (Istio) moves sidecar functions to node-level—reducing per-pod overhead.
+- Ambient mesh (Istio) moves sidecar functions to node-level - reducing per-pod overhead.
 - Non-mesh sidecars: Vault agent for secret rotation.
-- `shareProcessNamespace` rare—usually separate containers.
+- `shareProcessNamespace` rare - usually separate containers.
 
 ### When to use
 
@@ -428,7 +886,7 @@ flowchart LR
 ### Trade-offs / Pitfalls
 
 - Two containers to monitor and resource-limit per pod.
-- Startup ordering: app may start before sidecar ready—readiness probes matter.
+- Startup ordering: app may start before sidecar ready - readiness probes matter.
 - Debugging which container failed increases triage time.
 
 ### References
@@ -437,23 +895,25 @@ flowchart LR
 
 ---
 
-## 8.8 Circuit Breaker
+
+## 8.16 Circuit Breaker
+
 
 ### What is it?
 
-A **circuit breaker** stops calling a failing downstream service after error threshold—failing fast in **open** state, probing recovery in **half-open**, resuming in **closed**.
+A **circuit breaker** stops calling a failing downstream service after error threshold - failing fast in **open** state, probing recovery in **half-open**, resuming in **closed**.
 
 ### Why it matters
 
-Prevents retry storms and thread exhaustion cascading through call chains—the difference between one slow dependency and total outage.
+Prevents retry storms and thread exhaustion cascading through call chains - the difference between one slow dependency and total outage.
 
 ### How it works
 
 **States:**
 
 1. **Closed:** normal calls; count failures in sliding window.
-2. **Open:** failures exceed threshold → reject calls immediately (fast fail).
-3. **Half-open:** after timeout, allow probe requests; success → closed, failure → open.
+2. **Open:** failures exceed threshold -> reject calls immediately (fast fail).
+3. **Half-open:** after timeout, allow probe requests; success -> closed, failure -> open.
 
 ### Diagram
 
@@ -480,8 +940,8 @@ stateDiagram-v2
 
 ### Trade-offs / Pitfalls
 
-- Open circuit returns errors to users—need graceful degradation UX.
-- Threshold tuning wrong → flapping or slow failure detection.
+- Open circuit returns errors to users - need graceful degradation UX.
+- Threshold tuning wrong -> flapping or slow failure detection.
 - Circuit breaker on wrong layer (DB) may mask root cause.
 
 ### References
@@ -490,11 +950,13 @@ stateDiagram-v2
 
 ---
 
-## 8.9 Retry Pattern
+
+## 8.17 Retry Pattern
+
 
 ### What is it?
 
-The **retry pattern** re-attempts failed operations—transient network blips, 503 responses—with backoff and jitter, bounded by max attempts.
+The **retry pattern** re-attempts failed operations - transient network blips, 503 responses - with backoff and jitter, bounded by max attempts.
 
 ### Why it matters
 
@@ -536,8 +998,8 @@ sequenceDiagram
 ### Trade-offs / Pitfalls
 
 - Retries without breaker amplify outage (retry storm).
-- Non-idempotent POST retry → duplicate side effects.
-- Max attempts too high → multiplies tail latency.
+- Non-idempotent POST retry -> duplicate side effects.
+- Max attempts too high -> multiplies tail latency.
 
 ### References
 
@@ -545,11 +1007,13 @@ sequenceDiagram
 
 ---
 
-## 8.10 Bulkhead Pattern
+
+## 8.18 Bulkhead Pattern
+
 
 ### What is it?
 
-The **bulkhead pattern** isolates resources (thread pools, connections) per dependency or tenant—so one slow service cannot exhaust the entire pool shared by others.
+The **bulkhead pattern** isolates resources (thread pools, connections) per dependency or tenant - so one slow service cannot exhaust the entire pool shared by others.
 
 ### Why it matters
 
@@ -587,7 +1051,7 @@ flowchart TB
 
 ### Trade-offs / Pitfalls
 
-- More pools → more threads → higher memory; tune carefully.
+- More pools -> more threads -> higher memory; tune carefully.
 - Wrong pool sizing still allows starvation within bulkhead.
 - Doesn't help if shared DB is the actual bottleneck.
 
@@ -597,15 +1061,17 @@ flowchart TB
 
 ---
 
-## 8.11 Saga Pattern
+
+## 8.19 Saga Pattern
+
 
 ### What is it?
 
-A **saga** is a sequence of **local transactions** across services, each with a **compensating action** to undo prior steps on failure—achieving distributed workflow without 2PC.
+A **saga** is a sequence of **local transactions** across services, each with a **compensating action** to undo prior steps on failure - achieving distributed workflow without 2PC.
 
 ### Why it matters
 
-Cross-service business processes (place order → reserve inventory → charge payment) need failure recovery; sagas are the standard microservices alternative to distributed ACID.
+Cross-service business processes (place order -> reserve inventory -> charge payment) need failure recovery; sagas are the standard microservices alternative to distributed ACID.
 
 ### How it works
 
@@ -659,15 +1125,17 @@ sequenceDiagram
 
 ---
 
-## 8.12 Choreography
+
+## 8.20 Choreography
+
 
 ### What is it?
 
-**Choreography** implements sagas via **events**: each service listens and reacts—no central coordinator. Order placed → inventory reacts → payment reacts.
+**Choreography** implements sagas via **events**: each service listens and reacts - no central coordinator. Order placed -> inventory reacts -> payment reacts.
 
 ### Why it matters
 
-Loose coupling, no orchestrator SPOF, natural fit for event-driven architecture—preferred when workflow is simple and teams own services end-to-end.
+Loose coupling, no orchestrator SPOF, natural fit for event-driven architecture - preferred when workflow is simple and teams own services end-to-end.
 
 ### How it works
 
@@ -691,7 +1159,7 @@ flowchart LR
 
 ### Key details
 
-- No single view of saga state—distributed tracing essential.
+- No single view of saga state - distributed tracing essential.
 - Cyclic dependencies risk if event chains poorly designed.
 - Works best with clear event contracts and schema registry.
 
@@ -704,7 +1172,7 @@ flowchart LR
 ### Trade-offs / Pitfalls
 
 - Hard to answer "where is order X in workflow?" without correlation IDs and event log.
-- Compensating flows scatter across services—hard to reason about globally.
+- Compensating flows scatter across services - hard to reason about globally.
 - Adding step requires updating multiple subscribers.
 
 ### References
@@ -713,7 +1181,9 @@ flowchart LR
 
 ---
 
-## 8.13 Orchestration
+
+## 8.21 Orchestration
+
 
 ### What is it?
 
@@ -721,7 +1191,7 @@ flowchart LR
 
 ### Why it matters
 
-Explicit workflow visibility, easier complex branching, and single place for timeout/retry policy—better for long workflows with many steps.
+Explicit workflow visibility, easier complex branching, and single place for timeout/retry policy - better for long workflows with many steps.
 
 ### How it works
 
@@ -759,7 +1229,7 @@ sequenceDiagram
 
 ### Trade-offs / Pitfalls
 
-- Orchestrator SPOF and scaling concern—must engineer for HA.
+- Orchestrator SPOF and scaling concern - must engineer for HA.
 - Couples services to orchestrator API (tighter than choreography).
 - Risk of "smart orchestrator" accumulating business logic.
 
@@ -769,453 +1239,33 @@ sequenceDiagram
 
 ---
 
-## 8.14 BFF Pattern
-
-### What is it?
-
-**Backend for Frontend (BFF)** is a dedicated API layer per client type (web, mobile, IoT) that aggregates and shapes backend microservice responses for that client's specific needs.
-
-### Why it matters
-
-Mobile and web need different payloads and aggregation; one generic API forces compromises. BFF keeps core services client-agnostic.
-
-### How it works
-
-1. Mobile BFF and Web BFF deploy as separate services.
-2. Each calls internal microservices (gRPC/REST).
-3. Aggregates parallel fetches; trims fields for mobile bandwidth.
-4. Handles client-specific auth token exchange.
-5. Core domain services expose generic contracts, not UI-driven shapes.
-
-### Diagram
-
-```mermaid
-flowchart TB
-    Mobile --> MobileBFF[Mobile BFF]
-    Web --> WebBFF[Web BFF]
-    MobileBFF --> Core[Core Services]
-    WebBFF --> Core
-```
-
-### Key details
-
-- Not a god-service—thin orchestration only, no domain ownership.
-- GraphQL can serve BFF role with single graph per client.
-- Team ownership often follows client team (mobile team owns mobile BFF).
-
-### When to use
-
-- Multiple client platforms with diverging API needs.
-- Reduce chatty client calls via server-side aggregation.
-- Different release cadence for client-specific API tweaks.
-
-### Trade-offs / Pitfalls
-
-- N BFFs → duplication risk; share aggregation libraries.
-- BFF becomes dumping ground for business logic—enforce thin boundary.
-- Extra hop adds latency—co-locate with gateway or services.
-
-### References
-
-*(No curated references for this sub-topic in `_topics.json`.)*
-
----
-
-## 8.15 Strangler Pattern
-
-### What is it?
-
-The **strangler fig pattern** incrementally replaces a legacy monolith by routing slices of traffic to new microservices—growing new system around old until monolith can be decommissioned.
-
-### Why it matters
-
-Low-risk migration path vs big-bang rewrite; delivers value incrementally while legacy still runs.
-
-### How it works
-
-1. Place facade/proxy (API gateway) in front of monolith.
-2. Implement new service for one feature (e.g., notifications).
-3. Gateway routes `/notifications/*` to new service; rest to monolith.
-4. Repeat feature by feature; extract data via CDC or dual-write.
-5. Retire monolith modules when traffic and data fully migrated.
-
-### Diagram
-
-```mermaid
-flowchart LR
-    Client --> GW[Gateway]
-    GW -->|new paths| MS[New Microservice]
-    GW -->|legacy paths| Mono[Monolith]
-```
-
-### Key details
-
-- Anti-corruption layer translates between old and new models.
-- Data sync hardest part—CDC, strangler data pump, or temporary dual-write.
-- Feature flags control routing percentage for canary extraction.
-
-### When to use
-
-- Large legacy system unmaintainable but business cannot stop.
-- Gradual modernization with measurable milestones.
-- Team learning microservices while shipping features.
-
-### Trade-offs / Pitfalls
-
-- Long transition period maintaining two systems.
-- Data inconsistency during dual-running phase.
-- "Strangler" never finishes if scope creep adds features to monolith.
-
-### References
-
-*(No curated references for this sub-topic in `_topics.json`.)*
-
----
-
-## 8.16 DDD
-
-### What is it?
-
-**Domain-Driven Design (DDD)** is an approach aligning software structure with business domain—ubiquitous language, bounded contexts, aggregates, and strategic design for complex domains.
-
-### Why it matters
-
-Microservice boundaries drawn around org chart fail; DDD draws them around **domain** boundaries where language and rules are cohesive.
-
-### How it works
-
-1. Collaborate with domain experts; define ubiquitous language.
-2. Identify bounded contexts (sales, shipping, billing).
-3. Model aggregates as consistency boundaries inside contexts.
-4. Map context relationships (shared kernel, anti-corruption layer).
-5. Implement each bounded context as module or service.
-
-### Diagram
-
-```mermaid
-flowchart TB
-    subgraph Sales Context
-        Order[Order Aggregate]
-    end
-    subgraph Shipping Context
-        Shipment[Shipment Aggregate]
-    end
-    Order -->|domain events| Shipment
-```
-
-### Key details
-
-- **Tactical:** entities, value objects, aggregates, repositories, domain events.
-- **Strategic:** context map, subdomain classification (core/supporting/generic).
-- Not every project needs full DDD ceremony—scale rigor to complexity.
-
-### When to use
-
-- Complex business rules with expert stakeholders.
-- Defining microservice boundaries in ambiguous domains.
-- Legacy modernization needing shared vocabulary.
-
-### Trade-offs / Pitfalls
-
-- Over-engineering simple CRUD with DDD patterns.
-- Bounded contexts misidentified → wrong service splits.
-- Requires ongoing domain expert access—not one-time workshop.
-
-### References
-
-*(No curated references for this sub-topic in `_topics.json`.)*
-
----
-
-## 8.17 Bounded Context
-
-### What is it?
-
-A **bounded context** is a boundary within which a domain model and ubiquitous language are consistent. Same word ("customer") may mean different things in different contexts.
-
-### Why it matters
-
-Primary unit for microservice decomposition—one bounded context → one service (ideally). Prevents leaky shared models across domains.
-
-### How it works
-
-1. Map business capabilities and team ownership.
-2. Draw context boundaries where terminology or rules diverge.
-3. Define integration: published language, ACL for legacy.
-4. Each context owns its persistence and APIs.
-5. Sync via events or explicit translation at boundaries.
-
-### Diagram
-
-```mermaid
-flowchart LR
-    BC1[Catalog Context] --> ACL[Anti-Corruption Layer]
-    ACL --> BC2[Checkout Context]
-```
-
-### Key details
-
-- Context map documents relationships: upstream/downstream, conformist, ACL.
-- Shared kernel only for truly stable tiny shared model—use sparingly.
-- "Customer" in CRM ≠ "Customer" in billing—don't unify prematurely.
-
-### When to use
-
-- Any microservice boundary discussion.
-- Resolving "should this be one service or two?" debates.
-
-### Trade-offs / Pitfalls
-
-- Contexts too large → mini-monolith; too small → distributed mud.
-- Ignoring context map → accidental tight coupling via shared DB.
-- Integration without ACL spreads legacy model corruption.
-
-### References
-
-*(No curated references for this sub-topic in `_topics.json`.)*
-
----
-
-## 8.18 Hexagonal Architecture
-
-### What is it?
-
-**Hexagonal architecture** (ports and adapters) places **domain logic at the center**, surrounded by **ports** (interfaces) and **adapters** (implementations) for HTTP, DB, messaging.
-
-### Why it matters
-
-Testable domain without framework coupling; swap infrastructure (Postgres → Mongo, REST → gRPC) without touching business rules.
-
-### How it works
-
-1. Define domain entities and use cases in core (no framework imports).
-2. **Inbound ports:** application service interfaces called by controllers.
-3. **Outbound ports:** repository, event publisher interfaces.
-4. **Adapters:** REST controller, JPA repository implement ports.
-5. Dependency direction always points inward toward domain.
-
-### Diagram
-
-```mermaid
-flowchart TB
-    HTTP[HTTP Adapter] --> InPort[Inbound Port]
-    InPort --> Domain[Domain Core]
-    Domain --> OutPort[Outbound Port]
-    OutPort --> DB[DB Adapter]
-```
-
-### Key details
-
-- Same idea as clean/onion—terminology differs (ports/adapters).
-- Enables contract tests on domain without spinning HTTP server.
-- Anti-corruption layer is outbound adapter translating external models.
-
-### When to use
-
-- Services with non-trivial domain logic worth isolating.
-- Multiple inbound channels (REST + events + CLI) sharing core.
-- Long-lived services expecting infrastructure churn.
-
-### Trade-offs / Pitfalls
-
-- Boilerplate interfaces for simple CRUD services—YAGNI risk.
-- Team must discipline against domain importing Spring annotations.
-- Mapping between domain and DTOs adds code.
-
-### References
-
-*(No curated references for this sub-topic in `_topics.json`.)*
-
----
-
-## 8.19 Clean Architecture
-
-### What is it?
-
-**Clean architecture** (Uncle Bob) organizes code in concentric rings: entities → use cases → interface adapters → frameworks. Dependency rule: inner layers know nothing of outer layers.
-
-### Why it matters
-
-Framework-agnostic business logic; microservices benefit from testable use cases independent of HTTP and ORM details.
-
-### How it works
-
-1. **Entities:** enterprise business rules.
-2. **Use cases:** application-specific orchestration (interactors).
-3. **Interface adapters:** controllers, presenters, gateways.
-4. **Frameworks:** Spring, DB drivers at outer edge.
-5. Data crosses boundaries via simple DTOs or domain objects—not framework types.
-
-### Diagram
-
-```mermaid
-flowchart TB
-    FW[Frameworks] --> Adapters[Interface Adapters]
-    Adapters --> UC[Use Cases]
-    UC --> Ent[Entities]
-```
-
-### Key details
-
-- Use case class per application operation (`PlaceOrderUseCase`).
-- Presenter pattern formats output for HTTP vs CLI.
-- Overlaps heavily with hexagonal—often used interchangeably in practice.
-
-### When to use
-
-- Complex application logic deserving isolated unit tests.
-- Teams following Uncle Bob / SOLID training.
-- Services expected to outlive specific framework versions.
-
-### Trade-offs / Pitfalls
-
-- Ceremony for simple services—judge by domain complexity.
-- Anemic domain model if use cases hold all logic and entities are bags.
-- Circular dependency fights if dependency rule not enforced in reviews.
-
-### References
-
-*(No curated references for this sub-topic in `_topics.json`.)*
-
----
-
-## 8.20 Onion Architecture
-
-### What is it?
-
-**Onion architecture** layers application around domain model: domain model center → domain services → application services → infrastructure (ORM, HTTP) on outside.
-
-### Why it matters
-
-Similar to hexagonal/clean—emphasizes rich domain model at core rather than anemic entities; infrastructure is pluggable shell.
-
-### How it works
-
-1. **Domain model:** entities, value objects, domain services, repository interfaces.
-2. **Application services:** coordinate use cases, transactions, security.
-3. **Infrastructure:** ORM mappings, REST controllers, message listeners.
-4. Interfaces defined inward; implementations outward.
-5. Application depends on domain abstractions only.
-
-### Diagram
-
-```mermaid
-flowchart TB
-    Infra[Infrastructure Layer] --> App[Application Services]
-    App --> Domain[Domain Model]
-```
-
-### Key details
-
-- Repository interface in domain; implementation in infrastructure.
-- Domain events raised by aggregates, handled in application/infrastructure.
-- Often combined with DDD tactical patterns.
-
-### When to use
-
-- DDD projects wanting explicit layering naming.
-- Teams preferring "layers" mental model over "ports/adapters" vocabulary.
-
-### Trade-offs / Pitfalls
-
-- Layer bypass (controller → repository) erodes architecture—ArchUnit enforcement helps.
-- Duplicate concepts with hexagonal—pick one vocabulary per team.
-- Thick application layer → anemic domain smell.
-
-### References
-
-*(No curated references for this sub-topic in `_topics.json`.)*
-
----
-
-## 8.21 Dependency Injection
-
-### What is it?
-
-**Dependency injection (DI)** provides a component's dependencies from outside rather than self-constructing them—via constructor injection, enabling testability and loose coupling.
-
-### Why it matters
-
-Foundation of Spring, NestJS, and modern frameworks; essential for swapping real adapters with mocks in tests and wiring hexagonal ports to adapters.
-
-### How it works
-
-1. Class declares dependencies via constructor parameters (interfaces).
-2. DI container (Spring ApplicationContext) instantiates graph at startup.
-3. Container resolves interface → implementation bindings from config.
-4. Scopes: singleton (default), prototype, request-scoped.
-5. Tests override bindings with `@MockBean` or manual constructor injection.
-
-### Diagram
-
-```mermaid
-flowchart LR
-    Container[DI Container] --> Svc[OrderService]
-    Container --> Repo[OrderRepository]
-    Svc --> Repo
-```
-
-### Key details
-
-- Prefer constructor injection over field injection (testability, immutability).
-- `@Configuration` classes define bean wiring in Spring.
-- Pure DI without framework: manual composition root in `main()`.
-
-### When to use
-
-- Essentially all structured service applications.
-- Hexagonal/clean architectures wiring ports to adapters.
-- Unit testing with mocked outbound dependencies.
-
-### Trade-offs / Pitfalls
-
-- Magic container failures at runtime if bean missing—not compile-time.
-- Over-injection of tiny dependencies → constructor with 15 parameters (code smell).
-- Service locator anti-pattern bypasses explicit dependencies.
-
-### References
-
-*(No curated references for this sub-topic in `_topics.json`.)*
-
----
 
 ## Quick Reference
 
-| Pattern | Purpose | Key risk |
-|---------|---------|----------|
-| Monolith | Simplicity, ACID | Scale/deploy coupling |
-| Modular monolith | Boundaries without ops tax | Boundary erosion |
-| Microservices | Independent scale/deploy | Distributed complexity |
-| Service registry | Dynamic instance roster | Stale entries |
-| Service mesh | mTLS, observability, policy | Ops overhead |
-| Sidecar | Cross-cutting per pod | Resource cost |
-| Circuit breaker | Fail fast on outage | Needs fallback UX |
-| Retry | Transient failure recovery | Requires idempotency |
-| Bulkhead | Resource isolation | Pool tuning |
-| Saga | Distributed workflow | Compensation design |
-| Choreography | Event-driven saga | Global visibility |
-| Orchestration | Central saga control | Orchestrator HA |
-| BFF | Client-specific API | Logic duplication |
-| Strangler | Incremental migration | Long dual-run |
-| DDD / Bounded context | Service boundary design | Wrong cuts |
-| Hexagonal/Clean/Onion | Testable domain core | Over-ceremony |
+| # | Topic | Summary |
+|---|-------|---------|
+| 8.1 | Monolith | A **monolith** is a single deployable unit containing all application functio... |
+| 8.2 | Modular Monolith | A **modular monolith** keeps one deployable but enforces **strict module boun... |
+| 8.3 | Microservices | **Microservices** are independently deployable services, each implementing a ... |
+| 8.4 | Strangler Pattern | The **strangler fig pattern** incrementally replaces a legacy monolith by rou... |
+| 8.5 | BFF Pattern | **Backend for Frontend (BFF)** is a dedicated API layer per client type (web,... |
+| 8.6 | DDD | **Domain-Driven Design (DDD)** is an approach aligning software structure wit... |
+| 8.7 | Bounded Context | A **bounded context** is a boundary within which a domain model and ubiquitou... |
+| 8.8 | Hexagonal Architecture | **Hexagonal architecture** (ports and adapters) places **domain logic at the ... |
+| 8.9 | Clean Architecture | **Clean architecture** (Uncle Bob) organizes code in concentric rings: entiti... |
+| 8.10 | Onion Architecture | **Onion architecture** layers application around domain model: domain model c... |
+| 8.11 | Dependency Injection | **Dependency injection (DI)** provides a component's dependencies from outsid... |
+| 8.12 | Service Registry | A **service registry** is a database of running service instances - host, port,... |
+| 8.13 | Service Discovery | **Service discovery** is the client or platform mechanism to **find** availab... |
+| 8.14 | Service Mesh | A **service mesh** is infrastructure layer handling service-to-service traffi... |
+| 8.15 | Sidecar Pattern | The **sidecar pattern** deploys a helper process alongside the main applicati... |
+| 8.16 | Circuit Breaker | A **circuit breaker** stops calling a failing downstream service after error ... |
+| 8.17 | Retry Pattern | The **retry pattern** re-attempts failed operations - transient network blips, ... |
+| 8.18 | Bulkhead Pattern | The **bulkhead pattern** isolates resources (thread pools, connections) per d... |
+| 8.19 | Saga Pattern | A **saga** is a sequence of **local transactions** across services, each with... |
+| 8.20 | Choreography | **Choreography** implements sagas via **events**: each service listens and re... |
+| 8.21 | Orchestration | **Orchestration** implements sagas with a **central coordinator** (orchestrat... |
 
-### Saga: Choreography vs Orchestration
+---
 
-```mermaid
-flowchart TB
-    subgraph Choreography
-        E1[Events only] --> NoCenter[No central coordinator]
-    end
-    subgraph Orchestration
-        Orch[Orchestrator] --> Cmd[Commands to services]
-    end
-```
-
-### Circuit breaker states (interview snapshot)
-
-| State | Behavior |
-|-------|----------|
-| Closed | Normal traffic; count failures |
-| Open | Fail fast; no downstream calls |
-| Half-open | Probe with limited requests |
+[Ã¢ - Â Back to master index](../README.md)

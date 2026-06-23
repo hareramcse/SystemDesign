@@ -1,40 +1,44 @@
-﻿# 4. Distributed System
+# 4. Distributed System
 
-> Status: **Documented** — master reference
+> Status: **Documented**  -  master reference
 
-[← Back to master index](../README.md)
+[<- Back to master index](../README.md)
 
-## Sub-topics table
+## Sub-topics
 
 | # | Sub-topic | Status |
 |---|-----------|--------|
 | 4.1 | [Scalability](#41-scalability) | Done |
-| 4.2 | [Availability](#42-availability) | Done |
-| 4.3 | [Reliability](#43-reliability) | Done |
-| 4.4 | [Durability](#44-durability) | Done |
-| 4.5 | [Fault Tolerance](#45-fault-tolerance) | Done |
-| 4.6 | [Resilience](#46-resilience) | Done |
-| 4.7 | [Throughput](#47-throughput) | Done |
-| 4.8 | [Latency](#48-latency) | Done |
-| 4.9 | [Tail Latency](#49-tail-latency) | Done |
-| 4.10 | [Consistency](#410-consistency) | Done |
-| 4.11 | [Concurrency](#411-concurrency) | Done |
-| 4.12 | [CAP Theorem](#412-cap-theorem) | Done |
-| 4.13 | [PACELC Theorem](#413-pacelc-theorem) | Done |
-| 4.14 | [Strong Consistency](#414-strong-consistency) | Done |
-| 4.15 | [Eventual Consistency](#415-eventual-consistency) | Done |
-| 4.16 | [Causal Consistency](#416-causal-consistency) | Done |
-| 4.17 | [Linearizability](#417-linearizability) | Done |
-| 4.18 | [Backpressure](#418-backpressure) | Done |
-| 4.19 | [Graceful Degradation](#419-graceful-degradation) | Done |
-| 4.20 | [Failover](#420-failover) | Done |
-| 4.21 | [Redundancy](#421-redundancy) | Done |
+| 4.2 | [Throughput](#42-throughput) | Done |
+| 4.3 | [Latency](#43-latency) | Done |
+| 4.4 | [Tail Latency](#44-tail-latency) | Done |
+| 4.5 | [Availability](#45-availability) | Done |
+| 4.6 | [Reliability](#46-reliability) | Done |
+| 4.7 | [Durability](#47-durability) | Done |
+| 4.8 | [Fault Tolerance](#48-fault-tolerance) | Done |
+| 4.9 | [Resilience](#49-resilience) | Done |
+| 4.10 | [Redundancy](#410-redundancy) | Done |
+| 4.11 | [Failover](#411-failover) | Done |
+| 4.12 | [Consistency](#412-consistency) | Done |
+| 4.13 | [Concurrency](#413-concurrency) | Done |
+| 4.14 | [CAP Theorem](#414-cap-theorem) | Done |
+| 4.15 | [PACELC Theorem](#415-pacelc-theorem) | Done |
+| 4.16 | [Strong Consistency](#416-strong-consistency) | Done |
+| 4.17 | [Eventual Consistency](#417-eventual-consistency) | Done |
+| 4.18 | [Causal Consistency](#418-causal-consistency) | Done |
+| 4.19 | [Linearizability](#419-linearizability) | Done |
+| 4.20 | [Backpressure](#420-backpressure) | Done |
+| 4.21 | [Graceful Degradation](#421-graceful-degradation) | Done |
 | 4.22 | [Capacity Planning](#422-capacity-planning) | Done |
 | 4.23 | [Bottleneck Analysis](#423-bottleneck-analysis) | Done |
 
+
+
+
+
 ## Topic Overview
 
-A **distributed system** is a collection of independent computers that appear to users as a single coherent system. Components communicate over a network, have no shared clock, and can fail independently. Nearly every production system at scale—microservices, databases, CDNs, message queues—is distributed by necessity.
+A **distributed system** is a collection of independent computers that appear to users as a single coherent system. Components communicate over a network, have no shared clock, and can fail independently. Nearly every production system at scale - microservices, databases, CDNs, message queues - is distributed by necessity.
 
 Designing distributed systems means trading off properties that are easy in a single machine: strong consistency, low latency, and perfect availability cannot all hold simultaneously when networks partition. Understanding **CAP**, **consistency models**, **failure modes**, and **operational metrics** (latency, throughput, tail latency) is foundational for architecture interviews and real engineering decisions.
 
@@ -48,21 +52,34 @@ flowchart TB
     S1 -.->|async| MQ[Message Queue]
 ```
 
+## Reading order
+
+Sub-topics are sequenced for progressive learning: foundations first, then related concepts, then specialized topics.
+
+| Group | Sections | Focus |
+|-------|----------|-------|
+| **1. Performance** | 4.1-4.4 | Scale, throughput, latency, tail latency |
+| **2. Reliability** | 4.5-4.11 | Availability through failover |
+| **3. Consistency** | 4.12-4.17 | Models from CAP to linearizability |
+| **4. Operations** | 4.18-4.23 | Backpressure, degradation, capacity, bottlenecks |
+
 ## Related topics
 
-- [Distributed Databases](../05-distributed-databases/README.md) — sharding, replication, consensus
-- [Caching](../03-caching/README.md) — performance, consistency at the edge
-- [Messaging & Events](../06-messaging-and-events/README.md) — async communication, ordering
-- [Reliability Engineering](../12-reliability-engineering/README.md) — DR, HA, chaos engineering
-- [Observability](../09-observability/README.md) — SLI/SLO, tracing, alerting
+- [Distributed Databases](../05-distributed-databases/README.md)  -  sharding, replication, consensus
+- [Caching](../03-caching/README.md)  -  performance, consistency at the edge
+- [Messaging & Events](../06-messaging-and-events/README.md)  -  async communication, ordering
+- [Reliability Engineering](../12-reliability-engineering/README.md)  -  DR, HA, chaos engineering
+- [Observability](../09-observability/README.md)  -  SLI/SLO, tracing, alerting
 
 ---
 
+
 ## 4.1 Scalability
+
 
 ### What is it?
 
-**Scalability** is the ability of a system to handle increased load by adding resources—without requiring fundamental redesign. **Horizontal scaling** adds more machines; **vertical scaling** adds CPU/RAM to existing machines.
+**Scalability** is the ability of a system to handle increased load by adding resources - without requiring fundamental redesign. **Horizontal scaling** adds more machines; **vertical scaling** adds CPU/RAM to existing machines.
 
 ### Why it matters
 
@@ -86,14 +103,14 @@ flowchart LR
 
 ### Key details
 
-- **Scalable ≠ fast:** a slow system can scale by adding nodes but remain slow per request
+- **Scalable â‰  fast:** a slow system can scale by adding nodes but remain slow per request
 - **Amdahl's Law:** serial portions of work limit speedup from parallelization
 - **Elasticity:** cloud auto-scaling responds to load automatically
 - Bottleneck migrates as you scale (DB often becomes limit after app scales)
 
 ### When to use
 
-- Designing any system expected to grow 10× or more
+- Designing any system expected to grow 10Ã— or more
 - Choosing between monolith scale-up vs. microservices scale-out
 - Capacity reviews before product launches
 
@@ -106,11 +123,172 @@ flowchart LR
 
 ---
 
-## 4.2 Availability
+
+## 4.2 Throughput
+
 
 ### What is it?
 
-**Availability** is the fraction of time a system is operational and serving correct responses, usually expressed as "nines": 99.9% (three nines) ≈ 8.76 hours downtime/year; 99.99% ≈ 52 minutes/year.
+**Throughput** is the rate of work completed per unit time - requests per second (RPS), transactions per second (TPS), bytes per second. It measures **capacity**, not speed of individual operations.
+
+### Why it matters
+
+Throughput determines how much traffic a system can serve before saturation. Capacity planning and load testing target throughput headroom (e.g., 2Ã— peak load).
+
+### How it works
+
+1. Identify the **slowest stage** in the pipeline (bottleneck).
+2. Measure throughput at each tier under load test.
+3. Scale bottleneck tier (more connections, shards, workers).
+4. Batch work where possible (DB bulk insert, Kafka batch consume).
+5. Monitor throughput vs. target in production dashboards.
+
+```mermaid
+flowchart LR
+    In[1000 RPS in] --> App[800 RPS processed]
+    App --> DB[500 RPS to DB]
+```
+
+### Key details
+
+- Throughput and latency often inversely related under load (queueing theory)
+- **Little's Law:** L = Î» Ã— W (concurrency = arrival rate Ã— response time)
+- Peak vs. sustained throughput differ (burst buffers hide peaks briefly)
+- Horizontal scale increases aggregate throughput if bottleneck is parallelizable
+
+### When to use
+
+- Load testing before launches
+- Sizing Kafka partitions, DB connection pools, worker counts
+- Comparing sync vs. async processing architectures
+
+### Trade-offs / Pitfalls
+
+- Maximizing throughput can sacrifice per-request latency (large batches)
+- Reported RPS may count cached/fast paths differently than DB-heavy paths
+- Throughput limits change with payload size and query complexity
+- Ignoring downstream throughput causes cascading overload
+
+---
+
+
+## 4.3 Latency
+
+
+### What is it?
+
+**Latency** is the time between initiating a request and receiving a complete response. Components include network RTT, queue wait, processing, and I/O. Usually measured in milliseconds.
+
+### Why it matters
+
+User experience degrades sharply above ~100 - 300 ms for interactive apps. Latency drives architecture choices: caching, CDN, geographic distribution, async processing.
+
+### How it works
+
+1. Break request path into segments and measure each (tracing).
+2. Reduce round-trips (HTTP/2 multiplexing, batch APIs, colocation).
+3. Cache hot data closer to users.
+4. Use connection pooling to avoid TCP/TLS handshake per request.
+5. Optimize slow queries and serial critical paths.
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant Server
+    participant DB
+    Client->>Server: request
+    Note over Server: process 5ms
+    Server->>DB: query
+    Note over DB: 20ms
+    DB-->>Server: result
+    Server-->>Client: response
+```
+
+### Key details
+
+| Component | Typical range |
+|-----------|---------------|
+| Same-AZ network | 0.1 - 0.5 ms |
+| Cross-region | 50 - 150 ms |
+| SSD random read | 0.1 ms |
+| HDD seek | 5 - 10 ms |
+
+- **RTT** dominates in chatty protocols; design fewer round-trips
+- Latency â‰  response time under load (queueing adds wait)
+
+### When to use
+
+- Setting latency SLOs (p50, p95, p99)
+- Choosing sync vs. async user flows
+- Evaluating edge vs. central processing
+
+### Trade-offs / Pitfalls
+
+- Optimizing average latency ignores tail (see tail latency)
+- Caching lowers latency but introduces staleness
+- Microservices add network hops - latency compounds
+- Cold starts (serverless, JVM) spike first-request latency
+
+---
+
+
+## 4.4 Tail Latency
+
+
+### What is it?
+
+**Tail latency** refers to high-percentile response times - p95, p99, p999 - the slowest requests in a distribution. A few slow requests dominate user-perceived quality at scale.
+
+### Why it matters
+
+If 1% of requests are 10Ã— slower, with fan-out (one request calling 100 backends) the probability of hitting a slow backend approaches certainty. Google - s "Tail at Scale" paper showed why p99 matters more than mean.
+
+### How it works
+
+1. Measure and alert on p99/p999, not just averages.
+2. Reduce variance: avoid GC pauses, lock contention, slow disks on any node.
+3. **Hedged requests:** send duplicate request if first is slow (careful with load).
+4. **Canary routing:** detect slow instances via LB and drain them.
+5. Limit fan-out; parallelize with timeout per branch.
+
+```mermaid
+flowchart TB
+    Req[1 user request] --> F1[Service call 1]
+    Req --> F2[Service call 2]
+    Req --> F3[Service call N]
+    F3 --> Slow[Slow p99 node]
+    Slow --> Tail[User sees tail latency]
+```
+
+### Key details
+
+- p99 of 500 ms with p50 of 50 ms indicates outliers, not uniform slowness
+- **Head-of-line blocking** in queues inflates tails
+- Shared resources (noisy neighbor) cause tail spikes in multi-tenant cloud
+- Retry storms worsen tail latency under load
+
+### When to use
+
+- SLO definitions for user-facing APIs
+- Load balancer health check tuning (latency-based routing)
+- Database connection pool and timeout configuration
+
+### Trade-offs / Pitfalls
+
+- Hedged requests double load on recovery - use sparingly
+- Chasing p999.9 may cost more than business value
+- Aggregated metrics hide per-tenant tail issues
+- Tracing sampling often misses rare tail events
+
+---
+
+
+## 4.5 Availability
+
+
+### What is it?
+
+**Availability** is the fraction of time a system is operational and serving correct responses, usually expressed as "nines": 99.9% (three nines) â‰ˆ 8.76 hours downtime/year; 99.99% â‰ˆ 52 minutes/year.
 
 ### Why it matters
 
@@ -154,13 +332,15 @@ flowchart TB
 ### Trade-offs / Pitfalls
 
 - Higher nines cost exponentially more in infra and engineering
-- Availability ≠ correctness (system can be "up" but returning errors)
-- Dependency chain: 99.99% × 99.99% = 99.98% combined availability
+- Availability â‰  correctness (system can be "up" but returning errors)
+- Dependency chain: 99.99% Ã— 99.99% = 99.98% combined availability
 - Maintenance windows must be planned or use rolling updates
 
 ---
 
-## 4.3 Reliability
+
+## 4.6 Reliability
+
 
 ### What is it?
 
@@ -182,7 +362,7 @@ A service that is "available" but returns wrong answers or loses data is unrelia
 
 - **MTBF:** average time between failures; higher is better
 - **MTTR:** mean time to repair; lower improves effective availability
-- Effective uptime ≈ MTBF / (MTBF + MTTR)
+- Effective uptime â‰ˆ MTBF / (MTBF + MTTR)
 - Reliability includes data integrity, not just request success
 
 ### When to use
@@ -199,7 +379,9 @@ A service that is "available" but returns wrong answers or loses data is unrelia
 
 ---
 
-## 4.4 Durability
+
+## 4.7 Durability
+
 
 ### What is it?
 
@@ -233,7 +415,7 @@ sequenceDiagram
 - **Sync replication:** ack after replica confirms (stronger durability, higher latency)
 - **Async replication:** ack after local write (faster, risk of loss on crash)
 - Object storage (S3) achieves 11 nines durability via erasure coding across AZs
-- Durability ≠ consistency: data can be durable but stale on reads
+- Durability â‰  consistency: data can be durable but stale on reads
 
 ### When to use
 
@@ -250,11 +432,13 @@ sequenceDiagram
 
 ---
 
-## 4.5 Fault Tolerance
+
+## 4.8 Fault Tolerance
+
 
 ### What is it?
 
-**Fault tolerance** is the ability of a system to continue operating—possibly at reduced capacity—when one or more components fail. Failures may be hardware, software, network, or human error.
+**Fault tolerance** is the ability of a system to continue operating - possibly at reduced capacity - when one or more components fail. Failures may be hardware, software, network, or human error.
 
 ### Why it matters
 
@@ -298,7 +482,9 @@ flowchart TB
 
 ---
 
-## 4.6 Resilience
+
+## 4.9 Resilience
+
 
 ### What is it?
 
@@ -318,7 +504,7 @@ Modern systems face unpredictable load spikes, dependency outages, and cascading
 
 ### Key details
 
-- Resilience ⊃ fault tolerance (includes process and culture)
+- Resilience âŠƒ fault tolerance (includes process and culture)
 - **Adaptive concurrency** adjusts limits based on downstream health
 - **Idempotency keys** enable safe retries after ambiguous failures
 - Blameless postmortems convert incidents into systemic improvements
@@ -338,164 +524,116 @@ Modern systems face unpredictable load spikes, dependency outages, and cascading
 
 ---
 
-## 4.7 Throughput
+
+## 4.10 Redundancy
+
 
 ### What is it?
 
-**Throughput** is the rate of work completed per unit time—requests per second (RPS), transactions per second (TPS), bytes per second. It measures **capacity**, not speed of individual operations.
+**Redundancy** duplicates critical components so failure of one does not stop the system. Forms include **N+1** (one spare), **2N** (full duplicate), geographic redundancy, and erasure-coded storage.
 
 ### Why it matters
 
-Throughput determines how much traffic a system can serve before saturation. Capacity planning and load testing target throughput headroom (e.g., 2× peak load).
+Mean time between failures applies to every component. Redundancy converts single-component failure from outage into capacity reduction.
 
 ### How it works
 
-1. Identify the **slowest stage** in the pipeline (bottleneck).
-2. Measure throughput at each tier under load test.
-3. Scale bottleneck tier (more connections, shards, workers).
-4. Batch work where possible (DB bulk insert, Kafka batch consume).
-5. Monitor throughput vs. target in production dashboards.
-
-```mermaid
-flowchart LR
-    In[1000 RPS in] --> App[800 RPS processed]
-    App --> DB[500 RPS to DB]
-```
-
-### Key details
-
-- Throughput and latency often inversely related under load (queueing theory)
-- **Little's Law:** L = λ × W (concurrency = arrival rate × response time)
-- Peak vs. sustained throughput differ (burst buffers hide peaks briefly)
-- Horizontal scale increases aggregate throughput if bottleneck is parallelizable
-
-### When to use
-
-- Load testing before launches
-- Sizing Kafka partitions, DB connection pools, worker counts
-- Comparing sync vs. async processing architectures
-
-### Trade-offs / Pitfalls
-
-- Maximizing throughput can sacrifice per-request latency (large batches)
-- Reported RPS may count cached/fast paths differently than DB-heavy paths
-- Throughput limits change with payload size and query complexity
-- Ignoring downstream throughput causes cascading overload
-
----
-
-## 4.8 Latency
-
-### What is it?
-
-**Latency** is the time between initiating a request and receiving a complete response. Components include network RTT, queue wait, processing, and I/O. Usually measured in milliseconds.
-
-### Why it matters
-
-User experience degrades sharply above ~100–300 ms for interactive apps. Latency drives architecture choices: caching, CDN, geographic distribution, async processing.
-
-### How it works
-
-1. Break request path into segments and measure each (tracing).
-2. Reduce round-trips (HTTP/2 multiplexing, batch APIs, colocation).
-3. Cache hot data closer to users.
-4. Use connection pooling to avoid TCP/TLS handshake per request.
-5. Optimize slow queries and serial critical paths.
-
-```mermaid
-sequenceDiagram
-    participant Client
-    participant Server
-    participant DB
-    Client->>Server: request
-    Note over Server: process 5ms
-    Server->>DB: query
-    Note over DB: 20ms
-    DB-->>Server: result
-    Server-->>Client: response
-```
-
-### Key details
-
-| Component | Typical range |
-|-----------|---------------|
-| Same-AZ network | 0.1–0.5 ms |
-| Cross-region | 50–150 ms |
-| SSD random read | 0.1 ms |
-| HDD seek | 5–10 ms |
-
-- **RTT** dominates in chatty protocols; design fewer round-trips
-- Latency ≠ response time under load (queueing adds wait)
-
-### When to use
-
-- Setting latency SLOs (p50, p95, p99)
-- Choosing sync vs. async user flows
-- Evaluating edge vs. central processing
-
-### Trade-offs / Pitfalls
-
-- Optimizing average latency ignores tail (see tail latency)
-- Caching lowers latency but introduces staleness
-- Microservices add network hops—latency compounds
-- Cold starts (serverless, JVM) spike first-request latency
-
----
-
-## 4.9 Tail Latency
-
-### What is it?
-
-**Tail latency** refers to high-percentile response times—p95, p99, p999—the slowest requests in a distribution. A few slow requests dominate user-perceived quality at scale.
-
-### Why it matters
-
-If 1% of requests are 10× slower, with fan-out (one request calling 100 backends) the probability of hitting a slow backend approaches certainty. Google’s "Tail at Scale" paper showed why p99 matters more than mean.
-
-### How it works
-
-1. Measure and alert on p99/p999, not just averages.
-2. Reduce variance: avoid GC pauses, lock contention, slow disks on any node.
-3. **Hedged requests:** send duplicate request if first is slow (careful with load).
-4. **Canary routing:** detect slow instances via LB and drain them.
-5. Limit fan-out; parallelize with timeout per branch.
+1. Identify SPOFs (single power supply, single DB, single region).
+2. Add redundant instances with independent failure domains.
+3. Load balance across redundant paths.
+4. Ensure redundant copies are **diverse** (different AZ, rack, provider).
+5. Test failure of each redundant layer regularly.
 
 ```mermaid
 flowchart TB
-    Req[1 user request] --> F1[Service call 1]
-    Req --> F2[Service call 2]
-    Req --> F3[Service call N]
-    F3 --> Slow[Slow p99 node]
-    Slow --> Tail[User sees tail latency]
+    LB --> App1
+    LB --> App2
+    App1 --> DB_P[(Primary)]
+    App2 --> DB_R[(Replica)]
 ```
 
 ### Key details
 
-- p99 of 500 ms with p50 of 50 ms indicates outliers, not uniform slowness
-- **Head-of-line blocking** in queues inflates tails
-- Shared resources (noisy neighbor) cause tail spikes in multi-tenant cloud
-- Retry storms worsen tail latency under load
+- **Active-passive:** standby idle until failover
+- **Active-active:** all nodes serve traffic; need conflict handling
+- **Erasure coding:** storage redundancy with less overhead than 3Ã— replication
+- Correlated failures (same bug on all nodes) defeat redundancy
 
 ### When to use
 
-- SLO definitions for user-facing APIs
-- Load balancer health check tuning (latency-based routing)
-- Database connection pool and timeout configuration
+- Any availability target above single-server uptime
+- Data durability (3 replicas minimum for cloud disks)
+- Network paths (multi-homed, dual ISP)
 
 ### Trade-offs / Pitfalls
 
-- Hedged requests double load on recovery—use sparingly
-- Chasing p999.9 may cost more than business value
-- Aggregated metrics hide per-tenant tail issues
-- Tracing sampling often misses rare tail events
+- Cost scales with redundancy level
+- Active-active write conflicts need resolution
+- Shared codebase = shared bug (redundant but simultaneously wrong)
+- Operational complexity of keeping replicas in sync
 
 ---
 
-## 4.10 Consistency
+
+## 4.11 Failover
+
 
 ### What is it?
 
-**Consistency** in distributed systems defines what guarantees readers observe about writes—whether all nodes show the same data at the same time, and in what order updates appear. It spans a spectrum from strong (linearizable) to weak (eventual).
+**Failover** is the automatic or manual switch from a failed **primary** component to a **standby** so service continues. **Failback** returns traffic to the original primary when restored.
+
+### Why it matters
+
+Human-driven recovery takes minutes to hours; automated failover targets seconds. Critical for database HA, load balancer VIPs, and DNS routing.
+
+### How it works
+
+1. Health monitor detects primary failure (missed heartbeats).
+2. **Passive failover:** promote standby replica to primary.
+3. **Active-active:** traffic already split; remove failed node from pool.
+4. Update DNS/VIP/service registry to point clients to new primary.
+5. Reconcile state (replay WAL, resync replica) before failback.
+
+```mermaid
+sequenceDiagram
+    participant Primary
+    participant Standby
+    participant Monitor
+    Monitor->>Primary: heartbeat
+    Primary--xMonitor: timeout
+    Monitor->>Standby: promote
+    Standby->>Standby: become primary
+```
+
+### Key details
+
+- **Split-brain:** two nodes think they are primary - use fencing (STONITH)
+- **RTO:** recovery time objective; failover speed target
+- **RPO:** data loss window with async replication
+- DNS failover limited by TTL propagation delay
+
+### When to use
+
+- Database primary-replica setups
+- Multi-region disaster recovery
+- Load balancer active/passive pairs
+
+### Trade-offs / Pitfalls
+
+- False positive failover causes unnecessary disruption
+- Async replication -> lost writes on failover
+- Clients cache old primary address
+- Failback requires reverse sync complexity
+
+---
+
+
+## 4.12 Consistency
+
+
+### What is it?
+
+**Consistency** in distributed systems defines what guarantees readers observe about writes - whether all nodes show the same data at the same time, and in what order updates appear. It spans a spectrum from strong (linearizable) to weak (eventual).
 
 ### Why it matters
 
@@ -532,17 +670,19 @@ flowchart LR
 ### Trade-offs / Pitfalls
 
 - Strong consistency costs latency and availability during partitions
-- "Eventually consistent" without bound is not a spec—define convergence time
+- "Eventually consistent" without bound is not a spec - define convergence time
 - Application bugs mimic consistency failures (cache not invalidated)
 - Distributed transactions don't solve all cross-service consistency needs
 
 ---
 
-## 4.11 Concurrency
+
+## 4.13 Concurrency
+
 
 ### What is it?
 
-**Concurrency** is the ability of a system to make progress on multiple tasks simultaneously—via threads, processes, async I/O, or distributed workers. **Parallelism** is actual simultaneous execution on multiple CPUs.
+**Concurrency** is the ability of a system to make progress on multiple tasks simultaneously - via threads, processes, async I/O, or distributed workers. **Parallelism** is actual simultaneous execution on multiple CPUs.
 
 ### Why it matters
 
@@ -574,12 +714,14 @@ Single-threaded servers cannot use modern multi-core hardware. Concurrent design
 
 - Fine-grained locking complexity vs. coarse locking contention
 - Lock-free structures harder to verify correct
-- Distributed locks (Redis Redlock) have edge cases—prefer design without locks
+- Distributed locks (Redis Redlock) have edge cases - prefer design without locks
 - Too much concurrency overwhelms DB with connections
 
 ---
 
-## 4.12 CAP Theorem
+
+## 4.14 CAP Theorem
+
 
 ### What is it?
 
@@ -592,8 +734,8 @@ Partitions happen in production (switch failures, AZ outages). You must choose w
 ### How it works
 
 1. **Partition occurs:** nodes cannot communicate.
-2. **CP choice:** reject writes/reads that cannot be verified quorum → consistent but unavailable to some clients.
-3. **AP choice:** accept reads/writes on isolated sides → available but divergent until merge.
+2. **CP choice:** reject writes/reads that cannot be verified quorum -> consistent but unavailable to some clients.
+3. **AP choice:** accept reads/writes on isolated sides -> available but divergent until merge.
 4. After partition heals, reconcile divergent state (conflict resolution, anti-entropy).
 
 ```mermaid
@@ -607,10 +749,10 @@ flowchart TB
 
 ### Key details
 
-- **Partition tolerance is not optional** in distributed systems—effectively choose C vs. A under partition
+- **Partition tolerance is not optional** in distributed systems - effectively choose C vs. A under partition
 - CAP applies to **linearizability-style consistency**, not all consistency definitions
 - Most systems are **AP with tunable consistency** (quorum reads/writes)
-- No partition → can achieve CA on single node (not useful at scale)
+- No partition -> can achieve CA on single node (not useful at scale)
 
 ### When to use
 
@@ -620,14 +762,16 @@ flowchart TB
 
 ### Trade-offs / Pitfalls
 
-- CAP oversimplified—consistency and availability are spectrums
+- CAP oversimplified - consistency and availability are spectrums
 - PACELC extends the model for normal operation
 - "CA systems" usually aren't truly distributed
 - Application-level consistency may differ from storage CAP class
 
 ---
 
-## 4.13 PACELC Theorem
+
+## 4.15 PACELC Theorem
+
 
 ### What is it?
 
@@ -635,7 +779,7 @@ flowchart TB
 
 ### Why it matters
 
-Most of a system's life runs without partitions—you still trade latency for consistency on every write. PACELC explains why DynamoDB defaults to fast eventually consistent reads.
+Most of a system's life runs without partitions - you still trade latency for consistency on every write. PACELC explains why DynamoDB defaults to fast eventually consistent reads.
 
 ### How it works
 
@@ -680,7 +824,9 @@ flowchart TB
 
 ---
 
-## 4.14 Strong Consistency
+
+## 4.16 Strong Consistency
+
 
 ### What is it?
 
@@ -688,7 +834,7 @@ flowchart TB
 
 ### Why it matters
 
-Financial transfers, inventory deduction, and leader election require strong consistency—double-spend or oversell are unacceptable.
+Financial transfers, inventory deduction, and leader election require strong consistency - double-spend or oversell are unacceptable.
 
 ### How it works
 
@@ -714,7 +860,7 @@ sequenceDiagram
 - Implemented via sync replication, Raft/Paxos, or single-node DB
 - Cross-region strong consistency adds 100+ ms per write
 - Spanner uses TrueTime for external consistency globally
-- "Strong" must be defined precisely—serializable ≠ linearizable
+- "Strong" must be defined precisely - serializable â‰  linearizable
 
 ### When to use
 
@@ -731,7 +877,9 @@ sequenceDiagram
 
 ---
 
-## 4.15 Eventual Consistency
+
+## 4.17 Eventual Consistency
+
 
 ### What is it?
 
@@ -774,11 +922,13 @@ flowchart LR
 - Application must handle stale reads and conflicts
 - LWW loses concurrent updates silently
 - Testing eventual behavior is harder than strong consistency
-- "Eventually" without monitoring → never converges if replication broken
+- "Eventually" without monitoring -> never converges if replication broken
 
 ---
 
-## 4.16 Causal Consistency
+
+## 4.18 Causal Consistency
+
 
 ### What is it?
 
@@ -824,7 +974,9 @@ flowchart TB
 
 ---
 
-## 4.17 Linearizability
+
+## 4.19 Linearizability
+
 
 ### What is it?
 
@@ -851,7 +1003,7 @@ flowchart LR
 
 ### Key details
 
-- **Linearizable ≠ serializable:** serializable is multi-object transaction property
+- **Linearizable â‰  serializable:** serializable is multi-object transaction property
 - etcd, ZooKeeper, Consul provide linearizable reads/writes (with caveats)
 - Performance cost: coordination on every operation
 - **Sticky sessions** don't imply linearizability across clients
@@ -871,7 +1023,9 @@ flowchart LR
 
 ---
 
-## 4.18 Backpressure
+
+## 4.20 Backpressure
+
 
 ### What is it?
 
@@ -879,7 +1033,7 @@ flowchart LR
 
 ### Why it matters
 
-Without backpressure, fast producers overwhelm slow consumers—memory exhausts, GC pauses, and latency explodes. Essential in streaming, RPC, and reactive systems.
+Without backpressure, fast producers overwhelm slow consumers - memory exhausts, GC pauses, and latency explodes. Essential in streaming, RPC, and reactive systems.
 
 ### How it works
 
@@ -917,11 +1071,13 @@ sequenceDiagram
 - Blocking producers can deadlock if circular dependencies
 - Dropping requires business acceptance (lost messages)
 - Backpressure without metrics hides chronic under-provisioning
-- Thread pool rejection is crude backpressure—needs caller handling
+- Thread pool rejection is crude backpressure - needs caller handling
 
 ---
 
-## 4.19 Graceful Degradation
+
+## 4.21 Graceful Degradation
+
 
 ### What is it?
 
@@ -952,7 +1108,7 @@ flowchart TB
 - Netflix: skip personalization, show popular titles
 - E-commerce: disable reviews widget, keep checkout
 - Requires pre-built fallback content and tested code paths
-- Monitor degraded mode duration—don't normalize broken state
+- Monitor degraded mode duration - don't normalize broken state
 
 ### When to use
 
@@ -963,116 +1119,19 @@ flowchart TB
 ### Trade-offs / Pitfalls
 
 - Degraded UX erodes trust if prolonged unnoticed
-- Fallback data can be wrong (stale prices)—legal/compliance risk
+- Fallback data can be wrong (stale prices) - legal/compliance risk
 - Complex Cartesian product of failure modes to test
 - Teams may neglect degraded paths in development
 
 ---
 
-## 4.20 Failover
-
-### What is it?
-
-**Failover** is the automatic or manual switch from a failed **primary** component to a **standby** so service continues. **Failback** returns traffic to the original primary when restored.
-
-### Why it matters
-
-Human-driven recovery takes minutes to hours; automated failover targets seconds. Critical for database HA, load balancer VIPs, and DNS routing.
-
-### How it works
-
-1. Health monitor detects primary failure (missed heartbeats).
-2. **Passive failover:** promote standby replica to primary.
-3. **Active-active:** traffic already split; remove failed node from pool.
-4. Update DNS/VIP/service registry to point clients to new primary.
-5. Reconcile state (replay WAL, resync replica) before failback.
-
-```mermaid
-sequenceDiagram
-    participant Primary
-    participant Standby
-    participant Monitor
-    Monitor->>Primary: heartbeat
-    Primary--xMonitor: timeout
-    Monitor->>Standby: promote
-    Standby->>Standby: become primary
-```
-
-### Key details
-
-- **Split-brain:** two nodes think they are primary—use fencing (STONITH)
-- **RTO:** recovery time objective; failover speed target
-- **RPO:** data loss window with async replication
-- DNS failover limited by TTL propagation delay
-
-### When to use
-
-- Database primary-replica setups
-- Multi-region disaster recovery
-- Load balancer active/passive pairs
-
-### Trade-offs / Pitfalls
-
-- False positive failover causes unnecessary disruption
-- Async replication → lost writes on failover
-- Clients cache old primary address
-- Failback requires reverse sync complexity
-
----
-
-## 4.21 Redundancy
-
-### What is it?
-
-**Redundancy** duplicates critical components so failure of one does not stop the system. Forms include **N+1** (one spare), **2N** (full duplicate), geographic redundancy, and erasure-coded storage.
-
-### Why it matters
-
-Mean time between failures applies to every component. Redundancy converts single-component failure from outage into capacity reduction.
-
-### How it works
-
-1. Identify SPOFs (single power supply, single DB, single region).
-2. Add redundant instances with independent failure domains.
-3. Load balance across redundant paths.
-4. Ensure redundant copies are **diverse** (different AZ, rack, provider).
-5. Test failure of each redundant layer regularly.
-
-```mermaid
-flowchart TB
-    LB --> App1
-    LB --> App2
-    App1 --> DB_P[(Primary)]
-    App2 --> DB_R[(Replica)]
-```
-
-### Key details
-
-- **Active-passive:** standby idle until failover
-- **Active-active:** all nodes serve traffic; need conflict handling
-- **Erasure coding:** storage redundancy with less overhead than 3× replication
-- Correlated failures (same bug on all nodes) defeat redundancy
-
-### When to use
-
-- Any availability target above single-server uptime
-- Data durability (3 replicas minimum for cloud disks)
-- Network paths (multi-homed, dual ISP)
-
-### Trade-offs / Pitfalls
-
-- Cost scales with redundancy level
-- Active-active write conflicts need resolution
-- Shared codebase = shared bug (redundant but simultaneously wrong)
-- Operational complexity of keeping replicas in sync
-
----
 
 ## 4.22 Capacity Planning
 
+
 ### What is it?
 
-**Capacity planning** forecasts resource needs (CPU, memory, storage, network, licenses) to meet future load with acceptable performance and headroom—typically 30–50% buffer above expected peak.
+**Capacity planning** forecasts resource needs (CPU, memory, storage, network, licenses) to meet future load with acceptable performance and headroom - typically 30 - 50% buffer above expected peak.
 
 ### Why it matters
 
@@ -1084,7 +1143,7 @@ Under-provisioning causes outages; over-provisioning wastes budget. Planning con
 2. Project growth (users, data volume, request rate).
 3. Identify scaling limits per tier (connections, IOPS, shard count).
 4. Model cost vs. performance options (scale up, out, optimize).
-5. Schedule procurement/leads time before limits hit (6–12 months for bare metal).
+5. Schedule procurement/leads time before limits hit (6 - 12 months for bare metal).
 
 ```mermaid
 flowchart LR
@@ -1095,7 +1154,7 @@ flowchart LR
 
 ### Key details
 
-- **Headroom:** operate at 60–70% of max under normal peak
+- **Headroom:** operate at 60 - 70% of max under normal peak
 - Include **seasonality** and **marketing events**
 - Plan for **worst-case dependency** (DB often limits first)
 - Revisit quarterly; cloud elasticity reduces but doesn't eliminate planning
@@ -1108,18 +1167,20 @@ flowchart LR
 
 ### Trade-offs / Pitfalls
 
-- Growth forecasts wrong → sudden crunch or waste
+- Growth forecasts wrong -> sudden crunch or waste
 - Ignoring data growth (storage, index size) focuses only on RPS
 - Reserved capacity vs. on-demand trade-offs in cloud
 - Organizational silos hide cross-team bottlenecks
 
 ---
 
+
 ## 4.23 Bottleneck Analysis
+
 
 ### What is it?
 
-**Bottleneck analysis** identifies the slowest constraint limiting system throughput or causing latency dominance—the "narrowest pipe" in the pipeline per **Theory of Constraints**.
+**Bottleneck analysis** identifies the slowest constraint limiting system throughput or causing latency dominance - the "narrowest pipe" in the pipeline per **Theory of Constraints**.
 
 ### Why it matters
 
@@ -1129,9 +1190,9 @@ Optimizing non-bottlenecks yields zero improvement. Finding the real limit focus
 
 1. Map end-to-end request path with latency breakdown (tracing).
 2. Load test while monitoring all tiers (CPU, disk, network, pool saturation).
-3. Increase load until one metric saturates first—that's the bottleneck.
+3. Increase load until one metric saturates first - that's the bottleneck.
 4. Relieve bottleneck (scale, cache, optimize query).
-5. Repeat—bottleneck migrates to next tier.
+5. Repeat - bottleneck migrates to next tier.
 
 ```mermaid
 flowchart LR
@@ -1143,7 +1204,7 @@ flowchart LR
 
 ### Key details
 
-- **Utilization law:** ρ = λ/μ; near 100% utilization → queueing delays explode
+- **Utilization law:** Ï = Î»/Î¼; near 100% utilization -> queueing delays explode
 - Common bottlenecks: DB connections, lock contention, GC, single hot shard
 - **Profiling** vs. **load testing:** need both micro and macro views
 - External dependencies (payment API) become bottleneck outside your control
@@ -1152,7 +1213,7 @@ flowchart LR
 
 - Performance incidents and post-mortems
 - Before and after optimization projects
-- Architecture reviews ("what breaks first at 10×?")
+- Architecture reviews ("what breaks first at 10Ã—?")
 
 ### Trade-offs / Pitfalls
 
@@ -1163,28 +1224,35 @@ flowchart LR
 
 ---
 
+
 ## Quick Reference
 
-| Concept | One-line definition | Key metric / tool |
-|---------|---------------------|-------------------|
-| Scalability | Handle more load by adding resources | RPS headroom, shard count |
-| Availability | Uptime fraction | Nines, SLA |
-| Reliability | Correct operation over time | MTBF, error rate |
-| Durability | Survive crashes after ack | Replication, WAL |
-| Fault tolerance | Operate through component failure | Redundancy, failover |
-| Resilience | Absorb stress and recover | Chaos tests, error budgets |
-| Throughput | Work per unit time | RPS, TPS |
-| Latency | Request-response time | p50, p99 |
-| Tail latency | High-percentile slowness | p99, p999 |
-| CAP | Partition: C or A | CP vs AP |
-| PACELC | Else: L or C | PA/EL systems |
-| Strong consistency | All see latest write | Quorum, Raft |
-| Eventual consistency | Converge if quiescent | Conflict resolution |
-| Linearizability | Real-time sequential order | Consensus |
-| Backpressure | Slow producers when overloaded | Bounded queues |
-| Graceful degradation | Reduced mode vs. outage | Feature flags |
-| Failover | Switch to standby | RTO, RPO |
-| Capacity planning | Forecast resource needs | Headroom % |
-| Bottleneck | Limiting constraint | Utilization, tracing |
+| # | Topic | Summary |
+|---|-------|---------|
+| 4.1 | Scalability | **Scalability** is the ability of a system to handle increased load by adding... |
+| 4.2 | Throughput | **Throughput** is the rate of work completed per unit time - requests per secon... |
+| 4.3 | Latency | **Latency** is the time between initiating a request and receiving a complete... |
+| 4.4 | Tail Latency | **Tail latency** refers to high-percentile response times - p95, p99, p999 - the ... |
+| 4.5 | Availability | **Availability** is the fraction of time a system is operational and serving ... |
+| 4.6 | Reliability | **Reliability** is the probability that a system performs its intended functi... |
+| 4.7 | Durability | **Durability** guarantees that once data is acknowledged as written, it survi... |
+| 4.8 | Fault Tolerance | **Fault tolerance** is the ability of a system to continue operating - possibly... |
+| 4.9 | Resilience | **Resilience** is the capacity to absorb disturbances, adapt to stress, and r... |
+| 4.10 | Redundancy | **Redundancy** duplicates critical components so failure of one does not stop... |
+| 4.11 | Failover | **Failover** is the automatic or manual switch from a failed **primary** comp... |
+| 4.12 | Consistency | **Consistency** in distributed systems defines what guarantees readers observ... |
+| 4.13 | Concurrency | **Concurrency** is the ability of a system to make progress on multiple tasks... |
+| 4.14 | CAP Theorem | The **CAP theorem** (Brewer) states that a distributed data store can provide... |
+| 4.15 | PACELC Theorem | **PACELC** extends CAP: if **P**artition, choose **A** or **C**; **E**lse (no... |
+| 4.16 | Strong Consistency | **Strong consistency** (often implemented as **linearizability** for register... |
+| 4.17 | Eventual Consistency | **Eventual consistency** guarantees that if no new updates occur, all replica... |
+| 4.18 | Causal Consistency | **Causal consistency** preserves **cause-and-effect** order: if operation A h... |
+| 4.19 | Linearizability | **Linearizability** is the strongest single-object consistency model: every o... |
+| 4.20 | Backpressure | **Backpressure** is a flow-control mechanism where an overloaded downstream c... |
+| 4.21 | Graceful Degradation | **Graceful degradation** deliberately reduces functionality or quality during... |
+| 4.22 | Capacity Planning | **Capacity planning** forecasts resource needs (CPU, memory, storage, network... |
+| 4.23 | Bottleneck Analysis | **Bottleneck analysis** identifies the slowest constraint limiting system thr... |
 
-[← Back to master index](../README.md)
+---
+
+[Ã¢ - Â Back to master index](../README.md)

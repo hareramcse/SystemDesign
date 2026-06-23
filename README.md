@@ -1,4 +1,4 @@
-﻿# System Design — Master Reference
+# System Design — Master Reference
 
 A comprehensive, interview-ready knowledge base covering networking, databases, distributed systems, cloud infrastructure, and advanced platform patterns. Each topic folder is a **self-contained master reference** — read any `README.md` top-to-bottom without needing external context.
 
@@ -44,6 +44,10 @@ Follow topics **1 → 15** for breadth-first system design fundamentals:
 | **Platform** | 11 Cloud & Kubernetes, 12 Reliability Engineering | Deployment, SRE, disaster recovery |
 | **Specialized** | 13 Advanced Topics, 14 Search Systems, 15 Big Data | Probabilistic structures, search, data platforms |
 
+
+### Topic sequencing
+
+Within each topic README, sub-topics are **ordered for learning flow** (foundations -> related concepts -> specialized/advanced). Use the **Reading order** table at the top of each topic file to see how sections group together.
 ### Per sub-topic reference format
 
 Every sub-topic in a topic `README.md` follows the same master structure:

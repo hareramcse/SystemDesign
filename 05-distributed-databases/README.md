@@ -1,18 +1,18 @@
-﻿# 5. Distributed Databases
+# 5. Distributed Databases
 
 > Status: **Documented**
 
-[← Back to master index](../README.md)
+[<- Back to master index](../README.md)
 
 ---
 
 ## Overview
 
-Distributed databases spread data and query load across multiple nodes—often in different racks, regions, or continents—so a single machine is never the bottleneck or single point of failure. They combine **partitioning** (how data is split), **replication** (how copies are kept), and **consensus** (how nodes agree on state) to deliver scale, availability, and durability together.
+Distributed databases spread data and query load across multiple nodes - often in different racks, regions, or continents - so a single machine is never the bottleneck or single point of failure. They combine **partitioning** (how data is split), **replication** (how copies are kept), and **consensus** (how nodes agree on state) to deliver scale, availability, and durability together.
 
 Designing or operating a distributed database means choosing trade-offs you cannot escape: partition tolerance is mandatory on real networks, so you pick between consistency and availability (CAP), and between latency and consistency when the network is healthy (PACELC). Interview discussions usually center on partition keys, replication mode, quorum math, failure handling, and when distributed transactions are worth the cost.
 
-This chapter walks from horizontal scaling mechanics (sharding, hashing) through replication and quorums, distributed transactions, consensus algorithms, and logical clocks—everything you need to reason about systems like Cassandra, DynamoDB, CockroachDB, etcd, and Kafka's metadata layer.
+This chapter walks from horizontal scaling mechanics (sharding, hashing) through replication and quorums, distributed transactions, consensus algorithms, and logical clocks - everything you need to reason about systems like Cassandra, DynamoDB, CockroachDB, etcd, and Kafka's metadata layer.
 
 ---
 
@@ -20,34 +20,38 @@ This chapter walks from horizontal scaling mechanics (sharding, hashing) through
 
 | # | Sub-topic | Status |
 |---|-----------|--------|
-| 5.1 | [Sharding](#sharding) | Done |
-| 5.2 | [Partitioning](#partitioning) | Done |
-| 5.3 | [Hash Partitioning](#hash-partitioning) | Done |
-| 5.4 | [Range Partitioning](#range-partitioning) | Done |
-| 5.5 | [Geo Partitioning](#geo-partitioning) | Done |
-| 5.6 | [Rebalancing](#rebalancing) | Done |
-| 5.7 | [Hot Partitions](#hot-partitions) | Done |
-| 5.8 | [Consistent Hashing](#consistent-hashing) | Done |
-| 5.9 | [Rendezvous Hashing](#rendezvous-hashing) | Done |
-| 5.10 | [Virtual Nodes](#virtual-nodes) | Done |
-| 5.11 | [Replication](#replication) | Done |
-| 5.12 | [Leader Follower Replication](#leader-follower-replication) | Done |
-| 5.13 | [Multi Leader Replication](#multi-leader-replication) | Done |
-| 5.14 | [Quorum Reads](#quorum-reads) | Done |
-| 5.15 | [Quorum Writes](#quorum-writes) | Done |
-| 5.16 | [Distributed Transactions](#distributed-transactions) | Done |
-| 5.17 | [Two Phase Commit](#two-phase-commit) | Done |
-| 5.18 | [Three Phase Commit](#three-phase-commit) | Done |
-| 5.19 | [Distributed Locking](#distributed-locking) | Done |
-| 5.20 | [Split Brain](#split-brain) | Done |
-| 5.21 | [Consensus](#consensus) | Done |
-| 5.22 | [Paxos](#paxos) | Done |
-| 5.23 | [Raft](#raft) | Done |
-| 5.24 | [Leader Election](#leader-election) | Done |
-| 5.25 | [Lamport Clocks](#lamport-clocks) | Done |
-| 5.26 | [Vector Clocks](#vector-clocks) | Done |
-| 5.27 | [Gossip Protocol](#gossip-protocol) | Done |
-| 5.28 | [Membership Protocols](#membership-protocols) | Done |
+| 5.1 | [Partitioning](#51-partitioning) | Done |
+| 5.2 | [Sharding](#52-sharding) | Done |
+| 5.3 | [Hash Partitioning](#53-hash-partitioning) | Done |
+| 5.4 | [Range Partitioning](#54-range-partitioning) | Done |
+| 5.5 | [Geo Partitioning](#55-geo-partitioning) | Done |
+| 5.6 | [Hot Partitions](#56-hot-partitions) | Done |
+| 5.7 | [Rebalancing](#57-rebalancing) | Done |
+| 5.8 | [Consistent Hashing](#58-consistent-hashing) | Done |
+| 5.9 | [Virtual Nodes](#59-virtual-nodes) | Done |
+| 5.10 | [Rendezvous Hashing](#510-rendezvous-hashing) | Done |
+| 5.11 | [Replication](#511-replication) | Done |
+| 5.12 | [Leader Follower Replication](#512-leader-follower-replication) | Done |
+| 5.13 | [Multi Leader Replication](#513-multi-leader-replication) | Done |
+| 5.14 | [Quorum Reads](#514-quorum-reads) | Done |
+| 5.15 | [Quorum Writes](#515-quorum-writes) | Done |
+| 5.16 | [Distributed Transactions](#516-distributed-transactions) | Done |
+| 5.17 | [Two Phase Commit](#517-two-phase-commit) | Done |
+| 5.18 | [Three Phase Commit](#518-three-phase-commit) | Done |
+| 5.19 | [Distributed Locking](#519-distributed-locking) | Done |
+| 5.20 | [Split Brain](#520-split-brain) | Done |
+| 5.21 | [Consensus](#521-consensus) | Done |
+| 5.22 | [Paxos](#522-paxos) | Done |
+| 5.23 | [Raft](#523-raft) | Done |
+| 5.24 | [Leader Election](#524-leader-election) | Done |
+| 5.25 | [Lamport Clocks](#525-lamport-clocks) | Done |
+| 5.26 | [Vector Clocks](#526-vector-clocks) | Done |
+| 5.27 | [Gossip Protocol](#527-gossip-protocol) | Done |
+| 5.28 | [Membership Protocols](#528-membership-protocols) | Done |
+
+
+
+
 
 ```mermaid
 flowchart TB
@@ -61,7 +65,77 @@ flowchart TB
 
 ---
 
-## 5.1 Sharding
+
+## Reading order
+
+Sub-topics are sequenced for progressive learning: foundations first, then related concepts, then specialized topics.
+
+| Group | Sections | Focus |
+|-------|----------|-------|
+| **1. Partitioning** | 5.1-5.7 | Sharding strategies, hot keys, rebalancing |
+| **2. Routing** | 5.8-5.10 | Consistent hashing, vnodes, rendezvous |
+| **3. Replication** | 5.11-5.15 | Leader models, quorums |
+| **4. Transactions** | 5.16-5.20 | 2PC/3PC, locks, split brain |
+| **5. Coordination** | 5.21-5.28 | Consensus, clocks, gossip, membership |
+
+---
+---
+
+## 5.1 Partitioning
+
+
+### What is it?
+
+**Partitioning** divides a table or dataset into segments called partitions. In distributed systems, partitioning usually means horizontal splits (by row/key); vertical partitioning splits columns or tables.
+
+### Why it matters
+
+Partitioning is the abstraction beneath sharding, replication placement, and parallel query execution. Every distributed store partitions data - the design question is *how*.
+
+### How it works
+
+1. Define a partition key or partitioning scheme.
+2. Assign each partition to a storage node or replica group.
+3. Metadata service (or client library) tracks partition -> node mapping.
+4. Queries touching one partition stay local; multi-partition queries coordinate.
+
+### Diagram
+
+```mermaid
+flowchart TB
+    Table[Logical Table] --> P1[Partition 1]
+    Table --> P2[Partition 2]
+    Table --> P3[Partition 3]
+    P1 --> N1[Node A]
+    P2 --> N2[Node B]
+    P3 --> N3[Node C]
+```
+
+### Key details
+
+- **Horizontal:** rows split by key - standard for scale-out.
+- **Vertical:** rarely used at distributed scale; splits rarely co-accessed columns.
+- Partition count often fixed upfront or grows via splitting.
+- Partition = unit of replication, migration, and sometimes ordering.
+
+### When to use
+
+Always, in any distributed database. The choice is strategy (hash, range, list), not whether to partition.
+
+### Trade-offs / Pitfalls
+
+- Too few partitions -> cannot scale; too many -> metadata and coordination overhead.
+- Partition boundaries are hard to change - choose keys that match query patterns.
+
+### References
+
+*(No curated references for this sub-topic in `_topics.json`.)*
+
+---
+
+
+## 5.2 Sharding
+
 
 ### What is it?
 
@@ -108,7 +182,7 @@ flowchart LR
 ### Trade-offs / Pitfalls
 
 - Poor shard key choice creates hot shards and negates scale benefits.
-- Cross-shard ACID transactions are rare and slow—design around single-shard boundaries.
+- Cross-shard ACID transactions are rare and slow - design around single-shard boundaries.
 - Operational overhead: backups, schema migrations, and monitoring multiply per shard.
 
 ### References
@@ -117,58 +191,9 @@ flowchart LR
 
 ---
 
-## 5.2 Partitioning
-
-### What is it?
-
-**Partitioning** divides a table or dataset into segments called partitions. In distributed systems, partitioning usually means horizontal splits (by row/key); vertical partitioning splits columns or tables.
-
-### Why it matters
-
-Partitioning is the abstraction beneath sharding, replication placement, and parallel query execution. Every distributed store partitions data—the design question is *how*.
-
-### How it works
-
-1. Define a partition key or partitioning scheme.
-2. Assign each partition to a storage node or replica group.
-3. Metadata service (or client library) tracks partition → node mapping.
-4. Queries touching one partition stay local; multi-partition queries coordinate.
-
-### Diagram
-
-```mermaid
-flowchart TB
-    Table[Logical Table] --> P1[Partition 1]
-    Table --> P2[Partition 2]
-    Table --> P3[Partition 3]
-    P1 --> N1[Node A]
-    P2 --> N2[Node B]
-    P3 --> N3[Node C]
-```
-
-### Key details
-
-- **Horizontal:** rows split by key—standard for scale-out.
-- **Vertical:** rarely used at distributed scale; splits rarely co-accessed columns.
-- Partition count often fixed upfront or grows via splitting.
-- Partition = unit of replication, migration, and sometimes ordering.
-
-### When to use
-
-Always, in any distributed database. The choice is strategy (hash, range, list), not whether to partition.
-
-### Trade-offs / Pitfalls
-
-- Too few partitions → cannot scale; too many → metadata and coordination overhead.
-- Partition boundaries are hard to change—choose keys that match query patterns.
-
-### References
-
-*(No curated references for this sub-topic in `_topics.json`.)*
-
----
 
 ## 5.3 Hash Partitioning
+
 
 ### What is it?
 
@@ -176,12 +201,12 @@ Always, in any distributed database. The choice is strategy (hash, range, list),
 
 ### Why it matters
 
-Delivers even spread when keys are uniformly distributed—ideal for point lookups without range locality requirements.
+Delivers even spread when keys are uniformly distributed - ideal for point lookups without range locality requirements.
 
 ### How it works
 
 1. Client supplies partition key.
-2. System computes hash → partition index.
+2. System computes hash -> partition index.
 3. Router directs request to the node hosting that partition.
 4. Range queries must query all partitions (scatter-gather).
 
@@ -210,7 +235,7 @@ flowchart LR
 
 ### Trade-offs / Pitfalls
 
-- Adding shards with naive `mod N` requires massive data movement—use consistent hashing instead.
+- Adding shards with naive `mod N` requires massive data movement - use consistent hashing instead.
 - Skewed key distribution (e.g., celebrity users) still creates hot partitions.
 
 ### References
@@ -219,15 +244,17 @@ flowchart LR
 
 ---
 
+
 ## 5.4 Range Partitioning
+
 
 ### What is it?
 
-**Range partitioning** assigns contiguous key ranges to partitions—e.g., A–M on shard 1, N–Z on shard 2, or time buckets for events.
+**Range partitioning** assigns contiguous key ranges to partitions - e.g., A - M on shard 1, N - Z on shard 2, or time buckets for events.
 
 ### Why it matters
 
-Enables efficient range scans, time-series ingestion patterns, and ordered iteration—common in analytics and event stores.
+Enables efficient range scans, time-series ingestion patterns, and ordered iteration - common in analytics and event stores.
 
 ### How it works
 
@@ -240,9 +267,9 @@ Enables efficient range scans, time-series ingestion patterns, and ordered itera
 
 ```mermaid
 flowchart LR
-    Keys[Key Space] --> R1[2024-01 → Shard 1]
-    Keys --> R2[2024-02 → Shard 2]
-    Keys --> R3[2024-03 → Shard 3]
+    Keys[Key Space] --> R1[2024-01 -> Shard 1]
+    Keys --> R2[2024-02 -> Shard 2]
+    Keys --> R3[2024-03 -> Shard 3]
 ```
 
 ### Key details
@@ -259,7 +286,7 @@ flowchart LR
 
 ### Trade-offs / Pitfalls
 
-- Append-mostly workloads pile onto the "latest" partition—mitigate with pre-splitting or hash sub-partitioning.
+- Append-mostly workloads pile onto the "latest" partition - mitigate with pre-splitting or hash sub-partitioning.
 - Uneven range sizes require active rebalancing.
 
 ### References
@@ -268,7 +295,9 @@ flowchart LR
 
 ---
 
+
 ## 5.5 Geo Partitioning
+
 
 ### What is it?
 
@@ -309,7 +338,7 @@ flowchart TB
 ### Trade-offs / Pitfalls
 
 - Global queries and reports require federated query or aggregation layer.
-- Cross-region failover conflicts with residency—design DR per jurisdiction.
+- Cross-region failover conflicts with residency - design DR per jurisdiction.
 - Operational complexity: N regional deployments instead of one global cluster.
 
 ### References
@@ -318,69 +347,17 @@ flowchart TB
 
 ---
 
-## 5.6 Rebalancing
+
+## 5.6 Hot Partitions
+
 
 ### What is it?
 
-**Rebalancing** moves partitions between nodes to restore even load and capacity utilization after adds, removes, or traffic skew.
+A **hot partition** (hot spot) is a shard or partition receiving disproportionate read/write traffic - often from a skewed key (viral post, celebrity user, latest time bucket).
 
 ### Why it matters
 
-Without rebalancing, new nodes sit idle while old nodes overload; removing failed nodes leaves data under-replicated.
-
-### How it works
-
-1. Monitor per-node partition size, QPS, and disk usage.
-2. Select partitions to move (largest, hottest, or random under consistent hash).
-3. Copy partition data to target node while serving reads (often dual-read period).
-4. Update routing metadata atomically; drain old copy; verify consistency.
-
-### Diagram
-
-```mermaid
-sequenceDiagram
-    participant C as Coordinator
-    participant A as Node A
-    participant B as Node B
-    C->>A: Stream partition P
-    A->>B: Copy data
-    C->>C: Update routing table
-    C->>A: Drop local P
-```
-
-### Key details
-
-- Background migration throttled to avoid saturating network/disk.
-- Consistent hashing minimizes keys moved when adding one node.
-- Rebalancing during peak traffic risks latency spikes—schedule or rate-limit.
-
-### When to use
-
-- After scaling cluster up or down.
-- When hot partitions or disk imbalance detected.
-- Post-failure recovery to restore replication factor.
-
-### Trade-offs / Pitfalls
-
-- Moving large partitions takes hours—plan capacity before urgency.
-- Incorrect routing updates cause split reads or lost writes.
-- Rebalance + production traffic competes for I/O.
-
-### References
-
-*(No curated references for this sub-topic in `_topics.json`.)*
-
----
-
-## 5.7 Hot Partitions
-
-### What is it?
-
-A **hot partition** (hot spot) is a shard or partition receiving disproportionate read/write traffic—often from a skewed key (viral post, celebrity user, latest time bucket).
-
-### Why it matters
-
-One hot partition caps throughput at a single node's limit despite many shards—defeating horizontal scale and causing tail latency spikes.
+One hot partition caps throughput at a single node's limit despite many shards - defeating horizontal scale and causing tail latency spikes.
 
 ### How it works
 
@@ -416,7 +393,7 @@ Mitigate when p99 latency or throttle errors correlate with single partition met
 
 ### Trade-offs / Pitfalls
 
-- Salting breaks single-key locality—reads must fan out and merge.
+- Salting breaks single-key locality - reads must fan out and merge.
 - Caching hot data helps reads but not write-heavy hot keys.
 - Prevention at schema design time beats reactive firefighting.
 
@@ -426,19 +403,77 @@ Mitigate when p99 latency or throttle errors correlate with single partition met
 
 ---
 
-## 5.8 Consistent Hashing
+
+## 5.7 Rebalancing
+
 
 ### What is it?
 
-**Consistent hashing** maps keys and nodes onto a fixed hash ring. Adding or removing a node only remaps keys adjacent to that node on the ring—not the entire key space.
+**Rebalancing** moves partitions between nodes to restore even load and capacity utilization after adds, removes, or traffic skew.
 
 ### Why it matters
 
-Enables elastic scaling with minimal data movement—critical for caches (Memcached), Dynamo-style stores, and load balancers.
+Without rebalancing, new nodes sit idle while old nodes overload; removing failed nodes leaves data under-replicated.
 
 ### How it works
 
-1. Hash nodes and keys to positions on a 0–2³² ring.
+1. Monitor per-node partition size, QPS, and disk usage.
+2. Select partitions to move (largest, hottest, or random under consistent hash).
+3. Copy partition data to target node while serving reads (often dual-read period).
+4. Update routing metadata atomically; drain old copy; verify consistency.
+
+### Diagram
+
+```mermaid
+sequenceDiagram
+    participant C as Coordinator
+    participant A as Node A
+    participant B as Node B
+    C->>A: Stream partition P
+    A->>B: Copy data
+    C->>C: Update routing table
+    C->>A: Drop local P
+```
+
+### Key details
+
+- Background migration throttled to avoid saturating network/disk.
+- Consistent hashing minimizes keys moved when adding one node.
+- Rebalancing during peak traffic risks latency spikes - schedule or rate-limit.
+
+### When to use
+
+- After scaling cluster up or down.
+- When hot partitions or disk imbalance detected.
+- Post-failure recovery to restore replication factor.
+
+### Trade-offs / Pitfalls
+
+- Moving large partitions takes hours - plan capacity before urgency.
+- Incorrect routing updates cause split reads or lost writes.
+- Rebalance + production traffic competes for I/O.
+
+### References
+
+*(No curated references for this sub-topic in `_topics.json`.)*
+
+---
+
+
+## 5.8 Consistent Hashing
+
+
+### What is it?
+
+**Consistent hashing** maps keys and nodes onto a fixed hash ring. Adding or removing a node only remaps keys adjacent to that node on the ring - not the entire key space.
+
+### Why it matters
+
+Enables elastic scaling with minimal data movement - critical for caches (Memcached), Dynamo-style stores, and load balancers.
+
+### How it works
+
+1. Hash nodes and keys to positions on a 0 - 2Â³Â² ring.
 2. Key belongs to the first node clockwise from its position.
 3. Add node: only keys between predecessor and new node migrate.
 4. Use virtual nodes (vnodes) for even distribution.
@@ -467,7 +502,7 @@ flowchart LR
 
 ### Trade-offs / Pitfalls
 
-- Basic consistent hash still uneven with few physical nodes—use vnodes.
+- Basic consistent hash still uneven with few physical nodes - use vnodes.
 - Hot keys remain hot; hashing does not fix access skew.
 - Ring metadata must be consistent across clients and servers.
 
@@ -477,7 +512,60 @@ flowchart LR
 
 ---
 
-## 5.9 Rendezvous Hashing
+
+## 5.9 Virtual Nodes
+
+
+### What is it?
+
+**Virtual nodes** (vnodes) map each physical machine to many points on a consistent hash ring - e.g., 100 - 256 virtual tokens per host.
+
+### Why it matters
+
+Smooths load distribution when physical node counts are small and prevents one physical server from owning half the ring.
+
+### How it works
+
+1. Physical node `A` registers vnodes `A-0  -  A-N` on the ring.
+2. Key routing uses vnode ownership as usual.
+3. When node fails, its vnodes redistribute across survivors evenly.
+4. More vnodes -> better balance, more metadata.
+
+### Diagram
+
+```mermaid
+flowchart LR
+    PhysA[Physical A] --> V1[vnode A1]
+    PhysA --> V2[vnode A2]
+    PhysA --> V3[vnode A3]
+    PhysB[Physical B] --> V4[vnode B1]
+```
+
+### Key details
+
+- Cassandra default: 256 tokens per node (legacy) or vnode-based.
+- Rebalance granularity = one vnode at a time.
+- Trade vnode count vs metadata size and lookup cost.
+
+### When to use
+
+- Any consistent-hash cluster with < ~100 physical nodes.
+- When observed partition size variance is high without vnodes.
+
+### Trade-offs / Pitfalls
+
+- Too few vnodes -> imbalance; too many -> gossip/metadata overhead.
+- vnode reassignment during failure must be atomic in routing tables.
+
+### References
+
+*(No curated references for this sub-topic in `_topics.json`.)*
+
+---
+
+
+## 5.10 Rendezvous Hashing
+
 
 ### What is it?
 
@@ -506,7 +594,7 @@ flowchart TB
 
 ### Key details
 
-- O(nodes) per lookup—fine for tens of nodes, costly at thousands.
+- O(nodes) per lookup - fine for tens of nodes, costly at thousands.
 - Excellent distribution properties without virtual nodes.
 - Used in CDN routing and some load balancers.
 
@@ -518,7 +606,7 @@ flowchart TB
 
 ### Trade-offs / Pitfalls
 
-- Does not scale to huge node sets—cache scores or use hierarchical hashing.
+- Does not scale to huge node sets - cache scores or use hierarchical hashing.
 - Still subject to hot key problems at application level.
 
 ### References
@@ -527,56 +615,9 @@ flowchart TB
 
 ---
 
-## 5.10 Virtual Nodes
-
-### What is it?
-
-**Virtual nodes** (vnodes) map each physical machine to many points on a consistent hash ring—e.g., 100–256 virtual tokens per host.
-
-### Why it matters
-
-Smooths load distribution when physical node counts are small and prevents one physical server from owning half the ring.
-
-### How it works
-
-1. Physical node `A` registers vnodes `A-0 … A-N` on the ring.
-2. Key routing uses vnode ownership as usual.
-3. When node fails, its vnodes redistribute across survivors evenly.
-4. More vnodes → better balance, more metadata.
-
-### Diagram
-
-```mermaid
-flowchart LR
-    PhysA[Physical A] --> V1[vnode A1]
-    PhysA --> V2[vnode A2]
-    PhysA --> V3[vnode A3]
-    PhysB[Physical B] --> V4[vnode B1]
-```
-
-### Key details
-
-- Cassandra default: 256 tokens per node (legacy) or vnode-based.
-- Rebalance granularity = one vnode at a time.
-- Trade vnode count vs metadata size and lookup cost.
-
-### When to use
-
-- Any consistent-hash cluster with < ~100 physical nodes.
-- When observed partition size variance is high without vnodes.
-
-### Trade-offs / Pitfalls
-
-- Too few vnodes → imbalance; too many → gossip/metadata overhead.
-- vnode reassignment during failure must be atomic in routing tables.
-
-### References
-
-*(No curated references for this sub-topic in `_topics.json`.)*
-
----
 
 ## 5.11 Replication
+
 
 ### What is it?
 
@@ -625,7 +666,9 @@ Always for production data you cannot afford to lose. RF=3 is the common default
 
 ---
 
+
 ## 5.12 Leader Follower Replication
+
 
 ### What is it?
 
@@ -683,11 +726,13 @@ sequenceDiagram
 
 ---
 
+
 ## 5.13 Multi Leader Replication
+
 
 ### What is it?
 
-**Multi-leader** (multi-master) replication allows multiple nodes to accept writes, synchronizing changes between leaders—often one leader per region.
+**Multi-leader** (multi-master) replication allows multiple nodes to accept writes, synchronizing changes between leaders - often one leader per region.
 
 ### Why it matters
 
@@ -723,7 +768,7 @@ flowchart LR
 
 ### Trade-offs / Pitfalls
 
-- Write-write conflicts are inevitable—must have resolution strategy.
+- Write-write conflicts are inevitable - must have resolution strategy.
 - Debugging "which write won" is harder than single-leader.
 - Global uniqueness constraints (auto-increment IDs) break without coordination.
 
@@ -733,7 +778,9 @@ flowchart LR
 
 ---
 
+
 ## 5.14 Quorum Reads
+
 
 ### What is it?
 
@@ -741,7 +788,7 @@ A **quorum read** fetches data from multiple replicas and returns the value with
 
 ### Why it matters
 
-Tunable consistency without single-leader reads—foundation of Dynamo-style availability during partial failures.
+Tunable consistency without single-leader reads - foundation of Dynamo-style availability during partial failures.
 
 ### How it works
 
@@ -769,7 +816,7 @@ sequenceDiagram
 ### Key details
 
 - With `R + W > N`, quorum read sees latest quorum write (strong event).
-- Smaller R → faster, possibly stale reads.
+- Smaller R -> faster, possibly stale reads.
 - Read repair fixes divergent replicas on read path.
 
 ### When to use
@@ -790,7 +837,9 @@ sequenceDiagram
 
 ---
 
+
 ## 5.15 Quorum Writes
+
 
 ### What is it?
 
@@ -798,7 +847,7 @@ A **quorum write** acknowledges a write after `W` of `N` replicas persist it. Co
 
 ### Why it matters
 
-The write side of tunable quorum consistency—lets operators choose between durability guarantees and write latency.
+The write side of tunable quorum consistency - lets operators choose between durability guarantees and write latency.
 
 ### How it works
 
@@ -838,7 +887,7 @@ sequenceDiagram
 
 ### Trade-offs / Pitfalls
 
-- `W=1` + node death before async replicate → lost write.
+- `W=1` + node death before async replicate -> lost write.
 - Concurrent writes to same key with `W < N` need version resolution on read.
 - Quorum math must be understood before claiming linearizability.
 
@@ -848,11 +897,13 @@ sequenceDiagram
 
 ---
 
+
 ## 5.16 Distributed Transactions
+
 
 ### What is it?
 
-A **distributed transaction** spans multiple nodes or shards, requiring atomic commit or abort across all participants—preserving ACID across partition boundaries.
+A **distributed transaction** spans multiple nodes or shards, requiring atomic commit or abort across all participants - preserving ACID across partition boundaries.
 
 ### Why it matters
 
@@ -884,7 +935,7 @@ flowchart TB
 
 - Cross-shard joins in one SQL statement often imply distributed transaction underneath.
 - Latency = slowest participant + coordination round trips.
-- Many systems avoid them—design bounded contexts per shard instead.
+- Many systems avoid them - design bounded contexts per shard instead.
 
 ### When to use
 
@@ -904,7 +955,9 @@ flowchart TB
 
 ---
 
+
 ## 5.17 Two Phase Commit
+
 
 ### What is it?
 
@@ -912,16 +965,16 @@ flowchart TB
 
 ### Why it matters
 
-The textbook answer for atomic cross-node commit—and a cautionary tale for blocking and availability trade-offs in interviews.
+The textbook answer for atomic cross-node commit - and a cautionary tale for blocking and availability trade-offs in interviews.
 
 ### How it works
 
-**Phase 1 — Prepare:**
+**Phase 1  -  Prepare:**
 
 1. Coordinator writes decision log, sends `PREPARE` to participants.
 2. Each participant validates, locks resources, writes undo log, votes `YES` or `NO`.
 
-**Phase 2 — Commit/Abort:**
+**Phase 2  -  Commit/Abort:**
 
 3. If all `YES`, coordinator sends `COMMIT`; else `ABORT`.
 4. Participants apply decision, release locks, ACK.
@@ -956,7 +1009,7 @@ sequenceDiagram
 
 ### Trade-offs / Pitfalls
 
-- Coordinator SPOF—must be HA with durable log.
+- Coordinator SPOF - must be HA with durable log.
 - Not partition tolerant: minority partition cannot commit.
 - Prefer saga/outbox for high-throughput microservices.
 
@@ -966,11 +1019,13 @@ sequenceDiagram
 
 ---
 
+
 ## 5.18 Three Phase Commit
+
 
 ### What is it?
 
-**Three-phase commit (3PC)** adds a **pre-commit** phase after prepare so participants know global decision before committing—reducing indefinite blocking if coordinator fails *after* pre-commit.
+**Three-phase commit (3PC)** adds a **pre-commit** phase after prepare so participants know global decision before committing - reducing indefinite blocking if coordinator fails *after* pre-commit.
 
 ### Why it matters
 
@@ -998,8 +1053,8 @@ sequenceDiagram
 
 ### Key details
 
-- Assumes network bounded delay (synchronous model)—fails under async networks with partitions.
-- More round trips than 2PC → higher latency.
+- Assumes network bounded delay (synchronous model) - fails under async networks with partitions.
+- More round trips than 2PC -> higher latency.
 - Largely superseded by Paxos/Raft for production coordination.
 
 ### When to use
@@ -1019,15 +1074,17 @@ sequenceDiagram
 
 ---
 
+
 ## 5.19 Distributed Locking
+
 
 ### What is it?
 
-A **distributed lock** grants exclusive access to a resource across processes/nodes—implemented via consensus stores, databases with TTL leases, or dedicated services (Redis Redlock, ZooKeeper ephemeral nodes).
+A **distributed lock** grants exclusive access to a resource across processes/nodes - implemented via consensus stores, databases with TTL leases, or dedicated services (Redis Redlock, ZooKeeper ephemeral nodes).
 
 ### Why it matters
 
-Prevents duplicate work, enforces single-writer invariants, and coordinates leader election—but is a frequent source of outages when misused.
+Prevents duplicate work, enforces single-writer invariants, and coordinates leader election - but is a frequent source of outages when misused.
 
 ### How it works
 
@@ -1051,7 +1108,7 @@ sequenceDiagram
 
 ### Key details
 
-- Lease TTL protects against dead holder—but work must finish before expiry.
+- Lease TTL protects against dead holder - but work must finish before expiry.
 - Redlock debate: clock skew and GC pauses can violate safety without fencing.
 - Prefer idempotency and database constraints over locks when possible.
 
@@ -1063,9 +1120,9 @@ sequenceDiagram
 
 ### Trade-offs / Pitfalls
 
-- Long-held locks → availability killer on holder crash until TTL.
+- Long-held locks -> availability killer on holder crash until TTL.
 - Without fencing, delayed old holder can corrupt data after lease expires.
-- Heavy lock contention → redesign for optimistic concurrency.
+- Heavy lock contention -> redesign for optimistic concurrency.
 
 ### References
 
@@ -1073,11 +1130,13 @@ sequenceDiagram
 
 ---
 
+
 ## 5.20 Split Brain
+
 
 ### What is it?
 
-**Split brain** occurs when a cluster partitions into two groups that each believe they are the legitimate primary—both accepting writes and diverging irreconcilably.
+**Split brain** occurs when a cluster partitions into two groups that each believe they are the legitimate primary - both accepting writes and diverging irreconcilably.
 
 ### Why it matters
 
@@ -1113,7 +1172,7 @@ flowchart TB
 
 ### When to use
 
-Understanding split brain is prerequisite to designing HA—not something to "use," but to prevent.
+Understanding split brain is prerequisite to designing HA - not something to "use," but to prevent.
 
 ### Trade-offs / Pitfalls
 
@@ -1127,7 +1186,9 @@ Understanding split brain is prerequisite to designing HA—not something to "us
 
 ---
 
+
 ## 5.21 Consensus
+
 
 ### What is it?
 
@@ -1161,8 +1222,8 @@ flowchart LR
 ### Key details
 
 - Requires majority (quorum) for fault tolerance: `2f+1` nodes tolerate `f` failures.
-- FLP impossibility: no deterministic async consensus with one faulty process—protocols use timeouts/randomization.
-- Consensus ≠ distributed transactions (but transactions can use consensus per shard).
+- FLP impossibility: no deterministic async consensus with one faulty process - protocols use timeouts/randomization.
+- Consensus â‰  distributed transactions (but transactions can use consensus per shard).
 
 ### When to use
 
@@ -1173,7 +1234,7 @@ flowchart LR
 ### Trade-offs / Pitfalls
 
 - Latency tied to WAN round trips if leaders and majorities span regions.
-- Not for high-volume bulk data—only coordination metadata at scale.
+- Not for high-volume bulk data - only coordination metadata at scale.
 - Mis-sized clusters (even counts without witness) reduce fault tolerance.
 
 ### References
@@ -1182,7 +1243,9 @@ flowchart LR
 
 ---
 
+
 ## 5.22 Paxos
+
 
 ### What is it?
 
@@ -1190,7 +1253,7 @@ flowchart LR
 
 ### Why it matters
 
-The theoretical foundation of distributed consensus—Chubby, early ZooKeeper, and Spanner build on Paxos variants. Understanding Paxos clarifies why Raft was designed.
+The theoretical foundation of distributed consensus - Chubby, early ZooKeeper, and Spanner build on Paxos variants. Understanding Paxos clarifies why Raft was designed.
 
 ### How it works
 
@@ -1199,7 +1262,7 @@ The theoretical foundation of distributed consensus—Chubby, early ZooKeeper, a
 1. Proposer picks ballot number N, sends `prepare(N)` to acceptors.
 2. Acceptors promise not to accept lower ballots; return highest accepted value.
 3. Proposer sends `accept(N, value)` with chosen value.
-4. Majority accept → value chosen; learners notified.
+4. Majority accept -> value chosen; learners notified.
 5. Multi-Paxos elects stable leader to run many rounds efficiently.
 
 ### Diagram
@@ -1221,7 +1284,7 @@ sequenceDiagram
 
 - Correct but famously hard to implement and reason about.
 - Multi-Paxos needs stable leader for liveness in practice.
-- Superseded for new projects by Raft in many ecosystems—same guarantees, clearer structure.
+- Superseded for new projects by Raft in many ecosystems - same guarantees, clearer structure.
 
 ### When to use
 
@@ -1241,7 +1304,9 @@ sequenceDiagram
 
 ---
 
+
 ## 5.23 Raft
+
 
 ### What is it?
 
@@ -1249,12 +1314,12 @@ sequenceDiagram
 
 ### Why it matters
 
-Default teaching and implementation choice for replicated logs—balances formal guarantees with engineer-friendly mental model.
+Default teaching and implementation choice for replicated logs - balances formal guarantees with engineer-friendly mental model.
 
 ### How it works
 
-1. **Follower** times out → becomes **candidate**, requests votes.
-2. Majority votes → **leader** elected for term T.
+1. **Follower** times out -> becomes **candidate**, requests votes.
+2. Majority votes -> **leader** elected for term T.
 3. Client writes go to leader; leader appends entry, replicates to followers.
 4. Entry **committed** once on majority; leader applies and responds.
 5. New election if leader fails (higher term disrupts stale leaders).
@@ -1274,7 +1339,7 @@ flowchart TB
 | Rule | Purpose |
 |------|---------|
 | Term monotonic | Prevents stale leaders serving writes |
-| Log matching | Same index+term → same prefix |
+| Log matching | Same index+term -> same prefix |
 | Commit majority | Safety without all nodes ACK |
 | Snapshot + compaction | Bound log growth |
 
@@ -1286,9 +1351,9 @@ flowchart TB
 
 ### Trade-offs / Pitfalls
 
-- Leader-centric writes don't scale write throughput—shard instead.
+- Leader-centric writes don't scale write throughput - shard instead.
 - Cross-region Raft clusters pay WAN latency on every commit.
-- Joint consensus required for membership changes—plan node adds carefully.
+- Joint consensus required for membership changes - plan node adds carefully.
 
 ### References
 
@@ -1296,11 +1361,13 @@ flowchart TB
 
 ---
 
+
 ## 5.24 Leader Election
+
 
 ### What is it?
 
-**Leader election** selects one node as coordinator for a term—using Raft votes, ZooKeeper sequential ephemeral nodes, or lease-based campaigns in Kubernetes.
+**Leader election** selects one node as coordinator for a term - using Raft votes, ZooKeeper sequential ephemeral nodes, or lease-based campaigns in Kubernetes.
 
 ### Why it matters
 
@@ -1310,10 +1377,10 @@ Avoids split brain by ensuring at most one active leader per epoch; required for
 
 **Raft election example:**
 
-1. Follower misses heartbeats → increments term, votes for self.
+1. Follower misses heartbeats -> increments term, votes for self.
 2. Requests votes from peers; each node votes at most once per term.
 3. Candidate with majority becomes leader, sends heartbeats.
-4. Split vote → new random timeout, retry next term.
+4. Split vote -> new random timeout, retry next term.
 
 ### Diagram
 
@@ -1345,7 +1412,7 @@ sequenceDiagram
 
 - Flapping leadership (thrashing) if timeouts too aggressive.
 - Even-sized clusters need tie-breaker or witness for clean majority.
-- Election storms during network glitches—tune backoff and quorum.
+- Election storms during network glitches - tune backoff and quorum.
 
 ### References
 
@@ -1353,11 +1420,13 @@ sequenceDiagram
 
 ---
 
+
 ## 5.25 Lamport Clocks
+
 
 ### What is it?
 
-A **Lamport clock** is a logical timestamp: each node increments a counter on local events and sends max(local, received)+1 on message send—establishing **happens-before** ordering for causally related events.
+A **Lamport clock** is a logical timestamp: each node increments a counter on local events and sends max(local, received)+1 on message send - establishing **happens-before** ordering for causally related events.
 
 ### Why it matters
 
@@ -1383,9 +1452,9 @@ sequenceDiagram
 
 ### Key details
 
-- If A → B causally, then L(A) < L(B).
+- If A -> B causally, then L(A) < L(B).
 - Converse false: L(a) < L(b) does not imply causality.
-- Cannot detect concurrent (unordered) events—use vector clocks.
+- Cannot detect concurrent (unordered) events - use vector clocks.
 
 ### When to use
 
@@ -1395,7 +1464,7 @@ sequenceDiagram
 
 ### Trade-offs / Pitfalls
 
-- Concurrent events get arbitrary order—may violate application semantics.
+- Concurrent events get arbitrary order - may violate application semantics.
 - Not sufficient for Dynamo-style conflict detection alone.
 - Distributed tracing sometimes uses hybrid logical + physical clocks.
 
@@ -1405,15 +1474,17 @@ sequenceDiagram
 
 ---
 
+
 ## 5.26 Vector Clocks
+
 
 ### What is it?
 
-A **vector clock** is a vector of counters—one per node—updated on local and receive events. Compare vectors to detect if events are ordered, concurrent, or equal.
+A **vector clock** is a vector of counters - one per node - updated on local and receive events. Compare vectors to detect if events are ordered, concurrent, or equal.
 
 ### Why it matters
 
-Enables **true concurrency detection** for multi-leader and leaderless stores—foundation of version vectors in Riak, Dynamo, and CRDT metadata.
+Enables **true concurrency detection** for multi-leader and leaderless stores - foundation of version vectors in Riak, Dynamo, and CRDT metadata.
 
 ### How it works
 
@@ -1421,7 +1492,7 @@ Enables **true concurrency detection** for multi-leader and leaderless stores—
 2. Local event: V[self]++.
 3. Send message with V attached.
 4. On receive: V[i] = max(V[i], msg.V[i]) for all i; then V[self]++.
-5. Compare: V1 < V2 if all V1[i]≤V2[i] and strict; incomparable = concurrent.
+5. Compare: V1 < V2 if all V1[i]â‰¤V2[i] and strict; incomparable = concurrent.
 
 ### Diagram
 
@@ -1436,7 +1507,7 @@ flowchart LR
 
 - Version vectors are pragmatic finite-node variant with pruning.
 - Concurrent writes require application merge or sibling versions.
-- Size grows with replica count—compact with dotted version vectors.
+- Size grows with replica count - compact with dotted version vectors.
 
 ### When to use
 
@@ -1448,7 +1519,7 @@ flowchart LR
 
 - Vector size and comparison cost scale with node count.
 - Pruning old entries risks misclassifying concurrency.
-- Application must handle sibling conflicts—storage won't guess semantics.
+- Application must handle sibling conflicts - storage won't guess semantics.
 
 ### References
 
@@ -1456,15 +1527,17 @@ flowchart LR
 
 ---
 
+
 ## 5.27 Gossip Protocol
+
 
 ### What is it?
 
-**Gossip** (epidemic) protocols spread information peer-to-peer by random node pairs exchanging state—each round doubling reach until all nodes converge.
+**Gossip** (epidemic) protocols spread information peer-to-peer by random node pairs exchanging state - each round doubling reach until all nodes converge.
 
 ### Why it matters
 
-Scalable, decentralized membership and metadata dissemination without central coordinator—used in Cassandra, Consul, and failure detectors.
+Scalable, decentralized membership and metadata dissemination without central coordinator - used in Cassandra, Consul, and failure detectors.
 
 ### How it works
 
@@ -1497,7 +1570,7 @@ flowchart LR
 
 ### Trade-offs / Pitfalls
 
-- Convergence delay—not for sub-millisecond consistency needs.
+- Convergence delay - not for sub-millisecond consistency needs.
 - Split brain periods if partition + aggressive failure detection.
 - Malicious or buggy nodes can spread false membership without auth.
 
@@ -1507,15 +1580,17 @@ flowchart LR
 
 ---
 
+
 ## 5.28 Membership Protocols
+
 
 ### What is it?
 
-**Membership protocols** track which nodes are alive, joining, or leaving the cluster—via heartbeats, gossip, ZooKeeper ephemeral nodes, or SWIM (scalable weakly-consistent membership).
+**Membership protocols** track which nodes are alive, joining, or leaving the cluster - via heartbeats, gossip, ZooKeeper ephemeral nodes, or SWIM (scalable weakly-consistent membership).
 
 ### Why it matters
 
-Correct routing, replication, and consensus all depend on accurate membership. Wrong view → writes to dead nodes, lost quorum, or split brain.
+Correct routing, replication, and consensus all depend on accurate membership. Wrong view -> writes to dead nodes, lost quorum, or split brain.
 
 ### How it works
 
@@ -1554,7 +1629,7 @@ flowchart TB
 
 - False positive failure detection removes healthy nodes (flapping).
 - Slow detection delays failover; fast detection increases false positives.
-- Join storms during mass restart—use gradual rejoin and health gates.
+- Join storms during mass restart - use gradual rejoin and health gates.
 
 ### References
 
@@ -1562,20 +1637,40 @@ flowchart TB
 
 ---
 
+
 ## Quick Reference
 
-| Concept | One-liner | Default / Rule of thumb |
-|---------|-----------|-------------------------|
-| Sharding | Split rows across nodes | Design queries single-shard |
-| Hash partition | `hash(key) mod N` | Even spread, poor range scans |
-| Range partition | Contiguous key ranges | Time-series friendly, hot tail risk |
-| Consistent hash | Ring mapping, minimal move on resize | Use with vnodes |
-| Replication RF | Copy count per partition | RF=3 standard |
-| Leader-follower | Single write leader | Clear ordering, leader bottleneck |
-| Quorum | R + W > N for overlap | W=QUORUM, R=QUORUM in Cassandra |
-| 2PC | Prepare then commit | Blocking, avoid on hot path |
-| Raft | Understandable consensus | Majority commit, term-based leader |
-| Split brain | Dual primaries | Prevent with quorum + fencing |
-| Lamport clock | Logical time counter | Causal order, not concurrency detect |
-| Vector clock | Per-node counter vector | Detect concurrent writes |
-| Gossip | Epidemic state spread | O(log N) rounds convergence |
+| # | Topic | Summary |
+|---|-------|---------|
+| 5.1 | Partitioning | **Partitioning** divides a table or dataset into segments called partitions. ... |
+| 5.2 | Sharding | **Sharding** is horizontal partitioning of a dataset across independent datab... |
+| 5.3 | Hash Partitioning | **Hash partitioning** assigns rows to partitions using `hash(partition_key) m... |
+| 5.4 | Range Partitioning | **Range partitioning** assigns contiguous key ranges to partitions - e.g., A - M ... |
+| 5.5 | Geo Partitioning | **Geo partitioning** (geo-sharding, data residency partitioning) places data ... |
+| 5.6 | Hot Partitions | A **hot partition** (hot spot) is a shard or partition receiving disproportio... |
+| 5.7 | Rebalancing | **Rebalancing** moves partitions between nodes to restore even load and capac... |
+| 5.8 | Consistent Hashing | **Consistent hashing** maps keys and nodes onto a fixed hash ring. Adding or ... |
+| 5.9 | Virtual Nodes | **Virtual nodes** (vnodes) map each physical machine to many points on a cons... |
+| 5.10 | Rendezvous Hashing | **Rendezvous hashing** (highest random weight hashing) assigns each key to th... |
+| 5.11 | Replication | **Replication** maintains copies of data on multiple nodes for durability, av... |
+| 5.12 | Leader Follower Replication | **Leader-follower** (primary-replica) replication sends all writes through a ... |
+| 5.13 | Multi Leader Replication | **Multi-leader** (multi-master) replication allows multiple nodes to accept w... |
+| 5.14 | Quorum Reads | A **quorum read** fetches data from multiple replicas and returns the value w... |
+| 5.15 | Quorum Writes | A **quorum write** acknowledges a write after `W` of `N` replicas persist it.... |
+| 5.16 | Distributed Transactions | A **distributed transaction** spans multiple nodes or shards, requiring atomi... |
+| 5.17 | Two Phase Commit | **Two-phase commit (2PC)** is a distributed atomic commit protocol. A **coord... |
+| 5.18 | Three Phase Commit | **Three-phase commit (3PC)** adds a **pre-commit** phase after prepare so par... |
+| 5.19 | Distributed Locking | A **distributed lock** grants exclusive access to a resource across processes... |
+| 5.20 | Split Brain | **Split brain** occurs when a cluster partitions into two groups that each be... |
+| 5.21 | Consensus | **Consensus** is the problem of getting multiple nodes to agree on a single v... |
+| 5.22 | Paxos | **Paxos** is a family of consensus protocols (single-decree, Multi-Paxos) whe... |
+| 5.23 | Raft | **Raft** is a consensus algorithm designed for understandability: leader elec... |
+| 5.24 | Leader Election | **Leader election** selects one node as coordinator for a term - using Raft vot... |
+| 5.25 | Lamport Clocks | A **Lamport clock** is a logical timestamp: each node increments a counter on... |
+| 5.26 | Vector Clocks | A **vector clock** is a vector of counters - one per node - updated on local and ... |
+| 5.27 | Gossip Protocol | **Gossip** (epidemic) protocols spread information peer-to-peer by random nod... |
+| 5.28 | Membership Protocols | **Membership protocols** track which nodes are alive, joining, or leaving the... |
+
+---
+
+[Ã¢ - Â Back to master index](../README.md)

@@ -1,0 +1,1497 @@
+﻿[
+    {
+        "index":  1,
+        "name":  "Networking",
+        "items":  [
+                      {
+                          "topic":  "OSI Model",
+                          "link1":  "https://www.youtube.com/playlist?list=PLxCzCOWd7aiGFBD2-2joCpWOLUrDLvVV_",
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "TCP/IP",
+                          "link1":  "https://www.youtube.com/watch?v=2QGgEk20RXM",
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "TCP Handshake",
+                          "link1":  "https://www.youtube.com/watch?v=2QGgEk20RXM",
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "UDP",
+                          "link1":  "https://www.youtube.com/watch?v=2QGgEk20RXM",
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "IP Addressing/Subnetting",
+                          "link1":  "https://www.youtube.com/watch?v=eWb35_xIKho",
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "CIDR",
+                          "link1":  "https://www.youtube.com/watch?v=7u0XnqS-5xs",
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "DNS",
+                          "link1":  "https://www.youtube.com/watch?v=vhfRArT11jc",
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "DNS Resolution",
+                          "link1":  "https://www.youtube.com/watch?v=BZISxpdl4lQ",
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "HTTP/HTTPS",
+                          "link1":  "https://www.youtube.com/watch?v=FmgIQBQ87fo",
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "SSL/TLS",
+                          "link1":  "https://www.youtube.com/watch?v=LJDsdSh1CYM",
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "HTTP2 \u0026 HTTP3",
+                          "link1":  "https://www.youtube.com/watch?v=UMwQjFzTQXw",
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "QUIC",
+                          "link1":  "https://www.youtube.com/watch?v=HnDsMehSSY4",
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Forward \u0026 Reverse Proxy",
+                          "link1":  "https://www.youtube.com/watch?v=xo5V9g9joFs",
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "NAT",
+                          "link1":  "https://www.youtube.com/watch?v=FTUV0t6JaDA",
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "VPN",
+                          "link1":  "https://www.youtube.com/watch?v=R-JUOpCgTZc",
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "SSE \u0026 Polling \u0026 Websocets",
+                          "link1":  "https://www.youtube.com/watch?v=WS352jTTkPU",
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "CDN",
+                          "link1":  "https://www.youtube.com/watch?v=ouqqU0FJjhQ",
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Anycast/Multicast/Broadcast",
+                          "link1":  "https://www.youtube.com/watch?v=EcWhJbEWxHU",
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Load Balancer",
+                          "link1":  "https://www.youtube.com/watch?v=TavIqNcnwSA",
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Load Balancer Algorithm",
+                          "link1":  "https://www.youtube.com/watch?v=1fN2UDbtGDQ",
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "MTU",
+                          "link1":  "https://www.youtube.com/watch?v=XMcYwr-yJGA",
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Keep Alive Connections",
+                          "link1":  "https://www.youtube.com/watch?v=zRUdSu3JlK8",
+                          "link2":  null
+                      }
+                  ]
+    },
+    {
+        "index":  2,
+        "name":  "Databases",
+        "items":  [
+                      {
+                          "topic":  "Isolation Levels",
+                          "link1":  "https://www.youtube.com/watch?v=89YYHMYfymk",
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Indexing",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Normalization/Denormalizatio",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Views/ Materialized View",
+                          "link1":  "https://www.youtube.com/watch?v=XI1rk1Uaf7U",
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Query Planner/ optimizer",
+                          "link1":  "https://www.youtube.com/watch?v=fj9pK8isRA4",
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "B Tree/B+ Tree",
+                          "link1":  "https://www.youtube.com/watch?v=aZjYr87r1b8",
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "LSM Tree/SSTables/WAL",
+                          "link1":  "https://www.youtube.com/watch?v=P2xtlLymqqI",
+                          "link2":  "https://medium.com/@dwivedi.ankit21/lsm-trees-the-go-to-data-structure-for-databases-search-engines-and-more-c3a48fa469d2"
+                      },
+                      {
+                          "topic":  "MVCC",
+                          "link1":  "https://www.youtube.com/watch?v=TBmDBw1IIoY",
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Page Cache",
+                          "link1":  "https://www.youtube.com/watch?v=syPEMXQwaYQ",
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Redo/undo/bin Logs",
+                          "link1":  "https://www.youtube.com/watch?v=47LvbDGD4cc",
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Vacuum Process",
+                          "link1":  "https://www.youtube.com/watch?v=fTl8-pnaJCE",
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Key Value Stores",
+                          "link1":  "https://www.youtube.com/watch?v=VfcRxtBKI54",
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Document Databases",
+                          "link1":  "https://www.youtube.com/watch?v=cODCpXtPHbQ",
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Wide Column Databases",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Graph Databases",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Time Series Databases",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Search Databases",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Vector Databases",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Multi Model Databases",
+                          "link1":  "https://www.youtube.com/watch?v=hwYadL33HdI",
+                          "link2":  null
+                      }
+                  ]
+    },
+    {
+        "index":  3,
+        "name":  "Caching",
+        "items":  [
+                      {
+                          "topic":  "Cache Fundamentals",
+                          "link1":  "https://www.youtube.com/watch?v=1NngTUYPdpI",
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Cache Aside Pattern",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Read Through Cache",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Write Through Cache",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Write Back Cache",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Refresh Ahead Cache",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Distributed Cache",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Near Cache",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Cache Invalidation",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Cache Stampede",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Cache Avalanche",
+                          "link1":  null,
+                          "link2":  "https://www.linkedin.com/posts/alexxubyte_systemdesign-coding-interviewtips-share-7436445893542801409-YVJI/"
+                      },
+                      {
+                          "topic":  "Cache Penetration",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Cache Warming",
+                          "link1":  null,
+                          "link2":  null
+                      }
+                  ]
+    },
+    {
+        "index":  4,
+        "name":  "Distributed System",
+        "items":  [
+                      {
+                          "topic":  "Scalability",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Availability",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Reliability",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Durability",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Fault Tolerance",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Resilience",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Throughput",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Latency",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Tail Latency",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Consistency",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Concurrency",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "CAP Theorem",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "PACELC Theorem",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Strong Consistency",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Eventual Consistency",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Causal Consistency",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Linearizability",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Backpressure",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Graceful Degradation",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Failover",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Redundancy",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Capacity Planning",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Bottleneck Analysis",
+                          "link1":  null,
+                          "link2":  null
+                      }
+                  ]
+    },
+    {
+        "index":  5,
+        "name":  "Distributed Databases",
+        "items":  [
+                      {
+                          "topic":  "Sharding",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Partitioning",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Hash Partitioning",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Range Partitioning",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Geo Partitioning",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Rebalancing",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Hot Partitions",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Consistent Hashing",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Rendezvous Hashing",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Virtual Nodes",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Replication",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Leader Follower Replication",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Multi Leader Replication",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Quorum Reads",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Quorum Writes",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Distributed Transactions",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Two Phase Commit",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Three Phase Commit",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Distributed Locking",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Split Brain",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Consensus",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Paxos",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Raft",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Leader Election",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Lamport Clocks",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Vector Clocks",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Gossip Protocol",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Membership Protocols",
+                          "link1":  null,
+                          "link2":  null
+                      }
+                  ]
+    },
+    {
+        "index":  6,
+        "name":  "Messaging \u0026 Events",
+        "items":  [
+                      {
+                          "topic":  "Message Queues",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Publish Subscribe",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Event Streaming",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Kafka",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Kafka Partitions",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Kafka Consumer Groups",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "RabbitMQ",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "ActiveMQ",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Pulsar",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Ordering Guarantees",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Exactly Once Delivery",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "At Least Once Delivery",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "At Most Once Delivery",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Dead Letter Queue",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Retry Queue",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Event Driven Architecture",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Event Sourcing",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "CQRS",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Change Data Capture (CDC)",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Event Replay",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Outbox Pattern",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Event Versioning",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Schema Registry",
+                          "link1":  null,
+                          "link2":  null
+                      }
+                  ]
+    },
+    {
+        "index":  7,
+        "name":  "API Desing",
+        "items":  [
+                      {
+                          "topic":  "REST",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "GraphQL",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "gRPC",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "SOAP",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "API Gateway",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "API Aggregation",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "API Composition",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "API Versioning",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Pagination",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Filtering",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Sorting",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "OpenAPI",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Swagger",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Request Validation",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "API Security",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Webhooks",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Rate Limiting",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Throttling",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Idempotency",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Idempotency Keys",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Contract Testing",
+                          "link1":  null,
+                          "link2":  null
+                      }
+                  ]
+    },
+    {
+        "index":  8,
+        "name":  "MicroServices",
+        "items":  [
+                      {
+                          "topic":  "Monolith",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Modular Monolith",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Microservices",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Service Registry",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Service Discovery",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Service Mesh",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Sidecar Pattern",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Circuit Breaker",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Retry Pattern",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Bulkhead Pattern",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Saga Pattern",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Choreography",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Orchestration",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "BFF Pattern",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Strangler Pattern",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "DDD",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Bounded Context",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Hexagonal Architecture",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Clean Architecture",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Onion Architecture",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Dependency Injection",
+                          "link1":  null,
+                          "link2":  null
+                      }
+                  ]
+    },
+    {
+        "index":  9,
+        "name":  "Observability",
+        "items":  [
+                      {
+                          "topic":  "Logging",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Structured Logging",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Metrics",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Monitoring",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Distributed Tracing",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "OpenTelemetry",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Correlation IDs",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Alerting",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Dashboards",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Health Checks",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Synthetic Monitoring",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Error Budgets",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "SLA",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "SLO",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "SLI",
+                          "link1":  null,
+                          "link2":  null
+                      }
+                  ]
+    },
+    {
+        "index":  10,
+        "name":  "Security",
+        "items":  [
+                      {
+                          "topic":  "Authentication",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Authorization",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "OAuth2",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "OpenID Connect",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "JWT",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Session Management",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "RBAC",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "ABAC",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Encryption at Rest",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Encryption in Transit",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Secret Management",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "KMS",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "CSRF",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "XSS",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "SQL Injection",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "SSRF",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Clickjacking",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "DDoS Protection",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "WAF",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Zero Trust Security",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Audit Logging",
+                          "link1":  null,
+                          "link2":  null
+                      }
+                  ]
+    },
+    {
+        "index":  11,
+        "name":  "Cloud \u0026 Kubernetes",
+        "items":  [
+                      {
+                          "topic":  "IaaS",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "PaaS",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "SaaS",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Serverless",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Autoscaling",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Regions",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Availability Zones",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Multi Region Deployment",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "VPC",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Cloud Networking",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Cloud Storage",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Managed Databases",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Docker",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Container Runtime",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Container Images",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Image Layers",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Namespaces",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "cgroups",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Kubernetes",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Pods",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Deployments",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "ReplicaSets",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Services",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Ingress",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "StatefulSets",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "DaemonSets",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Jobs",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "CronJobs",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "ConfigMaps",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Secrets",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Scheduler",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "etcd",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Operators",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "HPA",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Cluster Autoscaler",
+                          "link1":  null,
+                          "link2":  null
+                      }
+                  ]
+    },
+    {
+        "index":  12,
+        "name":  "Reliability Engineering",
+        "items":  [
+                      {
+                          "topic":  "Chaos Engineering",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Disaster Recovery",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Backup Strategy",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Restore Strategy",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "RPO",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "RTO",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "High Availability",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Active Active",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Active Passive",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Fault Injection",
+                          "link1":  null,
+                          "link2":  null
+                      }
+                  ]
+    },
+    {
+        "index":  13,
+        "name":  "Advanced Topics",
+        "items":  [
+                      {
+                          "topic":  "Bloom Filters",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "HyperLogLog",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Count Min Sketch",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Merkle Trees",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Skip Lists",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Trie",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Distributed Hash Tables",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "UUID",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Snowflake IDs",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "ULID",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "KSUID",
+                          "link1":  null,
+                          "link2":  null
+                      }
+                  ]
+    },
+    {
+        "index":  14,
+        "name":  "Search Systems",
+        "items":  [
+                      {
+                          "topic":  "Full Text Search",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Inverted Index",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Elasticsearch",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Lucene",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Ranking",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Relevance Scoring",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Faceted Search",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Autocomplete",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Fuzzy Search",
+                          "link1":  null,
+                          "link2":  null
+                      }
+                  ]
+    },
+    {
+        "index":  15,
+        "name":  "Big Data",
+        "items":  [
+                      {
+                          "topic":  "Hadoop",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Spark",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Flink",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "ETL",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "ELT",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Batch Processing",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Stream Processing",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Data Lake",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Data Warehouse",
+                          "link1":  null,
+                          "link2":  null
+                      },
+                      {
+                          "topic":  "Lakehouse Architecture",
+                          "link1":  null,
+                          "link2":  null
+                      }
+                  ]
+    }
+]

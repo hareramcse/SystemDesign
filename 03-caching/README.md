@@ -1,10 +1,10 @@
-﻿# 3. Caching
+# 3. Caching
 
-> Status: **Documented** — master reference
+> Status: **Documented**  -  master reference
 
-[← Back to master index](../README.md)
+[<- Back to master index](../README.md)
 
-## Sub-topics table
+## Sub-topics
 
 | # | Sub-topic | Status |
 |---|-----------|--------|
@@ -22,9 +22,13 @@
 | 3.12 | [Cache Penetration](#312-cache-penetration) | Done |
 | 3.13 | [Cache Warming](#313-cache-warming) | Done |
 
+
+
+
+
 ## Topic Overview
 
-Caching stores frequently accessed data in a faster, closer storage tier so applications avoid repeated expensive work—disk I/O, network round-trips, or heavy computation. In system design, caching is one of the highest-leverage optimizations: a well-placed cache can reduce latency by orders of magnitude and absorb read traffic that would otherwise saturate databases.
+Caching stores frequently accessed data in a faster, closer storage tier so applications avoid repeated expensive work - disk I/O, network round-trips, or heavy computation. In system design, caching is one of the highest-leverage optimizations: a well-placed cache can reduce latency by orders of magnitude and absorb read traffic that would otherwise saturate databases.
 
 Caches exist at every layer: CPU L1/L2/L3, OS page cache, CDN edge nodes, in-process hash maps, and dedicated distributed stores like Redis or Memcached. The design challenge is not merely "add Redis" but choosing the right **pattern** (who reads/writes the cache), **consistency model** (how stale data is tolerated), and **failure modes** (stampede, avalanche, penetration) that determine whether caching helps or harms production systems.
 
@@ -36,16 +40,29 @@ flowchart LR
     CDN[CDN Edge] --> App
 ```
 
+## Reading order
+
+Sub-topics are sequenced for progressive learning: foundations first, then related concepts, then specialized topics.
+
+| Group | Sections | Focus |
+|-------|----------|-------|
+| **1. Basics** | 3.1 | Fundamentals |
+| **2. Cache patterns** | 3.2-3.6 | Aside, read/write-through, write-back, refresh-ahead |
+| **3. Deployment** | 3.7-3.9 | Distributed, near cache, invalidation |
+| **4. Failure modes** | 3.10-3.13 | Stampede, avalanche, penetration, warming |
+
 ## Related topics
 
-- [Databases](../02-databases/README.md) — storage engines, page cache, query optimization
-- [Distributed System](../04-distributed-system/README.md) — consistency, latency, availability trade-offs
-- [Distributed Databases](../05-distributed-databases/README.md) — replication and partitioning at scale
-- [Networking](../01-networking/README.md) — CDN, load balancing, keep-alive
+- [Databases](../02-databases/README.md)  -  storage engines, page cache, query optimization
+- [Distributed System](../04-distributed-system/README.md)  -  consistency, latency, availability trade-offs
+- [Distributed Databases](../05-distributed-databases/README.md)  -  replication and partitioning at scale
+- [Networking](../01-networking/README.md)  -  CDN, load balancing, keep-alive
 
 ---
 
+
 ## 3.1 Cache Fundamentals
+
 
 ### What is it?
 
@@ -53,7 +70,7 @@ A cache is a store of data duplicated from a slower **source of truth**, kept in
 
 ### Why it matters
 
-Without caching, every user request hits the database at full cost. Caches decouple read throughput from backend capacity, shrink p99 latency, and provide a buffer during traffic spikes—often the difference between a system that scales linearly and one that collapses under load.
+Without caching, every user request hits the database at full cost. Caches decouple read throughput from backend capacity, shrink p99 latency, and provide a buffer during traffic spikes - often the difference between a system that scales linearly and one that collapses under load.
 
 ### How it works
 
@@ -78,7 +95,7 @@ flowchart TB
 |---------|-------------|
 | **Hit ratio** | Percentage of requests served from cache; target often 90%+ for hot paths |
 | **TTL** | Maximum age before entry is considered stale and removed |
-| **Eviction policy** | LRU, LFU, FIFO—chooses what to remove when cache is full |
+| **Eviction policy** | LRU, LFU, FIFO - chooses what to remove when cache is full |
 | **Write policy** | Determines whether writes go to cache, source, or both (see patterns below) |
 | **Cache coherence** | How multiple cache layers stay consistent with each other and the source |
 
@@ -91,18 +108,20 @@ flowchart TB
 
 ### Trade-offs / Pitfalls
 
-- Stale data if TTL or invalidation is wrong—users see outdated information
+- Stale data if TTL or invalidation is wrong - users see outdated information
 - Memory cost scales with cached working set; unbounded caching causes OOM
 - Cache adds operational complexity: monitoring hit ratio, eviction, cluster health
 - Cold start after deploy or restart causes thundering herd on the backend
 
 ### References
 
-- [Cache Fundamentals — System Design video](https://www.youtube.com/watch?v=1NngTUYPdpI)
+- [Cache Fundamentals  -  System Design video](https://www.youtube.com/watch?v=1NngTUYPdpI)
 
 ---
 
+
 ## 3.2 Cache Aside Pattern
+
 
 ### What is it?
 
@@ -116,8 +135,8 @@ It is the most common production pattern because it is simple, works with any ca
 
 **Read path:**
 1. App queries cache for key.
-2. Hit → return data.
-3. Miss → query DB, store result in cache with TTL, return data.
+2. Hit -> return data.
+3. Miss -> query DB, store result in cache with TTL, return data.
 
 **Write path:**
 1. App writes to DB (source of truth).
@@ -139,7 +158,7 @@ sequenceDiagram
 
 ### Key details
 
-- Application owns cache logic—no magic in the cache layer
+- Application owns cache logic - no magic in the cache layer
 - **Invalidate-on-write** is safer than update-on-write (avoids race conditions where DB write fails but cache shows new value)
 - TTL provides safety net if invalidation is missed
 - Works well when read:write ratio is high (10:1 or greater)
@@ -154,13 +173,15 @@ sequenceDiagram
 ### Trade-offs / Pitfalls
 
 - **Stale reads** if invalidation fails silently or races occur (read after write before invalidate completes)
-- First request after invalidation always misses—latency spike per key
+- First request after invalidation always misses - latency spike per key
 - Application code must handle cache logic everywhere data is accessed
 - Does not help if working set exceeds cache size (constant churn, low hit ratio)
 
 ---
 
+
 ## 3.3 Read Through Cache
+
 
 ### What is it?
 
@@ -175,7 +196,7 @@ Centralizes read logic in one place, reducing duplicated cache-miss handling acr
 1. Application requests key from cache layer.
 2. Cache checks internal store.
 3. On miss, cache **automatically** calls a loader function / DB and populates itself.
-4. Cache returns data to application—application never touches DB directly for reads.
+4. Cache returns data to application - application never touches DB directly for reads.
 
 ```mermaid
 sequenceDiagram
@@ -204,14 +225,16 @@ sequenceDiagram
 
 ### Trade-offs / Pitfalls
 
-- Loader failures propagate as cache errors—need circuit breaking on DB
+- Loader failures propagate as cache errors - need circuit breaking on DB
 - Harder to implement partial/chunked caching (cache loads whole object)
 - Write path still needs separate strategy (usually invalidate or write-through)
 - Debugging requires understanding cache loader behavior, not just app code
 
 ---
 
+
 ## 3.4 Write Through Cache
+
 
 ### What is it?
 
@@ -219,7 +242,7 @@ sequenceDiagram
 
 ### Why it matters
 
-Keeps cache and DB consistent on writes—no stale cache entries after an update. Reads after writes always hit warm, correct data in cache (assuming write succeeded).
+Keeps cache and DB consistent on writes - no stale cache entries after an update. Reads after writes always hit warm, correct data in cache (assuming write succeeded).
 
 ### How it works
 
@@ -245,7 +268,7 @@ sequenceDiagram
 
 - Write latency = cache write + DB write (slower than write-back)
 - Eliminates stale-read problem for keys that were written
-- Cache only holds data that has been written or read—cold keys still miss
+- Cache only holds data that has been written or read - cold keys still miss
 - Used in systems requiring strong read-after-write consistency for cached entities
 
 ### When to use
@@ -257,13 +280,15 @@ sequenceDiagram
 ### Trade-offs / Pitfalls
 
 - Higher write latency than direct DB write or write-back
-- Failed DB write must roll back cache update—needs transactional coordination
+- Failed DB write must roll back cache update - needs transactional coordination
 - Caching data that is never read wastes memory (writes populate cache unnecessarily)
 - Does not protect DB from read load for keys never written through cache
 
 ---
 
+
 ## 3.5 Write Back Cache
+
 
 ### What is it?
 
@@ -296,7 +321,7 @@ sequenceDiagram
 
 - **Durability risk:** crash between cache write and DB flush loses data
 - Batching improves DB throughput (fewer transactions)
-- Ordering matters for related keys—flush order can cause temporary inconsistency
+- Ordering matters for related keys - flush order can cause temporary inconsistency
 - Often paired with replication or persistent cache (Redis AOF) to reduce loss window
 
 ### When to use
@@ -314,7 +339,9 @@ sequenceDiagram
 
 ---
 
+
 ## 3.6 Refresh Ahead Cache
+
 
 ### What is it?
 
@@ -344,7 +371,7 @@ flowchart TB
 ### Key details
 
 - Requires access tracking (frequency counters, last-access time)
-- Refresh storms if many hot keys expire simultaneously—stagger TTLs
+- Refresh storms if many hot keys expire simultaneously - stagger TTLs
 - Wasted refresh if key stops being accessed after refresh scheduled
 - Guava/Caffeine support `refreshAfterWrite`; Redis requires custom logic or jobs
 
@@ -363,7 +390,9 @@ flowchart TB
 
 ---
 
+
 ## 3.7 Distributed Cache
+
 
 ### What is it?
 
@@ -408,14 +437,16 @@ flowchart TB
 
 ### Trade-offs / Pitfalls
 
-- Network latency between app and remote cache (1–5 ms vs. microseconds for local)
+- Network latency between app and remote cache (1 - 5 ms vs. microseconds for local)
 - Hot keys on single shard cause skew despite hashing
 - Split-brain and failover can cause brief inconsistency or data loss
 - Operational overhead: cluster monitoring, resharding, version upgrades
 
 ---
 
+
 ## 3.8 Near Cache
+
 
 ### What is it?
 
@@ -428,10 +459,10 @@ Cuts p99 latency for hot keys from milliseconds to nanoseconds. Essential in mic
 ### How it works
 
 1. App checks local near cache (in-heap Caffeine/Guava map).
-2. Local hit → return immediately (no network).
-3. Local miss → fetch from remote cache (Redis).
-4. Remote hit → populate near cache with shorter TTL, return.
-5. Remote miss → load from DB per cache-aside logic.
+2. Local hit -> return immediately (no network).
+3. Local miss -> fetch from remote cache (Redis).
+4. Remote hit -> populate near cache with shorter TTL, return.
+5. Remote miss -> load from DB per cache-aside logic.
 
 ```mermaid
 sequenceDiagram
@@ -449,7 +480,7 @@ sequenceDiagram
 
 - Near cache TTL should be **shorter** than remote cache TTL to limit staleness
 - Invalidation must propagate: remote invalidation + local eviction (pub/sub, Hazelcast events)
-- Memory bounded per instance—each pod has its own L1 (not shared)
+- Memory bounded per instance - each pod has its own L1 (not shared)
 - Stale L1 entries across pods until TTL expires if invalidation missed
 
 ### When to use
@@ -461,13 +492,15 @@ sequenceDiagram
 ### Trade-offs / Pitfalls
 
 - **Consistency:** pods see different L1 state briefly
-- Total memory = near cache × number of pods (multiplied footprint)
+- Total memory = near cache Ã— number of pods (multiplied footprint)
 - Invalidation complexity increases significantly
 - Harder to debug "works on one pod, stale on another"
 
 ---
 
+
 ## 3.9 Cache Invalidation
+
 
 ### What is it?
 
@@ -475,7 +508,7 @@ sequenceDiagram
 
 ### Why it matters
 
-Wrong invalidation causes users to see outdated prices, permissions, or content—often worse than a cache miss because stale data looks legitimate.
+Wrong invalidation causes users to see outdated prices, permissions, or content - often worse than a cache miss because stale data looks legitimate.
 
 ### How it works
 
@@ -497,7 +530,7 @@ flowchart LR
 ### Key details
 
 - **Cache aside + delete** is most common; order matters: DB first, then delete cache
-- **Race:** read repopulates stale value between DB write and delete—use short TTL or versioned keys
+- **Race:** read repopulates stale value between DB write and delete - use short TTL or versioned keys
 - **Bulk invalidation:** tag-based keys (`product:*`) require scan or maintained index of keys
 - CDC (Debezium) can drive invalidation from binlog for decoupled services
 
@@ -512,11 +545,13 @@ flowchart LR
 - Over-invalidation kills hit ratio; under-invalidation serves stale data
 - Distributed invalidation lag causes temporary inconsistency across regions
 - Forgotten code paths that write DB but skip invalidation are common bugs
-- Full cache flush is a blunt instrument—causes massive miss storm
+- Full cache flush is a blunt instrument - causes massive miss storm
 
 ---
 
+
 ## 3.10 Cache Stampede
+
 
 ### What is it?
 
@@ -524,7 +559,7 @@ A **cache stampede** (thundering herd) occurs when a popular cache entry expires
 
 ### Why it matters
 
-A single hot key expiry can overwhelm the database—exactly when you thought the cache was protecting you. Black Friday outages often involve stampede dynamics.
+A single hot key expiry can overwhelm the database - exactly when you thought the cache was protecting you. Black Friday outages often involve stampede dynamics.
 
 ### How it works
 
@@ -573,11 +608,13 @@ sequenceDiagram
 
 ---
 
+
 ## 3.11 Cache Avalanche
+
 
 ### What is it?
 
-**Cache avalanche** is mass cache failure or simultaneous expiry of **many keys** (or entire cache cluster), causing a flood of traffic to the backend. Broader than stampede (one key)—avalanche affects large portions of the key space or all nodes.
+**Cache avalanche** is mass cache failure or simultaneous expiry of **many keys** (or entire cache cluster), causing a flood of traffic to the backend. Broader than stampede (one key) - avalanche affects large portions of the key space or all nodes.
 
 ### Why it matters
 
@@ -587,8 +624,8 @@ Redis cluster restart, network partition, or uniform TTL on millions of keys can
 
 1. Trigger event: cache cluster reboot, bad deploy flushing cache, or TTL set identically at cache warm.
 2. Large fraction of requests become cache misses simultaneously.
-3. Backend receives 10–100× normal load.
-4. Cascading failure: DB slow → app threads block → timeouts → retries amplify load.
+3. Backend receives 10 - 100Ã— normal load.
+4. Cascading failure: DB slow -> app threads block -> timeouts -> retries amplify load.
 
 ```mermaid
 flowchart TB
@@ -601,7 +638,7 @@ flowchart TB
 
 ### Key details
 
-- **TTL jitter:** add random offset (±10%) to every key's TTL
+- **TTL jitter:** add random offset (Â±10%) to every key's TTL
 - **Circuit breaker:** stop hitting DB when error rate spikes
 - **Rate limiting** on miss path to cap concurrent DB queries
 - **Multi-tier cache:** L1 survives brief L2 outage
@@ -615,22 +652,24 @@ flowchart TB
 
 ### Trade-offs / Pitfalls
 
-- Circuit breaker open state returns errors to users—product decision
+- Circuit breaker open state returns errors to users - product decision
 - Rate limiting on miss increases latency for legitimate requests
 - Multi-tier adds consistency complexity
 - Replicas help availability but failover still causes brief miss window
 
 ### References
 
-- [Cache Avalanche — system design discussion](https://www.linkedin.com/posts/alexxubyte_systemdesign-coding-interviewtips-share-7436445893542801409-YVJI/)
+- [Cache Avalanche  -  system design discussion](https://www.linkedin.com/posts/alexxubyte_systemdesign-coding-interviewtips-share-7436445893542801409-YVJI/)
 
 ---
 
+
 ## 3.12 Cache Penetration
+
 
 ### What is it?
 
-**Cache penetration** happens when requests query for keys that **do not exist** in the database (malicious or accidental), bypassing the cache every time because nothing valid gets stored—each request hits DB full cost.
+**Cache penetration** happens when requests query for keys that **do not exist** in the database (malicious or accidental), bypassing the cache every time because nothing valid gets stored - each request hits DB full cost.
 
 ### Why it matters
 
@@ -642,7 +681,7 @@ Attackers can enumerate random IDs (`user:-1`, `user:999999999`) to bypass cache
 2. Cache miss (key never stored).
 3. DB query returns empty.
 4. Application returns 404 **without** caching the negative result.
-5. Repeat step 1–4 for every request—cache provides zero protection.
+5. Repeat step 1 - 4 for every request - cache provides zero protection.
 
 ```mermaid
 sequenceDiagram
@@ -674,14 +713,16 @@ sequenceDiagram
 
 ### Trade-offs / Pitfalls
 
-- Caching nulls fills cache with garbage if attack uses infinite random keys—combine with Bloom filter
+- Caching nulls fills cache with garbage if attack uses infinite random keys - combine with Bloom filter
 - Bloom filter false positives block legitimate new keys briefly
 - Short TTL on null entries still allows sustained attack at reduced rate
 - Validation rules must not reject valid edge-case IDs
 
 ---
 
+
 ## 3.13 Cache Warming
+
 
 ### What is it?
 
@@ -710,7 +751,7 @@ flowchart LR
 ### Key details
 
 - Warm **measured** hot keys from access logs, not entire tables
-- Warming huge datasets can itself overload DB—rate-limit the job
+- Warming huge datasets can itself overload DB - rate-limit the job
 - TTL should be set at warm time; consider longer TTL for stable reference data
 - Blue/green deploy: warm cache in new environment before traffic switch
 - CDN warming uses similar idea (prefetch to edge PoPs)
@@ -727,23 +768,29 @@ flowchart LR
 - Warming wrong keys wastes memory and DB load with no hit ratio benefit
 - Stale data if warm snapshot is old and TTL is long
 - Race with live invalidation during warm job
-- Warm job failure leaves cache cold—monitor and alert
+- Warm job failure leaves cache cold - monitor and alert
 
 ---
 
+
 ## Quick Reference
 
-| Pattern / Concept | Read | Write | Consistency | Best for |
-|-------------------|------|-------|-------------|----------|
-| Cache aside | App → cache → DB on miss | App → DB, invalidate cache | Eventual | General purpose |
-| Read through | Cache loads on miss | Separate strategy | Eventual | Shared cache library |
-| Write through | From cache | Sync cache + DB | Strong RYW | Read-after-write critical |
-| Write back | From cache | Async to DB | Weak | Write-heavy, latency-sensitive |
-| Refresh ahead | Proactive reload | N/A | Slightly stale OK | Hot keys, low miss tolerance |
-| Near cache | L1 then L2 | Invalidate both layers | Per-pod eventual | Microservices, hot reads |
-| Stampede fix | Single-flight, jitter | — | — | Hot key TTL expiry |
-| Avalanche fix | Jitter, circuit breaker | — | — | Mass expiry / cache down |
-| Penetration fix | Cache nulls, Bloom filter | — | — | Invalid/missing keys |
-| Warming | Pre-load before traffic | — | — | Cold start, launches |
+| # | Topic | Summary |
+|---|-------|---------|
+| 3.1 | Cache Fundamentals | A cache is a store of data duplicated from a slower **source of truth**, kept... |
+| 3.2 | Cache Aside Pattern | **Cache-aside** (a.k.a. **lazy loading**) puts the application in control: th... |
+| 3.3 | Read Through Cache | In **read-through**, the cache itself is responsible for loading data on a mi... |
+| 3.4 | Write Through Cache | **Write-through** writes synchronously to **both** cache and database on ever... |
+| 3.5 | Write Back Cache | **Write-back** (write-behind) acknowledges writes to the cache immediately an... |
+| 3.6 | Refresh Ahead Cache | **Refresh-ahead** proactively reloads cache entries **before** they expire, b... |
+| 3.7 | Distributed Cache | A **distributed cache** spans multiple nodes, presenting a unified key space ... |
+| 3.8 | Near Cache | A **near cache** (L1) sits in the application process memory in front of a **... |
+| 3.9 | Cache Invalidation | **Cache invalidation** removes or updates cached entries when underlying data... |
+| 3.10 | Cache Stampede | A **cache stampede** (thundering herd) occurs when a popular cache entry expi... |
+| 3.11 | Cache Avalanche | **Cache avalanche** is mass cache failure or simultaneous expiry of **many ke... |
+| 3.12 | Cache Penetration | **Cache penetration** happens when requests query for keys that **do not exis... |
+| 3.13 | Cache Warming | **Cache warming** pre-populates the cache with anticipated data **before** tr... |
 
-[← Back to master index](../README.md)
+---
+
+[Ã¢ - Â Back to master index](../README.md)

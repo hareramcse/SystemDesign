@@ -1,8 +1,8 @@
-﻿# 11. Cloud & Kubernetes
+# 11. Cloud & Kubernetes
 
-> Status: **Documented** — MASTER reference depth for all sub-topics below.
+> Status: **Documented**  -  MASTER reference depth for all sub-topics below.
 
-[← Back to master index](../README.md)
+[<- Back to master index](../README.md)
 
 ---
 
@@ -14,14 +14,14 @@
 | 11.2 | [PaaS](#112-paas) | Done |
 | 11.3 | [SaaS](#113-saas) | Done |
 | 11.4 | [Serverless](#114-serverless) | Done |
-| 11.5 | [Autoscaling](#115-autoscaling) | Done |
-| 11.6 | [Regions](#116-regions) | Done |
-| 11.7 | [Availability Zones](#117-availability-zones) | Done |
-| 11.8 | [Multi Region Deployment](#118-multi-region-deployment) | Done |
-| 11.9 | [VPC](#119-vpc) | Done |
-| 11.10 | [Cloud Networking](#1110-cloud-networking) | Done |
-| 11.11 | [Cloud Storage](#1111-cloud-storage) | Done |
-| 11.12 | [Managed Databases](#1112-managed-databases) | Done |
+| 11.5 | [Regions](#115-regions) | Done |
+| 11.6 | [Availability Zones](#116-availability-zones) | Done |
+| 11.7 | [Multi Region Deployment](#117-multi-region-deployment) | Done |
+| 11.8 | [VPC](#118-vpc) | Done |
+| 11.9 | [Cloud Networking](#119-cloud-networking) | Done |
+| 11.10 | [Cloud Storage](#1110-cloud-storage) | Done |
+| 11.11 | [Managed Databases](#1111-managed-databases) | Done |
+| 11.12 | [Autoscaling](#1112-autoscaling) | Done |
 | 11.13 | [Docker](#1113-docker) | Done |
 | 11.14 | [Container Runtime](#1114-container-runtime) | Done |
 | 11.15 | [Container Images](#1115-container-images) | Done |
@@ -30,8 +30,8 @@
 | 11.18 | [cgroups](#1118-cgroups) | Done |
 | 11.19 | [Kubernetes](#1119-kubernetes) | Done |
 | 11.20 | [Pods](#1120-pods) | Done |
-| 11.21 | [Deployments](#1121-deployments) | Done |
-| 11.22 | [ReplicaSets](#1122-replicasets) | Done |
+| 11.21 | [ReplicaSets](#1121-replicasets) | Done |
+| 11.22 | [Deployments](#1122-deployments) | Done |
 | 11.23 | [Services](#1123-services) | Done |
 | 11.24 | [Ingress](#1124-ingress) | Done |
 | 11.25 | [StatefulSets](#1125-statefulsets) | Done |
@@ -46,11 +46,15 @@
 | 11.34 | [HPA](#1134-hpa) | Done |
 | 11.35 | [Cluster Autoscaler](#1135-cluster-autoscaler) | Done |
 
+
+
+
+
 ---
 
 ## Overview
 
-Cloud computing delivers on-demand compute, storage, and networking over the internet across service models (IaaS, PaaS, SaaS). Kubernetes orchestrates containers at scale—scheduling workloads, networking services, and automating rollouts across clusters spanning regions and availability zones.
+Cloud computing delivers on-demand compute, storage, and networking over the internet across service models (IaaS, PaaS, SaaS). Kubernetes orchestrates containers at scale - scheduling workloads, networking services, and automating rollouts across clusters spanning regions and availability zones.
 
 ```mermaid
 flowchart TB
@@ -83,7 +87,7 @@ flowchart TB
     CP --> SCH --> W1
 ```
 
-### Cloud Layers — IaaS / PaaS / SaaS
+### Cloud Layers  -  IaaS / PaaS / SaaS
 
 ```mermaid
 flowchart TB
@@ -98,19 +102,37 @@ flowchart TB
         Servers[Servers / Storage / Network]
     end
 
-    SaaS["SaaS — use software"] --> App
-    PaaS["PaaS — deploy code"] --> Runtime
-    IaaS["IaaS — rent VMs"] --> OS
+    SaaS["SaaS  -  use software"] --> App
+    PaaS["PaaS  -  deploy code"] --> Runtime
+    IaaS["IaaS  -  rent VMs"] --> OS
     Virt & Servers --> ProviderManage
 ```
 
 ---
 
+
+## Reading order
+
+Sub-topics are sequenced for progressive learning: foundations first, then related concepts, then specialized topics.
+
+| Group | Sections | Focus |
+|-------|----------|-------|
+| **1. Cloud models** | 11.1-11.4 | IaaS, PaaS, SaaS, serverless |
+| **2. Cloud infrastructure** | 11.5-11.12 | Regions, VPC, storage, managed DB |
+| **3. Containers** | 11.13-11.18 | Docker, images, namespaces, cgroups |
+| **4. Kubernetes core** | 11.19-11.24 | K8s, pods, deployments, services, ingress |
+| **5. K8s workloads and config** | 11.25-11.33 | StatefulSets, jobs, ConfigMaps, secrets, etcd |
+| **6. Scaling** | 11.34-11.35 | HPA, cluster autoscaler |
+
+---
+---
+
 ## 11.1 IaaS
+
 
 ### What is it
 
-**Infrastructure as a Service**—rent virtual machines, networks, block storage, and load balancers; you manage OS, runtime, and applications.
+**Infrastructure as a Service** - rent virtual machines, networks, block storage, and load balancers; you manage OS, runtime, and applications.
 
 ### Why it matters
 
@@ -155,11 +177,13 @@ flowchart LR
 
 ---
 
+
 ## 11.2 PaaS
+
 
 ### What is it
 
-**Platform as a Service**—provider manages runtime, OS, and orchestration; you deploy application code and configuration.
+**Platform as a Service** - provider manages runtime, OS, and orchestration; you deploy application code and configuration.
 
 ### Why it matters
 
@@ -205,11 +229,13 @@ flowchart LR
 
 ---
 
+
 ## 11.3 SaaS
+
 
 ### What is it
 
-**Software as a Service**—complete applications delivered over the internet; provider manages everything including the application itself.
+**Software as a Service** - complete applications delivered over the internet; provider manages everything including the application itself.
 
 ### Why it matters
 
@@ -254,7 +280,9 @@ flowchart LR
 
 ---
 
+
 ## 11.4 Serverless
+
 
 ### What is it
 
@@ -262,7 +290,7 @@ Event-driven compute where provider runs your function in response to triggers; 
 
 ### Why it matters
 
-Eliminates capacity planning for spiky workloads. Scales to zero—no cost when idle.
+Eliminates capacity planning for spiky workloads. Scales to zero - no cost when idle.
 
 ### How it works
 
@@ -281,7 +309,7 @@ flowchart LR
 
 - Cold start latency (JVM worst; Node/Python better)
 - Execution time limits (15 min Lambda max)
-- Stateless—externalize state to DB/cache
+- Stateless - externalize state to DB/cache
 - FaaS + managed API Gateway pattern
 
 ### When to use
@@ -304,58 +332,9 @@ flowchart LR
 
 ---
 
-## 11.5 Autoscaling
 
-### What is it
+## 11.5 Regions
 
-Automatically adjusting compute capacity based on demand signals—CPU, queue depth, custom metrics—to match load without manual intervention.
-
-### Why it matters
-
-Right-sizes cost and maintains performance during traffic spikes. Core to cloud economics and SLO adherence.
-
-### How it works
-
-**Horizontal:** add/remove instances (HPA, ASG). **Vertical:** resize instance (less common). Policies define min/max, scale-out/in thresholds, cooldown periods. Predictive scaling uses ML on historical patterns.
-
-### Diagram
-
-```mermaid
-flowchart LR
-    Metrics[CPU / RPS / Queue] --> Policy[Scaling Policy]
-    Policy -->|scale out| Add[+ Instances]
-    Policy -->|scale in| Remove[- Instances]
-    Add & Remove --> LB[Load Balancer]
-```
-
-### Key details
-
-- Scale on custom metrics (request rate, lag)
-- Cooldown prevents flapping
-- Combine HPA (pods) + Cluster Autoscaler (nodes)
-- Pre-warm for known events (sales, launches)
-
-### When to use
-
-- Variable traffic web services
-- Queue consumer workers
-- Batch processing with backlog signals
-
-### Trade-offs
-
-| Pros | Cons |
-|------|------|
-| Cost efficiency | Scale-out lag during spikes |
-| Handles unknown load | Misconfigured policies oscillate |
-| Automated | Stateful apps harder to scale |
-
-### References
-
-- [Kubernetes HPA](https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/)
-
----
-
-## 11.6 Regions
 
 ### What is it
 
@@ -386,7 +365,7 @@ flowchart LR
 
 - Not all services available in all regions
 - Data sovereignty: EU data stays in EU regions
-- Cross-region latency ~50–150ms typical
+- Cross-region latency ~50 - 150ms typical
 - Global services: DNS, CDN, IAM (varies by cloud)
 
 ### When to use
@@ -409,11 +388,13 @@ flowchart LR
 
 ---
 
-## 11.7 Availability Zones
+
+## 11.6 Availability Zones
+
 
 ### What is it
 
-Isolated datacenters within a region, connected by low-latency private fiber—typically 2–6 AZs per region.
+Isolated datacenters within a region, connected by low-latency private fiber - typically 2 - 6 AZs per region.
 
 ### Why it matters
 
@@ -462,7 +443,9 @@ flowchart TB
 
 ---
 
-## 11.8 Multi Region Deployment
+
+## 11.7 Multi Region Deployment
+
 
 ### What is it
 
@@ -513,15 +496,17 @@ flowchart TB
 
 ---
 
-## 11.9 VPC
+
+## 11.8 VPC
+
 
 ### What is it
 
-**Virtual Private Cloud**—logically isolated virtual network in a cloud region where you define IP ranges, subnets, routing, and security boundaries.
+**Virtual Private Cloud** - logically isolated virtual network in a cloud region where you define IP ranges, subnets, routing, and security boundaries.
 
 ### Why it matters
 
-VPC is the security perimeter for cloud workloads—controlling what reaches the internet and what stays private.
+VPC is the security perimeter for cloud workloads - controlling what reaches the internet and what stays private.
 
 ### How it works
 
@@ -566,11 +551,13 @@ flowchart TB
 
 ---
 
-## 11.10 Cloud Networking
+
+## 11.9 Cloud Networking
+
 
 ### What is it
 
-Cloud-managed networking primitives—load balancers, DNS, CDN, VPN, private links—that connect workloads within and across VPCs and on-premises.
+Cloud-managed networking primitives - load balancers, DNS, CDN, VPN, private links - that connect workloads within and across VPCs and on-premises.
 
 ### Why it matters
 
@@ -618,11 +605,13 @@ flowchart LR
 
 ---
 
-## 11.11 Cloud Storage
+
+## 11.10 Cloud Storage
+
 
 ### What is it
 
-Managed object, block, and file storage services—S3, GCS, EBS, EFS—durable and scalable without managing disks.
+Managed object, block, and file storage services - S3, GCS, EBS, EFS - durable and scalable without managing disks.
 
 ### Why it matters
 
@@ -669,7 +658,9 @@ flowchart LR
 
 ---
 
-## 11.12 Managed Databases
+
+## 11.11 Managed Databases
+
 
 ### What is it
 
@@ -720,11 +711,66 @@ flowchart LR
 
 ---
 
-## 11.13 Docker
+
+## 11.12 Autoscaling
+
 
 ### What is it
 
-Platform for building, shipping, and running applications in **containers**—lightweight, portable environments packaging code and dependencies.
+Automatically adjusting compute capacity based on demand signals - CPU, queue depth, custom metrics - to match load without manual intervention.
+
+### Why it matters
+
+Right-sizes cost and maintains performance during traffic spikes. Core to cloud economics and SLO adherence.
+
+### How it works
+
+**Horizontal:** add/remove instances (HPA, ASG). **Vertical:** resize instance (less common). Policies define min/max, scale-out/in thresholds, cooldown periods. Predictive scaling uses ML on historical patterns.
+
+### Diagram
+
+```mermaid
+flowchart LR
+    Metrics[CPU / RPS / Queue] --> Policy[Scaling Policy]
+    Policy -->|scale out| Add[+ Instances]
+    Policy -->|scale in| Remove[- Instances]
+    Add & Remove --> LB[Load Balancer]
+```
+
+### Key details
+
+- Scale on custom metrics (request rate, lag)
+- Cooldown prevents flapping
+- Combine HPA (pods) + Cluster Autoscaler (nodes)
+- Pre-warm for known events (sales, launches)
+
+### When to use
+
+- Variable traffic web services
+- Queue consumer workers
+- Batch processing with backlog signals
+
+### Trade-offs
+
+| Pros | Cons |
+|------|------|
+| Cost efficiency | Scale-out lag during spikes |
+| Handles unknown load | Misconfigured policies oscillate |
+| Automated | Stateful apps harder to scale |
+
+### References
+
+- [Kubernetes HPA](https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/)
+
+---
+
+
+## 11.13 Docker
+
+
+### What is it
+
+Platform for building, shipping, and running applications in **containers** - lightweight, portable environments packaging code and dependencies.
 
 ### Why it matters
 
@@ -748,7 +794,7 @@ flowchart LR
 
 - Dev tool and CI build standard
 - Docker Compose for local multi-container
-- Production orchestration → Kubernetes
+- Production orchestration -> Kubernetes
 - Rootless Docker improves security
 
 ### When to use
@@ -771,11 +817,13 @@ flowchart LR
 
 ---
 
+
 ## 11.14 Container Runtime
+
 
 ### What is it
 
-Low-level software that runs containers—implements OCI spec, manages image pull, container lifecycle, and cgroups/namespaces.
+Low-level software that runs containers - implements OCI spec, manages image pull, container lifecycle, and cgroups/namespaces.
 
 ### Why it matters
 
@@ -820,11 +868,13 @@ flowchart TB
 
 ---
 
+
 ## 11.15 Container Images
+
 
 ### What is it
 
-Immutable, layered filesystem snapshots packaging application code, runtime, libraries, and config—the unit deployed to containers.
+Immutable, layered filesystem snapshots packaging application code, runtime, libraries, and config - the unit deployed to containers.
 
 ### Why it matters
 
@@ -832,7 +882,7 @@ Images are the deployable artifact in cloud-native pipelines. Immutability enabl
 
 ### How it works
 
-Built from Dockerfile or buildpacks. Tagged with version (`myapp:1.2.3`) and digest (SHA256). Stored in registry. Pulled by nodes on schedule. Never mutate running image—build new tag for changes.
+Built from Dockerfile or buildpacks. Tagged with version (`myapp:1.2.3`) and digest (SHA256). Stored in registry. Pulled by nodes on schedule. Never mutate running image - build new tag for changes.
 
 ### Diagram
 
@@ -870,7 +920,9 @@ flowchart LR
 
 ---
 
+
 ## 11.16 Image Layers
+
 
 ### What is it
 
@@ -896,7 +948,7 @@ flowchart TB
 
 ### Key details
 
-- Change top layer → lower layers cache hit
+- Change top layer -> lower layers cache hit
 - Multi-stage builds discard build-time layers
 - `docker history` shows layer sizes
 - Squashing reduces layers (loses cache benefit)
@@ -920,15 +972,17 @@ flowchart TB
 
 ---
 
+
 ## 11.17 Namespaces
+
 
 ### What is it
 
-Linux kernel feature isolating process views of system resources—PID, network, mount, UTS—so containers see their own isolated environment.
+Linux kernel feature isolating process views of system resources - PID, network, mount, UTS - so containers see their own isolated environment.
 
 ### Why it matters
 
-Namespaces are foundational to container isolation—process in container cannot see host processes or network stack.
+Namespaces are foundational to container isolation - process in container cannot see host processes or network stack.
 
 ### How it works
 
@@ -967,15 +1021,17 @@ flowchart TB
 
 ---
 
+
 ## 11.18 cgroups
+
 
 ### What is it
 
-**Control groups**—Linux kernel mechanism limiting and accounting CPU, memory, I/O, and process count for groups of processes.
+**Control groups** - Linux kernel mechanism limiting and accounting CPU, memory, I/O, and process count for groups of processes.
 
 ### Why it matters
 
-cgroups prevent one container from starving others—enforcing memory limits, CPU shares, and enabling fair scheduling on shared nodes.
+cgroups prevent one container from starving others - enforcing memory limits, CPU shares, and enabling fair scheduling on shared nodes.
 
 ### How it works
 
@@ -992,8 +1048,8 @@ flowchart LR
 ### Key details
 
 - cgroup v2 unified hierarchy (modern distros)
-- Exceed memory limit → OOMKilled
-- CPU limit → throttling (CFS quota)
+- Exceed memory limit -> OOMKilled
+- CPU limit -> throttling (CFS quota)
 - Always set memory limits in production
 
 ### When to use
@@ -1015,7 +1071,9 @@ flowchart LR
 
 ---
 
+
 ## 11.19 Kubernetes
+
 
 ### What is it
 
@@ -1023,7 +1081,7 @@ Open-source **container orchestration** platform automating deployment, scaling,
 
 ### Why it matters
 
-Kubernetes is the de facto standard for running microservices at scale—self-healing, declarative config, and rich ecosystem.
+Kubernetes is the de facto standard for running microservices at scale - self-healing, declarative config, and rich ecosystem.
 
 ### How it works
 
@@ -1076,11 +1134,13 @@ flowchart TB
 
 ---
 
+
 ## 11.20 Pods
+
 
 ### What is it
 
-Smallest deployable unit in Kubernetes—one or more containers sharing network namespace, storage volumes, and lifecycle context.
+Smallest deployable unit in Kubernetes - one or more containers sharing network namespace, storage volumes, and lifecycle context.
 
 ### Why it matters
 
@@ -1088,9 +1148,9 @@ Pods group tightly coupled containers (app + sidecar) and receive single IP addr
 
 ### How it works
 
-Pod spec defines containers, resources, volumes, probes. Scheduled to node; kubelet starts containers via runtime. Ephemeral—recreated on failure. Controllers (Deployment) manage pod replicas.
+Pod spec defines containers, resources, volumes, probes. Scheduled to node; kubelet starts containers via runtime. Ephemeral - recreated on failure. Controllers (Deployment) manage pod replicas.
 
-### Diagram — Pod Anatomy
+### Diagram  -  Pod Anatomy
 
 ```mermaid
 flowchart TB
@@ -1111,14 +1171,14 @@ flowchart TB
 
 ### When to use
 
-- Always—everything runs in pods
+- Always - everything runs in pods
 - Sidecar pattern: logging, proxy, mesh
 
 ### Trade-offs
 
 | Pros | Cons |
 |------|------|
-| Shared localhost networking | Ephemeral—don't store state in pod FS |
+| Shared localhost networking | Ephemeral - don't store state in pod FS |
 | Atomic scheduling unit | Multi-container pods harder to scale independently |
 
 ### References
@@ -1127,7 +1187,57 @@ flowchart TB
 
 ---
 
-## 11.21 Deployments
+
+## 11.21 ReplicaSets
+
+
+### What is it
+
+Controller ensuring a specified number of pod replicas with matching labels are running at all times.
+
+### Why it matters
+
+ReplicaSets are the mechanism Deployments use for scaling. Direct ReplicaSet use is rare - prefer Deployments for update semantics.
+
+### How it works
+
+Selector matches pod labels. Compares desired vs actual count; creates or deletes pods. Owned by Deployment which manages versioned ReplicaSets during rollouts.
+
+### Diagram
+
+```mermaid
+flowchart LR
+    RS[ReplicaSet<br/>desired: 3] -->|creates| Pods[Matching Pods]
+    RS -->|deletes excess| X[Terminated Pods]
+```
+
+### Key details
+
+- Label selector must be unique enough
+- Deployment owns ReplicaSets - don't edit RS directly
+- Old RS kept for rollback history (`revisionHistoryLimit`)
+
+### When to use
+
+- Indirectly via Deployment (normal case)
+- Rarely: bare ReplicaSet without rollout needs
+
+### Trade-offs
+
+| Pros | Cons |
+|------|------|
+| Simple scaling logic | No built-in rolling update alone |
+| Self-healing | Superseded by Deployment for most cases |
+
+### References
+
+- [Kubernetes ReplicaSet](https://kubernetes.io/docs/concepts/workloads/controllers/replicaset/)
+
+---
+
+
+## 11.22 Deployments
+
 
 ### What is it
 
@@ -1135,13 +1245,13 @@ Declarative controller managing **ReplicaSets** to run stateless application rep
 
 ### Why it matters
 
-Deployments are the standard way to run web APIs and workers—handling scale, updates, and history without manual pod management.
+Deployments are the standard way to run web APIs and workers - handling scale, updates, and history without manual pod management.
 
 ### How it works
 
-Define `replicas`, `template` (pod spec), `strategy` (RollingUpdate). Change image tag → rolling replace old pods. `kubectl rollout undo` reverts. Paused deployments for canary with multiple ReplicaSets.
+Define `replicas`, `template` (pod spec), `strategy` (RollingUpdate). Change image tag -> rolling replace old pods. `kubectl rollout undo` reverts. Paused deployments for canary with multiple ReplicaSets.
 
-### Diagram — Deployment → Pods
+### Diagram  -  Deployment -> Pods
 
 ```mermaid
 flowchart TB
@@ -1177,57 +1287,13 @@ flowchart TB
 
 ---
 
-## 11.22 ReplicaSets
-
-### What is it
-
-Controller ensuring a specified number of pod replicas with matching labels are running at all times.
-
-### Why it matters
-
-ReplicaSets are the mechanism Deployments use for scaling. Direct ReplicaSet use is rare—prefer Deployments for update semantics.
-
-### How it works
-
-Selector matches pod labels. Compares desired vs actual count; creates or deletes pods. Owned by Deployment which manages versioned ReplicaSets during rollouts.
-
-### Diagram
-
-```mermaid
-flowchart LR
-    RS[ReplicaSet<br/>desired: 3] -->|creates| Pods[Matching Pods]
-    RS -->|deletes excess| X[Terminated Pods]
-```
-
-### Key details
-
-- Label selector must be unique enough
-- Deployment owns ReplicaSets—don't edit RS directly
-- Old RS kept for rollback history (`revisionHistoryLimit`)
-
-### When to use
-
-- Indirectly via Deployment (normal case)
-- Rarely: bare ReplicaSet without rollout needs
-
-### Trade-offs
-
-| Pros | Cons |
-|------|------|
-| Simple scaling logic | No built-in rolling update alone |
-| Self-healing | Superseded by Deployment for most cases |
-
-### References
-
-- [Kubernetes ReplicaSet](https://kubernetes.io/docs/concepts/workloads/controllers/replicaset/)
-
----
 
 ## 11.23 Services
 
+
 ### What is it
 
-Stable network endpoint (ClusterIP, NodePort, LoadBalancer) exposing a set of pods via label selector—providing DNS name and load balancing.
+Stable network endpoint (ClusterIP, NodePort, LoadBalancer) exposing a set of pods via label selector - providing DNS name and load balancing.
 
 ### Why it matters
 
@@ -1237,7 +1303,7 @@ Pod IPs change on restart. Services provide constant `my-svc.namespace.svc.clust
 
 Selector matches pod labels. kube-proxy or dataplane (eBPF/Cilium) routes to pod endpoints. Types: **ClusterIP** (internal), **NodePort** (host port), **LoadBalancer** (cloud LB), **Headless** (direct pod DNS for StatefulSet).
 
-### Diagram — Service → Pods
+### Diagram  -  Service -> Pods
 
 ```mermaid
 flowchart LR
@@ -1274,15 +1340,17 @@ flowchart LR
 
 ---
 
+
 ## 11.24 Ingress
+
 
 ### What is it
 
-HTTP/HTTPS routing rules exposing services externally—host/path-based routing, TLS termination, and virtual hosts on a shared load balancer.
+HTTP/HTTPS routing rules exposing services externally - host/path-based routing, TLS termination, and virtual hosts on a shared load balancer.
 
 ### Why it matters
 
-One external IP/LB serves many services via path (`/api`, `/web`) and hostnames—reducing cost and simplifying edge configuration.
+One external IP/LB serves many services via path (`/api`, `/web`) and hostnames - reducing cost and simplifying edge configuration.
 
 ### How it works
 
@@ -1325,7 +1393,9 @@ flowchart LR
 
 ---
 
+
 ## 11.25 StatefulSets
+
 
 ### What is it
 
@@ -1333,11 +1403,11 @@ Controller for **stateful** workloads requiring stable network identity, ordered
 
 ### Why it matters
 
-Databases, Kafka brokers, and ZooKeeper need predictable pod names (`pod-0`, `pod-1`) and stable volumes—not random Deployment pod names.
+Databases, Kafka brokers, and ZooKeeper need predictable pod names (`pod-0`, `pod-1`) and stable volumes - not random Deployment pod names.
 
 ### How it works
 
-Ordered create/scale/delete (0, 1, 2…). Each pod gets persistent **volume claim template**. Headless Service provides stable DNS (`pod-0.svc`). Rolling update with partition for controlled rollout.
+Ordered create/scale/delete (0, 1, 2 - ). Each pod gets persistent **volume claim template**. Headless Service provides stable DNS (`pod-0.svc`). Rolling update with partition for controlled rollout.
 
 ### Diagram
 
@@ -1353,7 +1423,7 @@ flowchart LR
 
 - `volumeClaimTemplates` per pod
 - `podManagementPolicy`: OrderedReady vs Parallel
-- Not a substitute for managed DB—often use RDS instead
+- Not a substitute for managed DB - often use RDS instead
 - Backup PVCs with Velero
 
 ### When to use
@@ -1375,11 +1445,13 @@ flowchart LR
 
 ---
 
+
 ## 11.26 DaemonSets
+
 
 ### What is it
 
-Ensures one pod copy runs on every (or selected) node—typically for node-level agents.
+Ensures one pod copy runs on every (or selected) node - typically for node-level agents.
 
 ### Why it matters
 
@@ -1393,9 +1465,9 @@ Controller creates pod per matching node. New nodes automatically get daemon pod
 
 ```mermaid
 flowchart TB
-    DS[DaemonSet] --> N1[Node 1 → Pod]
-    DS --> N2[Node 2 → Pod]
-    DS --> N3[Node 3 → Pod]
+    DS[DaemonSet] --> N1[Node 1 -> Pod]
+    DS --> N2[Node 2 -> Pod]
+    DS --> N3[Node 3 -> Pod]
 ```
 
 ### Key details
@@ -1414,7 +1486,7 @@ flowchart TB
 
 | Pros | Cons |
 |------|------|
-| Automatic per-node coverage | Resource use × node count |
+| Automatic per-node coverage | Resource use Ã— node count |
 | Survives node addition | Privileged access risk |
 
 ### References
@@ -1423,11 +1495,13 @@ flowchart TB
 
 ---
 
+
 ## 11.27 Jobs
+
 
 ### What is it
 
-Controller running pods to **completion**—batch work that terminates successfully rather than running continuously.
+Controller running pods to **completion** - batch work that terminates successfully rather than running continuously.
 
 ### Why it matters
 
@@ -1435,7 +1509,7 @@ One-off and parallel batch tasks (migrations, ETL, report generation) need retry
 
 ### How it works
 
-Job creates pod(s); retries on failure up to `backoffLimit`. `completions` and `parallelism` for indexed/parallel work. Pod exits 0 → Job complete. TTL controller cleans finished Jobs.
+Job creates pod(s); retries on failure up to `backoffLimit`. `completions` and `parallelism` for indexed/parallel work. Pod exits 0 -> Job complete. TTL controller cleans finished Jobs.
 
 ### Diagram
 
@@ -1471,11 +1545,13 @@ flowchart LR
 
 ---
 
+
 ## 11.28 CronJobs
+
 
 ### What is it
 
-Schedules Jobs on cron timetable—Kubernetes-native periodic batch execution.
+Schedules Jobs on cron timetable - Kubernetes-native periodic batch execution.
 
 ### Why it matters
 
@@ -1498,7 +1574,7 @@ flowchart LR
 - Use UTC timezone in spec
 - `successfulJobsHistoryLimit` limits clutter
 - For complex workflows consider Argo Workflows
-- Idempotent tasks—overlap if Allow concurrency
+- Idempotent tasks - overlap if Allow concurrency
 
 ### When to use
 
@@ -1520,7 +1596,9 @@ flowchart LR
 
 ---
 
+
 ## 11.29 ConfigMaps
+
 
 ### What is it
 
@@ -1528,7 +1606,7 @@ API object storing non-sensitive configuration data as key-value pairs or files,
 
 ### Why it matters
 
-Decouples configuration from container image—change config without rebuild. Supports twelve-factor app principles.
+Decouples configuration from container image - change config without rebuild. Supports twelve-factor app principles.
 
 ### How it works
 
@@ -1569,11 +1647,13 @@ flowchart LR
 
 ---
 
+
 ## 11.30 Secrets
+
 
 ### What is it
 
-Kubernetes object storing sensitive data (passwords, tokens, TLS keys)—base64 encoded, optionally encrypted at rest with KMS.
+Kubernetes object storing sensitive data (passwords, tokens, TLS keys) - base64 encoded, optionally encrypted at rest with KMS.
 
 ### Why it matters
 
@@ -1594,7 +1674,7 @@ flowchart LR
 
 ### Key details
 
-- Base64 ≠ encryption—enable etcd encryption
+- Base64 â‰  encryption - enable etcd encryption
 - Never commit Secrets to Git (use Sealed Secrets)
 - Rotate credentials; short-lived tokens preferred
 - Limit RBAC `get secrets` to necessary SAs
@@ -1618,7 +1698,9 @@ flowchart LR
 
 ---
 
+
 ## 11.31 Scheduler
+
 
 ### What is it
 
@@ -1657,7 +1739,7 @@ flowchart LR
 
 | Pros | Cons |
 |------|------|
-| Automated placement | Misconfigured affinity → pending pods |
+| Automated placement | Misconfigured affinity -> pending pods |
 | Extensible plugins | Scheduling latency at scale |
 | AZ spread built-in | Complex rules hard to debug |
 
@@ -1667,11 +1749,13 @@ flowchart LR
 
 ---
 
+
 ## 11.32 etcd
+
 
 ### What is it
 
-Distributed consistent key-value store holding all Kubernetes cluster state—the source of truth for desired and actual configuration.
+Distributed consistent key-value store holding all Kubernetes cluster state - the source of truth for desired and actual configuration.
 
 ### Why it matters
 
@@ -1718,7 +1802,9 @@ flowchart TB
 
 ---
 
+
 ## 11.33 Operators
+
 
 ### What is it
 
@@ -1770,21 +1856,23 @@ flowchart LR
 
 ---
 
+
 ## 11.34 HPA
+
 
 ### What is it
 
-**Horizontal Pod Autoscaler**—automatically scales Deployment/StatefulSet replicas based on CPU, memory, or custom/external metrics.
+**Horizontal Pod Autoscaler** - automatically scales Deployment/StatefulSet replicas based on CPU, memory, or custom/external metrics.
 
 ### Why it matters
 
-HPA matches pod count to demand without manual `kubectl scale`—core to cost-efficient autoscaling within a cluster.
+HPA matches pod count to demand without manual `kubectl scale` - core to cost-efficient autoscaling within a cluster.
 
 ### How it works
 
 HPA controller queries metrics API every 15s. Compares current vs target utilization. Computes desired replicas: `ceil(currentReplicas * (currentMetric / targetMetric))`. Applies min/max bounds. Requires metrics-server or Prometheus adapter for custom metrics.
 
-### Diagram — HPA Flow
+### Diagram  -  HPA Flow
 
 ```mermaid
 flowchart LR
@@ -1801,7 +1889,7 @@ flowchart LR
 
 ### Key details
 
-- Set resource `requests`—HPA uses them for CPU %
+- Set resource `requests` - HPA uses them for CPU %
 - `behavior` section controls scale-up/down rate
 - Custom metrics: requests per second, Kafka lag
 - KEDA extends to event-driven scaling (scale to zero)
@@ -1826,7 +1914,9 @@ flowchart LR
 
 ---
 
+
 ## 11.35 Cluster Autoscaler
+
 
 ### What is it
 
@@ -1834,11 +1924,11 @@ Adds or removes **worker nodes** in the cluster node pool when pods cannot sched
 
 ### Why it matters
 
-HPA scales pods; Cluster Autoscaler ensures nodes exist to run them—closing the loop on infrastructure autoscaling.
+HPA scales pods; Cluster Autoscaler ensures nodes exist to run them - closing the loop on infrastructure autoscaling.
 
 ### How it works
 
-Watches pending pods (unschedulable) → triggers cloud ASG/MIG to add node. When nodes underutilized and pods can move elsewhere, cordons and drains node for removal. Respects min/max node pool size and pod disruption budgets.
+Watches pending pods (unschedulable) -> triggers cloud ASG/MIG to add node. When nodes underutilized and pods can move elsewhere, cordons and drains node for removal. Respects min/max node pool size and pod disruption budgets.
 
 ### Diagram
 
@@ -1868,7 +1958,7 @@ flowchart TB
 
 | Pros | Cons |
 |------|------|
-| No manual node provisioning | Node add takes 2–5 minutes |
+| No manual node provisioning | Node add takes 2 - 5 minutes |
 | Pay only for needed capacity | Scale-down can disrupt long jobs |
 | Integrates with cloud ASG | Misconfig causes thrashing |
 
@@ -1878,25 +1968,47 @@ flowchart TB
 
 ---
 
+
 ## Quick Reference
 
-| Layer | Examples | You manage |
-|-------|----------|------------|
-| SaaS | Slack, Datadog | Users & data |
-| PaaS | GKE, Heroku | App & config |
-| IaaS | EC2, GCE | OS through app |
-| K8s Workload | Deployment, StatefulSet | Manifests & images |
-| K8s Network | Service, Ingress | Routes & TLS |
-| Scaling | HPA, Cluster Autoscaler | Metrics & limits |
+| # | Topic | Summary |
+|---|-------|---------|
+| 11.1 | IaaS | IaaS |
+| 11.2 | PaaS | PaaS |
+| 11.3 | SaaS | SaaS |
+| 11.4 | Serverless | Serverless |
+| 11.5 | Regions | Regions |
+| 11.6 | Availability Zones | Availability Zones |
+| 11.7 | Multi Region Deployment | Multi Region Deployment |
+| 11.8 | VPC | VPC |
+| 11.9 | Cloud Networking | Cloud Networking |
+| 11.10 | Cloud Storage | Cloud Storage |
+| 11.11 | Managed Databases | Managed Databases |
+| 11.12 | Autoscaling | Autoscaling |
+| 11.13 | Docker | Docker |
+| 11.14 | Container Runtime | Container Runtime |
+| 11.15 | Container Images | Container Images |
+| 11.16 | Image Layers | Image Layers |
+| 11.17 | Namespaces | Namespaces |
+| 11.18 | cgroups | cgroups |
+| 11.19 | Kubernetes | Kubernetes |
+| 11.20 | Pods | Pods |
+| 11.21 | ReplicaSets | ReplicaSets |
+| 11.22 | Deployments | Deployments |
+| 11.23 | Services | Services |
+| 11.24 | Ingress | Ingress |
+| 11.25 | StatefulSets | StatefulSets |
+| 11.26 | DaemonSets | DaemonSets |
+| 11.27 | Jobs | Jobs |
+| 11.28 | CronJobs | CronJobs |
+| 11.29 | ConfigMaps | ConfigMaps |
+| 11.30 | Secrets | Secrets |
+| 11.31 | Scheduler | Scheduler |
+| 11.32 | etcd | etcd |
+| 11.33 | Operators | Operators |
+| 11.34 | HPA | HPA |
+| 11.35 | Cluster Autoscaler | Cluster Autoscaler |
 
-### K8s Pod / Deployment / Service
+---
 
-```mermaid
-flowchart TB
-    Dep[Deployment] --> RS[ReplicaSet]
-    RS --> P1[Pod]
-    RS --> P2[Pod]
-    SVC[Service] --> P1 & P2
-    Ing[Ingress] --> SVC
-    User[External Traffic] --> Ing
-```
+[Ã¢ - Â Back to master index](../README.md)
