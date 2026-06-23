@@ -1,4 +1,4 @@
-# 11. Cloud & Kubernetes
+﻿# 11. Cloud & Kubernetes
 
 > Status: **Documented**  -  MASTER reference depth for all sub-topics below.
 
@@ -770,50 +770,164 @@ flowchart LR
 
 ### What is it
 
-Platform for building, shipping, and running applications in **containers** - lightweight, portable environments packaging code and dependencies.
+**Docker** is a platform for building, distributing, and running applications inside **containers** — lightweight, isolated processes that share the host kernel but have their own filesystem, network, and process view. The two core artifacts are:
+
+| Concept | Definition | Lifecycle |
+|---------|------------|-----------|
+| **Image** | Immutable, layered read-only template (code + runtime + libs + config) | Built once, versioned, stored in a registry |
+| **Container** | Runnable instance of an image — a live process with writable layer on top | Created, started, stopped, destroyed |
+
+Containers are **not** lightweight VMs. They virtualize the **OS** (namespaces + cgroups), not hardware.
 
 ### Why it matters
 
-Docker standardized container workflows, enabling "build once, run anywhere" from laptop to Kubernetes cluster.
+Docker standardized the container workflow that underpins cloud-native delivery:
+
+- **Build once, run anywhere** — same image from laptop → CI → staging → production
+- **Reproducible environments** — eliminates "works on my machine"
+- **Fast iteration** — seconds to start vs minutes for VMs
+- **Foundation for Kubernetes** — K8s schedules containers; Docker (or containerd) builds and runs them locally
+
+In system design interviews, Docker questions often pivot to: *images vs containers*, *containers vs VMs*, and *why you need orchestration (K8s) beyond Docker alone*.
 
 ### How it works
 
-`Dockerfile` defines image build steps. `docker build` creates image layers. `docker run` starts container from image with isolated filesystem, network, and process namespace. Docker Hub/registry stores and distributes images.
+**Image build pipeline:**
+
+```mermaid
+flowchart LR
+    DF[Dockerfile] -->|docker build| Image[Image<br/>layered + tagged]
+    Image -->|docker push| Reg[Registry<br/>Docker Hub / ECR / GCR]
+    Reg -->|docker pull| Node[Host / CI / K8s node]
+    Node -->|docker run| C[Container<br/>writable layer + process]
+```
+
+1. **Dockerfile** — declarative build recipe (`FROM`, `COPY`, `RUN`, `CMD`)
+2. **`docker build`** — each instruction creates a cached layer; layers are content-addressable (SHA256)
+3. **`docker push`** — uploads to registry; nodes pull only missing layers
+4. **`docker run`** — creates container: mounts union filesystem, applies namespaces/cgroups, starts PID 1
+
+**Docker daemon architecture (simplified):**
+
+```mermaid
+flowchart TB
+    CLI[docker CLI] -->|REST API| Daemon[dockerd]
+    Daemon --> Builder[Image Builder]
+    Daemon --> Runtime[containerd → runc]
+    Runtime --> C1[Container A]
+    Runtime --> C2[Container B]
+    Builder --> Reg[Registry pull/push]
+```
+
+**Containers vs VMs — interview comparison:**
+
+| Dimension | Container (Docker) | Virtual Machine |
+|-----------|-------------------|-----------------|
+| Isolation | Process-level (namespaces, cgroups); **shared kernel** | Hardware-level (hypervisor); **own kernel** |
+| Boot time | Seconds (process start) | Minutes (full OS boot) |
+| Size | MBs (image layers) | GBs (full OS disk) |
+| Density | 10–100+ per host | Few per host |
+| Security boundary | Weaker (kernel CVE affects all) | Stronger (hypervisor boundary) |
+| Portability | OCI image, any Linux host with runtime | VM image tied to hypervisor |
+| Use case | Microservices, CI, K8s workloads | Legacy monoliths, multi-OS, strong isolation |
+
+```mermaid
+flowchart TB
+    subgraph VM["Virtual Machine"]
+        App1[App] --> GuestOS[Guest OS]
+        GuestOS --> Hypervisor[Hypervisor]
+    end
+    subgraph CTR["Container"]
+        App2[App] --> Runtime[Container Runtime]
+        Runtime --> HostOS[Host OS Kernel]
+    end
+    Hypervisor --> HW[Physical Hardware]
+    HostOS --> HW
+```
+
+**Example — minimal Dockerfile and run:**
+
+```dockerfile
+FROM eclipse-temurin:21-jre-alpine
+WORKDIR /app
+COPY target/app.jar app.jar
+EXPOSE 8080
+USER 1000:1000
+CMD ["java", "-jar", "app.jar"]
+```
+
+```bash
+docker build -t myapp:1.2.3 .
+docker run -d -p 8080:8080 --name api --memory=512m myapp:1.2.3
+docker logs -f api
+```
 
 ### Diagram
 
 ```mermaid
 flowchart LR
-    DF[Dockerfile] -->|build| Image[Image]
-    Image -->|push| Registry[Registry]
-    Registry -->|pull| Run[docker run]
-    Run --> Container[Container]
+    subgraph Dev["Developer / CI"]
+        Code[Source Code] --> DF[Dockerfile]
+        DF --> Build[docker build]
+        Build --> Img[Image :tag + :digest]
+    end
+    subgraph Registry["Container Registry"]
+        Img --> Push[docker push]
+        Push --> Store[(Layer storage)]
+    end
+    subgraph Runtime["Execution"]
+        Store --> Pull[docker pull]
+        Pull --> Run[docker run]
+        Run --> CTR[Container process]
+    end
 ```
 
 ### Key details
 
-- Dev tool and CI build standard
-- Docker Compose for local multi-container
-- Production orchestration -> Kubernetes
-- Rootless Docker improves security
+| Topic | Detail |
+|-------|--------|
+| **Image immutability** | Never `docker exec` changes into prod image; rebuild + retag for fixes |
+| **Tags vs digests** | Tag (`:1.2.3`) is mutable pointer; digest (`@sha256:abc…`) is immutable — use digests in prod |
+| **Layer caching** | Order Dockerfile: stable layers (deps) first, volatile (app code) last |
+| **Multi-stage builds** | Discard build tools; ship only runtime artifact (smaller, fewer CVEs) |
+| **Docker Compose** | Local multi-container orchestration (networks, volumes, depends_on) — not for prod scale |
+| **Rootless Docker** | Runs daemon as unprivileged user; reduces container escape blast radius |
+| **Production gap** | Docker alone lacks HA scheduling, rolling updates, service discovery → use Kubernetes |
+
+**Interview rapid-fire:**
+
+| Question | Answer |
+|----------|--------|
+| Image vs container? | Image = blueprint (immutable); container = running instance (ephemeral writable layer) |
+| Why faster than VM? | No guest OS boot; just fork/exec a process with isolated namespaces |
+| What happens on `docker run`? | Pull layers → create writable layer → apply cgroups/limits → start PID 1 in new namespaces |
+| Can containers run different OS? | Linux containers on Linux host only; Windows containers need Windows host |
+| Docker vs Kubernetes? | Docker builds/runs containers; K8s orchestrates them at scale across a cluster |
 
 ### When to use
 
-- Local development parity with prod
-- CI/CD image builds
-- Containerizing legacy applications
+- **Local dev parity** — same image locally and in prod
+- **CI/CD artifact** — build image in pipeline; deploy tag/digest to K8s
+- **Legacy lift-and-shift** — containerize monolith before decomposing
+- **Batch / sidecar patterns** — lightweight isolated processes
+
+**Avoid Docker alone for:** multi-node HA, autoscaling across hosts, zero-downtime rollouts at scale.
 
 ### Trade-offs
 
 | Pros | Cons |
 |------|------|
-| Portable artifacts | Not a production orchestrator alone |
-| Fast startup vs VMs | Image security scanning needed |
-| Huge ecosystem | Daemon privileges (mitigate rootless) |
+| Portable, reproducible artifacts | Not a production orchestrator alone |
+| Fast startup vs VMs (seconds) | Shared-kernel isolation weaker than VMs |
+| Huge ecosystem (Hub, Compose, BuildKit) | Image CVEs require scanning (Trivy, Snyk) |
+| Efficient resource density | `dockerd` runs as root by default (use rootless) |
+| Layer caching speeds CI | Large images slow pull on cold nodes |
 
 ### References
 
 - [Docker documentation](https://docs.docker.com/)
+- [OCI Image Spec](https://github.com/opencontainers/image-spec)
+- [Dockerfile best practices](https://docs.docker.com/build/building/best-practices/)
 
 ---
 
@@ -1077,60 +1191,168 @@ flowchart LR
 
 ### What is it
 
-Open-source **container orchestration** platform automating deployment, scaling, networking, and lifecycle of containerized applications across clusters.
+**Kubernetes (K8s)** is an open-source **container orchestration** platform that automates deploying, scaling, networking, and healing containerized workloads across a cluster of machines. It follows a **declarative, control-loop** model: you describe desired state in YAML; controllers continuously reconcile actual state toward that goal.
+
+**Cluster anatomy — two planes:**
+
+| Plane | Components | Role |
+|-------|------------|------|
+| **Control plane** | API server, etcd, scheduler, controller manager, cloud-controller-manager | Cluster brain — stores state, schedules pods, runs reconciliation loops |
+| **Worker nodes** | kubelet, kube-proxy, container runtime (containerd/CRI-O) | Run workloads — start/stop containers, report health, route traffic |
 
 ### Why it matters
 
-Kubernetes is the de facto standard for running microservices at scale - self-healing, declarative config, and rich ecosystem.
+Kubernetes is the de facto standard for cloud-native microservices:
+
+- **Self-healing** — restart crashed containers, reschedule failed pods, replace unhealthy nodes
+- **Declarative ops** — GitOps-friendly; versioned manifests replace imperative SSH
+- **Portable** — same APIs on EKS, GKE, AKS, on-prem
+- **Ecosystem** — Ingress, HPA, Operators, service mesh integrations
+
+Interview focus: explain **control plane components individually**, how a pod gets scheduled, and what happens when a node dies.
 
 ### How it works
 
-**Control plane** (API server, scheduler, controller manager, etcd) maintains desired state. **Worker nodes** run kubelet and kube-proxy. You declare YAML manifests; controllers reconcile actual state. CNI plugins handle pod networking.
+**Control plane deep dive:**
+
+| Component | Function | Interview one-liner |
+|-----------|----------|---------------------|
+| **API server** | Front door to cluster; validates, persists, serves REST; only component that talks to etcd | "All `kubectl` and controllers go through it; it's the single source of API truth" |
+| **etcd** | Distributed key-value store; holds all cluster state (desired + observed) | "Raft quorum; lose quorum → cluster frozen" |
+| **Scheduler** | Watches unscheduled pods; filters + scores nodes; binds pod to node | "Doesn't run containers — only picks the node" |
+| **Controller manager** | Runs controllers (Deployment, ReplicaSet, Node, EndpointSlice, …) | "Each controller: compare desired vs actual → act" |
+| **Cloud controller manager** | Cloud-specific loops (LB provisioning, node lifecycle, routes) | "Bridges K8s API to AWS/GCP/Azure APIs" |
+
+**Worker node deep dive:**
+
+| Component | Function |
+|-----------|----------|
+| **kubelet** | Agent on each node; receives pod specs from API server; instructs container runtime to start/stop containers; runs probes |
+| **kube-proxy** | Maintains network rules (iptables/IPVS/eBPF) so Services reach backend pods |
+| **Container runtime** | containerd → runc; pulls images, creates containers with cgroups/namespaces |
+
+**End-to-end: `kubectl apply` → running pod**
+
+```mermaid
+sequenceDiagram
+    participant U as kubectl / User
+    participant API as API Server
+    participant ETCD as etcd
+    participant CM as Controller Manager
+    participant SCH as Scheduler
+    participant K as kubelet
+    participant RT as containerd/runc
+
+    U->>API: POST Deployment
+    API->>ETCD: persist desired state
+    CM->>API: watch Deployment
+    CM->>API: create ReplicaSet + Pods (Pending)
+    SCH->>API: watch unscheduled Pods
+    SCH->>API: bind Pod → Node X
+    K->>API: watch Pods on Node X
+    K->>RT: pull image, start containers
+    RT-->>K: container running
+    K->>API: update Pod status → Running
+```
+
+**Scheduler overview (filter → score → bind):**
+
+```mermaid
+flowchart TB
+    P[Pending Pod] --> SCH[Scheduler]
+    SCH --> F[Filter Phase<br/>CPU/mem fit, taints, affinity, PVC]
+    F --> S[Score Phase<br/>spread, least allocated, topology]
+    S --> B[Bind to top node]
+    B --> K[kubelet on node starts pod]
+```
+
+| Scheduler input | Effect |
+|-----------------|--------|
+| `resources.requests` | Must fit allocatable CPU/memory on node |
+| `nodeSelector` / `affinity` | Hard/soft placement rules |
+| `taints` + `tolerations` | Repel or allow pods on dedicated nodes |
+| `topologySpreadConstraints` | Even distribution across AZs |
+| `priorityClass` | Preemption of lower-priority pods |
 
 ### Diagram
 
 ```mermaid
 flowchart TB
-    subgraph CP["Control Plane"]
-        API[API Server]
-        SCH[Scheduler]
-        CM[Controller Manager]
-        ETCD[(etcd)]
+    subgraph CP["Control Plane (usually 3+ nodes for HA)"]
+        API[API Server<br/>REST + auth + admission]
+        ETCD[(etcd<br/>cluster state)]
+        SCH[Scheduler<br/>pod → node placement]
+        CM[Controller Manager<br/>reconciliation loops]
+        CCM[Cloud Controller Manager]
+        API <--> ETCD
+        SCH & CM & CCM --> API
     end
-    subgraph Workers
-        N1[Node 1]
-        N2[Node 2]
+
+    subgraph W1["Worker Node 1"]
+        K1[kubelet]
+        KP1[kube-proxy]
+        CR1[containerd]
+        K1 --> CR1
+        CR1 --> P1[Pods]
     end
-    API --> SCH & CM
-    CM & SCH --> N1 & N2
-    ETCD --> API
-    N1 & N2 --> Pods[Pods]
+
+    subgraph W2["Worker Node 2"]
+        K2[kubelet]
+        KP2[kube-proxy]
+        CR2[containerd]
+        K2 --> CR2
+        CR2 --> P2[Pods]
+    end
+
+    API --> K1 & K2
+    User[kubectl / GitOps] --> API
 ```
 
 ### Key details
 
-- Declarative: desired state in etcd
-- CNCF graduated; vendor distributions (EKS, GKE, AKS)
-- Extensible via CRDs and Operators
-- kubectl / GitOps (ArgoCD, Flux) for management
+| Topic | Detail |
+|-------|--------|
+| **Declarative model** | Desired state in etcd; controllers close the gap — never "SSH and start app" |
+| **Namespace** | API-level isolation (teams, envs) — different from Linux namespaces |
+| **CNI** | Calico, Cilium, Flannel — assigns pod IPs and network policies |
+| **Managed K8s** | EKS/GKE/AKS run control plane; you manage worker nodes (or serverless) |
+| **High availability** | Control plane: multi-master API + etcd quorum; workers: spread pods across AZs |
+| **API server load** | Watch-based; controllers react to events — not polling |
+
+**Interview scenarios:**
+
+| Scenario | What happens |
+|----------|--------------|
+| Node dies | Node controller marks `NotReady` after timeout; pods evicted/rescheduled elsewhere |
+| API server down | No new changes; running pods continue; existing controllers may stall |
+| etcd quorum lost | Cluster read-only or unavailable — catastrophic |
+| Pod stuck Pending | Usually scheduler can't place: insufficient resources, taints, PVC unbound |
+| `kubectl get pods` vs kubelet | API shows desired+status; kubelet is source of truth for local container state |
 
 ### When to use
 
-- Microservices at scale
-- Multi-team platform needing self-service
-- When you need HA rollouts and autoscaling
+- **Microservices at scale** — dozens to thousands of services
+- **Multi-team platform** — namespaces + RBAC for self-service
+- **HA rollouts + autoscaling** — Deployments, HPA, PDB
+- **Hybrid / multi-cloud** — portable workload definitions
+
+**Skip K8s when:** single monolith, tiny team, no ops capacity — use PaaS (Cloud Run, App Service) instead.
 
 ### Trade-offs
 
 | Pros | Cons |
 |------|------|
-| Industry standard | Steep learning curve |
-| Self-healing, scaling | Operational complexity |
-| Huge ecosystem | Overkill for simple apps |
+| Industry standard; huge talent pool | Steep learning curve (100+ resource types) |
+| Self-healing, declarative, extensible (CRD/Operator) | Operational complexity (upgrades, etcd, networking) |
+| Vendor-neutral portability | Overkill for simple apps |
+| Rich autoscaling and rollout primitives | Misconfiguration → cascading failures |
+| Strong ecosystem (Istio, ArgoCD, Prometheus) | Control plane HA is your problem on self-managed |
 
 ### References
 
 - [Kubernetes documentation](https://kubernetes.io/docs/home/)
+- [Kubernetes components](https://kubernetes.io/docs/concepts/overview/components/)
+- [Scheduler framework](https://kubernetes.io/docs/concepts/scheduling-eviction/kube-scheduler/)
 
 ---
 
@@ -1241,49 +1463,197 @@ flowchart LR
 
 ### What is it
 
-Declarative controller managing **ReplicaSets** to run stateless application replicas with rolling updates and rollbacks.
+A **Deployment** is the primary Kubernetes controller for **stateless** applications. It manages one or more **ReplicaSets** to ensure a declared number of **pod replicas** are running, and provides **rolling updates** and **rollbacks** when the pod template changes (e.g., new image tag).
+
+| Concept | Role |
+|---------|------|
+| **Replicas** | Desired pod count (`spec.replicas`) — scale horizontally |
+| **Pod template** | Container spec shared by all replicas (`spec.template`) |
+| **ReplicaSet** | Deployment-owned controller that creates/deletes pods to match replica count |
+| **Revision history** | Old ReplicaSets kept for rollback (`revisionHistoryLimit`, default 10) |
 
 ### Why it matters
 
-Deployments are the standard way to run web APIs and workers - handling scale, updates, and history without manual pod management.
+Deployments are how production services ship code safely:
+
+- **Zero-downtime rollouts** — replace pods incrementally, not all at once
+- **Instant rollback** — revert to previous ReplicaSet in seconds
+- **Horizontal scale** — `kubectl scale` or HPA adjusts replica count
+- **Self-healing** — crashed pods replaced automatically
+
+Interview staple: explain rolling update parameters, what happens during a failed rollout, and Deployment vs StatefulSet.
 
 ### How it works
 
-Define `replicas`, `template` (pod spec), `strategy` (RollingUpdate). Change image tag -> rolling replace old pods. `kubectl rollout undo` reverts. Paused deployments for canary with multiple ReplicaSets.
-
-### Diagram  -  Deployment -> Pods
+**Object hierarchy:**
 
 ```mermaid
 flowchart TB
-    Dep[Deployment<br/>replicas: 3] --> RS[ReplicaSet]
-    RS --> P1[Pod 1]
-    RS --> P2[Pod 2]
-    RS --> P3[Pod 3]
-    Dep -->|rolling update| RS2[New ReplicaSet]
+    Dep[Deployment<br/>replicas: 5<br/>strategy: RollingUpdate] --> RSnew[ReplicaSet rev:3<br/>desired: 5]
+    Dep -.->|kept for rollback| RSold[ReplicaSet rev:2<br/>desired: 0]
+    RSnew --> P1[Pod]
+    RSnew --> P2[Pod]
+    RSnew --> P3[Pod]
+    RSnew --> P4[Pod]
+    RSnew --> P5[Pod]
+```
+
+**Rolling update flow** (default `strategy.type: RollingUpdate`):
+
+```mermaid
+sequenceDiagram
+    participant U as User / CI
+    participant D as Deployment Controller
+    participant RS as New ReplicaSet
+    participant P as Pods
+
+    U->>D: change image tag v1 → v2
+    D->>RS: create new ReplicaSet (rev+1)
+    loop Until all replicas on v2
+        RS->>P: create new pod (v2)
+        P-->>P: readiness probe passes
+        RS->>P: terminate old pod (v1)
+    end
+    D->>D: scale old ReplicaSet to 0
+```
+
+**Rolling update tuning:**
+
+| Field | Default | Meaning |
+|-------|---------|---------|
+| `maxSurge` | 25% | Extra pods above desired count during rollout (e.g., 5 replicas → up to 6–7 temporarily) |
+| `maxUnavailable` | 25% | Pods that can be down during rollout (e.g., 5 replicas → min 4 available) |
+| `minReadySeconds` | 0 | Pod must be Ready for N seconds before considered available |
+| `progressDeadlineSeconds` | 600 | Rollout marked failed if no progress |
+
+**Example manifest:**
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+spec:
+  replicas: 5
+  revisionHistoryLimit: 5
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0        # never below 5 ready during rollout
+  selector:
+    matchLabels:
+      app: api
+  template:
+    metadata:
+      labels:
+        app: api
+    spec:
+      containers:
+      - name: api
+        image: myregistry/api:2.1.0
+        readinessProbe:
+          httpGet: { path: /health, port: 8080 }
+          periodSeconds: 5
+        resources:
+          requests: { cpu: 250m, memory: 256Mi }
+          limits:   { memory: 512Mi }
+```
+
+**Rollback:**
+
+```bash
+kubectl rollout status deployment/api
+kubectl rollout history deployment/api
+kubectl rollout undo deployment/api                    # previous revision
+kubectl rollout undo deployment/api --to-revision=3    # specific revision
+```
+
+```mermaid
+flowchart LR
+    V3[rev 3 : v2.1.0<br/>current] -->|rollout undo| V2[rev 2 : v2.0.0<br/>restored]
+    V2 --> RS2[ReplicaSet scaled up]
+    RS2 --> Pods[Pods on old image]
+```
+
+**Failed rollout behavior:**
+
+| Condition | Result |
+|-----------|--------|
+| New pods fail readiness probe | Rollout stalls; old pods keep serving |
+| `progressDeadlineSeconds` exceeded | Deployment condition `ProgressDeadlineExceeded` |
+| Image pull error | `ImagePullBackOff`; rollout stuck until fixed or undone |
+| Fix | `kubectl rollout undo` or fix manifest and re-apply |
+
+**Replicas and scaling:**
+
+| Method | Command / Mechanism |
+|--------|---------------------|
+| Manual | `kubectl scale deployment/api --replicas=10` |
+| HPA | Scales Deployment based on CPU/custom metrics |
+| GitOps | Change `replicas` in manifest; ArgoCD syncs |
+
+### Diagram
+
+```mermaid
+flowchart TB
+    subgraph Rollout["Rolling Update v1 → v2"]
+        direction LR
+        subgraph Before
+            O1[v1] --- O2[v1] --- O3[v1]
+        end
+        subgraph During
+            N1[v2 Ready] --- O4[v1] --- O5[v1]
+        end
+        subgraph After
+            N2[v2] --- N3[v2] --- N4[v2]
+        end
+    end
+    LB[Service / Ingress] --> Rollout
 ```
 
 ### Key details
 
-- `maxSurge` / `maxUnavailable` control rollout speed
-- Readiness probe gates traffic during rollout
-- Use labels/selectors consistently
-- GitOps tracks Deployment manifests
+| Topic | Detail |
+|-------|--------|
+| **Readiness vs liveness** | Readiness gates traffic during rollout; liveness restarts crashed containers |
+| **PodDisruptionBudget** | Limits voluntary evictions during node drain — protects availability |
+| **Recreate strategy** | Kill all old pods, then start new — brief downtime; used when two versions can't coexist |
+| **Canary / blue-green** | Native rolling update is linear; advanced patterns use Argo Rollouts or multiple Deployments + traffic split |
+| **Immutable fields** | `selector` can't change after creation — requires new Deployment |
+| **Don't edit ReplicaSets** | Deployment owns them; edit Deployment template instead |
+
+**Interview rapid-fire:**
+
+| Question | Answer |
+|----------|--------|
+| Deployment vs ReplicaSet? | Deployment adds rollout/rollback; always use Deployment in practice |
+| `maxUnavailable: 0`? | Never reduce below desired count — safest for prod, slower rollout |
+| How does rollback work? | Scales previous ReplicaSet back up, scales current down |
+| Stateful workload? | Use StatefulSet — stable identity + ordered rollout |
+| Pause rollout? | `kubectl rollout pause deployment/api` — useful for canary analysis |
 
 ### When to use
 
-- Stateless HTTP services, workers, consumers
-- Any workload needing rolling updates
+- **Stateless HTTP APIs, gRPC services, queue workers**
+- Any workload needing **rolling updates**, **scale**, or **rollback**
+- Default choice unless you need stable pod names or per-pod storage
 
 ### Trade-offs
 
 | Pros | Cons |
 |------|------|
-| Zero-downtime rollouts | Not for stable network identity |
-| Easy scale and rollback | Stateful apps need StatefulSet |
+| Zero-downtime rolling updates (with probes) | No stable network identity per pod |
+| One-command rollback | Not for databases or clustered stateful apps |
+| HPA integration | Rolling update is all-or-nothing per pod — no traffic weighting without extra tooling |
+| Self-healing replica management | Large replica counts + slow probes = long rollouts |
+| GitOps-friendly declarative spec | `maxSurge`/`maxUnavailable` misconfig can cause brief overload or capacity dip |
 
 ### References
 
 - [Kubernetes Deployments](https://kubernetes.io/docs/concepts/workloads/controllers/deployment/)
+- [Rolling Update Deployment](https://kubernetes.io/docs/tutorials/kubernetes-basics/update/update-intro/)
+- [kubectl rollout](https://kubernetes.io/docs/reference/kubectl/generated/kubectl_rollout/)
 
 ---
 
@@ -1862,55 +2232,195 @@ flowchart LR
 
 ### What is it
 
-**Horizontal Pod Autoscaler** - automatically scales Deployment/StatefulSet replicas based on CPU, memory, or custom/external metrics.
+The **Horizontal Pod Autoscaler (HPA)** automatically adjusts the **replica count** of a Deployment, StatefulSet, or ReplicaSet based on observed **metrics** — scaling pods in or out to match demand without manual `kubectl scale`.
+
+HPA is **horizontal** (more pods), not vertical (bigger pods). It works within existing node capacity; pair with **Cluster Autoscaler** to add nodes when pods can't schedule.
 
 ### Why it matters
 
-HPA matches pod count to demand without manual `kubectl scale` - core to cost-efficient autoscaling within a cluster.
+HPA is the core in-cluster autoscaling primitive:
+
+- **Cost efficiency** — scale in during low traffic; scale out during peaks
+- **SLO protection** — maintain target CPU/latency/queue depth automatically
+- **Hands-off ops** — no on-call paging to manually scale for predictable patterns
+
+Interview focus: metric types, replica formula, why CPU-only HPA fails, and scale-up/down behavior.
 
 ### How it works
 
-HPA controller queries metrics API every 15s. Compares current vs target utilization. Computes desired replicas: `ceil(currentReplicas * (currentMetric / targetMetric))`. Applies min/max bounds. Requires metrics-server or Prometheus adapter for custom metrics.
+**Control loop (every ~15 seconds):**
 
-### Diagram  -  HPA Flow
+```mermaid
+flowchart TB
+    subgraph Metrics["Metrics Sources"]
+        MS[metrics-server<br/>CPU / memory]
+        PM[Prometheus Adapter<br/>custom metrics]
+        EM[External metrics<br/>SQS lag, Pub/Sub]
+    end
+    MS & PM & EM --> API[Metrics API]
+    API --> HPA[HPA Controller]
+    HPA -->|desired replicas| Dep[Deployment / StatefulSet]
+    Dep --> Pods[Pod count changes]
+    HPA -->|reads current| Dep
+```
+
+**Replica calculation (resource metrics — simplified):**
+
+```
+desiredReplicas = ceil( currentReplicas × ( currentMetricValue / targetMetricValue ) )
+```
+
+| Example | Calculation | Result |
+|---------|-------------|--------|
+| 4 replicas, CPU 80%, target 50% | `ceil(4 × 80/50)` = `ceil(6.4)` | **7 replicas** |
+| 10 replicas, CPU 20%, target 50% | `ceil(10 × 20/50)` = `ceil(4)` | **4 replicas** (scale in) |
+
+Clamped by `minReplicas` and `maxReplicas`.
+
+**Metrics-based autoscaling types:**
+
+| Metric type | Source | Example use case |
+|-------------|--------|------------------|
+| **Resource** | metrics-server (kubelet cAdvisor) | CPU 70%, memory 80% of requests |
+| **Pods** | Prometheus adapter / custom metrics API | Requests per second per pod |
+| **Object** | External object metric | Ingress requests/sec across all pods |
+| **External** | Cloud monitoring API | SQS queue depth, Kafka consumer lag |
+
+**Example — CPU HPA:**
+
+```yaml
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: api-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: api
+  minReplicas: 3
+  maxReplicas: 50
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+      - type: Percent
+        value: 100
+        periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Percent
+        value: 10
+        periodSeconds: 60
+```
+
+**Example — custom metric (requests per second):**
+
+```yaml
+  metrics:
+  - type: Pods
+    pods:
+      metric:
+        name: http_requests_per_second
+      target:
+        type: AverageValue
+        averageValue: "1000"
+```
+
+**Scale behavior (v2 API):**
 
 ```mermaid
 flowchart LR
-    Metrics[Metrics Server] --> HPA[HPA Controller]
-    HPA -->|desired replicas| Dep[Deployment]
-    Dep --> Pods[Pod count scales]
-    subgraph Signals
-        CPU[CPU %]
-        MEM[Memory]
-        Custom[RPS / Queue lag]
+    subgraph ScaleUp["Scale Up (aggressive)"]
+        SU1[+100% pods / 60s]
+        SU2[No stabilization window]
     end
-    Signals --> Metrics
+    subgraph ScaleDown["Scale Down (conservative)"]
+        SD1[-10% pods / 60s]
+        SD2[5 min stabilization window]
+    end
+```
+
+| Behavior | Why |
+|----------|-----|
+| Fast scale-up | Traffic spikes need immediate capacity |
+| Slow scale-down | Avoid flapping; let cooldown confirm trend |
+| `stabilizationWindowSeconds` | Use max of recommendations in window — prevents oscillation |
+
+### Diagram
+
+```mermaid
+flowchart TB
+    Traffic[Traffic spike] --> Pods[Pods CPU rises]
+    Pods --> MS[metrics-server]
+    MS --> HPA[HPA: 70% > target 50%]
+    HPA -->|scale 5 → 8| Dep[Deployment]
+    Dep --> NewPods[New pods starting]
+    NewPods -->|readiness OK| SVC[Service receives traffic]
+    HPA -->|nodes full?| Pending[Pending pods]
+    Pending --> CA[Cluster Autoscaler<br/>adds nodes]
 ```
 
 ### Key details
 
-- Set resource `requests` - HPA uses them for CPU %
-- `behavior` section controls scale-up/down rate
-- Custom metrics: requests per second, Kafka lag
-- KEDA extends to event-driven scaling (scale to zero)
+| Topic | Detail |
+|-------|--------|
+| **Resource requests required** | HPA CPU % = usage / **requests**, not limits — missing requests → broken HPA |
+| **metrics-server** | Required for resource metrics; install on all clusters |
+| **Prometheus Adapter** | Exposes app metrics (RPS, latency, queue lag) to HPA |
+| **KEDA** | Event-driven autoscaler; scale to zero on Kafka/SQS/Cron triggers |
+| **Lag on spikes** | HPA reacts after metrics rise; cold pods need readiness time — pre-warm for known events |
+| **Not a silver bullet** | CPU-only misses I/O-bound, memory leaks, or latency-driven load |
+
+**HPA + Cluster Autoscaler stack:**
+
+| Layer | Scales | Trigger |
+|-------|--------|---------|
+| HPA | Pods | CPU, memory, custom metrics |
+| Cluster Autoscaler | Nodes | Pending pods (unschedulable) |
+| VPA (optional) | Pod CPU/memory requests | Right-size requests over time |
+
+**Interview rapid-fire:**
+
+| Question | Answer |
+|----------|--------|
+| Why scale on custom metrics? | CPU idle while queue backs up — scale on lag/RPS |
+| HPA vs VPA? | HPA = more pods; VPA = bigger pod resources |
+| Scale to zero? | Native HPA minReplicas ≥ 1; KEDA supports zero |
+| Flapping? | Tune `behavior.scaleDown.stabilizationWindowSeconds` |
+| Pod pending after HPA scale? | Need Cluster Autoscaler or more nodes |
 
 ### When to use
 
-- Variable load HTTP APIs and workers
-- Any Deployment with measurable demand signal
-- Combined with Cluster Autoscaler for node capacity
+- **Variable-load HTTP APIs, gRPC, workers** with measurable demand signal
+- Any Deployment where manual scaling is reactive and error-prone
+- Combined with **Cluster Autoscaler** for node-level capacity
+
+**Avoid CPU-only HPA when:** workload is I/O-bound, event-driven (use KEDA), or latency-sensitive (add RPS/latency metrics).
 
 ### Trade-offs
 
 | Pros | Cons |
 |------|------|
-| Automatic demand matching | Cooldown lag on sudden spikes |
-| Cost savings on scale-in | CPU-only HPA often insufficient |
-| Simple K8s native | Needs metrics pipeline |
+| Native K8s primitive; no extra vendor | 15s+ reaction lag on sudden spikes |
+| Supports resource + custom + external metrics | Requires metrics pipeline (metrics-server, Prometheus) |
+| Tunable scale-up/down behavior | CPU-only often insufficient |
+| Cost savings on scale-in | Misconfigured requests → wrong scaling decisions |
+| Works with GitOps-declared min/max bounds | Doesn't add nodes — needs Cluster Autoscaler |
 
 ### References
 
 - [Kubernetes HPA](https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/)
+- [HPA walkthrough](https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale-walkthrough/)
+- [KEDA](https://keda.sh/)
 
 ---
 

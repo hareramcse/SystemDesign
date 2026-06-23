@@ -1,4 +1,4 @@
-# 9. Observability
+﻿# 9. Observability
 
 > Status: **Documented**  -  MASTER reference depth for all sub-topics below.
 
@@ -335,60 +335,152 @@ flowchart TB
 
 ### What is it
 
-End-to-end tracking of a single request as it traverses multiple services, represented as a tree of **spans** (timed operations) linked by a shared **trace ID**.
+**Distributed tracing** tracks a single logical request as it crosses process and network boundaries, represented as a **trace** (the whole journey) composed of **spans** (individual timed operations) linked by a shared **trace ID** and parent-child relationships.
+
+Tracing answers: *where did the 2-second checkout latency go?* and *which downstream service returned 500?*
 
 ### Why it matters
 
-In microservices, latency and errors hide in the call graph. Tracing shows which downstream dependency slowed a checkout or which service returned 500 - impossible to infer from single-service logs alone.
+In monoliths, a stack trace suffices. In microservices:
+
+- One API call fans out to 5–20 internal HTTP/gRPC/DB calls
+- Logs alone cannot reconstruct timing per hop
+- Metrics show p99 latency spike but not **which dependency** caused it
+- **Interview staple:** "Logs = what; metrics = how much; traces = where time went"
 
 ### How it works
 
-An ingress service starts a root span and injects trace context (`traceparent` header) into outbound calls. Each hop creates child spans with timing and attributes. A collector receives spans; a UI (Jaeger, Tempo) renders the waterfall. Sampling reduces volume in high-traffic systems.
+**Core concepts:**
 
-### Diagram  -  Span Flow
+| Concept | Definition | Example |
+|---------|------------|---------|
+| **Trace** | End-to-end path of one request | Checkout `trace_id=abc123` |
+| **Span** | One timed operation within a trace | `HTTP GET /users/42` — 12 ms |
+| **Root span** | First span; no parent | API gateway ingress |
+| **Child span** | Created by downstream call | Order service → Payment gRPC |
+| **Span attributes** | Key-value metadata | `http.status_code=200`, `db.system=postgresql` |
+| **Span events** | Timestamped annotations | `exception` at T+45ms |
+
+**Span tree example (waterfall):**
+
+```text
+[trace_id: abc123]  total 847ms
+├── gateway.http          847ms
+│   ├── order.getOrder    320ms
+│   │   ├── postgres.query  45ms
+│   │   └── inventory.grpc  180ms
+│   └── payment.charge    410ms
+│       └── stripe.http     390ms
+```
+
+```mermaid
+flowchart TB
+    Root[gateway span<br/>trace_id=abc]
+    Root --> S1[order span<br/>parent=abc:gateway]
+    Root --> S2[payment span<br/>parent=abc:gateway]
+    S1 --> S3[db query span]
+    S1 --> S4[inventory grpc span]
+    S2 --> S5[stripe http span]
+```
+
+**Trace context propagation**
+
+For spans to link across services, context must **flow with the request**:
+
+| Standard | Header | Format |
+|----------|--------|--------|
+| **W3C Trace Context** | `traceparent` | `00-{trace-id}-{parent-span-id}-{flags}` |
+| **W3C** | `tracestate` | Vendor-specific key-value pairs |
+| Legacy B3 | `X-B3-TraceId`, `X-B3-SpanId` | Zipkin format (still common) |
 
 ```mermaid
 sequenceDiagram
     participant C as Client
-    participant GW as API Gateway
+    participant GW as Gateway
     participant O as Order Service
     participant P as Payment Service
 
-    C->>GW: HTTP Request [traceId: abc]
-    Note over GW: Span: gateway (root)
-    GW->>O: Forward [traceparent]
-    Note over O: Span: order (child)
-    O->>P: Charge [traceparent]
-    Note over P: Span: payment (child)
-    P-->>O: 200 OK
-    O-->>GW: 200 OK
-    GW-->>C: 200 OK
+    C->>GW: GET /checkout<br/>traceparent: 00-abc-span1-01
+    Note over GW: Start root span<br/>trace_id=abc
+    GW->>O: Forward<br/>traceparent: 00-abc-span2-01
+    Note over O: Child span, parent=span2
+    O->>P: gRPC metadata traceparent
+    Note over P: Child span under O
+    P-->>O: response
+    O-->>GW: response
+    GW-->>C: response
+    Note over GW,P: All spans exported with trace_id=abc
 ```
+
+**Propagation rules:**
+
+1. **Ingress:** extract context from incoming headers or start new trace
+2. **Egress:** inject context into outbound HTTP headers / gRPC metadata / Kafka headers
+3. **Broken propagation** → orphan spans; trace appears fragmented in UI
+4. **Async:** pass context in message headers (`traceparent` in Kafka record headers)
+
+**Instrumentation layers:**
+
+| Layer | What it traces | Example |
+|-------|----------------|---------|
+| Auto-instrumentation | HTTP server/client, gRPC, DB drivers | OpenTelemetry Java agent |
+| Manual spans | Business logic | `span.addEvent("payment_authorized")` |
+| Service mesh | Envoy generates spans | Istio without app changes |
+
+**Sampling (production necessity)**
+
+100% trace collection at 50K RPS is expensive. Strategies:
+
+| Strategy | Behavior | When |
+|----------|----------|------|
+| **Head-based** | Decide at root (1–10% random) | Default prod |
+| **Tail-based** | Keep traces that ended in error or slow | OTel Collector tail sampling |
+| **Always sample** | Dev/staging, errors | Debug sessions |
+
+Rule of thumb: sample 1–5% in prod; **always** capture errors if tail sampling available.
+
+**Linking traces to logs:**
+
+```json
+{
+  "level": "ERROR",
+  "message": "Payment declined",
+  "traceId": "abc123def456",
+  "spanId": "span789",
+  "service": "payment-service"
+}
+```
+
+Click trace ID in Jaeger → see exact log lines in Loki/Elasticsearch.
 
 ### Key details
 
-- **Trace:** full journey; **span:** one operation (HTTP call, DB query)
-- Context propagation via W3C `traceparent` / B3 headers
-- **Sampling:** 1 - 10% head-based in prod; tail-based or 100% on errors
-- Add span attributes: `http.status_code`, `db.statement` (sanitized)
+- **Critical path:** longest chain of dependent spans determines latency floor
+- **Span kind:** `SERVER`, `CLIENT`, `PRODUCER`, `CONSUMER`, `INTERNAL`
+- **Status:** `OK`, `ERROR` — set on non-2xx and exceptions
+- **Baggage:** propagate business context (`tenant_id`) — use sparingly (PII risk)
+- Tools: Jaeger, Zipkin, Grafana Tempo, Honeycomb, Datadog APM
 
 ### When to use
 
-- Microservices with multi-hop request paths
-- Latency debugging (p99 investigations)
-- Dependency mapping and critical path analysis
+- Any microservice with multi-hop synchronous or async paths
+- Latency debugging (p99 investigations, regression after deploy)
+- Dependency mapping and architecture discovery
+- SLO debugging — correlate burn-rate spikes to specific downstream
 
 ### Trade-offs
 
 | Pros | Cons |
 |------|------|
-| Pinpoints bottlenecks | Storage cost at 100% sampling |
-| Visual call graph | Requires consistent propagation |
-| Links to logs via trace ID | Incomplete traces if context dropped |
+| Pinpoints bottleneck span | Storage cost at high sampling |
+| Visual call graph for onboarding | Broken context = incomplete traces |
+| Links logs ↔ traces via trace ID | Manual instrumentation for business spans |
+| Mesh can add tracing without code | Cardinality of span attributes must be controlled |
 
 ### References
 
-- [OpenTelemetry Tracing](https://opentelemetry.io/docs/concepts/signals/traces/)
+- [OpenTelemetry — Traces](https://opentelemetry.io/docs/concepts/signals/traces/)
+- [W3C Trace Context](https://www.w3.org/TR/trace-context/)
 - [Jaeger architecture](https://www.jaegertracing.io/docs/latest/architecture/)
 
 ---
@@ -512,52 +604,115 @@ flowchart LR
 
 ### What is it
 
-**Service Level Indicator** - the raw measured metric that quantifies some aspect of service behavior (availability, latency, throughput, freshness, correctness).
+A **Service Level Indicator (SLI)** is a **quantitative measure** of some aspect of service behavior from the **user's perspective** — the raw metric you actually observe before setting targets.
+
+SLIs answer: *"What exactly are we measuring?"* SLOs answer: *"How well must we measure?"*
 
 ### Why it matters
 
-SLOs are only as good as their SLIs. Precise SLI definitions prevent disputes and ensure alerts reflect real user impact.
+Vague goals ("keep the site fast") are unmeasurable. Precise SLI definitions prevent:
+
+- Engineering optimizing server CPU while users see errors at the CDN
+- Disputes during incidents ("was that an outage?")
+- Alerts that fire on irrelevant internal metrics
+
+**Google SRE principle:** measure SLIs at the **user boundary** (load balancer, edge, synthetic probe) when possible — not only inside the data center.
 
 ### How it works
 
-Define **good events** and **valid events**. Availability SLI = successful responses / total valid requests. Latency SLI = fraction of requests faster than threshold. Instrument at the load balancer or edge for user perspective.
+**The SLI formula:**
 
-### Diagram
+```text
+SLI = (good events) / (valid events)   × 100%
+```
+
+| Term | Definition | Example |
+|------|------------|---------|
+| **Valid events** | Requests that should be counted | All HTTP requests excluding health checks |
+| **Good events** | Events meeting "good" criteria | 2xx/3xx responses, or latency < 300ms |
+| **Bad events** | Valid but not good | 5xx, timeout, latency > threshold |
+
+**Common SLI types:**
+
+| SLI type | Good event | Valid events | Measurement point |
+|----------|------------|--------------|-------------------|
+| **Availability** | Successful response (2xx/3xx) | All non-healthcheck requests | Edge LB, synthetic |
+| **Latency** | Response time < T ms | All successful requests | Edge histogram |
+| **Quality / Correctness** | Business-valid outcome | All attempts | App-level (e.g., search with results) |
+| **Freshness** | Data age < N seconds | All reads | Pipeline watermark |
+| **Durability** | Data not lost | All writes | Storage audit (rare for most teams) |
+
+**Availability SLI — definition debates (pick one explicitly):**
+
+| Definition | Formula | Trade-off |
+|------------|---------|-----------|
+| Strict | `(2xx + 3xx) / all` | Client 404 counts against you |
+| Server-focused | `2xx / (all - 4xx)` | Excludes client errors |
+| Success-only | `non-5xx / all` | Treats 4xx as "available" |
+
+**Latency SLI — percentile over threshold:**
+
+```text
+Latency SLI = (requests with duration < 300ms) / (all valid requests)
+```
+
+Or define as: "99th percentile latency < 500ms" — the SLI is the **fraction of windows** meeting that percentile target.
 
 ```mermaid
 flowchart LR
-    Req[Requests] --> V{Valid?}
-    V -->|yes| G{Good?}
-    G -->|yes| Good[Good Event]
-    G -->|no| Bad[Bad Event]
-    Good & Bad --> SLI["SLI = good / valid"]
-    SLI --> SLO[SLO Target]
+    Req[Incoming Requests] --> V{Valid event?}
+    V -->|healthcheck| Skip[Exclude]
+    V -->|yes| G{Good event?}
+    G -->|2xx in 200ms| Good[Good +1]
+    G -->|5xx or slow| Bad[Bad +1]
+    Good & Bad --> SLI["SLI = good / (good+bad)"]
+    SLI --> SLO[Compare to SLO target]
 ```
+
+**Instrumentation examples:**
+
+```promql
+# Availability SLI (5-minute rate)
+sum(rate(http_requests_total{status!~"5.."}[5m]))
+/
+sum(rate(http_requests_total[5m]))
+
+# Latency SLI — fraction under 300ms (histogram)
+sum(rate(http_request_duration_seconds_bucket{le="0.3"}[5m]))
+/
+sum(rate(http_request_duration_seconds_count[5m]))
+```
+
+**Multi-window SLIs:** measure over rolling 1h, 24h, 30d for SLO compliance reporting.
 
 ### Key details
 
-- **Availability:** `2xx+3xx / total` or stricter (exclude 4xx client errors)
-- **Latency:** `% requests < 200ms` (use histogram buckets)
-- **Correctness:** business-valid outcomes / attempts
-- Measure at user boundary when possible
+- **User-centric:** measure what users experience — synthetic + real traffic combined
+- **Few SLIs per service:** typically availability + latency + one domain-specific (correctness)
+- **Exclude noise:** health checks, internal metrics scrapes, pen-test traffic
+- **Document exclusions:** planned maintenance — in or out of SLI?
+- SLI without SLO is just a dashboard metric — pair them (see 9.9)
 
 ### When to use
 
-- Defining any SLO or SLA
-- Building availability and latency dashboards
-- Synthetic + real traffic combined SLIs
+- Defining any reliability target before writing SLO
+- Building golden-signal dashboards
+- Incident retrospectives — "did we breach SLO?"
+- Capacity planning — latency SLI degradation precedes outages
 
 ### Trade-offs
 
 | Pros | Cons |
 |------|------|
-| Objective measurement | Definition debates are common |
-| Foundation for SLO/SLA | Edge vs server measurement differs |
-| Drives instrumentation | Lagging indicators miss UX nuances |
+| Objective, auditable measurement | Definition debates (4xx, 3xx) take time |
+| Foundation for SLO/error budget | Edge vs server measurement can differ |
+| Aligns teams on "good" | Lagging indicator — misses UX nuance (slow but "success") |
+| Drives correct instrumentation | Too many SLIs → conflicting goals |
 
 ### References
 
-- [Google SRE  -  SLI selection](https://sre.google/workbook/implementing-slos/#sli-selection)
+- [Google SRE Workbook — SLI selection](https://sre.google/workbook/implementing-slos/#sli-selection)
+- [Google SRE Book — Monitoring Distributed Systems](https://sre.google/sre-book/monitoring-distributed-systems/)
 
 ---
 
@@ -567,59 +722,124 @@ flowchart LR
 
 ### What is it
 
-**Service Level Objective** - an internal reliability target the engineering team commits to, expressed as a measurable threshold over a time window.
+A **Service Level Objective (SLO)** is an **internal reliability target** — a threshold applied to an SLI over a defined **time window**, representing the level of reliability your team commits to deliver.
+
+Example: *"99.9% of checkout requests return a successful response within 30 rolling days."*
 
 ### Why it matters
 
-SLOs translate user happiness into numbers teams can optimize. They drive alerting, error budgets, and prioritization - reliability becomes engineering work, not hope.
+SLOs translate "users should be happy" into engineering decisions:
+
+- When to page on-call (SLO burn rate)
+- Whether Friday deploys are allowed (error budget remaining)
+- How to prioritize reliability vs feature work
+- **Interview chain:** SLI (measure) → SLO (target) → Error budget (allowed failure) → SLA (contract)
 
 ### How it works
 
-Pick 3 - 5 SLOs per service (availability, latency, correctness). Define SLI measurement. Set target (99.9% requests successful). Implement dashboards and burn-rate alerts. Review quarterly with product.
-
-### Diagram  -  SLI -> SLO -> SLA
+**SLI → SLO relationship:**
 
 ```mermaid
 flowchart TB
     subgraph Measure
-        SLI["SLI<br/>good events / valid events"]
+        SLI["SLI: good / valid events"]
     end
     subgraph Internal
-        SLO["SLO<br/>99.9% over 30 days"]
-        EB[Error Budget]
+        SLO["SLO: 99.9% over 30 days"]
+        EB["Error Budget: 0.1% = 43.2 min downtime"]
     end
     subgraph External
-        SLA["SLA<br/>99.95% contractual"]
+        SLA["SLA: 99.95% to customers"]
     end
     SLI --> SLO
     SLO --> EB
-    SLO -.->|buffer| SLA
+    SLO -.->|safety margin| SLA
+```
+
+**Writing good SLOs:**
+
+| Component | Example | Notes |
+|-----------|---------|-------|
+| SLI | Availability of `POST /checkout` | Specific user journey beats "all endpoints" |
+| Target | 99.9% | Three nines = 43.2 min/month budget |
+| Window | Rolling 30 days | Calendar month also common |
+| Measurement | Edge load balancer logs | Document data source |
+
+**Example SLO set for a payment API:**
+
+| SLO | SLI definition | Target | Window |
+|-----|----------------|--------|--------|
+| Availability | Non-5xx responses / valid requests | 99.95% | 30d rolling |
+| Latency | Requests < 500ms / successful requests | 99% | 30d rolling |
+| Correctness | Charges without duplicate / total charges | 99.99% | 30d rolling |
+
+**Nines cheat sheet (30-day window):**
+
+| Availability | Downtime/month | Error budget |
+|--------------|----------------|--------------|
+| 99% (two nines) | 7h 12m | 1% |
+| 99.9% (three nines) | 43m 12s | 0.1% |
+| 99.95% | 21m 36s | 0.05% |
+| 99.99% (four nines) | 4m 19s | 0.01% |
+
+**SLO-based alerting (multi-burn-rate):**
+
+Alert when error budget is **burning too fast** — not on every blip:
+
+| Alert | Burn rate | Window | Meaning |
+|-------|-----------|--------|---------|
+| Page | 14.4× | 1h | Budget gone in ~2 days if continues |
+| Page | 6× | 6h | Serious degradation |
+| Ticket | 3× | 3d | Slow burn worth investigating |
+
+```promql
+# Simplified burn-rate concept
+# (error_rate / (1 - SLO_target)) > burn_rate_threshold
+```
+
+**SLO review cadence:**
+
+- Quarterly: adjust targets with product — tighter if users demand, looser if cost prohibitive
+- Post-incident: did SLO breach? Was target realistic?
+- Avoid **SLO sprawl** — 3–5 SLOs per service maximum
+
+```mermaid
+flowchart LR
+    Users[User happiness] --> SLI[SLI measurement]
+    SLI --> SLO{SLO met?}
+    SLO -->|yes| Ship[Feature development]
+    SLO -->|budget left| Ship
+    SLO -->|budget exhausted| Rel[Reliability work only]
 ```
 
 ### Key details
 
-- User-centric: measure what users experience at the edge
-- Few SLOs - more creates conflicting priorities
-- Example: "99% of checkout requests complete < 2s over 28 days"
-- SLO review: adjust targets based on user needs and cost
+- **User-centric journeys:** SLO on `/checkout` not `/internal/metrics`
+- **SLO < SLA:** internal target stricter than contractual SLA (buffer for disputes)
+- **Shared SLOs:** one customer-facing SLO may map to multiple backend services
+- **Composite SLOs:** end-to-end only if you own full path; else per-service SLOs
+- Document **exclusions:** maintenance windows, third-party dependency failures
 
 ### When to use
 
-- Any production service with reliability goals
-- Foundation for error budgets and SRE practice
-- Input to alerting (multi-burn-rate pages)
+- Any production service past MVP — before alert fatigue sets in
+- Release governance and error budget policies
+- Prioritizing tech debt vs features with product leadership
+- On-call paging criteria — page on SLO burn, not CPU > 80%
 
 ### Trade-offs
 
 | Pros | Cons |
 |------|------|
-| Quantifies reliability | Wrong SLO optimizes wrong thing |
-| Enables error budgets | Measurement can be complex |
-| Aligns teams | Too many SLOs -> paralysis |
+| Quantifies reliability goals | Wrong SLO optimizes wrong behavior |
+| Enables error budget culture | Hard to measure end-to-end in microservices |
+| Reduces subjective release debates | Setting too loose → meaningless; too tight → no shipping |
+| Aligns eng and product | Requires instrumentation investment first |
 
 ### References
 
-- [Google SRE Workbook  -  Implementing SLOs](https://sre.google/workbook/implementing-slos/)
+- [Google SRE Workbook — Implementing SLOs](https://sre.google/workbook/implementing-slos/)
+- [Google SRE — Alerting on SLOs](https://sre.google/workbook/alerting-on-slos/)
 
 ---
 
@@ -681,51 +901,137 @@ flowchart LR
 
 ### What is it
 
-The allowed amount of unreliability derived from an SLO - e.g., 99.9% monthly availability permits ~43 minutes of downtime per month.
+An **error budget** is the **allowed amount of unreliability** implied by an SLO — the mirror image of the reliability target. If your SLO is 99.9% availability, your error budget is **0.1%** of valid events in the measurement window that may fail.
+
+Error budgets make reliability a **finite resource** product and engineering spend together.
 
 ### Why it matters
 
-Error budgets quantify the tension between shipping features and maintaining reliability. When budget remains, teams move fast; when exhausted, focus shifts to stability.
+Without error budgets:
+
+- Reliability debates are subjective ("is one outage too many?")
+- Teams ship recklessly OR never ship from fear
+- On-call pages on noisy thresholds unrelated to user impact
+
+With error budgets:
+
+- **Budget remaining** → justified risk-taking (deploys, experiments)
+- **Budget exhausted** → freeze features, focus on stability
+- **Interview one-liner:** "Error budget = 1 − SLO; it's how much downtime/latency failure you can afford per month."
 
 ### How it works
 
-`Error budget = 1 - SLO target` over a rolling window. Incidents, bad deploys, and experiments consume budget. Multi-window burn-rate alerts page when consumption accelerates. Policy: budget at zero -> feature freeze, reliability work only.
+**Calculation:**
 
-### Diagram
+```text
+Error budget (fraction) = 1 − SLO target
+Error budget (time)     = window_duration × (1 − SLO target)
+```
+
+**30-day rolling window examples:**
+
+| SLO target | Error budget % | Allowed downtime / month |
+|------------|----------------|--------------------------|
+| 99% | 1% | ~7h 18m |
+| 99.9% | 0.1% | ~43m 48s |
+| 99.95% | 0.05% | ~21m 54s |
+| 99.99% | 0.01% | ~4m 23s |
+
+**Request-based example:**
+
+```text
+SLO: 99.9% availability over 30d
+Valid requests/month: 100 million
+Error budget = 0.1% × 100M = 100,000 failed requests allowed
+```
+
+```mermaid
+flowchart TB
+    SLO["SLO 99.9%"] --> EB["Total budget: 43.2 min / month"]
+    EB --> Used["Consumed by incidents,<br/>bad deploys, experiments"]
+    EB --> Remaining["Remaining budget"]
+    Remaining -->|> 50%| Green[Ship features freely]
+    Remaining -->|10–50%| Yellow[Cautious deploys, more canaries]
+    Remaining -->|< 10% or 0| Red[Feature freeze — reliability sprint]
+```
+
+**What consumes error budget:**
+
+| Event | Consumption |
+|-------|-------------|
+| User-visible outage (5xx storm) | Large — minutes of bad SLI |
+| Partial degradation (elevated latency) | Latency SLO budget |
+| Bad deploy rolled back in 5 min | Small but non-zero |
+| Planned maintenance | Policy choice — exclude or consume |
+| Third-party dependency down | Depends — exclude if out of your control |
+
+**Error budget policy (example):**
+
+```text
+Budget > 50% remaining  → normal development velocity
+Budget 25–50%           → require canary + extra review for risky changes
+Budget < 25%            → reliability tasks prioritized in sprint
+Budget = 0                → feature freeze until budget recovers OR SLO revised
+```
+
+**Burn rate — how fast budget is consumed:**
+
+```text
+burn_rate = (current error rate) / (error budget rate)
+
+error budget rate = 1 − SLO = 0.001 for 99.9% SLO
+
+If 1% of requests failing now:
+burn_rate = 0.01 / 0.001 = 10×
+→ at this rate, monthly budget exhausted in ~3 days
+```
 
 ```mermaid
 flowchart LR
-    SLO["SLO 99.9%"] --> EB["Budget: 43 min/mo"]
-    EB --> U[Used by incidents]
-    EB --> R[Remaining]
-    R -->|low| Freeze[Feature Freeze]
-    R -->|healthy| Ship[Continue Shipping]
+    subgraph Alerts
+        B1["1h window: 14.4× burn → PAGE"]
+        B2["6h window: 6× burn → PAGE"]
+        B3["3d window: 3× burn → TICKET"]
+    end
+    SLI[SLI error rate] --> Burn[Burn rate calc]
+    Burn --> B1 & B2 & B3
 ```
+
+**Product + engineering collaboration:**
+
+- Error budget is a **product decision tool** — not only SRE
+- Product accepts: higher SLO = slower feature velocity (more careful deploys)
+- Postmortem when budget burned unexpectedly — was deploy process at fault?
 
 ### Key details
 
-- Budget is a product decision tool, not just engineering
-- Track per SLO, per service, per window (30d rolling common)
-- Partial outages consume proportional budget
-- Postmortems when budget burned unexpectedly
+- Track budget **per SLO**, per service, rolling window (30d common)
+- Dashboard: budget remaining % with projection ("at current burn, exhausted in 4 days")
+- **Partial outages** consume proportional budget — not binary
+- Budget recovery is automatic as window rolls forward (old bad minutes age out)
+- Don't game with loose SLOs — meaningless budget helps no one
 
 ### When to use
 
-- Teams practicing SRE with defined SLOs
-- Release governance (can we deploy Friday?)
-- Prioritizing tech debt vs features
+- Teams with defined SLOs practicing SRE
+- Release governance: "Can we deploy Friday 4pm?"
+- Sprint planning: reliability work vs features
+- Incident severity classification tied to budget impact
 
 ### Trade-offs
 
 | Pros | Cons |
 |------|------|
-| Objective release decisions | Requires SLO maturity first |
-| Aligns product and engineering | Can be gamed with loose SLOs |
-| Reduces blame culture | Cultural buy-in takes time |
+| Objective ship/no-ship decisions | Requires SLO maturity first |
+| Aligns product and engineering incentives | Loose SLO → fake budget |
+| Reduces blame — "we spent budget" | Cultural buy-in takes time |
+| Focuses alerts on user impact | Multi-service budgets are complex |
+| Encourages calculated risk | Budget freeze can frustrate product if overused |
 
 ### References
 
-- [Google SRE  -  Embracing Risk](https://sre.google/sre-book/embracing-risk/)
+- [Google SRE Book — Embracing Risk](https://sre.google/sre-book/embracing-risk/)
+- [Google SRE Workbook — Alerting on SLOs](https://sre.google/workbook/alerting-on-slos/)
 
 ---
 

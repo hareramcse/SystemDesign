@@ -193,53 +193,126 @@ flowchart TB
 
 ### What is it?
 
-**Microservices** are independently deployable services, each implementing a business capability, owning private data, and communicating via well-defined APIs or events.
+**Microservices** are independently **deployable** services, each aligned to a **business capability** (or bounded context), owning **private data**, communicating over the network via well-defined APIs or events, and scaling on independent cadences.
+
+"Micro" refers to **scope of responsibility**, not lines of code — a service can be 10K LOC if the boundary is right.
 
 ### Why it matters
 
-Enables team autonomy, polyglot stacks, independent scaling, and fault isolation - when organizational scale and operational maturity justify distributed complexity.
+- **Team autonomy:** Conway's Law — service boundaries mirror team boundaries; independent release trains
+- **Independent scaling:** scale search 10× without scaling billing
+- **Technology fit:** pick Postgres for orders, Elasticsearch for search, Go for stream processor
+- **Fault isolation:** blast radius contained — one bad deploy doesn't take down entire platform
+- **Interview trap:** microservices solve **organizational and scaling** problems, not "clean code" problems
 
-### How it works
+### How it works — when to split (decision framework)
 
-1. Identify bounded contexts (DDD) as service candidates.
-2. Each service has own database (database-per-service).
-3. Sync calls (REST/gRPC) or async events for integration.
-4. CI/CD pipeline per service; container orchestration (K8s).
-5. Shared platform: discovery, mesh, observability, gateway.
+**Start monolith or modular monolith.** Split when you have **concrete triggers**, not hypothetical future scale:
 
-### Diagram
+| Trigger | Signal | Example split |
+|---------|--------|---------------|
+| **Team scale** | >8–10 engineers stepping on same codebase | Orders team vs Catalog team |
+| **Deploy coupling** | One team's change blocks everyone's release | Extract notifications service |
+| **Scaling mismatch** | One module needs 50× traffic, rest needs 2× | Extract read-heavy search |
+| **Availability isolation** | Non-critical feature takes down critical path | Isolate recommendations |
+| **Regulatory boundary** | PCI/PII scope reduction | Extract payments vault service |
+| **Different SLAs** | 99.99% core vs 99% analytics | Separate analytics pipeline |
+
+```mermaid
+flowchart TB
+    subgraph Triggers["Split triggers"]
+        T1[Team autonomy]
+        T2[Independent scale]
+        T3[Fault isolation]
+        T4[Compliance scope]
+    end
+    Triggers --> Q{All triggers weak?}
+    Q -->|yes| Mono[Stay monolith / modular monolith]
+    Q -->|no| Split[Extract service]
+    Split --> BC[Validate bounded context]
+```
+
+**When NOT to split (anti-patterns):**
+
+- "We might need to scale someday" — premature distribution
+- Splitting by **technical layer** (DAO service, validation service) — nano-services
+- No platform maturity (no CI/CD per service, no tracing, no discovery)
+- Team too small to own N deployables + N databases
+
+**Service boundary rules (DDD-aligned):**
+
+1. **Bounded context = service candidate** — one ubiquitous language per service
+2. **Database per service** — no shared tables across services; integrate via API/events
+3. **High cohesion inside, loose coupling outside** — changes to order rules stay in Order service
+4. **Avoid chatty sync chains** — deep A→B→C→D call graphs are a design smell
+5. **Conway alignment** — if two teams own one service, expect friction
 
 ```mermaid
 flowchart LR
-    GW[Gateway] --> A[Service A]
-    GW --> B[Service B]
-    A --> DB_A[(DB A)]
-    B --> DB_B[(DB B)]
-    A <-->|events| Bus[Message Bus]
-    B <-->|events| Bus
+    subgraph Order Context
+        OS[Order Service]
+        ODB[(Orders DB)]
+    end
+    subgraph Inventory Context
+        IS[Inventory Service]
+        IDB[(Inventory DB)]
+    end
+    subgraph Payment Context
+        PS[Payment Service]
+        PDB[(Payments DB)]
+    end
+    OS -->|ReserveStock command / event| IS
+    OS -->|Charge command / event| PS
 ```
+
+**Integration styles:**
+
+| Style | Coupling | Consistency | Use when |
+|-------|----------|-------------|----------|
+| Sync REST/gRPC | Tight (runtime dependency) | Strong per call | Query, immediate validation |
+| Async events | Loose | Eventual | Notify, audit, analytics |
+| Saga | Orchestrated/choreographed | Eventual across steps | Multi-service transactions |
+
+**Operational prerequisites (microservices tax):**
+
+- CI/CD per service, container orchestration (K8s)
+- Service discovery, API gateway, centralized config
+- Distributed tracing, structured logging, correlation IDs
+- Resilience: circuit breaker, retry, bulkhead, timeouts
+- Contract testing, API versioning discipline
 
 ### Key details
 
-- Conway's Law: service boundaries mirror team structure.
-- Distributed transactions avoided - sagas and eventual consistency.
-- "Micro" refers to scope of responsibility, not lines of code.
+| Principle | Implication |
+|-----------|-------------|
+| Conway's Law | Org chart influences architecture — design teams and services together |
+| No distributed monolith | Independent deploys but sync-coupled everywhere = worst of both worlds |
+| Data ownership | Each service owns its schema; others access only via API |
+| Evolution | Modular monolith → strangler extraction (see 8.4) |
+| Size heuristic | "Two pizza team" can own 1–3 services, not 30 |
+
+**Interview answer template:** "I'd start modular monolith. Split when team size, scaling, or fault isolation forces it. Boundaries follow DDD bounded contexts with database-per-service. Cross-cutting workflows use sagas, not 2PC."
 
 ### When to use
 
-- Multiple teams needing independent release cycles.
-- Different scaling profiles per domain (search vs billing).
-- Mature DevOps, observability, and platform engineering.
+- Multiple teams (typically 3+) needing independent release cycles
+- Proven scaling or availability needs differ sharply by domain
+- Mature DevOps: K8s, observability, platform engineering in place
+- Organization willing to pay distributed systems complexity tax
 
 ### Trade-offs / Pitfalls
 
-- Distributed debugging, data consistency, and integration testing harder.
-- Latency and partial failure on every cross-service call.
-- Nano-services anti-pattern: too many tiny services -> ops nightmare.
+- **Distributed debugging:** one user request crosses 10 services — tracing mandatory
+- **Eventual consistency:** users see intermediate states; UX and support must handle it
+- **Integration testing:** combinatorial explosion — contract tests + staging env critical
+- **Latency tax:** every hop adds 1–20 ms + failure probability
+- **Nano-services:** 200 services with 200 databases — ops nightmare, avoid
+- **Shared database anti-pattern:** two services one DB = distributed monolith with network overhead
 
 ### References
 
-*(No curated references for this sub-topic in `_topics.json`.)*
+- [Martin Fowler — Microservices](https://martinfowler.com/articles/microservices.html)
+- [Sam Newman — Building Microservices](https://samnewman.io/books/building_microservices_2nd_edition/)
 
 ---
 
@@ -786,21 +859,30 @@ flowchart TB
 
 ### What is it?
 
-A **service mesh** is infrastructure layer handling service-to-service traffic - mTLS, retries, metrics, tracing, circuit breaking - via **sidecar proxies** (Envoy) controlled by a central plane (Istio, Linkerd).
+A **service mesh** is a dedicated infrastructure layer for **service-to-service (east-west)** communication. It handles cross-cutting concerns - **mTLS**, retries, timeouts, circuit breaking, load balancing, metrics, tracing - via **sidecar proxies** attached to each workload, controlled by a **control plane** (Istio/Istiod, Linkerd).
+
+Application code stays business-focused; networking policy is declarative (YAML).
 
 ### Why it matters
 
-Moves cross-cutting networking concerns out of application code into uniform platform policy - consistent security and observability across polyglot services.
+In a 50-service microservices estate:
+- Java service uses Resilience4j, Go service uses custom retries, Python has none -> **inconsistent** resilience
+- mTLS between every pair is impractical to configure per app
+- Distributed tracing requires instrumentation in every language
+
+Service mesh **uniformizes** security and observability at the platform layer.
 
 ### How it works
 
-1. Each pod runs app container + Envoy sidecar (data plane).
-2. All egress/ingress traffic routed through sidecar.
-3. Control plane (Istiod) pushes routes, certs, policies to sidecars.
-4. mTLS encrypts east-west traffic automatically.
-5. Telemetry exported without app instrumentation changes.
+**Data plane (sidecar - usually Envoy):**
+1. Each pod: `app container` + `envoy sidecar` (iptables/CNI redirects all traffic through sidecar)
+2. Outbound call from app -> localhost:15001 -> Envoy -> remote Envoy -> target app
+3. Sidecar handles: TLS, retry, timeout, load balance, telemetry export
 
-### Diagram
+**Control plane (Istiod / Linkerd controller):**
+1. Stores routing rules, cert authority, service registry
+2. Pushes config to all sidecars (xDS protocol)
+3. Issues short-lived certs for automatic **mTLS** between services
 
 ```mermaid
 flowchart TB
@@ -811,31 +893,55 @@ flowchart TB
         SideB[Envoy Sidecar] --> AppB[App]
     end
     SideA -->|mTLS| SideB
-    CP[Control Plane] -.-> SideA
+    CP[Istiod Control Plane] -.->|config + certs| SideA
     CP -.-> SideB
 ```
 
+**Platform capabilities without app changes:**
+
+| Feature | Mesh policy example |
+|---------|---------------------|
+| mTLS | `PeerAuthentication: STRICT` |
+| Retry | `VirtualService: retries: 3` |
+| Timeout | `route timeout: 2s` |
+| Circuit break | `DestinationRule: outlierDetection` |
+| Canary | 90% v1 / 10% v2 traffic split |
+| Fault injection | delay 5s on 1% of requests (chaos) |
+| Tracing | auto-inject trace headers |
+
+**vs API Gateway:**
+
+| | API Gateway | Service Mesh |
+|---|-------------|--------------|
+| Traffic | North-south (client -> cluster) | East-west (service -> service) |
+| Location | Edge | Sidecar per pod |
+| Examples | Kong, AWS API GW | Istio, Linkerd |
+
 ### Key details
 
-- L7 routing: canary, fault injection, timeout per route.
-- Cost: extra CPU/memory per sidecar; added latency (~1ms).
-- CNI alternatives (Cilium) blur mesh vs kernel networking.
+- **Cost:** ~50-100MB RAM + CPU per sidecar per pod; at 500 pods = significant cluster overhead
+- **Latency:** ~0.5-1.5ms added per hop (sidecar proxy)
+- **Alternatives:** library-based resilience (Resilience4j), **Cilium** service mesh (eBPF, no sidecar)
+- **When to skip:** <10 services, homogeneous stack, good shared libraries
+- **Debugging:** `istioctl proxy-config`, Envoy admin `:15000`, access logs
 
 ### When to use
 
-- Many microservices needing uniform mTLS and tracing.
-- Polyglot stack where library-based resilience inconsistent.
-- Progressive delivery (canary, traffic mirroring) at platform level.
+- 20+ microservices, polyglot stack, zero-trust mTLS requirement
+- Platform team owns progressive delivery (canary, mirroring)
+- Consistent observability without per-language instrumentation
 
 ### Trade-offs / Pitfalls
 
-- Operational complexity - debugging requires mesh expertise.
-- Sidecar resource overhead at high pod density.
-- Overkill for small service counts - start with gateway + good libraries.
+- **Operational complexity** - Istio learning curve is steep
+- **Sidecar resource tax** at high pod density
+- **Debugging harder** - extra hop obscures where latency/failure occurs
+- **Overkill early** - start with API gateway + good client libraries; add mesh when pain justifies cost
+- **iptables/CNI conflicts** with some network plugins
 
 ### References
 
-*(No curated references for this sub-topic in `_topics.json`.)*
+- Istio documentation; Linkerd docs; Envoy proxy architecture
 
 ---
 
@@ -1114,61 +1220,167 @@ flowchart TB
 
 ### What is it?
 
-A **saga** is a sequence of **local transactions** across services, each with a **compensating action** to undo prior steps on failure - achieving distributed workflow without 2PC.
+A **saga** is a **long-running business transaction** decomposed into a sequence of **local transactions** — each in one service with its own database — coordinated so that a failure triggers **compensating transactions** (semantic undo) rather than a distributed two-phase commit (2PC).
+
+There is no global lock; consistency is **eventual** across services.
 
 ### Why it matters
 
-Cross-service business processes (place order -> reserve inventory -> charge payment) need failure recovery; sagas are the standard microservices alternative to distributed ACID.
+In microservices, **2PC/XA across databases** is avoided (blocking, fragile, poor availability). Sagas are the standard pattern for:
+
+- Place order → reserve inventory → charge payment → confirm shipment
+- Book travel → reserve flight → reserve hotel → charge card
+- Sign up → create account → provision tenant → send welcome email
+
+**Interview framing:** "Saga = local ACID steps + compensating actions; choreography = events; orchestration = central coordinator."
 
 ### How it works
 
-**Happy path:**
-
-1. Order service creates order (pending).
-2. Inventory reserves stock.
-3. Payment charges card.
-4. Order marked confirmed.
-
-**Failure path (payment fails):**
-
-5. Compensate inventory (release reservation).
-6. Compensate order (cancel).
-
-### Diagram
+**Happy path (3-step order saga):**
 
 ```mermaid
 sequenceDiagram
+    participant O as Order Service
+    participant I as Inventory Service
+    participant P as Payment Service
+
+    O->>O: T1 Create order (PENDING)
+    O->>I: T2 Reserve stock
+    I-->>O: OK
+    O->>P: T3 Charge card
+    P-->>O: OK
+    O->>O: T4 Mark order CONFIRMED
+```
+
+**Failure path — payment fails, compensate in reverse order:**
+
+```mermaid
+sequenceDiagram
+    participant O as Order Service
+    participant I as Inventory Service
+    participant P as Payment Service
+
+    O->>I: Reserve stock ✓
+    O->>P: Charge card ✗
+    O->>I: Compensate: ReleaseReservation
+    O->>O: Compensate: Cancel order
+```
+
+**Compensating transactions vs rollback:**
+
+| DB rollback | Saga compensation |
+|-------------|-------------------|
+| Automatic, atomic | **Application-defined** semantic undo |
+| `ROLLBACK` restores rows | `ReleaseInventory`, `RefundPayment`, `CancelOrder` |
+| Works in one database | Works across independent databases |
+| Instant | May be async, eventually consistent |
+
+Not all steps are compensable:
+
+| Step | Compensatable? | Notes |
+|------|----------------|-------|
+| Reserve inventory | Yes | `ReleaseReservation` |
+| Charge payment | Yes | `Refund` (may be async) |
+| Send email | **No** | Use "pending send" until saga commits |
+| Ship physical goods | Hard | Avoid confirming until payment succeeds |
+
+**Saga implementation styles:**
+
+### Choreography vs orchestration
+
+| Dimension | Choreography | Orchestration |
+|-----------|--------------|---------------|
+| **Coordinator** | None — services react to events | Central orchestrator (Temporal, Camunda) |
+| **Communication** | Domain events on message bus | Commands + replies to orchestrator |
+| **Visibility** | Distributed — hard to see full state | Single workflow state store |
+| **Coupling** | Loose — subscribers know events | Services know orchestrator API |
+| **Complexity** | Simple flows (2–4 steps) | Complex branching, timers, human steps |
+| **Failure handling** | Compensating events scatter | Orchestrator drives compensate sequence |
+| **SPOF** | Bus availability | Orchestrator (must be HA) |
+| **Best for** | Event-native teams, simple pipelines | Long workflows, many branches |
+
+**Choreography diagram:**
+
+```mermaid
+flowchart LR
+    O[Order Svc] -->|OrderPlaced| Bus[Event Bus]
+    Bus --> I[Inventory Svc]
+    I -->|InventoryReserved| Bus
+    Bus --> P[Payment Svc]
+    P -->|PaymentFailed| Bus
+    Bus --> I2[Inventory: ReleaseStock]
+    Bus --> O2[Order: Cancelled]
+```
+
+**Orchestration diagram:**
+
+```mermaid
+sequenceDiagram
+    participant Orch as Orchestrator
     participant O as Order
     participant I as Inventory
     participant P as Payment
-    O->>I: reserve
-    I-->>O: OK
-    O->>P: charge
-    P-->>O: FAIL
-    O->>I: compensate release
+
+    Orch->>O: createOrder
+    Orch->>I: reserve
+    Orch->>P: charge
+    P-->>Orch: FAIL
+    Orch->>I: release (compensate)
+    Orch->>O: cancel (compensate)
 ```
+
+**Saga state machine (orchestrator view):**
+
+```mermaid
+stateDiagram-v2
+    [*] --> OrderCreated
+    OrderCreated --> InventoryReserved: reserve OK
+    InventoryReserved --> PaymentCaptured: charge OK
+    PaymentCaptured --> Confirmed
+    InventoryReserved --> CompensatingInventory: charge FAIL
+    CompensatingInventory --> Cancelled: release OK
+    Confirmed --> [*]
+    Cancelled --> [*]
+```
+
+**Design rules every saga step must follow:**
+
+1. **Idempotent** — retries safe (`Idempotency-Key`, unique business ID)
+2. **Compensable** — define explicit undo for each forward action
+3. **Commutative where possible** — compensation order may differ from forward order
+4. **Pivot transaction** — point of no return (e.g., shipment) — minimize steps after pivot
+5. **Outbox pattern** — publish events atomically with local DB commit
 
 ### Key details
 
-- Compensations are business logic (not automatic DB rollback).
-- Each step must be idempotent.
-- Saga state machine tracks current step.
+| Tool | Style | Notes |
+|------|-------|-------|
+| Temporal / Cadence | Orchestration | Durable workflows, timers, retries built-in |
+| Camunda / Zeebe | Orchestration | BPMN, human tasks |
+| Kafka + events | Choreography | Schema registry, consumer idempotency |
+| Custom saga table | Either | `saga_id`, `step`, `status` in DB |
+
+**Visibility requirements:** correlation ID (`saga_id`) in every log, span, and event; dashboard for stuck sagas in `PENDING` > N minutes.
 
 ### When to use
 
-- Long-running business transactions across microservices.
-- When 2PC latency/availability unacceptable.
-- Paired with outbox for reliable event emission per step.
+- Business processes spanning multiple microservices with independent databases
+- When 2PC is unacceptable (latency, availability, cloud DB limitations)
+- Long-running flows with timeouts (payment auth expires in 15 min)
 
 ### Trade-offs / Pitfalls
 
-- Compensations not always possible (email sent, shipped goods).
-- Eventual consistency visible to users mid-saga.
-- Debugging stuck sagas requires orchestration visibility.
+- **No isolation like ACID:** other transactions see intermediate state (dirty reads) — design UX accordingly
+- **Compensation ≠ undo:** refund takes days; email cannot be unsent
+- **Choreography debugging:** "where is order 123?" requires distributed trace + event log
+- **Orchestrator SPOF:** must run HA with durable state (Temporal handles this)
+- **Cyclic events:** `OrderFailed` triggers `Release` triggers `OrderUpdated` loop — clear event contracts
+- **Partial compensation failure:** need retry, manual intervention, and saga timeout alerts
 
 ### References
 
-*(No curated references for this sub-topic in `_topics.json`.)*
+- [Chris Richardson — Saga pattern](https://microservices.io/patterns/data/saga.html)
+- [Temporal — Saga documentation](https://docs.temporal.io/saga)
 
 ---
 

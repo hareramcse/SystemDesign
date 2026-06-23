@@ -1,4 +1,4 @@
-# 10. Security
+﻿# 10. Security
 
 > Status: **Documented**  -  MASTER reference depth for all sub-topics below.
 
@@ -200,61 +200,176 @@ flowchart TB
 
 ### What is it
 
-An authorization **framework** (RFC 6749) enabling third-party applications to obtain limited access to user resources without sharing passwords - via access tokens issued by an authorization server.
+**OAuth 2.0** (RFC 6749) is an **authorization framework** — not an authentication protocol — that enables clients to obtain **limited access** to resources on behalf of a **resource owner** (user) or the client itself, via **access tokens** issued by an **authorization server**, without sharing passwords.
+
+Roles:
+
+| Role | Example |
+|------|---------|
+| **Resource owner** | End user |
+| **Client** | Web app, mobile app, backend service |
+| **Authorization server** | Okta, Auth0, Keycloak, Google OAuth |
+| **Resource server** | Your API protecting `/orders` |
 
 ### Why it matters
 
-OAuth2 is the industry standard for delegated access - "Login with Google," API access on behalf of users, and machine-to-machine authorization.
+- **Delegated access:** "Allow App X to read my Google Calendar" without giving App X your Google password
+- **Industry standard** for API authorization, SSO integrations, and machine-to-machine auth
+- **Interview must-know:** Authorization Code + PKCE for users; Client Credentials for services
+- **Common mistake:** OAuth2 alone does not tell you *who* the user is — use **OIDC** (10.4) for identity
 
-### How it works
+### How it works — key flows
 
-**Authorization Code flow** (most secure for web/mobile): client redirects user to authorization server; user consents; server returns code; client exchanges code for access token (and optionally refresh token) using client secret or PKCE. Resource server validates token on each API call.
+**Flow comparison:**
 
-### Diagram  -  OAuth2 Authorization Code Flow
+| Flow | Who authenticates | Client type | Use case |
+|------|-------------------|-------------|----------|
+| **Authorization Code + PKCE** | User at auth server | SPA, mobile, server web app | User login, SSO |
+| **Client Credentials** | Client (no user) | Confidential backend service | M2M, cron jobs, microservices |
+| **Device Code** | User on second device | TV, CLI, IoT | Input-constrained devices |
+| **Refresh Token** | N/A (extends session) | Any flow that issued one | Long-lived access without re-login |
+
+**Deprecated / avoid:** Implicit flow, Resource Owner Password Credentials (ROPC).
+
+---
+
+### Authorization Code Flow (with PKCE) — primary flow for users
+
+**Why PKCE:** public clients (SPAs, mobile) cannot safely store a `client_secret`. **Proof Key for Code Exchange** prevents authorization code interception.
 
 ```mermaid
 sequenceDiagram
-    participant U as User
+    participant U as User / Browser
     participant C as Client App
     participant AS as Authorization Server
-    participant RS as Resource Server
+    participant RS as Resource Server (API)
 
-    U->>C: Click Login
-    C->>AS: Redirect /authorize (client_id, scope, PKCE)
-    U->>AS: Authenticate + Consent
-    AS->>C: Redirect with auth code
-    C->>AS: POST /token (code, client_secret/PKCE)
-    AS->>C: access_token + refresh_token
-    C->>RS: API call + Bearer token
-    RS->>AS: Validate token (introspect/JWKS)
+    C->>C: Generate code_verifier + code_challenge (S256)
+    C->>U: Redirect to /authorize
+    U->>AS: GET /authorize?response_type=code&client_id=...&redirect_uri=...&scope=openid+orders:read&code_challenge=...&code_challenge_method=S256&state=xyz
+    AS->>U: Login + consent screen
+    U->>AS: Approve
+    AS->>U: Redirect redirect_uri?code=AUTH_CODE&state=xyz
+    U->>C: Callback with code
+    C->>AS: POST /token (code, client_id, redirect_uri, code_verifier)
+    AS->>C: access_token + refresh_token + expires_in
+    C->>RS: GET /orders Authorization: Bearer access_token
+    RS->>AS: Validate JWT signature / introspect token
     RS->>C: Protected resource
 ```
 
+**Step-by-step:**
+
+1. Client generates `code_verifier` (random 43–128 chars) and `code_challenge = BASE64URL(SHA256(verifier))`
+2. Redirect user to `/authorize` with `code_challenge`, `scope`, `state` (CSRF protection)
+3. User authenticates and consents
+4. Auth server redirects to `redirect_uri` with **authorization code** (short-lived, ~60s, single-use)
+5. Client exchanges code at `/token` with `code_verifier` — server verifies challenge match
+6. Receive **access token** (short-lived, e.g. 15 min) + optional **refresh token**
+7. Call API with `Authorization: Bearer <access_token>`
+
+**Security requirements:**
+
+| Requirement | Why |
+|-------------|-----|
+| Exact `redirect_uri` match | Prevent code theft to attacker URL |
+| `state` parameter | CSRF on OAuth callback |
+| PKCE for public clients | Stolen code useless without verifier |
+| HTTPS everywhere | Tokens in transit protected |
+| Short-lived access tokens | Limits blast radius of theft |
+
+---
+
+### Client Credentials Flow — machine-to-machine (no user)
+
+Used when the client **is** the resource owner — no user context.
+
+```mermaid
+sequenceDiagram
+    participant S as Backend Service
+    participant AS as Authorization Server
+    participant API as Resource API
+
+    S->>AS: POST /token grant_type=client_credentials&client_id=...&client_secret=...&scope=inventory:write
+    AS->>S: access_token (no refresh token typically)
+    S->>API: POST /inventory Authorization: Bearer access_token
+    API->>AS: Validate token (JWKS / introspection)
+    API->>S: 200 OK
+```
+
+```http
+POST /oauth/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials
+&client_id=svc_order_processor
+&client_secret=<from vault>
+&scope=payments:write inventory:read
+```
+
+**Characteristics:**
+
+- No refresh token — request new access token when expired
+- `client_secret` in vault, rotated regularly — never in source code
+- Scopes should be minimal (`payments:write` not `*`)
+- Token represents the **service identity**, not a user — audit logs use `client_id`
+
+**When to use Client Credentials:**
+
+- Microservice A calls Microservice B
+- Batch jobs, ETL, internal admin tools
+- NOT for user-facing login — use Authorization Code
+
+---
+
+### Tokens and scopes
+
+| Token | Purpose | Lifetime |
+|-------|---------|----------|
+| **Access token** | Authorize API calls | Short (minutes–hours) |
+| **Refresh token** | Obtain new access token without re-login | Long (days–months), rotatable |
+
+**Scopes** limit token capability:
+
+```text
+openid profile email          # OIDC identity
+orders:read orders:write      # API-specific
+payments:charge               # Fine-grained
+```
+
+Resource server must **enforce scopes** — validating token signature alone is insufficient.
+
 ### Key details
 
-- Flows: Authorization Code (+ PKCE), Client Credentials, Device Code
-- **Never** use Implicit flow for new apps (deprecated pattern)
-- Scopes limit token capability (`read:orders`, `write:payments`)
-- Short-lived access tokens + refresh token rotation
+- **Token validation:** JWT local verify (JWKS) or RFC 7662 token introspection
+- **Refresh token rotation:** issue new refresh token on each use; detect reuse → revoke family
+- **Confidential vs public clients:** server apps keep secret; SPAs/mobile use PKCE, no secret
+- **OAuth 2.1** consolidates best practices: PKCE mandatory, implicit removed
+- Pair with **OIDC** when you need `id_token` with user claims (`sub`, `email`)
 
 ### When to use
 
-- Third-party API access and SSO integrations
-- Mobile/SPA apps with PKCE
-- Service accounts (client credentials)
+| Scenario | Flow |
+|----------|------|
+| User logs into web/mobile app | Authorization Code + PKCE |
+| Enterprise SSO | Authorization Code + OIDC |
+| Service-to-service API calls | Client Credentials |
+| Smart TV / CLI login | Device Code |
 
 ### Trade-offs
 
 | Pros | Cons |
 |------|------|
-| No password sharing | Complex to implement correctly |
-| Industry-wide support | Easy to misconfigure (redirect URIs) |
-| Scoped delegation | Token theft still a risk |
+| No password sharing with third parties | Easy to misconfigure (redirect URIs, PKCE skip) |
+| Scoped, revocable access | Token theft valid until expiry |
+| Massive ecosystem support | OAuth ≠ authentication without OIDC |
+| Standard for API gateways | Complex for developers first time |
 
 ### References
 
-- [RFC 6749  -  OAuth 2.0](https://datatracker.ietf.org/doc/html/rfc6749)
-- [OAuth 2.0 Security BCP](https://datatracker.ietf.org/doc/html/rfc9700)
+- [RFC 6749 — OAuth 2.0](https://datatracker.ietf.org/doc/html/rfc6749)
+- [RFC 7636 — PKCE](https://datatracker.ietf.org/doc/html/rfc7636)
+- [OAuth 2.0 Security BCP (RFC 9700)](https://datatracker.ietf.org/doc/html/rfc9700)
 
 ---
 
@@ -318,55 +433,204 @@ flowchart LR
 
 ### What is it
 
-**JSON Web Token** - a compact, signed (or signed+encrypted) token format (`header.payload.signature`) carrying claims between parties.
+A **JSON Web Token (JWT)** is a compact, URL-safe string format (`header.payload.signature`) for carrying **claims** between parties. The receiver verifies the **signature** to trust the payload without calling the issuer on every request — enabling **stateless** authentication and authorization at scale.
+
+JWTs are commonly used as **OAuth2 access tokens** and **OIDC ID tokens** — but a JWT is a *format*, not a protocol.
 
 ### Why it matters
 
-JWTs enable stateless authentication: resource servers verify signature locally without calling the auth server every request - critical for scalable microservices.
+- **Stateless verification:** microservices validate tokens locally via JWKS public key — no session store lookup per request
+- **Self-contained claims:** `sub`, `roles`, `scope` travel with the token
+- **Interoperability:** standard across languages, API gateways, and IdPs
+- **Interview focus:** structure, validation checklist, refresh token pattern, and why JWT ≠ session
 
-### How it works
+### How it works — JWT structure
 
-Issuer creates payload (claims: `sub`, `exp`, `roles`). Signs with HMAC (shared secret) or asymmetric key (RS256/ES256). Client sends `Authorization: Bearer <jwt>`. Verifier checks signature, `exp`, `iss`, `aud`, and extracts claims for authorization.
+A JWT has three Base64URL-encoded parts separated by `.`:
 
-### Diagram  -  JWT Structure
+```text
+eyJhbGciOiJSUzI1NiIs...   .   eyJzdWIiOiJ1c3JfNDIi...   .   SflKxwRJSMeKKF2QT4fwpM...
+        HEADER                   PAYLOAD                    SIGNATURE
+```
+
+**1. Header** — algorithm and type:
+
+```json
+{
+  "alg": "RS256",
+  "typ": "JWT",
+  "kid": "key-2024-01"
+}
+```
+
+**2. Payload** — claims (JSON):
+
+```json
+{
+  "iss": "https://auth.example.com",
+  "sub": "usr_42",
+  "aud": "api.example.com",
+  "exp": 1710000000,
+  "iat": 1709996400,
+  "nbf": 1709996400,
+  "scope": "orders:read payments:write",
+  "roles": ["editor"]
+}
+```
+
+**3. Signature** — cryptographic proof:
+
+```text
+RS256:  Sign( base64url(header) + "." + base64url(payload), private_key )
+HS256:  HMAC-SHA256( base64url(header) + "." + base64url(payload), shared_secret )
+```
 
 ```mermaid
 flowchart LR
     subgraph JWT
-        H[Header<br/>alg, typ]
+        H[Header<br/>alg, typ, kid]
         P[Payload<br/>claims]
         S[Signature]
     end
-  H --> P --> S
-  Issuer[Issuer<br/>private key] -->|sign| S
-  Verifier[Resource Server<br/>public key] -->|verify| S
+    H --> P --> S
+    Issuer[Authorization Server<br/>private key] -->|sign| S
+    API[Resource Server<br/>public key from JWKS] -->|verify| S
+    API -->|extract claims| AuthZ[Authorization decision]
 ```
+
+**Claim types:**
+
+| Claim | Name | Required? | Purpose |
+|-------|------|-----------|---------|
+| `iss` | Issuer | Yes | Who issued token — must match expected IdP |
+| `sub` | Subject | Yes | User or client ID |
+| `aud` | Audience | Yes | Intended recipient API — reject wrong audience |
+| `exp` | Expiration | Yes | Unix timestamp — reject expired |
+| `iat` | Issued at | Recommended | Detect clock skew issues |
+| `nbf` | Not before | Optional | Token not valid before this time |
+| `jti` | JWT ID | Optional | Unique ID for replay prevention / revocation lists |
+| Custom | `roles`, `scope` | App-specific | Authorization |
+
+---
+
+### JWT validation checklist (implement every step)
+
+```mermaid
+flowchart TB
+    T[Incoming Bearer JWT] --> V1{Algorithm allowed?<br/>Reject alg:none}
+    V1 -->|RS256/ES256 OK| V2{Signature valid?<br/>JWKS public key}
+    V2 -->|yes| V3{iss matches IdP?}
+    V3 -->|yes| V4{aud matches this API?}
+    V4 -->|yes| V5{exp / nbf valid?<br/>clock skew ±60s}
+    V5 -->|yes| V6{scope/roles sufficient?}
+    V6 -->|yes| Allow[Allow request]
+    V1 & V2 & V3 & V4 & V5 & V6 -->|no| Deny[401 Unauthorized]
+```
+
+| Check | Attack prevented |
+|-------|------------------|
+| Reject `alg: none` | Algorithm confusion attack |
+| Verify signature via JWKS | Forged tokens |
+| Validate `iss` | Token from wrong IdP |
+| Validate `aud` | Token meant for different API |
+| Validate `exp` / `nbf` | Replay of expired tokens |
+| Check `scope` / `roles` | Authorized token but insufficient permissions |
+
+**JWKS endpoint:** IdP publishes public keys at `/.well-known/jwks.json` — cache with TTL, refresh on `kid` mismatch.
+
+```http
+GET /.well-known/jwks.json
+{
+  "keys": [{ "kid": "key-1", "kty": "RSA", "n": "...", "e": "AQAB" }]
+}
+```
+
+**Algorithm choice:**
+
+| Algorithm | Key type | Use when |
+|-----------|----------|----------|
+| **RS256 / ES256** | Asymmetric (RSA/EC) | Distributed systems — only IdP has private key |
+| **HS256** | Shared secret | Single service or test — all verifiers share secret (risky at scale) |
+
+---
+
+### Access tokens vs refresh tokens
+
+| | Access token (JWT) | Refresh token |
+|---|-------------------|---------------|
+| **Purpose** | Authorize API calls | Obtain new access token |
+| **Lifetime** | Short (5–15 min) | Long (days–weeks) |
+| **Sent to** | Resource API on every request | **Only** auth server `/token` endpoint |
+| **Format** | Often JWT | Opaque string (recommended) or JWT |
+| **Storage (SPA)** | Memory only | HttpOnly secure cookie (not localStorage) |
+| **Revocation** | Hard before `exp` | Revoke in DB → all access tokens die at expiry |
+
+**Refresh flow:**
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant AS as Auth Server
+    participant API as Resource API
+
+    C->>AS: POST /token (refresh_token)
+    AS->>AS: Validate refresh token in store
+    AS->>C: New access_token + rotated refresh_token
+    C->>API: Request with new access_token
+    Note over C,AS: On refresh token reuse detection → revoke all sessions
+```
+
+**Refresh token rotation (security best practice):**
+
+1. Each refresh returns a **new** refresh token
+2. Old refresh token invalidated
+3. If old refresh token presented again → **reuse detected** → revoke entire token family (stolen token scenario)
+
+**Why short-lived access JWT + refresh:**
+
+- Stolen access JWT: attacker window = minutes until `exp`
+- Stolen refresh token: detectable via rotation; revocable in server store
+- Pure long-lived JWT with no refresh: theft valid for days — bad
+
+---
+
+### Storage and XSS considerations
+
+| Storage | XSS risk | CSRF risk | Recommendation |
+|---------|----------|-----------|----------------|
+| `localStorage` | **High** — JS can read | Low | Avoid for tokens |
+| Memory (SPA variable) | Lost on refresh | Low | OK for access token |
+| HttpOnly cookie | JS cannot read | **High** — need CSRF token | OK for refresh token + SameSite |
 
 ### Key details
 
-- Always validate `exp`, `iss`, `aud`; reject `alg: none`
-- Prefer RS256/ES256 over HS256 in distributed systems
-- Short TTL; use refresh tokens for long sessions
-- JWTs are **credentials** - never store in localStorage if XSS risk; HttpOnly cookies alternative
+- JWT is **not encrypted** by default — payload is Base64, readable by anyone; use JWE if confidentiality needed
+- **Revocation:** maintain denylist of `jti` for high-security; or accept window until `exp`
+- **Size:** large claim sets bloat every request header — keep minimal
+- **ID token vs access token:** ID token proves authentication to client; access token authorizes API — don't confuse (see OIDC 10.4)
+- Gateways can validate JWT once and pass trusted headers to backends on private network
 
 ### When to use
 
-- Stateless API auth between microservices
-- OIDC ID tokens
-- Short-lived service-to-service tokens
+- Stateless API auth in microservices (OAuth2 bearer tokens)
+- OIDC ID tokens for client-side user identity
+- Short-lived service-to-service tokens signed by internal CA
+- API gateway JWT validation at edge
 
 ### Trade-offs
 
 | Pros | Cons |
 |------|------|
-| No server-side session store | Revocation is hard before expiry |
-| Self-contained claims | Token size grows with claims |
-| Fast local verification | Leaked token valid until expiry |
+| No per-request auth server call | Revocation before expiry is hard |
+| Horizontally scalable verification | Token size vs cookies |
+| Standard JWKS rotation | `alg:none` and key confusion if poorly implemented |
+| Works across polyglot services | Leaked bearer token = credential until expiry |
 
 ### References
 
-- [RFC 7519  -  JWT](https://datatracker.ietf.org/doc/html/rfc7519)
-- [JWT Best Practices](https://datatracker.ietf.org/doc/html/rfc8725)
+- [RFC 7519 — JSON Web Token](https://datatracker.ietf.org/doc/html/rfc7519)
+- [RFC 8725 — JWT Best Current Practices](https://datatracker.ietf.org/doc/html/rfc8725)
+- [OAuth 2.0 Bearer Token Usage (RFC 6750)](https://datatracker.ietf.org/doc/html/rfc6750)
 
 ---
 

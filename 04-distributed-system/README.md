@@ -177,57 +177,130 @@ flowchart LR
 
 ### What is it?
 
-**Latency** is the time between initiating a request and receiving a complete response. Components include network RTT, queue wait, processing, and I/O. Usually measured in milliseconds.
+**Latency** is the time between initiating a request and receiving a complete response. It is the sum of independent components along the critical path - not a single number. Usually measured in milliseconds; user-perceived quality degrades sharply above ~100-300 ms for interactive apps.
+
+**Latency vs. response time under load:** at low utilization, latency ≈ service time. Under saturation, **queueing delay** dominates (see below).
 
 ### Why it matters
 
-User experience degrades sharply above ~100 - 300 ms for interactive apps. Latency drives architecture choices: caching, CDN, geographic distribution, async processing.
+Latency drives architecture choices: caching, CDN, geographic distribution, async processing, and connection pooling. A 200 ms cross-region hop makes synchronous microservice chains untenable for real-time UX.
 
 ### How it works
 
-1. Break request path into segments and measure each (tracing).
-2. Reduce round-trips (HTTP/2 multiplexing, batch APIs, colocation).
-3. Cache hot data closer to users.
-4. Use connection pooling to avoid TCP/TLS handshake per request.
-5. Optimize slow queries and serial critical paths.
+**Latency budget breakdown (typical API request):**
+
+```text
+Total latency = client_processing
+              + network_RTT (× hops)
+              + queue_wait
+              + server_processing
+              + downstream_calls
+              + DB_query_time
+              + serialization
+```
 
 ```mermaid
 sequenceDiagram
     participant Client
-    participant Server
+    participant LB as Load Balancer
+    participant App
+    participant Cache
     participant DB
-    Client->>Server: request
-    Note over Server: process 5ms
-    Server->>DB: query
-    Note over DB: 20ms
-    DB-->>Server: result
-    Server-->>Client: response
+    Client->>LB: RTT 1 (20ms WAN)
+    LB->>App: propagation 0.2ms
+    Note over App: queue wait 2ms
+    App->>Cache: RTT 0.5ms
+    Cache-->>App: hit 1ms
+    App->>DB: miss path only
+    Note over DB: query 15ms
+    App-->>Client: RTT 1 return
 ```
+
+#### RTT (round-trip time)
+
+Time for a packet to travel client → server → client. Dominates **chatty** protocols with many small requests.
+
+| Path | Typical RTT |
+|------|-------------|
+| Same host (loopback) | < 0.1 ms |
+| Same rack / AZ | 0.1 - 0.5 ms |
+| Cross-AZ (same region) | 1 - 3 ms |
+| Cross-region (US ↔ EU) | 80 - 150 ms |
+| Mobile 4G | 30 - 80 ms |
+| Satellite | 500+ ms |
+
+**Design rule:** minimize round-trips. One `GET /user?include=orders,profile` beats three sequential REST calls (3× RTT saved).
+
+```text
+# Bad: 3 round-trips × 100ms cross-region = 300ms minimum
+GET /users/123
+GET /users/123/orders
+GET /users/123/profile
+
+# Good: 1 round-trip
+GET /users/123?expand=orders,profile
+```
+
+#### Propagation delay
+
+Time for signal to traverse the physical link (distance / speed). Cross-region RTT is mostly propagation - cannot be optimized with faster CPUs.
+
+- Speed of light in fiber ≈ 200,000 km/s → ~67 ms minimum US coast-to-coast one-way.
+- **Colocation** and **edge computing** move compute closer to users to reduce propagation.
+
+#### Queueing delay
+
+When arrival rate approaches service capacity, requests wait in queue. **Kingman's formula** (simplified): queue delay explodes as utilization → 100%.
+
+| Utilization (ρ) | Queue delay trend |
+|-----------------|-------------------|
+| ρ < 70% | Negligible queue wait |
+| ρ = 80% | Moderate tails |
+| ρ > 90% | p99 latency spikes |
+| ρ → 100% | Unbounded wait |
+
+**Little's Law:** `L = λ × W` (average concurrency = arrival rate × average time in system). More requests in flight = longer waits.
+
+```mermaid
+flowchart LR
+    Arrive[Requests arrive λ] --> Queue[Queue depth L]
+    Queue --> Serve[Server μ requests/sec]
+    Serve --> Done[Response W ms]
+```
+
+**Example:** App handles 1000 RPS at 50 ms each (μ = 20K/s per instance). At 800 RPS (ρ = 4% per instance with 20 instances), queueing is negligible. At 19K RPS/instance (ρ = 95%), p99 explodes.
 
 ### Key details
 
-| Component | Typical range |
-|-----------|---------------|
-| Same-AZ network | 0.1 - 0.5 ms |
-| Cross-region | 50 - 150 ms |
-| SSD random read | 0.1 ms |
-| HDD seek | 5 - 10 ms |
+| Component | Typical range | Optimization |
+|-----------|---------------|--------------|
+| Same-AZ network | 0.1 - 0.5 ms | Keep services in same AZ |
+| Cross-region | 50 - 150 ms | Async, regional replicas, CDN |
+| SSD random read | 0.1 ms | Index tuning, cache |
+| HDD seek | 5 - 10 ms | Avoid random I/O |
+| TLS handshake | 1 - 3 RTTs | TLS 1.3, session resumption |
+| JVM warm-up | 100ms - 2s first req | Warm pools, GraalVM native |
+| GC pause | 10 - 200 ms | Tune heap, ZGC/Shenandoah |
 
-- **RTT** dominates in chatty protocols; design fewer round-trips
-- Latency â‰  response time under load (queueing adds wait)
+- **Tail latency (4.4)** often exceeds mean due to queueing, GC, slow shards
+- **Connection pooling** avoids TCP+TLS handshake per request (~1-3 RTTs saved)
+- **HTTP/2 multiplexing** shares one connection across parallel requests
 
 ### When to use
 
-- Setting latency SLOs (p50, p95, p99)
-- Choosing sync vs. async user flows
+- Setting latency SLOs (p50, p95, p99) per endpoint
+- Choosing sync vs. async user flows (checkout sync; email async)
 - Evaluating edge vs. central processing
+- Capacity planning: keep ρ < 70% at peak for headroom
 
 ### Trade-offs / Pitfalls
 
-- Optimizing average latency ignores tail (see tail latency)
+- Optimizing average latency ignores tail (see 4.4)
 - Caching lowers latency but introduces staleness
-- Microservices add network hops - latency compounds
+- Microservices add network hops - latency **compounds** serially, not averages
 - Cold starts (serverless, JVM) spike first-request latency
+- Measuring latency at LB hides client-side and last-mile delay
+- Cross-region strong consistency adds RTT to every write quorum
 
 ---
 
@@ -262,6 +335,64 @@ flowchart TB
 
 ### Key details
 
+#### Percentiles: p50, p95, p99, p999
+
+Latency distributions are **skewed** — a few slow requests dominate user experience at scale. Report percentiles, not just mean.
+
+| Percentile | Meaning | Who feels it |
+|------------|---------|--------------|
+| **p50** (median) | Half of requests faster | Typical user |
+| **p95** | 95% faster | Unlucky session |
+| **p99** | 99% faster | 1 in 100 requests — **SLO target** for APIs |
+| **p999** | 99.9% faster | Tail outliers; debug GC, slow shards |
+
+```text
+Example distribution (1000 requests):
+  p50 = 45 ms    ← "feels fast"
+  mean = 120 ms  ← pulled up by outliers
+  p99 = 800 ms   ← 10 users/min at 1000 RPS see this
+  max = 12,000 ms
+```
+
+**SLO example:** "99% of API requests complete in < 300 ms" = **p99 < 300 ms**. Alert on p99 burn rate, not mean.
+
+**Why mean lies:** 990 requests at 50 ms + 10 at 5 s → mean ≈ 99 ms, but 1% of users wait 5 seconds.
+
+#### Fan-out amplification
+
+One user request often triggers **N parallel backend calls**. Tail latency **compounds** — you don't average percentiles across calls.
+
+**Google "Tail at Scale" rule of thumb:**
+
+```text
+P(slow user response) ≈ 1 − (1 − p_slow)^N
+
+If each of N backends has 1% chance of p99 slowness:
+  N=1   → 1% slow
+  N=10  → ~10% slow user responses
+  N=100 → ~63% slow (effectively certain to hit one slow shard)
+```
+
+```mermaid
+flowchart TB
+    Req[1 API request] --> S1[Service 1 p99=200ms]
+    Req --> S2[Service 2 p99=200ms]
+    Req --> S3[Service N p99=200ms]
+  S1 & S2 & S3 --> Max[max latency wins serial path]
+  Max --> Tail[User sees worst of fan-out]
+```
+
+**Mitigations:**
+
+| Technique | Mechanism |
+|-----------|-----------|
+| **Reduce fan-out** | Denormalize, batch API, GraphQL DataLoader |
+| **Parallel + timeout** | `max(child_timeout)` not sum; cap each branch |
+| **Hedged requests** | Send duplicate if first slow; doubles load — use sparingly |
+| **Canary / outlier detection** | LB ejects high-latency instances |
+| **Tiered timeouts** | 50 ms cache → 200 ms DB → fail fast |
+| **Partial response** | Return core data; async enrich optional fields |
+
 - p99 of 500 ms with p50 of 50 ms indicates outliers, not uniform slowness
 - **Head-of-line blocking** in queues inflates tails
 - Shared resources (noisy neighbor) cause tail spikes in multi-tenant cloud
@@ -288,53 +419,108 @@ flowchart TB
 
 ### What is it?
 
-**Availability** is the fraction of time a system is operational and serving correct responses, usually expressed as "nines": 99.9% (three nines) â‰ˆ 8.76 hours downtime/year; 99.99% â‰ˆ 52 minutes/year.
+**Availability** is the fraction of time a system is operational and serving **correct** responses, expressed as **nines** (percentage of uptime per year). It measures whether the service is reachable - distinct from **reliability** (correct behavior) and **latency** (how fast).
+
+```text
+Availability = uptime / (uptime + downtime)
+             = MTBF / (MTBF + MTTR)    # mean time between failures / repair
+```
 
 ### Why it matters
 
-Downtime directly costs revenue, trust, and SLA penalties. Availability targets drive architecture: redundant nodes, multi-AZ deployment, health checks, and failover automation.
+Downtime directly costs revenue, trust, and SLA penalties. Availability targets drive architecture: redundant nodes, multi-AZ deployment, health checks, and failover automation. Choosing "four nines" vs "three nines" can 10× infrastructure cost.
 
 ### How it works
 
-1. Eliminate single points of failure (SPOF) via redundancy.
+1. Eliminate single points of failure (SPOF) via redundancy (4.10).
 2. Deploy across multiple availability zones or regions.
 3. Health checks remove unhealthy instances from load balancers.
-4. Automated failover promotes standby when primary fails.
-5. Measure uptime with synthetic probes and real user monitoring.
+4. Automated failover promotes standby when primary fails (4.11).
+5. Measure uptime with synthetic probes and real user monitoring (RUM).
 
 ```mermaid
 flowchart TB
-    Users --> LB
-    LB --> A1[AZ-1]
-    LB --> A2[AZ-2]
-    A1 --> DB1[(Primary)]
-    A2 --> DB2[(Replica)]
+    Users --> LB[Load Balancer + health checks]
+    LB --> A1[AZ-1: App × N]
+    LB --> A2[AZ-2: App × N]
+    A1 --> DB1[(Primary DB)]
+    A2 --> DB2[(Replica DB)]
+    DB1 -.->|sync/async rep| DB2
 ```
 
 ### Key details
 
-| Nines | Downtime/year | Typical use |
-|-------|---------------|-------------|
-| 99% | 3.65 days | Internal tools |
-| 99.9% | 8.76 hours | Standard SaaS |
-| 99.99% | 52 min | Payment, core infra |
-| 99.999% | 5.26 min | Telco, critical systems |
+#### Nines table and downtime math
 
-- Availability = uptime / (uptime + downtime); excludes planned maintenance if SLA defines it
-- **High availability (HA)** pairs active/passive or active/active redundancy
+| Availability | Downtime/year | Downtime/month | Downtime/week | Typical use |
+|--------------|---------------|----------------|---------------|-------------|
+| **90%** (1 nine) | 36.5 days | 3 days | 16.8 hours | Dev/test |
+| **99%** (2 nines) | 3.65 days | 7.2 hours | 1.68 hours | Internal tools |
+| **99.9%** (3 nines) | 8.76 hours | 43.8 min | 10.1 min | Standard SaaS |
+| **99.99%** (4 nines) | 52.6 min | 4.38 min | 1.01 min | Payments, core API |
+| **99.999%** (5 nines) | 5.26 min | 26.3 sec | 6.05 sec | Telco, hospital systems |
+| **99.9999%** (6 nines) | 31.5 sec | 2.6 sec | 0.6 sec | Rare; multi-region DR |
+
+```text
+Downtime/year = (1 - availability) × 365 × 24 × 60 minutes
+
+99.9%  → 0.001 × 525,600 min = 525.6 min ≈ 8.76 hours
+99.99% → 0.0001 × 525,600 min = 52.56 min
+```
+
+#### SLA vs. SLO vs. SLI
+
+| Term | Meaning | Example |
+|------|---------|---------|
+| **SLI** (indicator) | Measured metric | Successful requests / total requests |
+| **SLO** (objective) | Internal target | 99.95% success over 30 days |
+| **SLA** (agreement) | Contract with penalties | 99.9% or credits refunded |
+
+**Error budget:** at 99.9% SLO, you can afford ~43 min downtime/month. Spending it on risky deploys vs. incidents is an engineering/product trade-off.
+
+#### Combined availability (dependency chain)
+
+Independent components in series **multiply**:
+
+```text
+End-to-end availability = A₁ × A₂ × A₃ × ...
+
+Example: API (99.99%) × DB (99.99%) × Cache (99.9%)
+  = 0.9999 × 0.9999 × 0.999
+  = 0.9988 ≈ 99.88% (worse than any single component)
+```
+
+Parallel redundancy improves availability:
+
+```text
+Two AZs each 99.9% (fail independently):
+  A = 1 - (0.001 × 0.001) = 99.9999% (if failover works)
+```
+
+#### High availability patterns
+
+| Pattern | Description | Availability gain |
+|---------|-------------|-------------------|
+| **Active-active** | All nodes serve traffic | Survives N-1 node loss |
+| **Active-passive** | Standby on hot/warm/cold standby | Depends on failover speed |
+| **Multi-AZ** | Replicas in isolated failure domains | Survives single AZ outage |
+| **Multi-region** | Geographic redundancy | Survives region disaster |
 
 ### When to use
 
 - Defining SLA/SLO with business stakeholders
 - Choosing single-region vs. multi-region architecture
 - Evaluating cloud provider AZ/region strategies
+- Error budget policies for release velocity
 
 ### Trade-offs / Pitfalls
 
-- Higher nines cost exponentially more in infra and engineering
-- Availability â‰  correctness (system can be "up" but returning errors)
-- Dependency chain: 99.99% Ã— 99.99% = 99.98% combined availability
-- Maintenance windows must be planned or use rolling updates
+- Higher nines cost **exponentially** more in infra and engineering
+- Availability ≠ correctness (system "up" but returning 500s counts as down in good SLIs)
+- **Planned maintenance** may or may not count against SLA - define in contract
+- Dependency chain math: adding components lowers combined availability
+- Active-active write conflicts need resolution - complexity trade-off
+- Measuring at LB misses client-side failures and partial degradation
 
 ---
 
@@ -462,6 +648,55 @@ flowchart TB
 
 ### Key details
 
+#### Failure domains
+
+A **failure domain** is the blast-radius boundary for a single fault — everything inside can fail together.
+
+| Domain | Typical shared fate | Design response |
+|--------|---------------------|-----------------|
+| **Process** | Crash, OOM, bug | Restart; multiple processes per host |
+| **Host / VM** | Kernel panic, disk | Replicas on different hosts |
+| **Rack** | Top-of-rack switch | Spread replicas across racks |
+| **Availability Zone (AZ)** | Power, flood, misconfig | Multi-AZ deployment; quorum across AZs |
+| **Region** | Earthquake, provider outage | Multi-region DR; async replication |
+| **Dependency** | Payment API down | Circuit breaker, degrade, cache |
+
+```text
+Bad:  primary DB + replica on same host → host death = total loss
+Good: primary AZ-a, replicas AZ-b, AZ-c → survives single AZ
+```
+
+**Correlated failures defeat redundancy:** same software version on all nodes → one bug kills all replicas. Mitigate with **canary deploys**, **shuffle sharding** (AWS), diverse instance types.
+
+#### Bulkheads
+
+**Bulkhead pattern** (from ship compartments) **isolates resources** so overload in one area cannot exhaust shared pools.
+
+| Bulkhead type | Example | Prevents |
+|---------------|---------|----------|
+| **Thread pool per dependency** | 20 threads for payments, 50 for catalog | Slow payment API starving catalog |
+| **Connection pool limits** | Max 10 DB conns per service | Connection stampede to DB |
+| **Semaphore / rate limit** | 100 concurrent exports | Batch job blocking interactive traffic |
+| **Cell-based architecture** | Users A–M on cell 1, N–Z on cell 2 | Celebrity outage contained to one cell |
+| **Queue partitioning** | Priority queue vs bulk queue | Backfill starving real-time |
+
+```mermaid
+flowchart TB
+    subgraph Bulkhead["Thread pools (bulkheads)"]
+        API[API threads: 100]
+        API --> PoolA[Payment pool: 20]
+        API --> PoolB[Catalog pool: 50]
+        API --> PoolC[Search pool: 30]
+    end
+    PoolA --> Pay[Payment Svc]
+    PoolB --> Cat[Catalog Svc]
+    PoolC --> Search[Search Svc]
+```
+
+**Hystrix / resilience4j / Envoy** implement bulkheads with circuit breakers. **Kubernetes** resource limits (`limits.cpu`, `limits.memory`) are coarse bulkheads at pod level.
+
+**Without bulkheads:** one slow dependency blocks all worker threads → entire service returns 503 even for unrelated endpoints.
+
 - **Byzantine faults:** malicious or arbitrary behavior (blockchain, military systems)
 - **Crash-stop faults:** node stops responding (most cloud assumptions)
 - **Fail-fast:** detect errors early and abort rather than corrupt state
@@ -580,50 +815,125 @@ flowchart TB
 
 ### What is it?
 
-**Failover** is the automatic or manual switch from a failed **primary** component to a **standby** so service continues. **Failback** returns traffic to the original primary when restored.
+**Failover** is the automatic or manual switch from a failed **primary** component to a **standby** so service continues. **Failback** returns traffic to the original primary when restored and synchronized.
+
+Failover targets are measured as **RTO** (how fast) and **RPO** (how much data loss).
+
+| Metric | Meaning | Example |
+|--------|---------|---------|
+| **RTO** (Recovery Time Objective) | Max acceptable downtime | 30 seconds for API |
+| **RPO** (Recovery Point Objective) | Max acceptable data loss | 0 for payments; 5 min for logs |
 
 ### Why it matters
 
-Human-driven recovery takes minutes to hours; automated failover targets seconds. Critical for database HA, load balancer VIPs, and DNS routing.
+Human-driven recovery takes minutes to hours; automated failover targets seconds. Critical for database HA, load balancer VIPs, DNS routing, and Kubernetes pod rescheduling.
 
 ### How it works
 
-1. Health monitor detects primary failure (missed heartbeats).
-2. **Passive failover:** promote standby replica to primary.
-3. **Active-active:** traffic already split; remove failed node from pool.
-4. Update DNS/VIP/service registry to point clients to new primary.
-5. Reconcile state (replay WAL, resync replica) before failback.
+#### Active-passive failover
+
+Standby is idle (or read-only) until primary fails. One node serves writes at a time.
 
 ```mermaid
 sequenceDiagram
+    participant Client
+    participant VIP as Virtual IP
     participant Primary
     participant Standby
     participant Monitor
-    Monitor->>Primary: heartbeat
-    Primary--xMonitor: timeout
-    Monitor->>Standby: promote
-    Standby->>Standby: become primary
+    Client->>VIP: write request
+    VIP->>Primary: route
+    Monitor->>Primary: heartbeat /health
+    Primary--xMonitor: timeout (3 misses)
+    Monitor->>Standby: promote to primary
+    Monitor->>VIP: rebind VIP to Standby
+    Client->>VIP: retry write
+    VIP->>Standby: route
+```
+
+**Steps:**
+1. Health monitor detects primary failure (missed heartbeats, failed `/health`).
+2. **Fencing (STONITH):** isolate dead primary to prevent split-brain writes.
+3. Promote standby replica to primary (DB) or assume VIP (network).
+4. Update service registry / DNS / VIP so clients route to new primary.
+5. Replay WAL / resync before failback.
+
+#### Active-active failover
+
+All nodes serve traffic simultaneously. Failure = remove bad node from pool; no promotion needed.
+
+```text
+LB health check fails on Node B → drain B → traffic to A and C only
+No promotion; reduced capacity until B replaced
+```
+
+#### Virtual IP (VIP) failover
+
+A **floating IP** moves from primary to standby hardware. Clients connect to VIP; underlying host changes transparently (if L2/L3 network supports gratuitous ARP / BGP update).
+
+| Component | VIP role |
+|-----------|----------|
+| **Keepalived + VRRP** | Linux HA pair shares VIP |
+| **Cloud LB** | Managed VIP (ALB, NLB) abstracts instances |
+| **Kubernetes Service** | ClusterIP / external LB with endpoint updates |
+
+```mermaid
+flowchart LR
+    Client --> VIP[10.0.0.100 VIP]
+    VIP -->|normal| Primary[Primary 10.0.0.1]
+    VIP -.->|after failover| Standby[Standby 10.0.0.2]
+```
+
+#### Health checks
+
+| Check type | What it tests | Risk |
+|------------|---------------|------|
+| **TCP probe** | Port open | False positive: process hung but port listens |
+| **HTTP `/health`** | App returns 200 | Better; can check DB connectivity |
+| **Deep check** | Query DB, disk space | Slower; may flap under load |
+| **Heartbeat lease** | etcd/K8s lease renewal | Leader election integration |
+
+**Tuning:**
+- `interval`: 5-10s typical
+- `unhealthy_threshold`: 2-3 consecutive failures before failover (avoid flapping)
+- `healthy_threshold`: 2 successes before re-admitting to pool
+
+```text
+# Example K8s liveness + readiness
+livenessProbe:  /health/live   # restart pod if dead
+readinessProbe: /health/ready  # remove from LB if not ready
 ```
 
 ### Key details
 
-- **Split-brain:** two nodes think they are primary - use fencing (STONITH)
-- **RTO:** recovery time objective; failover speed target
-- **RPO:** data loss window with async replication
-- DNS failover limited by TTL propagation delay
+| Failover type | RTO | RPO | Complexity |
+|---------------|-----|-----|------------|
+| **Hot standby** (sync rep) | Seconds | 0 | Medium |
+| **Warm standby** (async rep) | Seconds-minutes | Seconds of writes | Medium |
+| **Cold standby** (restore backup) | Minutes-hours | Hours | Low cost |
+| **DNS failover** | Minutes (TTL) | Depends | Low; slow propagation |
+| **K8s pod reschedule** | Seconds | N/A (stateless) | Low for stateless apps |
+
+- **Split-brain:** two nodes think they are primary - use **fencing** (STONITH, power off, isolate network)
+- **Async replication:** promoted standby may lack last writes → RPO > 0
+- **Client stickiness:** clients cache old primary IP - connection pools need refresh
+- **Failback:** reverse sync (new primary → old primary) before role swap
 
 ### When to use
 
-- Database primary-replica setups
+- Database primary-replica setups (PostgreSQL, MySQL, MongoDB replica set)
 - Multi-region disaster recovery
-- Load balancer active/passive pairs
+- Load balancer active/passive pairs (Keepalived, cloud NLB)
+- Stateful services on Kubernetes with persistent leader election
 
 ### Trade-offs / Pitfalls
 
-- False positive failover causes unnecessary disruption
-- Async replication -> lost writes on failover
-- Clients cache old primary address
-- Failback requires reverse sync complexity
+- **False positive failover** causes unnecessary disruption (flapping health checks)
+- Async replication → **lost writes** on failover (measure RPO honestly)
+- Clients cache old primary address (DNS TTL, connection pool)
+- Failback requires reverse sync complexity - often stay on new primary
+- VIP failover needs L2 adjacency or BGP - not trivial cross-subnet
+- Automated failover without human verification can promote corrupted node
 
 ---
 
@@ -823,52 +1133,119 @@ flowchart TB
 
 ### What is it?
 
-**PACELC** extends CAP: if **P**artition, choose **A** or **C**; **E**lse (normal operation), choose **L**atency or **C**onsistency. It captures that even without partitions, strong consistency costs latency (cross-replica coordination).
+**PACELC** (Daniel Abadi, 2012) extends CAP by stating that **even when the network is normal** (no partition), you still trade off **latency** against **consistency**.
+
+**Full theorem:**
+
+> If there is a **P**artition, choose between **A**vailability and **C**onsistency (same as CAP).
+> **E**lse (normal operation), choose between **L**atency and **C**onsistency.
+
+```text
+PACELC = PA/EL or PC/EC (common shorthand labels)
+         │    └── Else: Latency vs Consistency
+         └── Partition: Availability vs Consistency
+```
+
+CAP alone only describes partition behavior; PACELC explains why DynamoDB's default reads are fast *and* eventually consistent even when the network is healthy.
 
 ### Why it matters
 
-Most of a system's life runs without partitions - you still trade latency for consistency on every write. PACELC explains why DynamoDB defaults to fast eventually consistent reads.
+Most of a system's life runs without partitions - you still trade latency for consistency on every replicated read/write. PACELC explains:
+- Why synchronous cross-region replication adds 100+ ms per write
+- Why Cassandra defaults to `ONE` quorum (low latency, eventual)
+- Why etcd always coordinates a quorum (consistent, higher latency)
 
 ### How it works
 
-1. **During partition:** same as CAP (PA vs. PC).
-2. **During normal ops:** replicate synchronously (LC, higher latency) or asynchronously (EL, lower latency).
-3. Systems labeled **PA/EL** (Cassandra, Dynamo) favor availability and low latency.
-4. Systems labeled **PC/EC** (traditional RDBMS sync replica) favor consistency.
-
 ```mermaid
 flowchart TB
-    Op[Operation] --> Part{Partition?}
-    Part -->|Yes| CAP[Choose A or C]
-    Part -->|No| PAC[Choose L or C]
-    CAP --> PA[PA: available]
-    CAP --> PC[PC: consistent]
-    PAC --> EL[EL: low latency]
-    PAC --> EC[EC: consistent]
+    Op[Read or Write] --> Part{Network partition?}
+    Part -->|Yes| CAP{CAP trade-off}
+    CAP --> PA[PA: stay available, may diverge]
+    CAP --> PC[PC: reject ops, stay consistent]
+    Part -->|No - Else| PAC{PACELC trade-off}
+    PAC --> EL[EL: async replication, low latency]
+    PAC --> EC[EC: sync replication, consistent]
+```
+
+**During partition (same as CAP):**
+- **PA:** accept reads/writes on both sides; reconcile later
+- **PC:** reject ops that cannot reach quorum; preserve single truth
+
+**During normal operation (the EL/EC choice):**
+
+| Choice | Mechanism | Read latency | Consistency |
+|--------|-----------|--------------|-------------|
+| **EL** | Async replication; read from nearest replica | Low (~1 ms) | May be stale |
+| **EC** | Sync quorum before ack; read from leader/quorum | Higher (~5-50 ms) | Strong / linearizable |
+
+**Example write path:**
+
+```text
+EL (Cassandra ONE):  write to local replica → ack client → async gossip to others
+EC (PostgreSQL sync): write to primary → wait for standby fsync → ack client
 ```
 
 ### Key details
 
-| System | Partition | Else |
-|--------|-----------|------|
-| Cassandra | PA | EL |
-| MongoDB (default) | PA | EL |
-| PostgreSQL sync rep | PC | EC |
-| etcd | PC | EC |
+#### Full system classification table
 
-- Tunable per operation in some systems (strong vs. eventual read in DynamoDB)
+| System | On Partition | Else (normal) | Notes |
+|--------|--------------|---------------|-------|
+| **Cassandra** | PA | EL | Tunable CL: QUORUM → EC-like |
+| **DynamoDB** | PA | EL | `ConsistentRead=true` → EC reads |
+| **Riak** | PA | EL | Strong consistency via riak_dt / not default |
+| **MongoDB** | PA | EL | `writeConcern: majority` → EC writes |
+| **PostgreSQL (async rep)** | PA | EL | Reads from replica may be stale |
+| **PostgreSQL (sync rep)** | PC | EC | Writes block if standby down |
+| **MySQL Group Replication** | PC | EC | Majority quorum required |
+| **etcd / ZooKeeper / Consul** | PC | EC | Raft consensus always |
+| **CockroachDB / Spanner** | PC | EC | Global consistency; Spanner uses TrueTime |
+| **Redis Cluster** | PA | EL | Async replication; failover may lose writes |
+| **Memcached** | PA | EL | No replication; partition = split brain |
+| **Kafka** | PC | EC | ISR quorum for committed messages |
+| **S3** | PA | EL | Read-after-write eventual for overwrites |
+
+#### Tunable consistency (bridge EL ↔ EC)
+
+Many AP systems let you pay latency per operation:
+
+| System | Tunable knob | Effect |
+|--------|--------------|--------|
+| Cassandra | `ConsistencyLevel` ONE/QUORUM/ALL | Higher CL = more EC-like |
+| DynamoDB | `ConsistentRead` | Strong read costs 2× RCU |
+| MongoDB | `readConcern` / `writeConcern` | `majority` = EC |
+| Riak | `PR/PW` values | Quorum reads/writes |
+
+```text
+# DynamoDB: default EL read
+GetItem(Key=...)                           # eventual
+
+# EC read: 2× read cost, higher latency
+GetItem(Key=..., ConsistentRead=true)
+```
+
+#### Interview framing
+
+- *"Cassandra is PA/EL by default; we use QUORUM for writes and reads on payment tables to move toward EC when needed."*
+- *"Our config store uses PC/EC (etcd) because leader election must be linearizable."*
+- *"PACELC reminds us that cross-region sync replication is an EC choice even without partitions."*
 
 ### When to use
 
 - Nuanced database comparisons beyond CAP slogans
 - Explaining read consistency options in cloud databases
-- Designing per-API consistency/latency tiers
+- Designing per-API consistency/latency tiers (catalog EL, inventory EC)
+- Justifying why payment service accepts higher write latency
 
 ### Trade-offs / Pitfalls
 
-- Not all systems fit cleanly into one quadrant
-- Latency vs. consistency trade-off depends on replication distance
-- Strong reads on AP systems may still hit stale replicas if not requested
+- Not all systems fit cleanly into one quadrant - tunable knobs blur lines
+- EL → EC per operation still doesn't give cross-key transactions
+- Latency vs. consistency trade-off depends on **replication distance** (same AZ vs cross-region)
+- Strong reads on AP systems hit stale replicas if routing wrong replica
+- PACELC doesn't cover durability (use replication mode separately)
+- Teams confuse "no partition" with "no trade-off" - EL/EC always applies with replicas
 
 ---
 
@@ -878,50 +1255,101 @@ flowchart TB
 
 ### What is it?
 
-**Strong consistency** (often implemented as **linearizability** for registers) guarantees that after a write completes, all subsequent reads return that value or a newer one. Users see a single copy of data updating in real-time order.
+**Strong consistency** is a broad term meaning reads reflect the latest successful write. In practice it usually means one of:
+
+| Model | Guarantee | Scope |
+|-------|-----------|-------|
+| **Linearizability** | Real-time ordering; each op atomic at a point in time | Single register/object |
+| **Sequential consistency** | All agree on some sequential order (not necessarily real-time) | Multi-object |
+| **Serializable** | Transactions appear in some serial order | Multi-key transactions |
+
+Colloquially "strong" often means **read-after-write**: after update, a read returns the new value. Precise definition matters in interviews and specs.
 
 ### Why it matters
 
-Financial transfers, inventory deduction, and leader election require strong consistency - double-spend or oversell are unacceptable.
+Financial transfers, inventory deduction, and leader election require strong consistency - double-spend or oversell are unacceptable. Ambiguous "strong" without definition leads to production bugs (reading stale replica labeled "strong").
 
 ### How it works
 
-1. Writes go through a **single leader** or **consensus quorum** (majority ack).
-2. Reads contact leader or quorum of replicas verifying latest version.
-3. Linearization point assigned to each operation in global order.
-4. Transactions (2PC, Raft log apply) serialize conflicting updates.
+**Single-leader replication (most common):**
+
+1. All writes go to **leader** (primary).
+2. Leader applies to local log, replicates to followers.
+3. **Sync replication:** ack after quorum of followers confirm (strong, slower).
+4. **Reads from leader** (or quorum-verified followers) return latest committed value.
 
 ```mermaid
 sequenceDiagram
     participant W as Writer
     participant L as Leader
-    participant R as Replica
-    W->>L: write v=2
-    L->>R: replicate
-    R-->>L: ack
-    L-->>W: OK
-    Note over L,R: Readers see v=2
+    participant F1 as Follower 1
+    participant F2 as Follower 2
+    participant R as Reader
+    W->>L: write balance=100
+    L->>F1: replicate
+    L->>F2: replicate
+    F1-->>L: ack
+    F2-->>L: ack
+    L-->>W: OK (quorum committed)
+    R->>L: read balance
+    L-->>R: 100
+```
+
+**Consensus-based (Raft/Paxos):**
+
+1. Leader proposes entry to replicated log.
+2. Majority (quorum) persists before commit.
+3. All nodes apply log in same order → consistent state.
+4. Used by etcd, CockroachDB, TiKV.
+
+**Distributed transactions (2PC):**
+
+```text
+Coordinator: PREPARE → all participants vote
+             COMMIT  → all apply (or ABORT all)
+Strong across shards; blocks on participant failure
 ```
 
 ### Key details
 
-- Implemented via sync replication, Raft/Paxos, or single-node DB
-- Cross-region strong consistency adds 100+ ms per write
-- Spanner uses TrueTime for external consistency globally
-- "Strong" must be defined precisely - serializable â‰  linearizable
+| Implementation | Consistency level | Write latency | Partition behavior |
+|----------------|-------------------|---------------|-------------------|
+| Single-node RDBMS | Linearizable (single node) | Low | Not distributed |
+| PostgreSQL sync rep | Strong on leader reads | Medium | CP on partition |
+| Raft (etcd) | Linearizable | Medium | CP; minority partition unavailable |
+| Spanner | External consistency (TrueTime) | High (global) | CP with clocks |
+| DynamoDB `ConsistentRead` | Strong for single item | 2× read cost | AP system; strong per key |
+
+**Read paths that are NOT strong (common bugs):**
+
+```text
+❌ Write to primary, read from async replica
+❌ Read from Redis cache without invalidation
+❌ Read from local near-cache after remote write on another pod
+✅ Read from leader or quorum with version check
+```
+
+**Cross-region strong consistency:**
+
+- Requires sync replication across regions → 100-200 ms per write (RTT bound).
+- Spanner uses **TrueTime** (GPS + atomic clocks) for global `commit timestamp`.
+- Most systems choose **strong per region, eventual cross region**.
 
 ### When to use
 
-- Money, inventory, booking systems with limited stock
-- Coordination services (locks, service discovery)
-- When regulatory audit requires read-after-write truth
+- Money, inventory, booking with limited stock
+- Coordination services (locks, leader election, service discovery)
+- Regulatory audit requiring read-after-write truth
+- Any invariant that must hold globally (`balance >= 0`)
 
 ### Trade-offs / Pitfalls
 
-- Lower availability during partition (CP behavior)
-- Higher latency from quorum waits
-- Harder to scale writes (single leader bottleneck)
+- Lower availability during partition (CP behavior - minority side rejects ops)
+- Higher latency from quorum waits and cross-region sync
+- Harder to scale writes (single leader bottleneck per shard)
 - Misconfigured "strong" reads from async replica are not actually strong
+- **Strong consistency ≠ ACID serializable** across arbitrary multi-key without explicit transactions
+- 2PC coordinator failure blocks until recovery
 
 ---
 
@@ -931,46 +1359,124 @@ sequenceDiagram
 
 ### What is it?
 
-**Eventual consistency** guarantees that if no new updates occur, all replicas will **converge** to the same value given sufficient time. During convergence, reads may return stale or conflicting versions.
+**Eventual consistency** guarantees that if **no new updates** are made to a given object, all replicas will **converge** to the same value given sufficient time. During convergence, reads may return **stale** or **conflicting** versions.
+
+There is no bound on staleness unless you add one (SLA: "reads lag < 5s p99").
 
 ### Why it matters
 
-Enables highly available, low-latency global systems (DNS, CDN, Dynamo-style KV). Most users tolerate seconds of staleness for social feeds, analytics, and session data.
+Enables highly available, low-latency global systems (DNS, CDN, Dynamo-style KV). Most users tolerate seconds of staleness for social feeds, analytics, session data, and product catalogs.
 
 ### How it works
 
-1. Writes accepted at any replica (or leader with async fan-out).
-2. Replicas propagate updates via gossip, anti-entropy, or read repair.
-3. Clients may read stale data until replication completes.
-4. Conflicts resolved via **LWW** (last-write-wins), vector clocks, or CRDT merge.
+**Basic replication flow:**
+
+1. Write accepted at one replica (or leader with async fan-out).
+2. Update propagates via replication log, gossip, or anti-entropy.
+3. Reads from other replicas may return pre-update value.
+4. Convergence when all replicas receive all updates.
 
 ```mermaid
 flowchart LR
-    W[Write to A] --> A[Replica A]
-    A -.->|async| B[Replica B]
-    A -.->|async| C[Replica C]
-    R[Read from B] --> Stale[May be stale]
+    W[Write v=2 to A] --> A[Replica A: v=2]
+    A -.->|async 200ms| B[Replica B: v=1 stale]
+    A -.->|async 200ms| C[Replica C: v=1 stale]
+    R[Read from B] --> Stale[Returns v=1]
+    B -.->|later| Sync[B converges to v=2]
+```
+
+#### Read repair
+
+On read, if replicas disagree, the **latest version** is returned to client and stale replicas are updated in background.
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant Coord as Coordinator
+    participant R1 as Replica 1 v=3
+    participant R2 as Replica 2 v=2
+    Client->>Coord: read key K
+    Coord->>R1: read K
+    Coord->>R2: read K
+    R1-->>Coord: v=3 (latest)
+    R2-->>Coord: v=2 (stale)
+    Coord-->>Client: return v=3
+    Coord->>R2: write repair v=3
+    Note over R2: Anti-entropy via read path
+```
+
+| Aspect | Read repair | Background anti-entropy |
+|--------|-------------|-------------------------|
+| Trigger | Client read discovers mismatch | Scheduled / gossip protocol |
+| Cost | Paid on read path latency | Background bandwidth |
+| Used by | Cassandra (with `LOCAL_QUORUM`) | Cassandra, Riak, Dynamo |
+
+#### Anti-entropy
+
+Background process compares replica state and syncs missing writes (Merkle trees, hash comparisons).
+
+```text
+1. Each replica hashes key ranges (Merkle tree)
+2. Peers exchange tree roots
+3. Divergent branches identified → sync missing data
+4. Runs continuously (Cassandra repair) or on schedule (weekly)
+```
+
+```mermaid
+flowchart TB
+    R1[Replica A Merkle tree] --> Compare{Compare roots}
+    R2[Replica B Merkle tree] --> Compare
+    Compare -->|differ| Drill[Drill into child hashes]
+    Drill --> Sync[Transfer missing SSTables / ops]
+```
+
+**Other convergence mechanisms:**
+
+| Mechanism | Description |
+|-----------|-------------|
+| **Gossip protocol** | Epidemic spread of updates peer-to-peer |
+| **Hinted handoff** | Store writes for temporarily down replica; deliver on recovery |
+| **Last-write-wins (LWW)** | Timestamp/version picks winner; silent data loss on conflict |
+| **Vector clocks** | Detect concurrent writes; app merges |
+| **CRDTs** | Mathematically merge without coordination |
+
+**Conflict example (LWW):**
+
+```text
+Replica A: set name="Alice"  t=100
+Replica B: set name="Bob"    t=101   (partition healed)
+Result: name="Bob" (Alice update lost silently)
 ```
 
 ### Key details
 
-- Convergence time unbounded without extra mechanisms (SLA on staleness helps)
-- **Read repair:** stale read triggers background fix
-- **Hinted handoff:** writes routed around down nodes
-- Version vectors detect conflicts for application merge
+- Convergence time **unbounded** without monitoring - define SLA on replication lag
+- **Hinted handoff:** write goes to healthy replica + hint for down node; prevents temporary unavailability
+- **Quorum reads/writes:** `W + R > N` gives strong-ish consistency when no partition (not true EC)
+- Monitor: `replication_lag_seconds`, Merkle repair progress, conflict counters
+
+| System | Default model | Stronger option |
+|--------|---------------|-----------------|
+| Cassandra | Eventual (ONE) | QUORUM / LOCAL_QUORUM |
+| DynamoDB | Eventual reads | `ConsistentRead=true` |
+| DNS | Eventual (TTL-bound) | Low TTL for faster convergence |
+| S3 | Eventual for overwrites | Read-after-write for new objects |
 
 ### When to use
 
 - High write/read throughput globally
-- Caching layers, shopping carts, activity feeds
-- Systems with natural conflict resolution (counters, sets)
+- Caching layers, shopping carts, activity feeds, view counts
+- Systems with natural conflict resolution (counters, sets, CRDTs)
+- Data where brief staleness is acceptable (product description, avatar)
 
 ### Trade-offs / Pitfalls
 
-- Application must handle stale reads and conflicts
-- LWW loses concurrent updates silently
-- Testing eventual behavior is harder than strong consistency
-- "Eventually" without monitoring -> never converges if replication broken
+- Application must handle stale reads and explicit conflict merge
+- LWW loses concurrent updates silently - dangerous for financial state
+- Testing eventual behavior harder than strong consistency (timing-dependent)
+- "Eventually" without monitoring → never converges if replication broken
+- Read repair adds latency spike on contested keys
+- Anti-entropy repair during peak can cause I/O storms
 
 ---
 
@@ -1028,46 +1534,117 @@ flowchart TB
 
 ### What is it?
 
-**Linearizability** is the strongest single-object consistency model: every operation appears to occur atomically at some point between its invocation and response, respecting real-time order. All clients agree on a single sequential history.
+**Linearizability** is the strongest single-object consistency model. Every operation appears to occur **atomically** at some instant between its invocation and response, and the global history respects **real-time ordering**: if operation A completes before B begins (in real wall-clock time), A appears before B in the sequential history.
+
+All clients agree on a single sequential order - as if there were one copy of the data and no replication lag visible.
 
 ### Why it matters
 
-Gold standard for correctness of registers, locks, and leader election. If a system is linearizable, reasoning about concurrent behavior matches sequential intuition.
+Gold standard for correctness of registers, distributed locks, and leader election. If a system is linearizable, reasoning about concurrent behavior matches sequential intuition - critical for coordination primitives.
 
 ### How it works
 
-1. Each operation assigned a linearization point on a timeline.
-2. History equivalent to some sequential execution of same operations.
-3. If op1 completes before op2 starts (real time), op1 precedes op2 in order.
-4. Achieved via consensus (Raft, Paxos) or single leader with sync replication.
+1. Each operation assigned a **linearization point** on a timeline.
+2. History is equivalent to some **sequential** execution of the same operations.
+3. **Real-time constraint:** `A completes → B starts` implies A precedes B in the order.
+4. Achieved via consensus (Raft, Paxos), single leader with sync replication, or hardware serializability (single node).
 
 ```mermaid
 flowchart LR
-    T[Timeline] --> O1[Write x=1]
-    O1 --> O2[Read x]
-    O2 --> O3[Write x=2]
-    Note[Total order all clients agree]
+    subgraph Timeline
+        W1[Write x=1] --> W2[Write x=2]
+        W2 --> R1[Read x=2]
+    end
+    Note[All observers agree on this order]
+```
+
+**Valid linearizable history example:**
+
+```text
+Client 1:  |-- write(x=1) --|
+Client 2:                    |-- read x → 1 --|
+Client 1:                              |-- write(x=2) --|
+Client 2:                                            |-- read x → 2 --|
+
+Linearization points: write1 at t1, read1 at t2 (sees 1), write2 at t3, read2 at t4 (sees 2)
+```
+
+**NOT linearizable (stale read violates real-time order):**
+
+```text
+Client 1:  |-- write(x=1) --|  (completes at t=100)
+Client 2:  |-- read x → 0 --|  (starts at t=150, still sees old value)
+→ Read should have linearized after write; violates real-time order
 ```
 
 ### Key details
 
-- **Linearizable â‰  serializable:** serializable is multi-object transaction property
-- etcd, ZooKeeper, Consul provide linearizable reads/writes (with caveats)
-- Performance cost: coordination on every operation
-- **Sticky sessions** don't imply linearizability across clients
+#### Linearizability vs. sequential consistency
+
+| Property | Linearizability | Sequential consistency |
+|----------|-----------------|------------------------|
+| **Single global order** | Yes | Yes |
+| **Respects real-time order** | **Yes** | No |
+| **Example violation** | N/A | Write finishes, read starts later, still sees old value |
+| **Strength** | Stronger | Weaker |
+| **Typical systems** | etcd, ZooKeeper (with caveats) | Some shared-memory hardware models |
+
+```text
+Sequential consistency ALLOWS:
+  Process P1: write(x=1) completes at t=10
+  Process P2: read(x) starts at t=20 → may still return 0
+  (as long as ALL processes see the same sequential story)
+
+Linearizability FORBIDS this - read at t=20 must see write from t=10
+```
+
+#### Linearizability vs. serializability
+
+| | Linearizability | Serializability |
+|---|-----------------|-----------------|
+| **Scope** | Single object / register | Multi-key **transactions** |
+| **Question answered** | "What order do ops appear?" | "Can transactions reorder?" |
+| **Example** | Atomic counter increment | Transfer A→B debit+credit atomic |
+| **Composable** | Per-object | Whole transaction bundle |
+
+A system can be serializable but not linearizable (reordering within transaction bounds), or linearizable per key without cross-key serializability.
+
+#### Real-time order and clocks
+
+Linearizability uses **real-time precedence** (wall clock), not logical clocks:
+
+```text
+if resp_time(A) < start_time(B)  →  A must precede B in linearization order
+```
+
+Clock skew between nodes does not relax this - coordination service assigns order at commit time.
+
+| System | Linearizable? | Caveats |
+|--------|---------------|---------|
+| **etcd / Raft** | Yes (default) | `read index` ensures linearizable reads |
+| **ZooKeeper** | Yes (sync reads) | `sync()` before read for linearizability |
+| **Consul** | Yes (with consistent mode) | Stale reads in default mode |
+| **DynamoDB** | Per-item strong read | Not cross-item |
+| **Cassandra** | No (default) | SERIAL not full linearizability |
+| **Single RDBMS node** | Yes | One copy of data |
+
+**Jepsen testing:** industry standard for finding linearizability violations in distributed databases under partition/failure.
 
 ### When to use
 
-- Distributed locks, leader election, config stores
+- Distributed locks, leader election, config stores (etcd, ZooKeeper)
 - When interview or spec says "strongest consistency for single key"
-- Comparing correctness of coordination services
+- Comparing correctness guarantees of coordination services
+- Implementing compare-and-swap / fencing tokens
 
 ### Trade-offs / Pitfalls
 
-- Not scalable for high-throughput data plane
-- Clock skew irrelevant to linearization (uses real-time precedence)
-- Partial linearizability bugs in complex systems hard to detect (Jepsen testing)
-- Confused with "strong consistency" colloquially
+- Not scalable for high-throughput data plane (coordination per op)
+- **Sticky sessions** to one replica do not guarantee linearizability across clients
+- Partial linearizability bugs in complex systems hard to detect without Jepsen
+- Confused with "strong consistency" colloquially - always define precisely
+- Linearizable reads from followers require quorum or leader confirmation (extra RTT)
+- Multi-object invariants need **transactions** or **serializability**, not linearizability alone
 
 ---
 

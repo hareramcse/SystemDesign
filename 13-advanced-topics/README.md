@@ -79,10 +79,58 @@ flowchart TB
 
 ### Key details
 
-- Optimal `k â‰ˆ (m/n) Â· ln 2` where `n` = expected elements; false-positive rate `p â‰ˆ (1 âˆ’ e^(âˆ’kn/m))^k`.
+#### False-positive math
+
+Given bit array size `m`, `k` hash functions, and `n` inserted elements:
+
+| Formula | Meaning |
+|---------|---------|
+| `k ≈ (m/n) · ln 2` | Optimal hash count minimizing false positives for fixed `m`, `n` |
+| `p ≈ (1 − e^(−kn/m))^k` | Approximate false-positive probability |
+| `m ≈ −(n · ln p) / (ln 2)²` | Bits needed for target `p` and expected `n` |
+
+**Worked example:** `n = 1,000,000` keys, target `p = 0.01` (1%):
+
+```text
+m ≈ −(10⁶ × ln 0.01) / (ln 2)² ≈ 9.6M bits ≈ 1.2 MB
+k ≈ (9.6M / 10⁶) × 0.693 ≈ 7 hash functions
+```
+
+At `n` elements, **false negatives never occur** — if any of the `k` bits is 0, the key was definitely never inserted. False positives mean "maybe present" → confirm with backing store.
+
+| `n` (at capacity) | `m` (bits) | `k` | Approx `p` |
+|-------------------|------------|-----|------------|
+| 1M | 1.2 MB | 7 | 1% |
+| 10M | 12 MB | 7 | 1% |
+| 1M | 600 KB | 7 | ~10% (undersized) |
+
+**Sizing rule of thumb:** allocate ~10 bits per element for ~1% FP rate; double `m` to quarter `p`.
+
 - **Cannot delete** from a standard Bloom filter (use **counting Bloom filter** with small counters per bit).
 - **Cannot enumerate** members  -  membership test only.
-- Used inside **RocksDB/LevelDB** (SSTable existence), **Cassandra** (partition filter), **Chrome Safe Browsing**, **Medium** (duplicate article detection).
+
+#### Use cases — cache and database
+
+| Layer | Pattern | What Bloom filter does |
+|-------|---------|------------------------|
+| **Cache** | Negative lookup guard | Before Redis/Memcached GET, Bloom says "definitely not cached" → skip network RTT on known misses |
+| **Cache** | Penetration protection | Block repeated lookups for non-existent keys (attack or buggy client) that would miss cache and hammer DB |
+| **DB** | RocksDB/LevelDB SSTable filter | Per-SSTable Bloom: "key not in this file" → skip disk read on LSM lookup |
+| **DB** | Cassandra partition filter | `BloomFilter` on SSTable row keys; reduces I/O on wide partitions |
+| **DB** | HBase / Bigtable | Same LSM pattern — filter before block fetch |
+| **App** | Chrome Safe Browsing | Compact URL hash set; false positive → extra safe-list check |
+| **App** | Medium duplicate detection | "Have we seen this article URL?" before expensive dedup store |
+
+**Cache flow:**
+
+```text
+Request key K
+  → Bloom.contains(K)?
+      NO  → return 404 / cache miss (skip DB)
+      YES → GET cache → on miss, query DB (1% FP may cause extra DB hit)
+```
+
+**Trade-off:** Bloom saves **definite miss** paths; false positives add occasional redundant lookups — acceptable when DB/cache lookup cost >> Bloom check cost (nanoseconds in RAM).
 
 ### When to use
 
@@ -477,10 +525,71 @@ flowchart LR
 
 ### Key details
 
-- **41 bits time** â‰ˆ 69 years from epoch; plan epoch and overflow migration early.
-- **10 bits** for DC+worker = 1024 machines  -  scale via logical shards or extend format (Sonyflake, etc.).
-- IDs are **sortable by creation time**  -  great for time-range queries and cursor pagination.
-- Requires **clock sync (NTP)**  -  clock backward jump causes duplicate risk (wait or use sequence buffer).
+#### 64-bit layout (Twitter Snowflake)
+
+```text
+| 1 bit (unused/sign) | 41 bits timestamp | 5 bits DC | 5 bits worker | 12 bits sequence |
+|         0           |   ms since epoch  |  0-31     |    0-31       |    0-4095        |
+```
+
+| Field | Bits | Range | Notes |
+|-------|------|-------|-------|
+| **Timestamp** | 41 | ~69 years from custom epoch | Twitter epoch: 2010-11-04; sortable by time |
+| **Datacenter ID** | 5 | 32 DCs | Provisioned at deploy; avoids cross-DC collision |
+| **Worker ID** | 5 | 32 machines per DC | 1,024 total generators (32 × 32) |
+| **Sequence** | 12 | 4,096 IDs/ms per worker | Overflow → spin-wait for next ms |
+
+**Assembly:** `id = (timestamp << 22) | (dc << 17) | (worker << 12) | sequence`
+
+**Capacity:** 4,096 × 1,000 IDs/sec ≈ **4M IDs/sec per worker**; cluster scales with worker count.
+
+**Variants:** Sonyflake (39+8+8+16), Instagram shard id, Discord snowflake — same idea, different bit splits.
+
+#### Clock drift and backward jumps
+
+Snowflake assumes **monotonic millisecond clock** per worker. Real clocks drift and NTP steps backward.
+
+| Scenario | Risk | Mitigation |
+|----------|------|------------|
+| Clock runs fast | IDs slightly in future | Usually harmless; monitor skew |
+| **NTP step backward** | Same `(timestamp, worker)` → **duplicate IDs** if sequence resets | **Wait** until clock catches up to last timestamp; or use sequence buffer |
+| Clock skew across workers | Out-of-order IDs globally | Acceptable for sortable PK; not a total order guarantee |
+| Leap second / VM pause | Burst or gap in timestamp | Sequence absorbs within ms; long pause may need wait |
+
+**Production pattern (backward jump):**
+
+```text
+now = currentTimeMs()
+if now < lastTimestamp:
+    wait until now >= lastTimestamp   # block ID generation
+if now == lastTimestamp:
+    sequence = (sequence + 1) & 4095
+    if sequence == 0: wait next ms
+else:
+    sequence = 0
+lastTimestamp = now
+```
+
+Run **chrony** or **ntpd** with slew (not step) on ID-generating hosts; alert on clock offset > 50 ms.
+
+#### Snowflake vs UUID
+
+| | Snowflake (int64) | UUID v4 | UUID v7 |
+|---|-------------------|---------|---------|
+| **Size** | 8 bytes | 16 bytes | 16 bytes |
+| **Sortable** | Yes (time prefix) | No (random) | Yes (time prefix) |
+| **Coordination** | Worker/DC IDs required | None | None |
+| **Clock dependency** | Yes (NTP) | No | Yes (ms timestamp) |
+| **B-tree insert** | Sequential (good) | Random (page splits) | Sequential (good) |
+| **URL-friendly** | Numeric only | 36-char string | 36-char string |
+| **Privacy** | Leaks rough creation time | Opaque | Leaks rough creation time |
+| **Collision** | Per-worker sequence | ~negligible (122 random bits) | ~negligible |
+
+**Choose Snowflake** when: compact numeric PK, high insert rate, time-range queries, internal IDs.
+
+**Choose UUID v7/ULID** when: no worker registry, client-generated IDs, string APIs, multi-language interop.
+
+**Choose UUID v4** when: opacity matters more than index locality; low write volume.
 
 ### When to use
 

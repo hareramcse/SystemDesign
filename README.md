@@ -60,7 +60,26 @@ Every sub-topic in a topic `README.md` follows the same master structure:
 6. **Trade-offs** — pros vs cons table
 7. **References** — links from the spreadsheet and external resources
 
-**Must-know sub-topics** (CAP, cache-aside, consistent hashing, rate limiting, Kafka, etc.) are written in **extra depth** within these same sections — no separate headings — with worked examples, pseudo-code, comparison tables, and production patterns similar to detailed study notes.
+**Must-know sub-topics** are written in **extra depth** within the same sections — worked examples, pseudo-code, comparison tables, and production patterns (similar to detailed study notes). See **Tier-1 index** below.
+
+### Tier-1 sub-topics (expanded in depth)
+
+| Topic folder | Must-know sections |
+|--------------|-------------------|
+| **01-networking** | TCP Handshake, DNS, DNS Resolution, HTTP/HTTPS, Forward/Reverse Proxy, Load Balancer, LB Algorithms, SSE/Polling/WebSockets |
+| **02-databases** | Indexing, B-Tree/B+ Tree, Isolation Levels, MVCC |
+| **03-caching** | Fundamentals, Cache Aside, Distributed Cache, Invalidation, Stampede, Avalanche, Penetration |
+| **04-distributed-system** | Latency, Availability, Failover, CAP, PACELC, Strong/Eventual Consistency, Linearizability, Tail Latency, Fault Tolerance |
+| **05-distributed-databases** | Partitioning, Sharding, Hot Partitions, Consistent Hashing, Replication, Leader-Follower, Quorum R/W, 2PC, Raft |
+| **06-messaging** | Kafka, Ordering, At-most/At-least/Exactly-once, Outbox, CQRS |
+| **07-api** | REST, GraphQL, gRPC, API Gateway, Rate Limiting, Idempotency Keys |
+| **08-microservices** | Microservices, Circuit Breaker, Service Mesh, Saga |
+| **09-observability** | Distributed Tracing, SLI, SLO, Error Budgets |
+| **10-security** | OAuth2, JWT |
+| **11-cloud-k8s** | Docker, Kubernetes, Deployments, HPA |
+| **12-reliability** | High Availability, RPO, RTO, Chaos Engineering |
+| **13-advanced** | Bloom Filters, Snowflake IDs |
+| **14-search** | Inverted Index, Elasticsearch |
 
 ### Interview prep workflow
 

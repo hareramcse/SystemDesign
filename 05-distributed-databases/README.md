@@ -86,50 +86,99 @@ Sub-topics are sequenced for progressive learning: foundations first, then relat
 
 ### What is it?
 
-**Partitioning** divides a table or dataset into segments called partitions. In distributed systems, partitioning usually means horizontal splits (by row/key); vertical partitioning splits columns or tables.
+**Partitioning** divides a logical table or dataset into disjoint **segments** (partitions), each owning a subset of rows or keys. In distributed systems, **horizontal partitioning** splits rows by a partition key; **vertical partitioning** splits columns or related tables onto different stores.
+
+Partitioning is the **unit of placement**: each partition is assigned to one or more nodes, replicated as a group, migrated during rebalancing, and often the scope of ordering guarantees.
+
+**Contrast with replication:** partitioning answers *which subset of data lives here*; replication answers *how many copies of that subset exist*.
 
 ### Why it matters
 
-Partitioning is the abstraction beneath sharding, replication placement, and parallel query execution. Every distributed store partitions data - the design question is *how*.
+Every distributed database partitions data — the design question is *how*, not *whether*. Partitioning drives:
+
+- **Write/read parallelism** — independent partitions process concurrently
+- **Failure isolation** — one bad partition does not take down the whole dataset
+- **Operational boundaries** — backup, compaction, and migration happen per partition
+- **Query routing** — single-partition queries stay local; scatter-gather costs multiply
+
+Poor partition design creates hot spots, expensive cross-partition transactions, and painful rebalancing.
 
 ### How it works
 
-1. Define a partition key or partitioning scheme.
-2. Assign each partition to a storage node or replica group.
-3. Metadata service (or client library) tracks partition -> node mapping.
-4. Queries touching one partition stay local; multi-partition queries coordinate.
-
-### Diagram
+1. **Choose partition key** — high cardinality, aligned with dominant query pattern (`user_id`, `tenant_id`, `order_id`).
+2. **Apply scheme** — hash, range, list, or composite (see 5.3–5.5).
+3. **Map partition → node** — metadata service (Cassandra system tables, DynamoDB partitions, Spanner tablets) or client-side consistent hash.
+4. **Route requests** — coordinator or driver looks up partition for key; sends read/write to owning replica group.
+5. **Coordinate multi-partition ops** — scatter-gather queries, 2PC, or application-level fan-out when query spans partitions.
 
 ```mermaid
 flowchart TB
-    Table[Logical Table] --> P1[Partition 1]
-    Table --> P2[Partition 2]
-    Table --> P3[Partition 3]
-    P1 --> N1[Node A]
-    P2 --> N2[Node B]
-    P3 --> N3[Node C]
+    subgraph Logical
+        Table[Logical Table: orders]
+    end
+    Table --> P1["Partition 0<br/>keys hash 0..33%"]
+    Table --> P2["Partition 1<br/>keys hash 34..66%"]
+    Table --> P3["Partition 2<br/>keys hash 67..100%"]
+    P1 --> RG1["Replica Group A<br/>Node 1,2,3"]
+    P2 --> RG2["Replica Group B"]
+    P3 --> RG3["Replica Group C"]
+    Client[Client] --> Meta[Partition Map]
+    Meta --> RG1
+    Meta --> RG2
 ```
+
+**Worked example — e-commerce orders:**
+
+| Partition key | Query | Partitions touched |
+|---------------|-------|-------------------|
+| `customer_id` | `SELECT * FROM orders WHERE customer_id = 42` | **1** (ideal) |
+| `order_id` | `SELECT * FROM orders WHERE order_id = 99` | **1** if keyed by order |
+| `status` | `SELECT * FROM orders WHERE status = 'PENDING'` | **All** (scatter-gather) |
+| `created_at` | Range scan last 7 days | **Subset** (range partitioning) |
 
 ### Key details
 
-- **Horizontal:** rows split by key - standard for scale-out.
-- **Vertical:** rarely used at distributed scale; splits rarely co-accessed columns.
-- Partition count often fixed upfront or grows via splitting.
-- Partition = unit of replication, migration, and sometimes ordering.
+| Type | Split by | Best for | Risk |
+|------|----------|----------|------|
+| **Horizontal** | Row/key | Scale-out OLTP | Cross-partition joins |
+| **Vertical** | Column/table | Wide rows, cold columns | Joins across stores |
+| **Functional** | Tenant/region | Compliance, isolation | Uneven tenant sizes |
+
+**Production patterns:**
+
+- **Partition = replication unit** — Cassandra vnodes, Kafka partitions, Spanner tablets all replicate at partition granularity.
+- **Partition = ordering scope** — Kafka and DynamoDB Streams guarantee order *within* a partition key, not globally.
+- **Co-partitioning** — place related tables on same key (`user_id` on `users` and `profiles`) to enable local joins.
+- **Pre-splitting** — create enough empty partitions upfront (Cassandra, HBase) to avoid hot latest-range partition on time-series ingest.
+
+**Partition count guidance:**
+
+| Factor | Too few | Too many |
+|--------|---------|----------|
+| Throughput | Single-node ceiling | — |
+| Metadata | — | Routing table bloat, gossip overhead |
+| Rebalancing | Large moves per change | Fine-grained but noisy |
+| Consumers | Kafka: under-parallelized | File handle / election cost |
 
 ### When to use
 
-Always, in any distributed database. The choice is strategy (hash, range, list), not whether to partition.
+Always in distributed storage. Choose strategy based on access pattern:
+
+- **Point lookups, even spread** → hash partitioning (5.3)
+- **Range scans, time-series** → range partitioning (5.4)
+- **Data residency** → geo/list partitioning (5.5)
 
 ### Trade-offs / Pitfalls
 
-- Too few partitions -> cannot scale; too many -> metadata and coordination overhead.
-- Partition boundaries are hard to change - choose keys that match query patterns.
+- **Wrong partition key** — low-cardinality keys (`status`, `country`) collapse to few partitions; fix at schema time, not after petabytes.
+- **Partition boundary changes** — re-keying data is a migration project; prefer keys stable for entity lifetime.
+- **Secondary indexes** — often global indexes scatter writes (DynamoDB GSI, Cassandra SASI); understand hidden cross-partition cost.
+- **Assuming partitions = shards** — in some systems one shard hosts many partitions (vnode model); terminology varies by product.
 
 ### References
 
-*(No curated references for this sub-topic in `_topics.json`.)*
+- Designing Data-Intensive Applications, Ch. 6 (Partitioning)
+- Dynamo (Amazon) partition and consistent hashing paper
 
 ---
 
@@ -139,55 +188,125 @@ Always, in any distributed database. The choice is strategy (hash, range, list),
 
 ### What is it?
 
-**Sharding** is horizontal partitioning of a dataset across independent database instances (shards), each holding a disjoint subset of rows. The cluster collectively stores the full dataset; no single node holds everything.
+**Sharding** is horizontal partitioning of a dataset across **independent database instances** (shards), each holding a disjoint subset of rows with its own storage engine, CPU, and memory. The cluster collectively stores the full dataset; no single node holds everything.
+
+Sharding is partitioning at **deployment scale** — each shard is often a full database process (MySQL shard, MongoDB shard, Vitess tablet), not just a logical segment on a shared cluster.
+
+**Sharding vs partitioning:**
+
+| Term | Typical meaning |
+|------|-----------------|
+| Partitioning | Logical segment; may share nodes (Cassandra, Kafka) |
+| Sharding | Physical instance boundary; shared-nothing architecture |
+| In practice | Used interchangeably — context matters |
 
 ### Why it matters
 
-Sharding is the primary path to write scalability beyond one machine's disk, CPU, and memory limits. It is foundational for multi-tenant SaaS, social graphs, and any workload that outgrows vertical scaling.
+Sharding is the primary path to **write scalability** beyond one machine's limits:
+
+- **Disk** — single-node storage caps (~few TB practical)
+- **CPU/memory** — index and buffer pool pressure
+- **Connection limits** — connection pools saturate one host
+- **Blast radius** — isolate failures and noisy neighbors per shard
+
+Foundational for multi-tenant SaaS (shard per tenant tier), social graphs (shard by `user_id`), and hyperscale OLTP (Vitess, Citus, MongoDB sharded cluster).
 
 ### How it works
 
-A **shard key** (partition key) determines which shard owns a row. The application or a routing layer computes the target shard on every read and write.
-
-1. Choose a shard key with high cardinality and even access distribution.
-2. Map keys to shards via hash, range, or directory lookup.
-3. Route single-key queries to one shard; fan out only when necessary.
-4. Plan resharding before data volume makes migration painful.
-
-### Diagram
+A **shard key** (partition key) determines shard ownership on every read/write.
 
 ```mermaid
-flowchart LR
-    App[Application] --> Router[Shard Router]
-    Router -->|key=42| Shard1[(Shard 1)]
-    Router -->|key=99| Shard2[(Shard 2)]
-    Router -->|key=7| Shard3[(Shard 3)]
+flowchart TB
+    App[Application] --> Router{Shard Router}
+    Router -->|"hash(user_id)=0"| S1[(Shard 1<br/>users 0-33M)]
+    Router -->|"hash(user_id)=1"| S2[(Shard 2<br/>users 33-66M)]
+    Router -->|"hash(user_id)=2"| S3[(Shard 3<br/>users 66-100M)]
+    S1 --> R1[Replicas]
+    S2 --> R2[Replicas]
+    S3 --> R3[Replicas]
+```
+
+**Routing layers:**
+
+| Layer | Examples | Notes |
+|-------|----------|-------|
+| Application | Custom hash in service code | Simple; logic duplicated |
+| Proxy | Vitess VTGate, ProxySQL, mongos | Centralized routing, connection pooling |
+| Driver | DynamoDB SDK, Cassandra driver | Client-side token awareness |
+| Directory | ZooKeeper shard map, etcd | Flexible; lookup on every request |
+
+**Request flow:**
+
+1. Client sends `GET user:12345`.
+2. Router computes `shard = hash(12345) mod N` (or range/directory lookup).
+3. Connection pool opens to target shard primary.
+4. Query executes locally — no cross-shard coordination.
+
+**Cross-shard query (expensive):**
+
+```mermaid
+sequenceDiagram
+    participant App
+    participant Router
+    participant S1 as Shard 1
+    participant S2 as Shard 2
+    participant S3 as Shard 3
+    App->>Router: SELECT COUNT(*) FROM users WHERE country='US'
+    Router->>S1: partial count
+    Router->>S2: partial count
+    Router->>S3: partial count
+    S1-->>Router: 1.2M
+    S2-->>Router: 0.9M
+    S3-->>Router: 1.1M
+    Router-->>App: aggregate 3.2M
 ```
 
 ### Key details
 
 | Aspect | Detail |
 |--------|--------|
-| Shard key | Must appear in most queries to avoid scatter-gather |
-| Cross-shard ops | Joins, transactions, and global aggregates are expensive |
-| Resharding | Requires dual-write, copy, or consistent-hash migration |
-| Shared nothing | Each shard has its own storage and compute |
+| Shard key | Must appear in **most** queries; high cardinality; avoid monotonic hot keys |
+| Cross-shard ops | Joins, global `UNIQUE`, serial `AUTO_INCREMENT` break without extra coordination |
+| Resharding | Dual-write, copy-and-cutover, or consistent-hash migration (5.7, 5.8) |
+| Shared nothing | Each shard = independent failure domain; no shared disk |
+| Schema migrations | Run per shard; version drift is an operational nightmare |
+
+**Production patterns:**
+
+- **Vitess / Citus** — managed sharding with distributed query planner for limited cross-shard SQL.
+- **MongoDB** — `mongos` routes; chunks migrated by balancer; shard key immutable after collection creation.
+- **DynamoDB** — transparent sharding; partitions split/merge automatically; hot key problem remains.
+- **Tenant isolation** — enterprise tier on dedicated shard; free tier on shared shard pool.
+- **Read replicas per shard** — scale reads without multiplying write shards.
+
+**Resharding strategies:**
+
+| Strategy | Downtime | Complexity | When |
+|----------|----------|------------|------|
+| Double capacity + split | Low | Medium | Planned growth |
+| Consistent hash add node | Low | High | Elastic cache/NoSQL |
+| Directory update | Config window | Low | Small clusters |
+| Re-key application | High | Very high | Wrong key chosen — avoid |
 
 ### When to use
 
-- Dataset or write throughput exceeds one node.
-- Access patterns are mostly single-key or single-shard.
-- You can accept operational complexity of multi-shard operations.
+- Dataset or write throughput exceeds one node after vertical scaling.
+- Access patterns are **mostly single-key or single-shard** (`user_id`, `tenant_id`).
+- Team can operate N databases (monitoring, backups, failover per shard).
+- Cross-shard transactions are rare or delegated to saga/outbox (6.20).
 
 ### Trade-offs / Pitfalls
 
-- Poor shard key choice creates hot shards and negates scale benefits.
-- Cross-shard ACID transactions are rare and slow - design around single-shard boundaries.
-- Operational overhead: backups, schema migrations, and monitoring multiply per shard.
+- **Celebrity user problem** — one hot `user_id` saturates a shard; mitigate with sub-sharding, caching, or async write path (5.6).
+- **Cross-shard ACID** — 2PC across shards kills latency; CockroachDB/Spanner shard *internally* with consensus instead.
+- **Global secondary indexes** — write amplification to all shards (MongoDB, DynamoDB GSI).
+- **Operational multiplication** — 32 shards = 32x backup jobs, 32x failover drills, 32x schema migration risk.
+- **Joins across shards** — application-side join or denormalize; SQL sharding proxies have limits.
 
 ### References
 
-*(No curated references for this sub-topic in `_topics.json`.)*
+- Vitess architecture docs; MongoDB sharding guide
+- Designing Data-Intensive Applications, Ch. 6
 
 ---
 
@@ -380,12 +499,61 @@ flowchart TB
 
 ### Key details
 
-| Mitigation | Mechanism |
-|------------|-----------|
-| Key salting | `hash(user_id + random_suffix)` spreads writes |
-| Split partition | Divide key range into sub-partitions |
-| Write-behind cache | Absorb read pressure on hot key |
-| Dedicated shard | Isolate known hot tenant |
+#### Symptoms
+
+Hot partitions show up in metrics before user complaints — one partition diverges from cluster norms.
+
+| Signal | What you see | Tools |
+|--------|--------------|-------|
+| **Per-partition QPS** | One partition 10–1000× others | DynamoDB `ConsumedReadCapacityUnits`, Cassandra `nodetool tablestats` |
+| **Throttle errors** | `ProvisionedThroughputExceeded`, 429 on one key | CloudWatch, API metrics |
+| **CPU / IOPS saturation** | Single node pegged while peers idle | Node dashboards |
+| **Tail latency** | p99 spikes correlate with one shard | Distributed tracing, partition tags |
+| **Replication lag** | One replica falls behind on hot key range | `ReplicationLag`, PostgreSQL `pg_stat_replication` |
+| **Queue depth** | Kafka partition consumer lag on one partition | `kafka.consumer.lag` |
+
+**Common hot-key causes:**
+
+```text
+Partition key = status          →  all "ACTIVE" rows on one shard
+Partition key = trending_post_id →  viral content
+Time-series key = current_date  →  all writes hit "today" range
+Tenant key = mega_customer      →  one B2B tenant dominates
+```
+
+#### Fixes and salting
+
+| Fix | How | Trade-off |
+|-----|-----|-----------|
+| **Key salting** | Append random suffix: `user_id#3` spread across N logical shards | Reads must fan-out to N keys and merge |
+| **Write sharding** | Split hot logical key into `post:123:shard0..7` | Application aggregates on read |
+| **Caching** | CDN / Redis in front of hot key | Helps reads; write-heavy celebs still hot |
+| **Dedicated partition** | Isolate known hot tenant to own shard | Ops overhead; plan ahead |
+| **Partition split** | DynamoDB auto-splits; Cassandra split range | Eventually helps; lag during split |
+| **Async write path** | Queue writes for counters, likes | Eventual consistency on count |
+
+**Salting pattern (writes):**
+
+```text
+# Before: all traffic → partition hash(celebrity_user_42)
+partition_key = celebrity_user_42
+
+# After: spread across 8 salted partitions
+partition_key = celebrity_user_42#${random 0..7}
+write to one random suffix
+
+# Read total followers: query all 8 suffixes, sum in app
+```
+
+**Salting pattern (DynamoDB):**
+
+```text
+PK = HOT#${user_id % 10}   SK = user_id
+→ 10 partitions absorb write load
+GSI or scatter-gather read to reconstruct per-user view
+```
+
+**Prevention at schema time:** choose high-cardinality partition keys aligned with access (`user_id`, not `country`); for time-series use **hash prefix + timestamp** (`hash(device_id) + date`).
 
 ### When to use
 
@@ -653,48 +821,119 @@ flowchart TB
 
 ### What is it?
 
-**Replication** maintains copies of data on multiple nodes for durability, availability, and read scalability. Each partition typically has a replication factor (RF) of 3 or more.
+**Replication** maintains multiple **copies** of the same data on different nodes for **durability** (survive disk/node loss), **availability** (serve reads during failure), and **latency** (read from nearest replica). Each partition typically has a **replication factor (RF)** — commonly 3 in production.
 
-### Why it matters
-
-Single-copy data dies with the disk. Replication survives node loss, enables local reads, and supports geographic distribution.
-
-### How it works
-
-1. Choose replication topology: leader-follower, multi-leader, or leaderless.
-2. On write, propagate to RF nodes per policy (sync/async).
-3. On read, fetch from leader, nearest replica, or quorum.
-4. Repair divergence via anti-entropy, read repair, or consensus log.
-
-### Diagram
+Replication is orthogonal to partitioning: every partition has its own replica set.
 
 ```mermaid
 flowchart TB
-    Write[Write] --> Primary[Primary Copy]
-    Primary --> R1[Replica 1]
-    Primary --> R2[Replica 2]
+    subgraph Partition P
+        L[Leader / Primary]
+        F1[Follower 1]
+        F2[Follower 2]
+    end
+    Write[Write] --> L
+    L -->|replicate| F1
+    L -->|replicate| F2
+    Read[Read] --> L
+    Read --> F1
+    Read --> F2
 ```
+
+### Why it matters
+
+Single-copy data dies with the disk. Without replication:
+
+- Node failure = **data loss** and **downtime**
+- Maintenance windows require full outage
+- Reads cannot scale horizontally off primaries
+- Geographic users pay WAN latency on every read
+
+Replication is non-negotiable for production data you cannot afford to lose.
+
+### How it works
+
+**Three replication topologies:**
+
+| Topology | Write path | Read path | Conflict handling |
+|----------|------------|-----------|-------------------|
+| **Leader-follower** | Single leader orders writes | Leader or stale follower | None (single writer) |
+| **Multi-leader** | Multiple leaders accept local writes | Nearest leader | LWW, version vectors, CRDTs |
+| **Leaderless** | Quorum write to any N replicas | Quorum read from R replicas | Version merge on read |
+
+**Replication sync spectrum:**
+
+```mermaid
+flowchart LR
+    subgraph Sync["Synchronous (strong)"]
+        W1[Write] --> L1[Leader]
+        L1 --> F1[Follower ACK]
+        F1 --> ACK[Client ACK]
+    end
+    subgraph Async["Asynchronous (fast)"]
+        W2[Write] --> L2[Leader]
+        L2 --> ACK2[Client ACK]
+        L2 -.->|background| F2[Follower]
+    end
+```
+
+1. **Choose topology** — match consistency needs and write locality (5.12, 5.13).
+2. **On write** — leader or coordinator replicates to RF nodes per sync policy.
+3. **On read** — fetch from leader, nearest replica, or quorum (5.14, 5.15).
+4. **On divergence** — anti-entropy repair, read repair, or consensus log replay.
+
+**Worked example — RF=3, N=3:**
+
+- Data written to nodes A, B, C
+- A fails → reads/writes continue from B, C if quorum allows
+- A returns → catch-up via hinted handoff or full rebuild
 
 ### Key details
 
-| Style | Write path | Conflict handling |
-|-------|------------|-------------------|
-| Leader-follower | Single leader orders writes | None on single leader |
-| Multi-leader | Leaders accept local writes | Conflict resolution needed |
-| Leaderless | Quorum writes | Version vectors / LWW |
+| Parameter | Typical value | Meaning |
+|-----------|---------------|---------|
+| RF | 3 | Tolerate 1 node loss with quorum |
+| `min.insync.replicas` | 2 | Kafka: min replicas for `acks=all` |
+| Sync replicas | All or quorum | Durability vs latency trade-off |
+| Read preference | `nearest`, `primary` | MongoDB, Cassandra drivers |
+
+**Production patterns:**
+
+- **3 AZ deployment** — one replica per availability zone; survive full AZ loss with quorum.
+- **Read replicas for analytics** — async follower serves reporting; lag monitored; never used for money reads without policy.
+- **Chain replication** — leader → follower1 → follower2 reduces leader fan-out (some systems).
+- **Geo-replication** — async cross-region for DR; sync only if product requires global strong consistency (Spanner).
+- **Anti-entropy** — Cassandra `nodetool repair` fixes silent divergence between replicas.
+
+**Replication vs backup:**
+
+| | Replication | Backup |
+|---|-------------|--------|
+| Purpose | HA, read scale | Point-in-time recovery, human error |
+| Lag | Seconds or less | Hours (snapshot schedule) |
+| Corruption | Replicates bad writes | Snapshot may predate corruption |
 
 ### When to use
 
-Always for production data you cannot afford to lose. RF=3 is the common default for HA.
+Always for production durable data. Defaults:
+
+- **RF=3** for HA databases and Kafka topics
+- **Leader-follower** when strong per-partition ordering required
+- **Leaderless + quorum** when AP availability during partition matters (Dynamo family)
+- **Multi-leader** only with explicit conflict resolution (geo writes)
 
 ### Trade-offs / Pitfalls
 
-- Sync replication increases latency; async risks data loss on failure.
-- More replicas = higher storage and write amplification costs.
+- **Sync replication** — latency = slowest replica RTT; cross-region sync hurts write p99.
+- **Async replication** — promoted follower may **lag**; lost writes on failover if not monitored.
+- **Stale reads** — reading followers without `read-your-writes` confuses users and breaks invariants.
+- **Write amplification** — RF=3 means 3x disk writes; RF=5 rare except extreme durability needs.
+- **Split brain** — two primaries without quorum fencing (5.20); always require majority for leadership.
 
 ### References
 
-*(No curated references for this sub-topic in `_topics.json`.)*
+- Designing Data-Intensive Applications, Ch. 5 (Replication)
+- Dynamo paper (leaderless replication)
 
 ---
 
@@ -736,8 +975,94 @@ sequenceDiagram
 
 ### Key details
 
-- **Sync replication:** no data loss if leader dies after ACK; higher latency.
-- **Async replication:** faster; promoted follower may lag (lost writes).
+#### Synchronous vs asynchronous replication
+
+| Mode | Ack when | Durability (RPO) | Latency | Partition behavior |
+|------|----------|------------------|---------|-------------------|
+| **Sync** | Quorum/all followers persist | **0** lost writes on leader death after ack | Highest (WAN RTT per replica) | CP: minority partition cannot commit |
+| **Async** | Leader local write done | **> 0** — promoted replica may lack last writes | Lowest | AP: leader accepts writes; followers catch up |
+| **Semi-sync** | At least 1 follower ack | Bounded loss (1 replica) | Middle | Common MySQL compromise |
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant L as Leader
+    participant F as Follower
+    Note over C,F: Synchronous
+    C->>L: WRITE
+    L->>F: replicate + fsync
+    F-->>L: ACK
+    L-->>C: OK
+
+    Note over C,F: Asynchronous
+    C->>L: WRITE
+    L-->>C: OK
+    L->>F: replicate (background)
+```
+
+**PostgreSQL examples:**
+
+```text
+synchronous_commit = on          → wait for sync standby (strong)
+synchronous_commit = remote_write → wait for standby receive
+synchronous_commit = off         → async (faster, riskier)
+```
+
+**MySQL:** `innodb_flush_log_at_trx_sync` + semi-sync plugin waits for one replica.
+
+**Read consistency:**
+
+| Read from | Consistency |
+|-----------|-------------|
+| Leader / primary | Latest committed (strong) |
+| Async follower | **Stale** — replication lag seconds |
+| Sync quorum follower | Strong if read-after-quorum |
+
+Use `read-your-writes` session routing or `WAIT FOR REPLICA` after write when reading followers.
+
+#### Failover
+
+When the leader dies, a follower is **promoted** to accept writes.
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant L as Old Leader
+    participant F1 as Follower 1
+    participant F2 as Follower 2
+    participant M as Monitor
+    L--xM: heartbeat lost
+    M->>F1: promote (most caught-up)
+    F1->>F1: accept writes as new leader
+    M->>C: update connection / VIP / DNS
+    C->>F1: WRITE resumes
+```
+
+| Step | Action |
+|------|--------|
+| 1. **Detect** | Missed heartbeats (3× interval), `/health` fails, Raft election timeout |
+| 2. **Elect** | Raft majority vote; PostgreSQL `pg_promote()`; MongoDB replica set election |
+| 3. **Fence** | STONITH old leader — revoke VIP, isolate network — prevent split-brain |
+| 4. **Catch-up** | New leader at highest LSN; other replicas resync |
+| 5. **Redirect** | VIP, DNS TTL, driver `primary` endpoint, K8s Service update |
+
+**RPO / RTO by replication mode:**
+
+| Mode | RPO on failover | Typical RTO |
+|------|-----------------|-------------|
+| Sync replication | 0 | Seconds (automated) |
+| Async replication | Seconds–minutes of writes | Seconds–minutes |
+| Manual promotion | Depends on lag at death | Minutes (human) |
+
+**Split-brain prevention:** require **quorum** for promotion (`majority of N` replicas). Two-node clusters need **witness** or **arbiter** (MongoDB) in third AZ.
+
+**Failover pitfalls:**
+
+- Promoting async replica → **lost writes** not yet replicated
+- Clients cache old primary IP → connection pool refresh needed
+- Long failover → brief write unavailability (CP) or dual-write risk (misconfigured AP)
+- **Logical replication** lag in PostgreSQL — verify `pg_last_wal_replay_lsn` before promote
+
 - Follower reads may be stale unless read-from-leader or quorum read.
 
 ### When to use
@@ -816,56 +1141,114 @@ flowchart LR
 
 ### What is it?
 
-A **quorum read** fetches data from multiple replicas and returns the value with the highest version once `R` nodes respond, where `R` is the read quorum size.
+A **quorum read** contacts multiple replicas and returns a value only after **R** of **N** replicas respond, selecting the **highest version** among responses. Combined with write quorums (5.15), quorums provide **tunable consistency** without a single leader for reads.
+
+Foundation of **Dynamo-style** (AP) systems: Cassandra, Riak, DynamoDB (with `ConsistentRead`), Voldemort.
 
 ### Why it matters
 
-Tunable consistency without single-leader reads - foundation of Dynamo-style availability during partial failures.
+Leaderless architectures must answer: *"Which replica has the latest value?"* Quorum reads:
+
+- Survive replica unavailability (read from any R alive nodes)
+- Detect stale replicas via version metadata
+- Enable **read repair** — fix divergent replicas on the read path
+- Tune latency vs freshness per query (`ONE` vs `QUORUM` vs `ALL`)
 
 ### How it works
 
-1. Client (or coordinator) sends read to all N replicas.
-2. Wait for R responses with version metadata.
-3. Return newest version by version clock or timestamp.
-4. Optionally trigger read repair if replicas disagree.
+**Parameters:**
 
-### Diagram
+- **N** — replication factor (total replicas)
+- **R** — read quorum size (replicas contacted for read)
+- **W** — write quorum size (see 5.15)
 
 ```mermaid
 sequenceDiagram
     participant C as Client
+    participant Co as Coordinator
     participant N1 as Replica 1
     participant N2 as Replica 2
     participant N3 as Replica 3
-    C->>N1: READ
-    C->>N2: READ
-    C->>N3: READ
-    N1-->>C: v3
-    N2-->>C: v3
-    Note over C: R=2 met, return v3
+    C->>Co: READ key=K
+    Co->>N1: read K
+    Co->>N2: read K
+    Co->>N3: read K
+    N1-->>Co: value=v3, version=3
+    N2-->>Co: value=v3, version=3
+    N3-->>Co: timeout
+    Note over Co: R=2 met; max version=3
+    Co-->>C: return v3
+    Co->>N3: async read repair v3
 ```
+
+**Step-by-step:**
+
+1. Coordinator (often any node, or token owner) receives read.
+2. Sends parallel read to **preferred replicas** (often local + replicas in same DC).
+3. Waits for **R** responses with `(value, version)` tuples.
+4. Returns value with **highest version** (version vector or timestamp).
+5. If replicas disagree and `R + W > N`, returned value is guaranteed to include latest quorum write.
+6. **Read repair** — async write of newest value to stale replicas.
+
+**Consistency levels (Cassandra example):**
+
+| Level | R | Behavior |
+|-------|---|----------|
+| `ONE` | 1 | Fastest; may return stale data |
+| `LOCAL_ONE` | 1 in local DC | Low latency multi-DC |
+| `QUORUM` | majority of N | Balanced |
+| `LOCAL_QUORUM` | majority in local DC | Avoid cross-DC on every read |
+| `ALL` | N | Slowest; fails if any replica down |
 
 ### Key details
 
-- With `R + W > N`, quorum read sees latest quorum write (strong event).
-- Smaller R -> faster, possibly stale reads.
-- Read repair fixes divergent replicas on read path.
+**The overlap guarantee (`R + W > N`):**
+
+For N=3, W=2, R=2: any read quorum of 2 nodes **must overlap** any write quorum of 2 nodes by at least one replica — that replica holds the latest write.
+
+```
+N=3 replicas: {A, B, C}
+Write quorum W=2: {A,B} or {A,C} or {B,C}
+Read quorum R=2: must share at least 1 node with any write set
+→ reader sees latest committed quorum write
+```
+
+| Config | Consistency | Availability on partition |
+|--------|-------------|---------------------------|
+| R=1, W=1 | Eventual | High |
+| R=2, W=2, N=3 | Strong quorum | Minority partition cannot R or W |
+| R=3, W=3 | Linearizable-ish | Low — any down node blocks |
+
+**Sloppy quorum / hinted handoff:**
+
+When preferred replicas are down, coordinator may write/read from **fallback** nodes outside the natural replica set, returning hints for when primary returns. Improves availability but **weakens** strict quorum guarantees — document when enabled.
+
+**Production patterns:**
+
+- **LOCAL_QUORUM** in multi-DC Cassandra — avoid cross-WAN on every read.
+- **DynamoDB `ConsistentRead=true`** — reads from leader replica; eventually consistent is default (cheaper).
+- **Monitor read repair rate** — high repair rate signals replication lag or node issues.
+- **Speculative retry** — if R responses slow, issue extra read to different replica (latency vs cost).
 
 ### When to use
 
-- Leaderless systems (Cassandra, Riak, DynamoDB tunable consistency).
-- When you need read availability during node outages.
-- Tunable R per query (ONE vs QUORUM vs ALL).
+- Leaderless systems (Cassandra, Scylla, Riak).
+- Need read availability when some replicas are down.
+- Tunable consistency per query — analytics `ONE`, billing `QUORUM`.
+- Pair with idempotent writes and version columns for conflict detection.
 
 ### Trade-offs / Pitfalls
 
-- `R=1` reads may return stale or conflicting data.
-- Quorum reads cost more latency than single-replica reads.
-- Sloppy quorums (fallback to other nodes) trade consistency for availability.
+- **`R=1` reads** — fast but may return **stale** or conflicting siblings; never for financial balances without application merge.
+- **Latency cost** — QUORUM waits for slowest of R replicas; tail latency matters.
+- **`R + W ≤ N`** — no overlap guarantee; you have **eventual consistency** only — know your math.
+- **Sloppy quorum** — availability win that breaks strict consistency claims in minority partitions.
+- **Not linearizable by default** — need `R=W=majority` + careful conflict handling; compare to Raft leader reads.
 
 ### References
 
-*(No curated references for this sub-topic in `_topics.json`.)*
+- Dynamo paper (quorum replication)
+- Cassandra consistency level documentation
 
 ---
 
@@ -875,57 +1258,118 @@ sequenceDiagram
 
 ### What is it?
 
-A **quorum write** acknowledges a write after `W` of `N` replicas persist it. Combined with read quorums, it defines the consistency/latency envelope.
+A **quorum write** acknowledges a write only after **W** of **N** replicas persist it. Together with read quorum **R**, the pair `(W, R, N)` defines the **consistency/latency/availability envelope** — the core of **tunable consistency** in Dynamo-family databases.
+
+**The fundamental rule:** when `R + W > N`, read and write quorums **overlap**, so a quorum read is guaranteed to see the latest quorum write (for a single register, absent concurrent writes).
 
 ### Why it matters
 
-The write side of tunable quorum consistency - lets operators choose between durability guarantees and write latency.
+Leaderless systems have no single authority to serialize writes. Quorum writes let operators **dial consistency**:
+
+- `W=1` — optimize write latency; risk loss if that node dies before async replicate
+- `W=QUORUM` — durable commit with minority node failure tolerance
+- `W=N` — all replicas must ACK; strongest durability; fails on any replica outage
+
+Interview must-know: **write the math**, explain overlap, and state when concurrent writes need version resolution.
 
 ### How it works
-
-1. Coordinator receives write with version.
-2. Sends write to all N replicas (or preferred nodes).
-3. ACK client when W replicas confirm.
-4. Remaining replicas catch up asynchronously (hinted handoff).
-
-### Diagram
 
 ```mermaid
 sequenceDiagram
     participant C as Client
     participant Co as Coordinator
-    participant R1 as Replica
-    participant R2 as Replica
-    C->>Co: WRITE v4
-    Co->>R1: replicate
-    Co->>R2: replicate
-    R1-->>Co: ACK
-    R2-->>Co: ACK
-    Co-->>C: OK (W=2)
+    participant A as Replica A
+    participant B as Replica B
+    participant D as Replica C
+    C->>Co: WRITE key=K, value=v4, version=4
+    Co->>A: replicate v4
+    Co->>B: replicate v4
+    Co->>D: replicate v4
+    A-->>Co: ACK
+    B-->>Co: ACK
+    Note over Co: W=2 met → success
+    Co-->>C: OK
+    D-->>Co: ACK (async catch-up)
 ```
+
+**Write path:**
+
+1. Coordinator receives write with new version (timestamp, UUID, or counter).
+2. Computes replica set from partition placement (token ring).
+3. Sends write to all N replicas (or preferred set).
+4. Waits for **W** acknowledgments.
+5. Returns success to client; remaining replicas catch up via **hinted handoff** or **read repair**.
+6. Concurrent writes to same key with `W < N` may create **siblings** — resolved on read via LWW or application logic.
 
 ### Key details
 
-| Config | Effect |
-|--------|--------|
-| W=N | Slowest, strongest durability |
-| W=1 | Fastest, risk if that node dies before replication |
-| W + R > N | Overlap guarantees read sees latest write |
+**W + R > N math (N=3):**
+
+| W | R | W+R | Overlap? | Typical use |
+|---|---|-----|----------|-------------|
+| 1 | 1 | 2 | No | Fast writes + fast reads; eventual |
+| 2 | 2 | 4 | **Yes** | Balanced quorum (most common) |
+| 3 | 1 | 4 | Yes | Strong writes, fast stale reads |
+| 1 | 3 | 4 | Yes | Fast writes, strong reads |
+| 3 | 3 | 6 | Yes | Strongest; any down node blocks |
+
+**Visual overlap (N=3, W=2, R=2):**
+
+```text
+Write to {A,B}:     ●●○  or  ●○●  or  ○●●
+Read from {B,C}:    ○●●  or  ●●○  etc.
+Any write {A,B} and read {B,C} share at least B → latest write visible
+```
+
+**Tunable consistency presets (Cassandra):**
+
+| Use case | CL write | CL read | Notes |
+|----------|----------|---------|-------|
+| Analytics counter | `ONE` | `ONE` | Loss acceptable |
+| User profile | `QUORUM` | `QUORUM` | Default balanced |
+| Financial ledger | `ALL` | `ALL` | Or use LWT / external lock |
+| Multi-DC | `LOCAL_QUORUM` | `LOCAL_QUORUM` | Per-DC quorum |
+
+**Concurrent write problem:**
+
+When two clients write with `W=2` concurrently:
+
+```text
+Client 1: write v1 to {A,B}  ✓
+Client 2: write v2 to {B,C}  ✓
+Both succeed! No single latest value without version merge on read.
+```
+
+Mitigations: **lightweight transactions (LWT / Paxos)** in Cassandra, **conditional writes** in DynamoDB, or design for commutative updates.
+
+**Production patterns:**
+
+- **LOCAL_QUORUM + LOCAL_QUORUM** — standard multi-DC Cassandra production default.
+- **`min.insync.replicas=2` + `acks=all`** — Kafka's quorum write analog.
+- **Hinted handoff** — write to temporary node when preferred replica down; ship hint when it returns.
+- **Monitor `W` latency p99** — slow replica dominates quorum write tail.
+- **Avoid `W=1` for money** — node death between ACK and replicate = silent loss.
 
 ### When to use
 
 - Dynamo-family databases with per-query consistency levels.
-- When network partitions require continuing writes with minority partitions (carefully).
+- Need writes to continue when minority replicas unavailable (AP during partition).
+- Willing to handle sibling conflicts for availability.
+- Pair with `R + W > N` when reads must see latest quorum write.
 
 ### Trade-offs / Pitfalls
 
-- `W=1` + node death before async replicate -> lost write.
-- Concurrent writes to same key with `W < N` need version resolution on read.
-- Quorum math must be understood before claiming linearizability.
+- **`W=1`** — fastest write; **data loss** if acknowledging node fails before background replicate.
+- **`W + R ≤ N`** — no overlap; claiming "strong consistency" is wrong.
+- **Concurrent writes** — quorum does not serialize writers; need LWT, locks, or CRDTs.
+- **Sloppy quorum** — writes to non-replica nodes during outage weaken guarantees.
+- **Not a distributed transaction** — quorum is per-key; multi-key atomicity needs separate mechanism (5.16).
+- **Latency** — `W=ALL` blocked by slowest or dead replica.
 
 ### References
 
-*(No curated references for this sub-topic in `_topics.json`.)*
+- Dynamo paper (W, R, N tunable consistency)
+- Cassandra consistency levels and lightweight transactions
 
 ---
 
@@ -993,26 +1437,60 @@ flowchart TB
 
 ### What is it?
 
-**Two-phase commit (2PC)** is a distributed atomic commit protocol. A **coordinator** runs a **prepare** phase (all vote yes/no) then a **commit** or **abort** phase.
+**Two-phase commit (2PC)** is a distributed **atomic commit protocol**. A **coordinator** (transaction manager) runs:
+
+1. **Phase 1 — Prepare:** ask all participants to vote; each locks resources and writes undo log
+2. **Phase 2 — Commit or Abort:** if all vote YES, send COMMIT; otherwise ABORT
+
+Goal: all participants commit or all abort — **atomicity** across nodes. Used in **XA transactions** (JDBC across two databases), some distributed SQL engines, and as the conceptual baseline for why modern systems prefer sagas and consensus.
 
 ### Why it matters
 
-The textbook answer for atomic cross-node commit - and a cautionary tale for blocking and availability trade-offs in interviews.
+The textbook answer for cross-node atomicity — and a **cautionary tale** for blocking, coordinator failure, and partition intolerance. Interviewers expect you to draw both phases, explain **in-doubt** state, and contrast with **3PC** (5.18), **Saga** (6.x), and **Raft-backed** transactions (CockroachDB, Spanner).
 
 ### How it works
 
-**Phase 1  -  Prepare:**
+```mermaid
+sequenceDiagram
+    participant TC as Coordinator
+    participant P1 as Participant 1 (Shard A)
+    participant P2 as Participant 2 (Shard B)
+    TC->>TC: write decision log (START)
+    TC->>P1: PREPARE(txn_id)
+    TC->>P2: PREPARE(txn_id)
+    P1->>P1: validate, lock rows, write undo log
+    P2->>P2: validate, lock rows, write undo log
+    P1-->>TC: VOTE YES
+    P2-->>TC: VOTE YES
+    TC->>TC: log COMMIT decision
+    TC->>P1: COMMIT(txn_id)
+    TC->>P2: COMMIT(txn_id)
+    P1->>P1: apply, release locks
+    P2->>P2: apply, release locks
+    P1-->>TC: ACK
+    P2-->>TC: ACK
+```
 
-1. Coordinator writes decision log, sends `PREPARE` to participants.
-2. Each participant validates, locks resources, writes undo log, votes `YES` or `NO`.
+**Phase 1 — Prepare (voting):**
 
-**Phase 2  -  Commit/Abort:**
+| Step | Coordinator | Participant |
+|------|-------------|-------------|
+| 1 | Persist `txn_id` in **transaction log** | — |
+| 2 | Send `PREPARE(txn_id)` to all | Receive prepare |
+| 3 | — | Validate constraints, acquire **locks** |
+| 4 | — | Write **undo log** (for abort rollback) |
+| 5 | — | Vote `YES` or `NO` (vote NO on any failure) |
+| 6 | Collect votes | Hold locks until COMMIT/ABORT |
 
-3. If all `YES`, coordinator sends `COMMIT`; else `ABORT`.
-4. Participants apply decision, release locks, ACK.
-5. Coordinator marks transaction complete.
+**Phase 2 — Commit/Abort (decision):**
 
-### Diagram
+| Outcome | Coordinator action | Participant action |
+|---------|-------------------|-------------------|
+| All YES | Log COMMIT; send `COMMIT` to all | Apply changes; release locks |
+| Any NO | Log ABORT; send `ABORT` to all | Rollback via undo log; release locks |
+| Coordinator crash after prepare | — | **Blocked** in prepared state |
+
+**Abort path:**
 
 ```mermaid
 sequenceDiagram
@@ -1022,32 +1500,86 @@ sequenceDiagram
     TC->>P1: PREPARE
     TC->>P2: PREPARE
     P1-->>TC: YES
-    P2-->>TC: YES
-    TC->>P1: COMMIT
-    TC->>P2: COMMIT
+    P2-->>TC: NO (constraint violation)
+    TC->>TC: log ABORT
+    TC->>P1: ABORT
+    TC->>P2: ABORT
+    P1->>P1: rollback undo log
 ```
 
 ### Key details
 
-- **Blocking:** if coordinator dies after prepare, participants hold locks until recovery.
-- **In-doubt:** participants unsure commit vs abort until coordinator log replayed.
-- XA transactions in databases use 2PC across resource managers.
+**Coordinator failure scenarios:**
+
+| Failure point | Participant state | Recovery |
+|---------------|-------------------|----------|
+| Before prepare sent | No locks | Safe to abort locally |
+| After some YES votes | Prepared, locks held | **In-doubt** until coordinator recovers |
+| After COMMIT logged | Must commit | Replay coordinator log |
+| Coordinator dead post-prepare | **Blocked indefinitely** | Manual intervention or timeout heuristic (unsafe) |
+
+**The blocking problem:**
+
+If coordinator crashes **after** participants voted YES but **before** sending COMMIT/ABORT:
+
+- Participants hold **locks** and wait forever (or until coordinator recovers)
+- Other transactions block on locked rows
+- This is why 2PC is **not partition tolerant** and avoided on hot paths
+
+**In-doubt transactions:**
+
+```text
+Participant log: PREPARED txn_42 — outcome unknown
+Cannot unilaterally COMMIT (coordinator may have aborted)
+Cannot unilaterally ABORT (coordinator may have committed)
+→ must contact coordinator or heuristic rollback (dangerous)
+```
+
+**XA / JDBC example:**
+
+```text
+UserService DB (RM1) + Inventory DB (RM2) under JTA coordinator
+BEGIN → prepare both → commit both
+Any RM timeout → entire XA transaction rolls back
+```
+
+**Production patterns (where 2PC still appears):**
+
+- **Infrequent admin operations** — cross-database migrations with human oversight
+- **XA across two RDBMS** — legacy enterprise integration (declining in microservices)
+- **Internal control planes** — coordinator is HA with durable log (ZooKeeper transaction, not user-facing)
+- **NOT microservice hot paths** — use **outbox** (6.20) or **saga** instead
+
+**2PC vs alternatives:**
+
+| Protocol | Atomicity | Blocking | Partition tolerant | Throughput |
+|----------|-----------|----------|-------------------|------------|
+| 2PC | Yes | **Yes** | No | Low |
+| 3PC | Yes | Reduced* | No* | Lower |
+| Saga | Compensating | No | Yes | High |
+| Raft + per-shard txn | Yes | No* | Majority | Medium |
+| Outbox | Eventual | No | Yes | High |
+
+*3PC assumes bounded delay; still fails under async network partitions.
 
 ### When to use
 
-- Infrequent cross-database operations with strong atomicity needs.
-- Internal control planes with reliable coordinator (not user-facing hot path).
-- When 3PC or Paxos-backed transaction layer is unavailable.
+- Rare cross-database operations with **strong atomicity** and low frequency.
+- HA coordinator with **durable transaction log** and recovery procedures.
+- Internal tooling, not customer-facing checkout at 10k TPS.
 
 ### Trade-offs / Pitfalls
 
-- Coordinator SPOF - must be HA with durable log.
-- Not partition tolerant: minority partition cannot commit.
-- Prefer saga/outbox for high-throughput microservices.
+- **Coordinator SPOF** — must replicate coordinator log (Spanner uses Paxos for this layer).
+- **Locks held through WAN** — prepare phase latency = sum of participant RTTs.
+- **Minority partition cannot commit** — CP behavior during network split.
+- **Heuristic rollback** — forcing abort on in-doubt txn risks inconsistency if coordinator actually committed.
+- **Prefer saga/outbox** for microservices — 2PC couples availability of all participants.
 
 ### References
 
-*(No curated references for this sub-topic in `_topics.json`.)*
+- Gray & Reuter: Transaction Processing (2PC specification)
+- Designing Data-Intensive Applications, Ch. 9 (Distributed transactions)
 
 ---
 
@@ -1342,54 +1874,171 @@ sequenceDiagram
 
 ### What is it?
 
-**Raft** is a consensus algorithm designed for understandability: leader election, log replication, and safety rules structured in clear phases. Used in etcd, Consul, CockroachDB, TiKV, and many cloud control planes.
+**Raft** is a **consensus algorithm** designed for understandability. It elects a **leader** per **term**, replicates an **ordered log** to followers, and commits entries once stored on a **majority**. Used in **etcd**, **Consul**, **CockroachDB**, **TiKV**, **NATS JetStream**, and countless control planes.
+
+Raft solves the same problem as Paxos (5.22) — agreed ordered log despite crashes — with a clearer structure: **leader election**, **log replication**, **safety rules**.
 
 ### Why it matters
 
-Default teaching and implementation choice for replicated logs - balances formal guarantees with engineer-friendly mental model.
+Default teaching and implementation choice for **strongly consistent replicated logs**. Understanding Raft explains:
+
+- How Kubernetes stores cluster state (etcd)
+- How distributed SQL shards agree on writes (CockroachDB)
+- Why leader failure causes brief unavailability
+- What **term** numbers fence stale leaders
 
 ### How it works
 
-1. **Follower** times out -> becomes **candidate**, requests votes.
-2. Majority votes -> **leader** elected for term T.
-3. Client writes go to leader; leader appends entry, replicates to followers.
-4. Entry **committed** once on majority; leader applies and responds.
-5. New election if leader fails (higher term disrupts stale leaders).
-
-### Diagram
+**Node states:**
 
 ```mermaid
-flowchart TB
-    F[Follower] -->|timeout| C[Candidate]
-    C -->|majority votes| L[Leader]
-    L -->|heartbeat| F
-    L -->|replicate log| F
+stateDiagram-v2
+    [*] --> Follower
+    Follower --> Candidate: election timeout
+    Candidate --> Leader: majority votes
+    Candidate --> Follower: discover higher term
+    Leader --> Follower: discover higher term
+    Leader --> Follower: new leader elected
 ```
+
+**1. Leader election**
+
+1. Follower misses **heartbeat** from leader → election timeout fires (randomized 150–300ms typical).
+2. Increments **term** T, becomes **candidate**, votes for self.
+3. Sends `RequestVote(term=T)` to all peers.
+4. Each node votes **at most once per term** for first valid candidate.
+5. **Majority votes** → becomes **leader**; sends heartbeats to suppress elections.
+6. **Split vote** (no majority) → new random timeout; retry term T+1.
+
+```mermaid
+sequenceDiagram
+    participant F1 as Follower 1
+    participant F2 as Follower 2
+    participant F3 as Follower 3
+    Note over F1,F3: Leader died
+    F1->>F1: timeout → Candidate term=5
+    F1->>F2: RequestVote term=5
+    F1->>F3: RequestVote term=5
+    F2-->>F1: Grant vote
+    F3-->>F1: Grant vote
+    Note over F1: Majority → Leader term=5
+    F1->>F2: AppendEntries heartbeat
+    F1->>F3: AppendEntries heartbeat
+```
+
+**2. Log replication**
+
+1. Client sends command to **leader only**.
+2. Leader appends entry `(term, index, command)` to local log.
+3. Leader sends `AppendEntries` RPC to followers with **prevLogIndex/prevLogTerm** for consistency check.
+4. Follower rejects if log mismatch; leader **decrements nextIndex** and retries (backtrack).
+5. Follower appends matching entries, responds success.
+6. Entry **committed** when replicated on **majority** (not merely sent).
+7. Leader applies committed entries to **state machine**, responds to client.
+8. Followers apply entries in order as they become committed.
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant L as Leader
+    participant F1 as Follower 1
+    participant F2 as Follower 2
+    C->>L: SET x=1
+    L->>L: append index=10 term=3
+    L->>F1: AppendEntries index=10
+    L->>F2: AppendEntries index=10
+    F1-->>L: success
+    F2-->>L: success
+    Note over L: majority=2/3 → commit index 10
+    L->>L: apply to state machine
+    L-->>C: OK
+```
+
+**3. Terms — logical clocks for leadership**
+
+| Concept | Purpose |
+|---------|---------|
+| **Term** | Monotonically increasing epoch number |
+| **Higher term** | Always supersedes lower; stale leader ignored |
+| **Vote per term** | At most one vote prevents split leadership |
+| **Log entry term** | Identifies which leader created entry |
+
+**Stale leader scenario:**
+
+```text
+Leader L (term 3) partitioned from majority
+Majority elects L2 (term 4)
+L recovers, sends AppendEntries term=3
+Followers reject: "my term is 4" → L steps down to follower
+```
+
+**4. Commit rule (majority)**
+
+Entry at index `i` is **committed** when:
+
+- Stored on replicas in **majority**, AND
+- Entry's term equals **current leader term** (Raft paper safety detail)
+
+Leader then applies and notifies followers via subsequent `AppendEntries`.
+
+**Cluster size math:**
+
+| Nodes N | Majority | Tolerates failures |
+|---------|----------|-------------------|
+| 3 | 2 | 1 |
+| 5 | 3 | 2 |
+| 7 | 4 | 3 |
+
+Always use **odd** counts or add **witness** for tie-breaking.
 
 ### Key details
 
 | Rule | Purpose |
 |------|---------|
-| Term monotonic | Prevents stale leaders serving writes |
-| Log matching | Same index+term -> same prefix |
-| Commit majority | Safety without all nodes ACK |
-| Snapshot + compaction | Bound log growth |
+| **Election safety** | At most one leader per term |
+| **Leader append-only** | Leader never overwrites own log |
+| **Log matching** | Same index+term → identical prefix |
+| **Leader completeness** | Committed entries present in all future leader logs |
+| **State machine safety** | Same apply order on all nodes |
+
+**Production patterns:**
+
+- **etcd** — 3 or 5 nodes for K8s control plane; never even count without witness.
+- **CockroachDB** — **Range** = Raft group per shard; many Raft groups per cluster.
+- **Joint consensus** — membership changes use transitional config to avoid two majorities (node add/remove safely).
+- **Snapshots** — compact log; new follower installs snapshot instead of replaying full history.
+- **Pre-vote** (etcd enhancement) — prevent disrupted follower from spuriously incrementing term.
+- **Read index / lease read** — leader serves linearizable reads without log entry (with caveats).
+
+**Raft vs quorum (Dynamo):**
+
+| | Raft | Quorum (W/R/N) |
+|---|------|----------------|
+| Ordering | Total order via leader | Per-key; concurrent writers |
+| Consistency | Strong (linearizable writes) | Tunable |
+| Write path | Leader only | Any coordinator |
+| Failover | Election + brief unavailability | Continues with quorum |
 
 ### When to use
 
-- New strongly consistent coordination service.
-- Per-shard replication in distributed SQL (CockroachDB model).
-- Replacing ZooKeeper when simpler ops model desired (etcd).
+- New **coordination service** (config, locks, service discovery).
+- **Per-shard replication** in distributed SQL (CockroachDB, TiDB/TiKV).
+- Replacing ZooKeeper when simpler ops model desired.
+- Any system needing **one authoritative ordered history** per partition.
 
 ### Trade-offs / Pitfalls
 
-- Leader-centric writes don't scale write throughput - shard instead.
-- Cross-region Raft clusters pay WAN latency on every commit.
-- Joint consensus required for membership changes - plan node adds carefully.
+- **Leader write bottleneck** — scale writes by sharding into many Raft groups.
+- **WAN latency** — cross-region Raft pays RTT on every commit; keep majority in one region.
+- **Membership changes** — use joint consensus; naive add/remove risks two leaders.
+- **Election storms** — tune `election_timeout`, use pre-vote; flaky network causes leadership flapping.
+- **Even node counts** — 4 nodes tolerates only 1 failure (majority=3), same as 3 nodes but more cost.
+- **Not for bulk data** — Raft coordinates metadata; data plane uses object storage or SSTables.
 
 ### References
 
-*(No curated references for this sub-topic in `_topics.json`.)*
+- Raft paper: "In Search of an Understandable Consensus Algorithm" (Ongaro & Ousterhout)
+- etcd Raft implementation docs; CockroachDB architecture
 
 ---
 

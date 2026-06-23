@@ -214,47 +214,161 @@ flowchart LR
 
 ### What is it?
 
-**B-trees** and **B+ trees** are balanced tree structures storing sorted keys in pages, optimized for **disk I/O** (wide nodes, shallow height). B+ trees keep all values in leaf nodes linked for range scans; internal nodes only route. Default index structure in PostgreSQL, MySQL InnoDB, SQLite.
+**B-trees** and **B+ trees** are **balanced search trees** optimized for **block-oriented storage** (disk, SSD pages). Instead of binary tree nodes with 2 children, each node holds **hundreds of keys** (high **fanout**), keeping tree height very shallow—typically 3–4 levels for billions of rows.
+
+| Variant | Internal nodes | Leaf nodes |
+|---------|----------------|------------|
+| **B-tree** | Keys + pointers to children **and** optionally row data | May hold data |
+| **B+ tree** | Keys + pointers only (routing) | **All** data/pointers; leaves **linked** for range scans |
+
+**PostgreSQL, MySQL InnoDB, SQLite** use B+ tree (or close variants) for primary and secondary indexes. One **page** (often 8–16 KB) = one node.
+
+**Why "B"?** Originally "Bayer/Balanced"; think **"bushy"** (wide nodes, short trees).
 
 ### Why it matters
 
-Most OLTP index lookups and range queries go through B+ trees. Understanding page splits, fill factor, and seek vs. scan explains index performance limits.
+Almost every OLTP **index seek** and **range scan** is a B+ tree walk. Performance is measured in **page reads**, not pointer hops:
+
+```text
+1 billion rows, fanout ~500:
+  height ≈ log₅₀₀(10⁹) ≈ 3.4 → 4 page reads worst case for point lookup
+```
+
+Understanding **splits**, **fill factor**, and **clustered vs secondary** indexes explains:
+
+- Why `WHERE id = 123` is microseconds but `WHERE unindexed_col = x` scans millions of pages
+- Why random UUID primary keys cause **write amplification** (constant page splits)
+- Why `ORDER BY indexed_col LIMIT 10` is cheap (leaf chain scan, no sort)
+
+**Interview point:** B+ tree is optimized for **disk I/O**, not CPU. Minimize pages touched.
 
 ### How it works
 
-1. Root-to-leaf search: O(log n) page reads.
-2. Leaf pages contain keys + row pointers (or row data if clustered).
-3. Insert: find leaf; if full, **split** page and propagate key up.
-4. Delete may **merge** underfilled pages.
-5. Range query: scan linked leaf pages sequentially.
+**Point lookup (primary key):**
+
+1. Start at **root page**; binary search within page for key range → child pointer.
+2. Repeat at internal levels until **leaf page**.
+3. Leaf contains key + row (clustered) or key + PK pointer (secondary).
+4. Total I/O ≈ **tree height** page reads (often cached in buffer pool).
+
+**Range scan (`WHERE age BETWEEN 20 AND 30`):**
+
+1. Seek to first key ≥ 20 in leaf.
+2. Walk **leaf linked list** sequentially until key > 30.
+3. No backtracking up the tree—leaves are a sorted linked chain.
+
+**Insert:**
+
+1. Find target leaf.
+2. If leaf has space → insert in sorted order.
+3. If leaf **full** → **split** into two leaves, promote **middle key** to parent.
+4. If parent full → split propagates upward; rare **root split** increases height by 1.
 
 ```mermaid
 flowchart TB
-    Root[Root internal] --> I1[Internal]
-    Root --> I2[Internal]
-    I1 --> L1[Leaf linked list]
-    L1 --> L2[Leaf]
+    Root["Root [10 | 50]"]
+    I1["Internal [10 | 20 | 30]"]
+    I2["Internal [50 | 70]"]
+    L1["Leaf 1–9"]
+    L2["Leaf 10–19"]
+    L3["Leaf 20–29"]
+    L4["Leaf 50–69"]
+    Root --> I1
+    Root --> I2
+    I1 --> L1
+    I1 --> L2
+    I1 --> L3
+    I2 --> L4
+    L1 --> L2
+    L2 --> L3
+    L3 -.-> L4
+```
+
+**Split worked example:**
+
+```text
+Leaf full: [10, 15, 20, 25, 30]  (max 4 keys — simplified)
+
+Split →
+  Left leaf:  [10, 15]
+  Right leaf: [25, 30]
+  Parent promotes separator: 20
+
+New insert 22 goes to right leaf.
+```
+
+**Delete:** Remove key; if leaf **underflows** (< 50% fill typically), **merge** with sibling or **borrow** from sibling; may shrink height if root empties.
+
+**Pseudo-code (search):**
+
+```text
+function search(node, key):
+    while node is not leaf:
+        child = find_child_pointer(node.keys, key)
+        node = load_page(child)
+    return binary_search(node.leaf_keys, key)
 ```
 
 ### Key details
 
-- Typical fanout 100 - 500 keys per page -> 4 levels for billions of rows
-- **Clustered B+ tree:** leaf = row data (InnoDB PK)
-- **Secondary index:** leaf stores PK values for lookup
-- Random inserts cause page splits (write amplification)
+**Pages and fanout**
+
+| Parameter | Typical value | Effect |
+|-----------|---------------|--------|
+| Page size | 8 KB (PostgreSQL), 16 KB (InnoDB) | Larger → more keys/node, shallower tree |
+| Fanout | 100–500 keys/internal node | Higher → fewer I/Os per lookup |
+| Fill factor | ~90% after bulk load; ~50% min on delete | Low fill → wasted space, more pages |
+
+**Clustered vs secondary (InnoDB vs PostgreSQL):**
+
+| Engine | Clustered index | Secondary index leaf |
+|--------|-----------------|----------------------|
+| **InnoDB** | PK leaf = **full row** | Stores **PK values** → extra lookup (bookmark lookup) |
+| **PostgreSQL** | Table heap separate; PK index like secondary | Leaf has **TID** (block, offset) → heap fetch |
+
+**Range vs point:**
+
+```sql
+-- Point: 3–4 page reads (index seek)
+SELECT * FROM users WHERE id = 42;
+
+-- Range: seek + scan along leaf chain
+SELECT * FROM users WHERE created_at BETWEEN '2024-01-01' AND '2024-01-31';
+
+-- Covering index: never touch heap if all columns in index
+SELECT email FROM users WHERE id = 42;  -- if index is (id, email)
+```
+
+**Write amplification:** Random inserts (UUID v4 PK) land in random leaves → splits on hot pages spread across tree; sequential inserts (auto-increment, time-ordered) append to right edge → fewer splits.
+
+**Interview point:** Secondary index lookup in InnoDB = **index seek + table lookup** (unless covering). PostgreSQL = index + heap TID fetch (visibility check).
 
 ### When to use
 
-- Default for relational indexes
-- Range queries, ORDER BY, prefix LIKE 'abc%'
-- Moderate write rates with read-heavy mix
+- **Default** for relational indexes (equality, range, `ORDER BY`, prefix `LIKE 'abc%'`)
+- **Composite indexes** for multi-column predicates (left-prefix rule)
+- **Moderate write rates** with read-heavy OLTP
+- **Not** the only option: full-table analytics scans may prefer seq scan; extreme write throughput may prefer **LSM** (RocksDB, Cassandra)
 
 ### Trade-offs / Pitfalls
 
-- Poor for very high write throughput (splits) vs. LSM
-- UUID primary keys cause random insert hotspots (page splits)
-- Wide rows reduce fanout, deepen tree
-- Not ideal for full-table sequential scan workloads
+| Pitfall | Effect | Mitigation |
+|---------|--------|------------|
+| Random UUID PK | Page splits, fragmented inserts | UUID v7 (time-ordered), SERIAL, or separate surrogate key |
+| Wide rows | Lower fanout, deeper tree | Narrow PK; vertical partitioning |
+| Over-indexing | Every write updates all indexes | Index only queried columns |
+| Ignoring clustering | Secondary queries cause random heap I/O | Cluster related columns in PK (carefully) |
+| Assuming O(log n) CPU | Constant is **page I/O** | Fit hot pages in buffer pool |
+| LSM comparison | B+ tree worse at **sustained write** throughput | Choose engine for workload (OLTP vs ingest) |
+| Full scan cheaper | Optimizer skips index when % rows large | Update statistics; understand selectivity |
+
+**B+ tree vs LSM (interview summary):**
+
+| | B+ tree (InnoDB, Postgres) | LSM (RocksDB, Cassandra) |
+|---|---------------------------|--------------------------|
+| Reads | Few page reads, predictable | May merge multiple SSTables |
+| Writes | In-place + splits (random I/O) | Sequential append + async merge |
+| Best for | OLTP read-heavy | Write-heavy ingest |
 
 ### References
 
@@ -379,53 +493,193 @@ flowchart LR
 
 ### What is it?
 
-**Transaction isolation levels** define how much concurrent transactions interfere with each other - what anomalies (dirty reads, non-repeatable reads, phantom reads) are permitted. SQL defines four standard levels: READ UNCOMMITTED, READ COMMITTED, REPEATABLE READ, SERIALIZABLE.
+**Transaction isolation levels** define which **concurrency anomalies** are allowed when multiple transactions run at the same time. Higher isolation = stricter rules = fewer bugs visible to users, but more locking/abort overhead.
+
+SQL standard defines four levels (weakest → strongest):
+
+```text
+READ UNCOMMITTED → READ COMMITTED → REPEATABLE READ → SERIALIZABLE
+```
+
+Each level forbids certain **phenomena** (anomalies):
+
+| Phenomenon | Definition |
+|------------|------------|
+| **Dirty read** | Transaction T2 reads data written by T1 that T1 has **not committed** (may roll back) |
+| **Non-repeatable read** | T1 reads row twice; T2 **updates** row between reads; T1 sees different values |
+| **Phantom read** | T1 runs same range query twice; T2 **inserts/deletes** rows matching range; T1 sees different row set |
+
+**Lost update** (not always in SQL table but interview favorite): two transactions read same value, both increment, both write—one update lost.
 
 ### Why it matters
 
-Too weak isolation causes data corruption visible to users (double booking, wrong balances). Too strong isolation increases lock contention and kills throughput. Production systems default to READ COMMITTED (PostgreSQL) or REPEATABLE READ (MySQL InnoDB) with application-level handling of edge cases.
+Too **weak** isolation → production bugs that are hell to reproduce:
+
+```text
+Double booking: two txs both see "1 seat left", both sell it → oversold
+Wrong balance: read uncommitted sees rolled-back transfer
+Report drift: repeatable needed for consistent financial snapshot
+```
+
+Too **strong** isolation → throughput collapse:
+
+```text
+SERIALIZABLE under contention → many serialization failures → retry storms
+Lock waits on hot rows → p99 latency spikes
+```
+
+**Real defaults differ:**
+
+| Database | Default isolation |
+|----------|-------------------|
+| **PostgreSQL** | READ COMMITTED |
+| **MySQL InnoDB** | REPEATABLE READ |
+| **SQL Server** | READ COMMITTED |
+
+**Interview point:** "Repeatable read" in PostgreSQL ≠ MySQL—Postgres RR uses MVCC snapshots and **prevents phantoms** for standard queries; classic SQL RR definition still allows phantoms.
 
 ### How it works
 
-1. Transaction begins; isolation level set per session or globally.
-2. Reads may use shared locks, snapshot (MVCC), or no locks depending on level.
-3. Writes acquire exclusive locks or create new row versions.
-4. Conflicts detected at read, write, or commit time (optimistic vs. pessimistic).
-5. Scheduler produces a history equivalent to some serial order (serializable) or allows defined anomalies.
+**Lifecycle (conceptual):**
+
+1. Transaction `BEGIN`; isolation level set (`SET TRANSACTION ISOLATION LEVEL ...` or session default).
+2. Each **read** either: reads latest committed (RC), holds shared lock (locking RR), or reads **snapshot** (MVCC).
+3. Each **write** creates new row version or acquires exclusive lock.
+4. Conflicts detected at **read time**, **write time**, or **commit time** depending on implementation.
+5. **Serializable** goal: observed behavior equals **some serial execution order** of transactions.
 
 ```mermaid
 flowchart TB
-    RU[Read Uncommitted] --> RC[Read Committed]
-    RC --> RR[Repeatable Read]
-    RR --> Ser[Serializable]
+    RU["READ UNCOMMITTED<br/>dirty ✓ non-repeat ✓ phantom ✓"]
+    RC["READ COMMITTED<br/>dirty ✗ non-repeat ✓ phantom ✓"]
+    RR["REPEATABLE READ<br/>dirty ✗ non-repeat ✗ phantom ✓*"]
+    SER["SERIALIZABLE<br/>dirty ✗ non-repeat ✗ phantom ✗"]
+    RU --> RC --> RR --> SER
+```
+
+**Standard SQL anomaly matrix:**
+
+| Level | Dirty read | Non-repeatable read | Phantom read |
+|-------|------------|---------------------|--------------|
+| READ UNCOMMITTED | Possible | Possible | Possible |
+| READ COMMITTED | **Not** | Possible | Possible |
+| REPEATABLE READ | **Not** | **Not** | Possible* |
+| SERIALIZABLE | **Not** | **Not** | **Not** |
+
+*PostgreSQL REPEATABLE READ prevents phantoms via snapshot; InnoDB RR uses next-key locks to prevent phantoms.
+
+**Worked example — dirty read (READ UNCOMMITTED only):**
+
+```text
+T1: BEGIN
+T1: UPDATE accounts SET balance = 0 WHERE id = 1  -- not committed
+T2: BEGIN (READ UNCOMMITTED)
+T2: SELECT balance FROM accounts WHERE id = 1  → 0   -- dirty!
+T1: ROLLBACK
+T2: believed balance was 0 — wrong decision
+```
+
+**Worked example — non-repeatable read (READ COMMITTED allows):**
+
+```text
+T1: BEGIN
+T1: SELECT balance FROM accounts WHERE id = 1  → 100
+T2: BEGIN
+T2: UPDATE accounts SET balance = 50 WHERE id = 1
+T2: COMMIT
+T1: SELECT balance FROM accounts WHERE id = 1  → 50   -- different!
+T1: COMMIT
+```
+
+**Worked example — phantom read:**
+
+```text
+T1: BEGIN
+T1: SELECT COUNT(*) FROM rooms WHERE hotel_id = 5 AND booked = false  → 1
+T2: BEGIN
+T2: INSERT INTO rooms (...) booked = false  -- new available room row
+T2: COMMIT
+T1: SELECT COUNT(*) ...  → 2   -- phantom row appeared
+T1: COMMIT
+```
+
+**Implementation mechanisms:**
+
+| Approach | Used by | How |
+|----------|---------|-----|
+| **Locking** | SQL Server RC/RR | Shared locks on read; exclusive on write |
+| **MVCC snapshots** | PostgreSQL, InnoDB | Readers see snapshot; writers new versions |
+| **SSI (Serializable Snapshot Isolation)** | PostgreSQL SERIALIZABLE | Tracks rw-dependencies; abort on dangerous cycles |
+
+```mermaid
+sequenceDiagram
+    participant T1
+    participant T2
+    T1->>T1: BEGIN RR snapshot
+    T1->>T1: SELECT id=1 → 100
+    T2->>T2: UPDATE id=1 → 50, COMMIT
+    T1->>T1: SELECT id=1 → 100 (still snapshot)
+    T1->>T1: COMMIT
 ```
 
 ### Key details
 
-| Level | Dirty read | Non-repeatable | Phantom |
-|-------|------------|----------------|---------|
-| Read Uncommitted | Yes | Yes | Yes |
-| Read Committed | No | Yes | Yes |
-| Repeatable Read | No | No | Yes* |
-| Serializable | No | No | No |
+**PostgreSQL specifics:**
 
-*PostgreSQL RR prevents phantoms; standard SQL definition may differ.
+- **READ COMMITTED:** each **statement** sees a fresh snapshot of committed data.
+- **REPEATABLE READ:** one snapshot for entire transaction; no phantoms for normal SELECT.
+- **SERIALIZABLE:** SSI—may get `40001 serialization_failure` → app must retry.
 
-- **Snapshot isolation** (MVCC) common implementation of RR
-- **Serializable snapshot isolation (SSI)** in PostgreSQL 9.1+ for true serializable
+**InnoDB REPEATABLE READ:**
+
+- Consistent **read view** at first consistent read.
+- **Next-key locks** (gap + record) on indexes prevent phantom inserts in locking reads (`SELECT ... FOR UPDATE`).
+
+**Choosing level (practical):**
+
+```sql
+-- Report needing stable numbers for one txn
+BEGIN ISOLATION LEVEL REPEATABLE READ;
+SELECT SUM(amount) FROM ledger WHERE date = CURRENT_DATE;
+SELECT COUNT(*) FROM ledger WHERE date = CURRENT_DATE;
+COMMIT;  -- both see same snapshot
+
+-- Financial invariant: transfer must not interleave
+BEGIN ISOLATION LEVEL SERIALIZABLE;
+-- debit + credit
+COMMIT;  -- or retry on conflict
+```
+
+**Interview point:** Application can emulate stronger invariants with `SELECT FOR UPDATE` even at RC—but deadlocks and lock order matter.
 
 ### When to use
 
-- READ COMMITTED: default for most OLTP web apps
-- REPEATABLE READ: reports within one transaction needing stable snapshot
-- SERIALIZABLE: financial invariants where application locking is error-prone
+| Level | Typical use |
+|-------|-------------|
+| **READ COMMITTED** | Default web OLTP; short transactions; acceptable occasional re-read |
+| **READ UNCOMMITTED** | Rare; analytics approximations (most DBs map to RC anyway) |
+| **REPEATABLE READ** | Single-txn reports, batch read consistency, migration validation |
+| **SERIALIZABLE** | Critical invariants (inventory, ledger) when app locking is error-prone |
 
 ### Trade-offs / Pitfalls
 
-- Higher isolation -> more rollbacks and retries
-- ORM default isolation may not match DB default
-- Distributed transactions across DBs don't inherit single-DB isolation
-- "Serializable" in one DB â‰  same guarantees in another
+| Pitfall | Consequence | Mitigation |
+|---------|-------------|------------|
+| ORM default ≠ DB default | Unexpected anomalies | Explicit isolation in connection pool |
+| Long RR/Serializable txn | Blocks vacuum, holds locks, retries | Keep serializable txns short |
+| Retry not implemented for SSI | User sees random errors | Catch `40001`, exponential backoff |
+| Distributed txs across DBs | No global isolation level | Saga, outbox, idempotency |
+| Assuming same name = same behavior | Postgres RR ≠ SQL Server RR | Read engine docs |
+| RC + read-modify-write race | Lost update | `UPDATE ... WHERE version = ?` or `FOR UPDATE` |
+| Phantom under RC | Double booking in gap | `FOR UPDATE`, unique constraints, SERIALIZABLE |
+
+**Lost update fix pattern (optimistic locking):**
+
+```sql
+UPDATE products SET stock = stock - 1, version = version + 1
+WHERE id = 42 AND version = 7;
+-- if rows_affected = 0 → retry
+```
 
 ### References
 
@@ -439,48 +693,176 @@ flowchart TB
 
 ### What is it?
 
-**Multi-Version Concurrency Control (MVCC)** keeps multiple versions of each row; readers see a **snapshot** as of transaction start without blocking writers. Writers create new versions; old versions garbage-collected later (vacuum).
+**Multi-Version Concurrency Control (MVCC)** stores **multiple versions** of each logical row. Readers access a **snapshot** of the database as of a point in time; writers create **new versions** without overwriting old ones in place. Old versions are reclaimed later by **vacuum** (PostgreSQL) or **purge** (InnoDB).
+
+Core idea: **readers don't block writers; writers don't block readers** (for normal reads). Conflicts appear on **write-write** overlap or under **serializable** rules.
+
+**PostgreSQL row versioning (conceptual columns on every tuple):**
+
+| Field | Meaning |
+|-------|---------|
+| `xmin` | Transaction ID that **inserted** this version |
+| `xmax` | Transaction ID that **deleted/updated** this version (0 if live) |
+| `ctid` | Physical location (block, offset); updates create new tuple with new ctid |
 
 ### Why it matters
 
-MVCC enables high read concurrency in PostgreSQL, InnoDB, Oracle - readers don't acquire blocking locks on row data. Foundation for snapshot isolation and repeatable read.
+MVCC is how PostgreSQL, InnoDB, Oracle, and others sustain **high read concurrency** without shared read locks on row data. A long-running report and a burst of writes can coexist—reports see a stable snapshot; writes append new versions.
+
+Without understanding MVCC you cannot debug:
+
+- **Table bloat** (dead tuples not vacuumed)
+- **Transaction ID wraparound** emergencies (PostgreSQL)
+- **Write skew** under snapshot isolation
+- **Index-only scan** failures (visibility map stale)
+
+**Interview point:** UPDATE in Postgres = INSERT new tuple + mark old deleted—not in-place overwrite.
 
 ### How it works
 
-1. Each transaction assigned **transaction ID (xid)**.
-2. Row versions tagged with `xmin` (creating xid) and `xmax` (deleting xid).
-3. Read visibility rule: version visible if created before snapshot and not deleted before snapshot.
-4. UPDATE = insert new version + mark old deleted.
-5. Vacuum removes dead versions no longer visible to any transaction.
+**Transaction IDs and snapshots:**
+
+1. Each transaction gets a **xid** (PostgreSQL) or **read view** (InnoDB trx id).
+2. On first statement, engine builds **snapshot**: set of active xids at that instant.
+3. **Visibility rule** (PostgreSQL, simplified): tuple version is visible if:
+   - `xmin` is **committed** and was committed **before** snapshot
+   - AND (`xmax` is 0 OR `xmax` transaction **not committed** at snapshot time OR `xmax` started after snapshot)
+
+**UPDATE path:**
+
+```text
+Row v1: (id=1, balance=100)  xmin=100, xmax=0
+
+Txn 200 UPDATE balance=80:
+  - Insert v2: (id=1, balance=80)  xmin=200, xmax=0
+  - Mark v1: xmax=200
+  - Both exist until vacuum removes v1
+```
+
+**DELETE path:** Set `xmax` on latest version; no new row (unless soft-delete pattern).
 
 ```mermaid
 sequenceDiagram
-    participant T1 as Txn 1
-    participant T2 as Txn 2
-    T1->>T1: read snapshot v1
-    T2->>T2: write v2
-    T1->>T1: still sees v1
+    participant T100 as Txn 100 (reader)
+    participant T200 as Txn 200 (writer)
+    participant Heap as Table heap
+
+    T100->>Heap: BEGIN; snapshot at xid 100
+    T100->>Heap: SELECT id=1 → balance 100 (v1 visible)
+    T200->>Heap: BEGIN
+    T200->>Heap: UPDATE id=1 → v2 inserted, v1 xmax=200
+    T200->>Heap: COMMIT
+    T100->>Heap: SELECT id=1 → still 100 (v2 xmin=200 after snap)
+    T100->>Heap: COMMIT
 ```
+
+**Visibility pseudo-code (PostgreSQL-style):**
+
+```text
+function is_visible(tuple, snapshot):
+    if xmin_txn not committed: return false
+    if xmin_txn in snapshot.active: return false  // started after reader
+    if xmax == 0: return true
+    if xmax_txn not committed: return true        // delete not yet final
+    if xmax_txn in snapshot.active: return true // deleted after reader snap
+    return false                                  // deleted before reader saw it
+```
+
+**Vacuum / purge:**
+
+```text
+When no active snapshot needs old versions:
+  VACUUM marks space in pages as reusable (PostgreSQL)
+  PURGE thread reclaims undo log space (InnoDB)
+```
+
+Long-running transactions **pin** old snapshots → vacuum cannot remove dead tuples → **bloat**.
+
+**PostgreSQL concurrent read/write (default READ COMMITTED):**
+
+| Statement | Snapshot taken |
+|-----------|----------------|
+| Each SELECT in RC | New snapshot at statement start |
+| Entire txn in RR | One snapshot at first statement |
+
+**Write-write conflict:**
+
+```text
+T1: UPDATE row SET x=1 WHERE id=5  -- waits if T2 holds row lock (FOR UPDATE path)
+T2: UPDATE row SET x=2 WHERE id=5  -- second commit wins or deadlock depending on timing
+```
+
+Plain MVCC UPDATE takes **row-level exclusive lock** on latest version during update—two writers still serialize on same row.
 
 ### Key details
 
-- **Snapshot isolation:** each statement or transaction sees consistent snapshot
-- Long transactions block vacuum -> table bloat
-- **Transaction ID wraparound** requires aggressive vacuum (PostgreSQL)
-- Conflicts detected on commit for serializable variants (SSI)
+**Snapshot isolation vs serializable:**
+
+| Property | Snapshot isolation (RR in PG) | Serializable (SSI) |
+|----------|------------------------------|---------------------|
+| Read-write conflicts | Readers ignore writers | Tracks dependencies |
+| Write skew | **Possible** | Detected → abort |
+| Phantom (normal SELECT) | Prevented in PG RR | Prevented |
+
+**Write skew classic example:**
+
+```text
+Constraints: at least one doctor on duty (application-enforced)
+
+T1: SELECT count(on duty) → 1; thinks OK to set Alice off
+T2: SELECT count(on duty) → 1; thinks OK to set Bob off
+T1: UPDATE Alice off; COMMIT
+T2: UPDATE Bob off; COMMIT
+→ zero on duty — neither txn saw the other's write in snapshot
+```
+
+Fix: `SERIALIZABLE`, `SELECT FOR UPDATE` on duty rows, or constraint trigger.
+
+**InnoDB MVCC (differences):**
+
+- Versions stored in **undo log** (rollback segment); base row overwritten in place for latest version.
+- **Read view** hides trx ids newer than view or not committed.
+- **Purge** async cleans undo history.
+
+**PostgreSQL operational:**
+
+| Issue | Cause | Fix |
+|-------|-------|-----|
+| Table bloat | Long txn + autovacuum lag | Kill long queries; tune autovacuum |
+| Xid wraparound | ~2 billion xids; old DB not vacuumed | Aggressive vacuum freeze |
+| Index-only scan miss | Visibility map not set | VACUUM; heap fetches required |
+
+**HOT (Heap-Only Tuple):** PostgreSQL optimization—if UPDATE doesn't change indexed columns, new version stays on same page without new index entries.
+
+**Interview point:** MVCC trades **storage** (dead tuples) for **read concurrency**. Vacuum is not optional housekeeping—it is correctness + space + xid safety.
 
 ### When to use
 
-- Built into PostgreSQL, InnoDB - understand defaults
-- Choosing isolation and connection pool timeouts
-- Debugging bloat and vacuum issues
+- **Implicit:** PostgreSQL and InnoDB use MVCC by default—you design **with** it.
+- **Connection pools:** Keep transactions short; return connections with `ROLLBACK` if needed.
+- **Reporting:** `REPEATABLE READ` or replica snapshot for consistent exports.
+- **Debugging:** `pg_stat_activity.xact_start`, `age(datfrozenxid)` for wraparound risk.
+- **Choosing isolation:** Pair MVCC with RC for OLTP; SSI when app-level locking is insufficient.
 
 ### Trade-offs / Pitfalls
 
-- Storage overhead from dead row versions
-- Write skew possible under snapshot isolation (needs SSI or app logic)
-- Index-only scans must verify visibility map
-- ORM long sessions hold snapshots unintentionally
+| Pitfall | Symptom | Mitigation |
+|---------|---------|------------|
+| Long open transaction | Bloat, vacuum can't truncate | Timeouts; avoid txn in ORM lazy session |
+| Assuming reads never block writes | Locking reads (`FOR UPDATE`) block | Know when locks taken |
+| Write skew under RR | Invariant violated | SERIALIZABLE or explicit locks |
+| Stale index-only scans | Extra heap fetches | Regular VACUUM |
+| ORM `@Transactional` spanning HTTP | Holds snapshot minutes | Transaction per request |
+| Monitoring only live rows | Disk usage grows | Track dead tuples `n_dead_tup` |
+| InnoDB undo bloat | Disk full on undo tablespace | Tune purge; shorten long reads |
+
+**Worked example — bloat math:**
+
+```text
+1M updates/day on hot row → 1M dead tuples/day if vacuum delayed
+Each tuple ~100 bytes → ~100 MB/day bloat on one row hotspot (extreme)
+Real tables: millions of dead tuples → seq scans slow, indexes fat
+```
 
 ### References
 

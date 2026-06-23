@@ -676,49 +676,137 @@ flowchart TB
 
 ### What is it?
 
-**Ordering guarantees** define whether consumers see messages in send order - globally, per partition/key, or not at all.
+**Ordering guarantees** define whether consumers observe messages in **send order** — globally across a topic, **per partition/key**, or **not at all**. Ordering is one of the most misunderstood messaging properties: brokers often guarantee less than producers assume.
+
+**Three levels:**
+
+| Level | Scope | Throughput | Example |
+|-------|-------|------------|---------|
+| **Global order** | Entire topic/queue | Lowest (single pipe) | Audit log serial pipeline |
+| **Partition/key order** | Same key only | High | `order_id` lifecycle events |
+| **No order** | Independent messages | Highest | Metrics, independent alerts |
 
 ### Why it matters
 
-Many invariants require order (account debits before credits on same account). Violating assumed order causes subtle financial and inventory bugs.
+Many business invariants require order:
+
+- **Debit before credit** on same account
+- **Created → Paid → Shipped** on same order
+- **Schema version N before N+1** migration events
+
+Violating assumed order causes subtle bugs: negative balances, duplicate shipments, corrupted projections. Ordering choice directly limits **parallelism** — you cannot have strict global order *and* unlimited horizontal scale.
 
 ### How it works
 
-1. **Global order:** single partition/queue (limits throughput).
-2. **Partition key order:** same key -> same partition -> ordered per key.
-3. **No order:** multiple partitions, competing consumers without key affinity.
-4. Sequence numbers or versioning detect out-of-order at application layer.
-
-### Diagram
+**1. Global ordering — single partition**
 
 ```mermaid
 flowchart LR
-    K1[Key=A] --> P0[Partition 0 ordered]
-    K2[Key=B] --> P1[Partition 1 ordered]
+  P[All Producers] --> Part0[Single Partition 0]
+  Part0 --> C[Single Consumer]
+```
+
+- Kafka: topic with `num.partitions=1`
+- RabbitMQ: single queue, single consumer
+- **Ceiling:** one consumer process throughput (~tens of thousands msg/s)
+
+**2. Partition/key ordering (production default)**
+
+```mermaid
+flowchart TB
+  P[Producer] -->|"key=order_42"| Part2[Partition 2]
+  P -->|"key=order_99"| Part7[Partition 7]
+  Part2 --> C1[Consumer A]
+  Part7 --> C2[Consumer B]
+  Note1[order_42 events strictly ordered in Part 2]
+```
+
+- `partition = hash(key) % numPartitions`
+- Same key → same partition → **FIFO within partition**
+- Different keys → parallel, **no relative order**
+
+**Kafka example:**
+
+```text
+Topic: orders (12 partitions)
+Producer: key=order_id → hash(order_id) % 12
+Events for order_42 always land in same partition → processed in offset order
+```
+
+**3. No ordering — maximum parallelism**
+
+- Round-robin partition assignment (no key)
+- Multiple competing consumers on one queue
+- Fan-out pub/sub with independent subscriber queues
+
+**4. Application-layer ordering detection**
+
+When order cannot be guaranteed by broker:
+
+```text
+message: { sequence: 42, entity_id: "acct_1", type: "DEBIT" }
+consumer: buffer until sequence 41 applied; reject or reorder gaps
 ```
 
 ### Key details
 
-| Level | Throughput | Use case |
-|-------|------------|----------|
-| Global | Low | Strict serial pipeline |
-| Per-key | High | Entity lifecycle events |
-| None | Highest | Independent metrics |
+**Ordering vs parallelism trade-off:**
+
+| Partitions | Max consumers (per group) | Order scope |
+|------------|---------------------------|-------------|
+| 1 | 1 | Global |
+| 12 | 12 | Per-key only |
+| 100 | 100 | Per-key only |
+
+**What breaks ordering in practice:**
+
+| Scenario | Effect | Mitigation |
+|----------|--------|------------|
+| Consumer rebalance | Duplicate + reorder window | Idempotent consumer; sticky assignor |
+| Retry queue | Message re-enters out of order | Per-key retry topic; sequence numbers |
+| Multiple producers | Interleaved writes to partition | Single producer per key or versioning |
+| Cross-partition transaction | No atomic order across keys | Saga; design bounded context |
+| Async publish thread pool | Send order ≠ enqueue order | `max.in.flight.requests=1` (Kafka) |
+
+**Production patterns:**
+
+- **Entity lifecycle** — partition by `order_id`, `user_id`, `account_id`.
+- **Kafka `enable.idempotence=true`** — preserves order per partition on retry (PID + sequence).
+- **Pulsar `Key_Shared`** — order per key with multiple consumers.
+- **RabbitMQ** — single active consumer per queue for strict order; or consistent-hash exchange by key.
+- **Poison message** — DLQ removes one message; later messages on same key may process "early" — handle gaps.
+- **Global order escape hatch** — single partition for control commands only; data plane stays partitioned.
+
+**Ordering across consumer groups:**
+
+```text
+Consumer Group A and Group B both read same topic independently
+Each group maintains its own offset — ordering is per-partition in both,
+but Group A and Group B are not synchronized with each other
+```
 
 ### When to use
 
-- Per-entity order: partition by `user_id` or `order_id`.
-- Global order only when business truly requires serial processing.
+| Requirement | Design |
+|-------------|--------|
+| Per-entity lifecycle | Partition by entity ID |
+| Global serial pipeline | Single partition; accept throughput cap |
+| Independent events | No key; maximize partitions |
+| Cross-entity workflow | Saga + correlation ID; not broker order |
 
 ### Trade-offs / Pitfalls
 
-- Rebalance can deliver duplicate or reorder during failure - design idempotent handlers.
-- Multiple producers to same partition still need sequence checks if clocks skew.
-- "Ordering" in pub/sub with multiple subscribers is per-subscriber queue only.
+- **Assuming global order** on multi-partition topic — wrong; only per-partition order holds.
+- **Rebalance during deploy** — cooperative-sticky assignor reduces partition movement.
+- **`key=null`** in Kafka — round-robin; no ordering guarantee for related events.
+- **Retry/DLQ** — reprocessed message may arrive after newer messages for same key without sequence checks.
+- **Pub/sub fan-out** — each subscriber queue ordered independently; no cross-subscriber order.
+- **Clock skew** — timestamp ordering across producers unreliable; use broker offset or sequence.
 
 ### References
 
-*(No curated references for this sub-topic in `_topics.json`.)*
+- Kafka partitioning and ordering documentation
+- Designing Data-Intensive Applications, Ch. 11 (Stream processing)
 
 ---
 
@@ -728,48 +816,137 @@ flowchart LR
 
 ### What is it?
 
-**At-most-once** delivery may lose messages but never duplicates - consumer ACKs before processing or broker fires-and-forgets without persistence.
+**At-most-once** delivery guarantees a message is delivered **zero or one times** — **never duplicated**, but **loss is possible**. Achieved when the system ACKs or discards a message **before** durable processing completes, or when the producer does not wait for broker persistence.
 
-### Why it matters
-
-Highest throughput, lowest latency - for metrics, logs, and telemetry where approximate counts beat correctness.
-
-### How it works
-
-1. Producer sends without waiting for broker durability (acks=0 in Kafka).
-2. Or consumer commits offset **before** processing.
-3. Crash after ACK loses message permanently.
-4. No redelivery attempts.
-
-### Diagram
+Also called **fire-and-forget** or **best-effort** semantics.
 
 ```mermaid
 flowchart LR
-    Msg[Message] --> ACK[ACK first]
-    ACK --> Process[Process]
-    Process -->|crash| Lost[Message lost]
+    subgraph AtMostOnce["At-most-once path"]
+        M[Message] --> ACK[ACK / discard]
+        ACK --> P[Process]
+        P -->|crash here| X[Message gone forever]
+    end
 ```
+
+### Why it matters
+
+Highest **throughput** and lowest **latency** — acceptable when approximate data beats correctness:
+
+- Metrics and telemetry (missing 0.01% of datapoints OK)
+- Sampled distributed traces
+- Live dashboard tick updates
+- Non-critical notifications
+
+**Critical distinction:** at-most-once is often chosen **accidentally** via misconfiguration (`enable.auto.commit=true` before process, `acks=0`), not deliberately.
+
+### How it works
+
+**Producer-side loss:**
+
+| Config | Broker behavior | Loss scenario |
+|--------|-----------------|---------------|
+| Kafka `acks=0` | No wait for broker | Broker crash before replicate |
+| Kafka `acks=1` + leader dies | Leader ACK only | Unreplicated leader failure |
+| UDP / unreliable transport | No retry | Network drop |
+| Async send without callback | Client buffer loss | Process crash before flush |
+
+**Consumer-side loss (most common accidental pattern):**
+
+```mermaid
+sequenceDiagram
+    participant B as Broker
+    participant C as Consumer
+    B->>C: deliver msg_42
+    C->>C: commit offset 42
+    Note over C: offset committed FIRST
+    C->>C: process msg_42
+    Note over C: CRASH before finish
+    C->>B: restart, offset=43
+    Note over B,C: msg_42 never processed — LOST
+```
+
+```text
+WRONG (at-most-once):
+  poll() → commit offset → process()   // crash after commit = loss
+
+RIGHT (at-least-once):
+  poll() → process() → commit offset   // crash before commit = redelivery
+```
+
+**Kafka configurations that produce at-most-once:**
+
+```properties
+# Producer: may lose before broker
+acks=0
+
+# Consumer: commit before processing
+enable.auto.commit=true
+# (auto-commit runs on poll interval, often before your handler finishes)
+```
+
+**RabbitMQ at-most-once:**
+
+- Auto-ACK mode (`noAck=true`) — broker removes message on deliver, before consumer processes
+- Consumer crash after delivery = message gone
 
 ### Key details
 
-- Kafka `acks=0` or `enable.auto.commit=true` with early commit.
-- UDP-style semantics over reliable transport.
-- Acceptable loss rate must be quantified in SLO.
+**Delivery semantics comparison:**
+
+| Semantic | Duplicates | Loss | Typical config |
+|----------|------------|------|----------------|
+| At-most-once | Never | Possible | ACK before process; `acks=0` |
+| At-least-once | Possible | Never* | Process before ACK |
+| Exactly-once | Never (effect) | Never* | Transactions + idempotency |
+
+*Assuming broker durability and correct config.
+
+**When at-most-once is deliberate:**
+
+```text
+Metrics agent → statsd/Kafka with acks=0
+  Lose occasional counter increment
+  SLO: 99.9% visibility acceptable
+  Cost: cannot afford 50ms per metric for acks=all
+```
+
+**Detecting silent loss:**
+
+| Technique | How |
+|-----------|-----|
+| Producer counter vs consumer counter | Compare `sent_total` vs `received_total` |
+| Sequence gaps | Monotonic `seq` field; alert on gaps |
+| End-to-end checksum | Sample audit trail |
+| Broker metrics | `record-error-rate`, under-replicated partitions |
+
+**Production patterns:**
+
+- **Explicit choice** — document in SLO: "telemetry stream is best-effort"
+- **Never at-most-once for money** — orders, payments, inventory need at-least-once minimum
+- **Kafka metrics pipeline** — `acks=1` or `acks=0` with monitoring; not for billing events
+- **Separate topics** — critical events on `acks=all` topic; metrics on fire-and-forget topic
+- **Review auto-commit** — default `enable.auto.commit=true` surprises teams migrating from queues
 
 ### When to use
 
-- Metrics, click streams, sampling traces.
-- Non-critical notifications where loss < 0.1% OK.
+- Metrics, click streams, sampled logs where **loss < 0.1%** is acceptable.
+- High-frequency sensor data with redundant sources.
+- Ephemeral notifications ("typing indicator") where missing one is invisible.
+- **Never** for orders, payments, audit trails, or legally required records.
 
 ### Trade-offs / Pitfalls
 
-- Unacceptable for money, orders, or audit trails.
-- Silent loss hard to detect without producer-side counters.
-- Often chosen accidentally via misconfigured auto-commit.
+- **Silent loss** — no redelivery means no second chance; hardest failure mode to debug.
+- **Accidental at-most-once** — most common bug: commit offset before DB transaction commits.
+- **`acks=0` during broker maintenance** — silent drop spike invisible to producer.
+- **Confusing with idempotency** — at-most-once avoids duplicates by accepting loss; different goal than exactly-once.
+- **Testing blind spot** — happy-path tests pass; loss only visible under crash injection.
 
 ### References
 
-*(No curated references for this sub-topic in `_topics.json`.)*
+- Kafka producer `acks` documentation
+- Messaging semantics overview (Jakob Jenkov / enterprise integration patterns)
 
 ---
 
@@ -1108,52 +1285,83 @@ flowchart LR
 
 ### What is it?
 
-**Command Query Responsibility Segregation (CQRS)** separates **write model** (commands, domain logic) from **read model** (optimized queries) - often fed by events from the write side.
+**Command Query Responsibility Segregation (CQRS)** splits the **write path** (commands that change state) from the **read path** (queries that display data). Writes go through a **command model** optimized for business rules; reads hit **read models** optimized for queries (denormalized tables, search indexes, caches).
+
+Often paired with **event sourcing** (writes append events; read models are projections), but CQRS does not require it.
 
 ### Why it matters
 
-Read and write workloads scale differently; read models can be denormalized for UI without polluting write schema.
+Read and write workloads have different scaling and schema needs:
+- **Write:** normalized schema, strong invariants, transactional consistency
+- **Read:** denormalized views, Elasticsearch facets, pre-aggregated dashboards
+
+Forcing one schema for both leads to slow queries or polluted domain models.
 
 ### How it works
 
-1. Commands hit write API -> update aggregate -> emit events.
-2. Projectors consume events -> update one or more read databases (SQL, Elasticsearch, cache).
-3. Queries hit read API only - never touch write store.
-4. Eventual lag between write and read models exposed in UI.
+**Simple CQRS (same database, separate APIs):**
 
-### Diagram
+```text
+POST /commands/PlaceOrder -> OrderCommandHandler -> normalized DB
+GET  /queries/OrderSummary  -> OrderQueryHandler   -> denormalized view table
+```
+
+**Full CQRS + event-driven projections:**
+
+```text
+1. Command: PlaceOrder -> Write aggregate -> persist event to event store
+2. Event bus: OrderPlaced event published
+3. Projector A: updates SQL read table (order list UI)
+4. Projector B: updates Elasticsearch (search)
+5. Projector C: updates Redis cache (order detail)
+6. Query API reads only from read models - never touches write store
+```
 
 ```mermaid
 flowchart TB
-    Write[Write API] --> WS[Write Store]
-    WS --> Events[Events]
-    Events --> RM1[SQL Read Model]
-    Events --> RM2[Search Index]
-    Read[Read API] --> RM1
-    Read --> RM2
+    Cmd[Command API] --> WS[Write Store / Event Log]
+    WS --> Bus[Event Bus]
+    Bus --> P1[SQL Read Model]
+    Bus --> P2[Search Index]
+    Bus --> P3[Cache]
+    Qry[Query API] --> P1
+    Qry --> P2
+    Qry --> P3
 ```
+
+**Eventual consistency lag:** user places order (write succeeds) -> read model updates in 100ms-2s -> UI may briefly show stale list unless you use read-your-writes pattern (route to write store for immediate read, or version polling).
+
+**Rebuild read model:** replay all events from beginning - useful after bug fix in projector logic.
 
 ### Key details
 
-- Simple CQRS: separate classes/DBs without event sourcing.
-- Full stack: event sourcing + multiple projections.
-- Read model rebuild = replay all events.
+| Variant | Complexity | When |
+|---------|------------|------|
+| Separate handlers, same DB | Low | Start here |
+| Separate read DBs | Medium | Read scaling |
+| Event sourcing + multiple projections | High | Audit, temporal queries |
+
+- **Not every query needs CQRS** - start with read replicas before full projection pipeline
+- **Command validation** on write side only; read models trust events
+- **Idempotent projectors** - same event processed twice must not double-count
 
 ### When to use
 
-- Read:write ratio extreme (social feeds, dashboards).
-- Multiple query shapes on same data (graph + table + search).
-- Paired with event sourcing for audit-heavy domains.
+- Extreme read:write ratio (social feed, analytics dashboard)
+- Same data needs SQL + search + graph views
+- Event sourcing already adopted (natural fit)
+- Complex domain with rich write rules but many read shapes
 
 ### Trade-offs / Pitfalls
 
-- Eventual consistency UX challenges.
-- Operational complexity: more stores to monitor and sync.
-- Overkill for simple CRUD domains.
+- **Eventual consistency UX** - "I saved but don't see it" complaints
+- **More moving parts** - lag monitoring, projector failures, schema migrations on projections
+- **Overkill for CRUD** - simple admin panels don't need CQRS
+- **Debugging** - trace from read anomaly back through projector to source event
 
 ### References
 
-*(No curated references for this sub-topic in `_topics.json`.)*
+- Martin Fowler CQRS; Microsoft microservices architecture guide
 
 ---
 
@@ -1217,58 +1425,185 @@ flowchart LR
 
 ### What is it?
 
-The **outbox pattern** writes domain changes and outbound message records in the **same local database transaction** - a separate relay process publishes outbox rows to the message broker.
+The **transactional outbox pattern** atomically persists **business state** and an **outbound event record** in the **same local database transaction**. A separate **relay** process reads the outbox table and publishes to the message broker — eliminating the **dual-write problem**.
+
+```mermaid
+flowchart TB
+    subgraph SameTxn["Single DB transaction"]
+        BR[Business row UPDATE]
+        OB[Outbox INSERT]
+    end
+    SameTxn --> Commit[COMMIT]
+    Commit --> Relay[Outbox Relay]
+    Relay --> Broker[Kafka / RabbitMQ]
+    Broker --> Consumers[Downstream consumers]
+```
+
+**Dual-write problem (why outbox exists):**
+
+```text
+WITHOUT outbox:
+  1. UPDATE orders SET status='PAID'     ✓ commits
+  2. kafka.publish(OrderPaid)            ✗ crashes here
+  → DB says PAID, no event → inventory never decrements
+
+  OR:
+  1. kafka.publish(OrderPaid)            ✓
+  2. UPDATE orders                       ✗ rolls back
+  → event fired, DB says PENDING → phantom shipment
+```
 
 ### Why it matters
 
-Solves the dual-write problem: DB committed but message never sent (or vice versa) without 2PC across DB and Kafka.
+Microservices need **reliable event emission** after local commits without **2PC across DB and Kafka** (5.17). Outbox is the industry-standard solution:
+
+- Used with **Debezium CDC**, polling relays, or framework support (MassTransit, Axon, Micronaut)
+- Enables **at-least-once delivery** to broker with **exactly-once effect** when consumers are idempotent
+- Foundation for **event-driven sagas** and **CQRS** projections (6.17, 6.18)
 
 ### How it works
 
-1. Business transaction: `UPDATE orders SET ...` + `INSERT INTO outbox (payload)`.
-2. Single DB commit - atomic together.
-3. Outbox relay (polling or CDC) reads unpublished rows.
-4. Publishes to broker; marks row published or deletes.
-5. Consumers process with idempotency (at-least-once relay).
+**1. Transactional write (application)**
 
-### Diagram
+```sql
+BEGIN;
+  UPDATE orders SET status = 'PAID', updated_at = NOW()
+    WHERE id = 'ord_123' AND status = 'PENDING';
+
+  INSERT INTO outbox (id, aggregate_type, aggregate_id, event_type, payload, created_at)
+  VALUES (
+    'evt_uuid_1',
+    'Order',
+    'ord_123',
+    'OrderPaid',
+    '{"orderId":"ord_123","amount":99.00}',
+    NOW()
+  );
+COMMIT;
+```
+
+Both succeed or both roll back — **no orphan state**.
+
+**2. Relay publishes (separate process)**
 
 ```mermaid
 sequenceDiagram
-    participant S as Service
+    participant S as Order Service
     participant DB as Database
     participant R as Outbox Relay
     participant K as Kafka
-    S->>DB: BEGIN txn
-    S->>DB: UPDATE business row
-    S->>DB: INSERT outbox event
+    S->>DB: BEGIN — UPDATE order + INSERT outbox
     S->>DB: COMMIT
-    R->>DB: poll outbox
-    R->>K: publish event
-    R->>DB: mark sent
+    loop poll or CDC
+        R->>DB: read unpublished outbox rows
+        R->>K: publish OrderPaid
+        R->>DB: mark published / DELETE row
+    end
+```
+
+**Relay implementations:**
+
+| Method | Mechanism | Latency | Scale |
+|--------|-----------|---------|-------|
+| **Polling** | `SELECT * FROM outbox WHERE published=false LIMIT 100` | 100ms–1s | Simple; DB load at high volume |
+| **CDC (Debezium)** | Read outbox table from WAL/binlog | Near real-time | Preferred at scale |
+| **Log tail** | Same DB transaction log | Low | Requires CDC infra |
+
+**3. Consumer idempotency**
+
+Relay guarantees **at-least-once** to broker (crash after publish, before mark-sent → duplicate). Consumers must dedupe:
+
+```sql
+INSERT INTO processed_events (event_id) VALUES ('evt_uuid_1')
+ON CONFLICT DO NOTHING;
+-- only process if insert succeeded
 ```
 
 ### Key details
 
-- Debezium outbox event router: structured JSON in outbox table -> Kafka.
-- Relay must be HA but duplicates OK with idempotent consumers.
-- Ordering per aggregate if single outbox table partitioned by ID.
+**Outbox table schema (typical):**
+
+| Column | Purpose |
+|--------|---------|
+| `id` | Unique event ID (UUID) — idempotency key |
+| `aggregate_type` | `Order`, `Payment` |
+| `aggregate_id` | Entity ID for partition key |
+| `event_type` | `OrderPaid` — routing in Debezium |
+| `payload` | JSON / Avro bytes |
+| `created_at` | Ordering, monitoring lag |
+| `published_at` | NULL until relay succeeds |
+
+**Debezium outbox event router:**
+
+```json
+{
+  "id": "evt_uuid_1",
+  "aggregateType": "Order",
+  "aggregateId": "ord_123",
+  "type": "OrderPaid",
+  "payload": { "orderId": "ord_123", "amount": 99.00 }
+}
+```
+
+Debezium transforms row → Kafka topic `Order` with key `ord_123` — no custom relay code.
+
+**Outbox vs dual write vs 2PC:**
+
+| Approach | Atomicity | Complexity | Coupling |
+|----------|-----------|------------|----------|
+| Dual write (DB + publish) | **None** | Low | Loose |
+| 2PC (XA) | Strong | High | Tight; blocking |
+| **Transactional outbox** | **Local ACID** | Medium | Loose; eventual publish |
+| CDC from main table | No outbox table | Medium | Couples event shape to schema |
+
+**Outbox vs Change Data Capture (6.19):**
+
+| | Outbox | CDC on business table |
+|---|--------|----------------------|
+| Event shape | Explicit domain events | Row before/after |
+| Coupling | Decoupled from schema | Every column change emits |
+| Intent | `OrderPaid` business fact | `status` column changed |
+| When | Domain events, sagas | Integrate legacy DB |
+
+**Production patterns:**
+
+- **Partition relay by `aggregate_id`** — preserve per-entity ordering in Kafka.
+- **Relay HA** — multiple relay instances with `FOR UPDATE SKIP LOCKED` polling, or single CDC connector.
+- **Cleanup** — archive/delete published rows; partition outbox table by date.
+- **Monitoring** — `now() - created_at` for unpublished rows = **outbox lag** alert.
+- **Transactional inbox** — symmetric pattern for idempotent inbound message processing.
+- **NestJS / Spring** — libraries wrap outbox insert in same `@Transactional` boundary.
+
+**Failure scenarios:**
+
+| Failure | Result | Recovery |
+|---------|--------|----------|
+| Crash before COMMIT | No row, no event | Client retries command |
+| Crash after COMMIT, before relay | Row in outbox | Relay publishes on restart |
+| Crash after publish, before mark | Duplicate event | Consumer idempotency |
+| Relay faster than consumer | Kafka lag | Scale consumers |
 
 ### When to use
 
-- Microservice must emit events after local DB commit reliably.
-- Replacing unsafe "write DB then fire-and-forget publish".
-- Saga step completion notifications.
+- Microservice must emit events **after** local DB commit reliably.
+- Replacing unsafe `save()` then `kafka.send()` sequencing.
+- Saga choreography — notify next step on state transition.
+- Event sourcing migration — outbox bridges CRUD services to event bus.
 
 ### Trade-offs / Pitfalls
 
-- Relay lag adds milliseconds to seconds delivery delay.
-- Outbox table growth without cleanup/archival.
-- Polling inefficient at scale - prefer CDC on outbox table.
+- **Relay lag** — 100ms–seconds between commit and publish; UI may need polling or WebSocket.
+- **Outbox table growth** — published rows must be purged; index bloat without archival.
+- **Polling at scale** — `SELECT` hammers DB; migrate to Debezium CDC on outbox table.
+- **Not cross-service atomicity** — only single DB boundary; multi-service sagas still need compensation.
+- **Event schema in outbox** — evolve payload with versioning (6.22); old rows replay on failure.
+- **Ordering** — relay must publish per `aggregate_id` in `created_at` order for single-entity sequence.
 
 ### References
 
-*(No curated references for this sub-topic in `_topics.json`.)*
+- microservices.io — Transactional outbox pattern
+- Debezium outbox event router documentation
+- Gunnar Morling: "Reliable Microservices Data Exchange With the Outbox Pattern"
 
 ---
 

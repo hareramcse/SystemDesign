@@ -131,9 +131,65 @@ flowchart TB
 
 ### Key details
 
-- **Skip lists** on posting lists accelerate AND operations.
-- **Compression:** variable-byte, PForDelta, Roaring bitmaps shrink index size 3 - 10Ã—.
-- **Phrase query:** verify term positions within sliding window in merged postings.
+#### Postings lists
+
+A **posting** is one `(doc_id, …metadata)` entry in the list for a term. Metadata enables ranking and phrase queries without re-reading the document.
+
+| Field | Purpose | Example |
+|-------|---------|---------|
+| `doc_id` | Document identifier | `doc_48291` |
+| **Term frequency (tf)** | How often term appears in doc | `fox` appears 3× → tf=3 |
+| **Positions** | Token index in document | `[2, 15, 88]` for phrase "quick fox" |
+| **Payloads** | Custom per-occurrence data | Boost factor, part-of-speech |
+| **Norms** | Field length normalization | Shorter title matches weigh more |
+
+**List structure:** postings sorted by `doc_id` ascending → efficient **merge-intersect** for boolean AND.
+
+```text
+Term "quick":  [doc1:tf=1,pos=[0], doc2:tf=1,pos=[0], doc7:tf=2,pos=[0,12]]
+Term "fox":    [doc1:tf=1,pos=[2], doc5:tf=1,pos=[4]]
+
+Query "quick AND fox":
+  intersect doc_ids → {doc1}
+  phrase "quick fox" on doc1: positions 0 and 2 adjacent? No (gap=1) → phrase miss unless slop allowed
+```
+
+**Skip lists** on posting lists store skip pointers every N doc_ids — during AND merge, skip ahead when the other list's current doc_id is larger, avoiding full scans.
+
+**Compression:** doc_id deltas + tf/pos encoding (variable-byte, PForDelta, Roaring bitmaps) shrink index 3–10×; hot terms ("the") use aggressive compression because lists are huge.
+
+#### Tokenization
+
+**Tokenization** splits raw text into **terms** (tokens) before indexing. The **analyzer** pipeline in Lucene/ES:
+
+```text
+Raw text → CharFilter (strip HTML) → Tokenizer (split) → TokenFilter (lowercase, stem, stop)
+```
+
+| Stage | Example input → output |
+|-------|------------------------|
+| **Tokenizer (standard)** | `"Quick brown foxes"` → `[Quick, brown, foxes]` |
+| **Lowercase filter** | `[Quick, brown, foxes]` → `[quick, brown, foxes]` |
+| **Stemmer (English)** | `[foxes]` → `[fox]` |
+| **Stop filter** | removes `[the, a, is]` |
+
+**Language matters:**
+
+| Language | Challenge | Approach |
+|----------|-----------|----------|
+| English | Inflection | Porter stemmer, lemma |
+| CJK (Chinese/Japanese/Korean) | No spaces | ICU segmenter, dictionary-based |
+| German | Compound words | Decompounding or n-grams |
+| Code / SKU | Exact match needed | `keyword` field, no stemming |
+
+**Analyzed vs not_analyzed:**
+
+- `text` field — tokenized; full-text search on `running` matches "run", "runs" (if stemmed).
+- `keyword` field — whole value is one token; filters, aggregations, exact SKU.
+
+**Index-time vs search-time analyzers:** must align or use **search_as_you_type** / **synonym** filters at query time (e.g., "laptop" → "notebook").
+
+- **Phrase query:** verify term positions within sliding window in merged postings (`slop=0` = adjacent).
 - Stored fields vs index-only  -  `_source` in ES stores original JSON for highlighting.
 
 ### When to use
@@ -248,8 +304,69 @@ sequenceDiagram
 
 ### Key details
 
-- **Segment immutability:** Lucene segments merge in background; deletes are tombstones until merge.
-- **Refresh interval:** default 1s  -  trade indexing throughput vs search freshness.
+#### Shards
+
+An **index** is split into **primary shards** — independent Lucene indexes, each hosting a subset of documents.
+
+| Concept | Detail |
+|---------|--------|
+| **Shard count** | Fixed at index creation (hard to change); typical 1–50 per index depending on data size |
+| **Routing** | `shard = hash(_routing) % num_primary_shards`; default `_routing = _id` |
+| **Custom routing** | Same `user_id` routes to same shard — efficient per-user queries |
+| **Shard size** | Target 10–50 GB per shard; too many shards → cluster state overhead; too few → no parallelism |
+
+```text
+Index "orders" (3 primary shards)
+  shard 0: doc_ids hash % 3 == 0
+  shard 1: doc_ids hash % 3 == 1
+  shard 2: doc_ids hash % 3 == 2
+```
+
+**Search:** coordinating node fans out to **all shards** (or routed subset), merges top-K per shard into global top-K.
+
+**Write:** document routed to one primary shard; that shard indexes locally.
+
+#### Replicas
+
+Each primary shard has **N replica shards** (copies) for HA and read scale.
+
+| Setting | Effect |
+|---------|--------|
+| `number_of_replicas: 1` | 1 primary + 1 replica per shard; survives 1 node loss |
+| `number_of_replicas: 2` | 1 primary + 2 replicas; more read throughput, more disk |
+| Replica = Lucene copy | Same segments; replicates indexing on primary |
+
+**Write path:** primary indexes → replicates operation to replica shards (async within cluster).
+
+**Read path:** coordinating node may use **replica** for query phase (load spread); **get-by-id** can use `preference=_primary` for freshest doc.
+
+**Never put primary and its only replica on same node** — use zone/awareness attributes (`node.attr.zone`).
+
+#### Near real-time (NRT)
+
+Elasticsearch is **near real-time**, not instant. Writes are visible to search after **refresh**.
+
+| Stage | What happens | Visibility |
+|-------|--------------|------------|
+| **Indexing** | Doc buffered in memory on primary shard | Not searchable |
+| **Refresh** (default every **1s**) | Buffer flushed to new **immutable Lucene segment** | Searchable |
+| **Translog** | Write-ahead log for durability before refresh | Recover on crash |
+| **Flush / commit** | fsync segments + commit point | Durable on disk |
+
+```text
+POST /index/_doc  →  in-memory buffer  →  refresh (1s)  →  searchable segment
+                                              ↑
+                                    tunable: index.refresh_interval
+```
+
+**Tuning:**
+
+- `refresh_interval: 30s` — bulk ingest (logs, reindex); higher throughput, stale search up to 30s.
+- `refresh_interval: -1` — disable auto-refresh during bulk load; manual `_refresh` after.
+- `refresh=wait_for` on write — block until next refresh (stronger read-your-writes, slower).
+
+**Segment immutability:** updates = delete + re-insert (tombstone); background **merge** compacts segments; heavy merge → I/O spikes.
+
 - **Mapping:** schema defines field types; changing mapping often requires reindex.
 - **Aggregations:** bucket (terms, date histogram) + metric (sum, avg)  -  analytics without separate DB.
 - Alternatives: **OpenSearch** (AWS fork), **Solr** (similar Lucene core), managed **Elastic Cloud**.
