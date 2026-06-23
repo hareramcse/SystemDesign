@@ -619,21 +619,4 @@ Mobile keyboards and fast typing produce typos; strict term matching returns zer
 
 ---
 
-
-## Quick Reference
-
-| # | Topic | Summary |
-|---|-------|---------|
-| 14.1 | Full Text Search | Full Text Search |
-| 14.2 | Inverted Index | Inverted Index |
-| 14.3 | Lucene | Lucene |
-| 14.4 | Elasticsearch | Elasticsearch |
-| 14.5 | Ranking | Ranking |
-| 14.6 | Relevance Scoring | Relevance Scoring |
-| 14.7 | Faceted Search | Faceted Search |
-| 14.8 | Autocomplete | Autocomplete |
-| 14.9 | Fuzzy Search | Fuzzy Search |
-
----
-
 [Ã¢ - Â Back to master index](../README.md)

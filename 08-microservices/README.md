@@ -1486,33 +1486,4 @@ sequenceDiagram
 
 ---
 
-
-## Quick Reference
-
-| # | Topic | Summary |
-|---|-------|---------|
-| 8.1 | Monolith | A **monolith** is a single deployable unit containing all application functio... |
-| 8.2 | Modular Monolith | A **modular monolith** keeps one deployable but enforces **strict module boun... |
-| 8.3 | Microservices | **Microservices** are independently deployable services, each implementing a ... |
-| 8.4 | Strangler Pattern | The **strangler fig pattern** incrementally replaces a legacy monolith by rou... |
-| 8.5 | BFF Pattern | **Backend for Frontend (BFF)** is a dedicated API layer per client type (web,... |
-| 8.6 | DDD | **Domain-Driven Design (DDD)** is an approach aligning software structure wit... |
-| 8.7 | Bounded Context | A **bounded context** is a boundary within which a domain model and ubiquitou... |
-| 8.8 | Hexagonal Architecture | **Hexagonal architecture** (ports and adapters) places **domain logic at the ... |
-| 8.9 | Clean Architecture | **Clean architecture** (Uncle Bob) organizes code in concentric rings: entiti... |
-| 8.10 | Onion Architecture | **Onion architecture** layers application around domain model: domain model c... |
-| 8.11 | Dependency Injection | **Dependency injection (DI)** provides a component's dependencies from outsid... |
-| 8.12 | Service Registry | A **service registry** is a database of running service instances - host, port,... |
-| 8.13 | Service Discovery | **Service discovery** is the client or platform mechanism to **find** availab... |
-| 8.14 | Service Mesh | A **service mesh** is infrastructure layer handling service-to-service traffi... |
-| 8.15 | Sidecar Pattern | The **sidecar pattern** deploys a helper process alongside the main applicati... |
-| 8.16 | Circuit Breaker | A **circuit breaker** stops calling a failing downstream service after error ... |
-| 8.17 | Retry Pattern | The **retry pattern** re-attempts failed operations - transient network blips, ... |
-| 8.18 | Bulkhead Pattern | The **bulkhead pattern** isolates resources (thread pools, connections) per d... |
-| 8.19 | Saga Pattern | A **saga** is a sequence of **local transactions** across services, each with... |
-| 8.20 | Choreography | **Choreography** implements sagas via **events**: each service listens and re... |
-| 8.21 | Orchestration | **Orchestration** implements sagas with a **central coordinator** (orchestrat... |
-
----
-
 [Ã¢ - Â Back to master index](../README.md)

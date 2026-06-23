@@ -1949,34 +1949,4 @@ sequenceDiagram
 
 ---
 
-
-## Quick Reference
-
-| # | Topic | Summary |
-|---|-------|---------|
-| 1.1 | OSI Model | The **Open Systems Interconnection (OSI) model** is a seven-layer conceptual ... |
-| 1.2 | TCP/IP | The **TCP/IP model** is the practical four-layer stack underlying the Interne... |
-| 1.3 | TCP Handshake | The **TCP three-way handshake** establishes a reliable connection between cli... |
-| 1.4 | UDP | **User Datagram Protocol (UDP)** is a connectionless transport protocol sendi... |
-| 1.5 | MTU | **Maximum Transmission Unit (MTU)** is the largest IP packet payload size a l... |
-| 1.6 | IP Addressing/Subnetting | **IP addressing** assigns unique identifiers to hosts on IP networks. **Subne... |
-| 1.7 | CIDR | **Classless Inter-Domain Routing (CIDR)** notation expresses IP addresses and... |
-| 1.8 | DNS | The **Domain Name System (DNS)** is a hierarchical, distributed naming system... |
-| 1.9 | DNS Resolution | **DNS resolution** is the step-by-step process a resolver uses to find the IP... |
-| 1.10 | HTTP/HTTPS | **HTTP (Hypertext Transfer Protocol)** is the application-layer protocol for ... |
-| 1.11 | SSL/TLS | **TLS (Transport Layer Security)**, successor to SSL, provides **encryption**... |
-| 1.12 | HTTP2 & HTTP3 | **HTTP/2** multiplexes many requests over one TCP connection with binary fram... |
-| 1.13 | QUIC | **QUIC (Quick UDP Internet Connections)** is a transport protocol on UDP comb... |
-| 1.14 | Keep Alive Connections | **HTTP keep-alive (persistent connections)** reuses the same TCP connection f... |
-| 1.15 | Forward & Reverse Proxy | A **forward proxy** sits in front of **clients**, forwarding requests to the ... |
-| 1.16 | NAT | **Network Address Translation (NAT)** maps private IP addresses inside a netw... |
-| 1.17 | VPN | A **Virtual Private Network (VPN)** creates an encrypted tunnel over a public... |
-| 1.18 | Anycast/Multicast/Broadcast | Three IP delivery semantics: **Broadcast** (one-to-all on subnet), **Multicas... |
-| 1.19 | CDN | A **Content Delivery Network (CDN)** distributes cached copies of static (and... |
-| 1.20 | Load Balancer | A **load balancer** distributes incoming traffic across multiple backend serv... |
-| 1.21 | Load Balancer Algorithm | **Load balancing algorithms** determine which backend receives each request: ... |
-| 1.22 | SSE & Polling & Websocets | Three patterns for **server-to-client real-time updates**: **polling** (clien... |
-
----
-
 [Ã¢ - Â Back to master index](../README.md)

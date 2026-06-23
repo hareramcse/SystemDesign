@@ -1479,31 +1479,4 @@ flowchart TB
 
 ---
 
-
-## Quick Reference
-
-| # | Topic | Summary |
-|---|-------|---------|
-| 2.1 | Normalization/Denormalizatio | **Normalization** organizes data into related tables to eliminate redundancy ... |
-| 2.2 | Indexing | An **index** is a secondary data structure that speeds lookups by key or colu... |
-| 2.3 | B Tree/B+ Tree | **B-trees** and **B+ trees** are balanced tree structures storing sorted keys... |
-| 2.4 | Query Planner/ optimizer | The **query planner** (optimizer) chooses how to execute a SQL statement - join... |
-| 2.5 | Views/ Materialized View | A **view** is a stored SQL query acting as a virtual table - no data stored, co... |
-| 2.6 | Isolation Levels | **Transaction isolation levels** define how much concurrent transactions inte... |
-| 2.7 | MVCC | **Multi-Version Concurrency Control (MVCC)** keeps multiple versions of each ... |
-| 2.8 | Redo/undo/bin Logs | Database **logs** ensure durability and recoverability: **redo log** (WAL) re... |
-| 2.9 | LSM Tree/SSTables/WAL | **Log-Structured Merge (LSM) trees** buffer writes in memory (**memtable**), ... |
-| 2.10 | Page Cache | The **page cache** (buffer pool) is DB-managed memory holding frequently acce... |
-| 2.11 | Vacuum Process | **VACUUM** (PostgreSQL terminology; similar concepts elsewhere) reclaims spac... |
-| 2.12 | Key Value Stores | **Key-value stores** map opaque keys to blob values with simple get/put/delet... |
-| 2.13 | Document Databases | **Document databases** store semi-structured **JSON/BSON documents** with fle... |
-| 2.14 | Wide Column Databases | **Wide-column stores** (column-family) organize data by row key with **dynami... |
-| 2.15 | Graph Databases | **Graph databases** store **nodes** (entities) and **edges** (relationships) ... |
-| 2.16 | Time Series Databases | **Time-series databases (TSDB)** optimize storage and queries for **timestamp... |
-| 2.17 | Search Databases | **Search databases** (Elasticsearch, OpenSearch, Solr) build **inverted index... |
-| 2.18 | Vector Databases | **Vector databases** store **embeddings** (high-dimensional float arrays) and... |
-| 2.19 | Multi Model Databases | **Multi-model databases** support multiple data models - document, graph, key-v... |
-
----
-
 [Ã¢ - Â Back to master index](../README.md)

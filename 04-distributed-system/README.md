@@ -1830,35 +1830,4 @@ flowchart LR
 
 ---
 
-
-## Quick Reference
-
-| # | Topic | Summary |
-|---|-------|---------|
-| 4.1 | Scalability | **Scalability** is the ability of a system to handle increased load by adding... |
-| 4.2 | Throughput | **Throughput** is the rate of work completed per unit time - requests per secon... |
-| 4.3 | Latency | **Latency** is the time between initiating a request and receiving a complete... |
-| 4.4 | Tail Latency | **Tail latency** refers to high-percentile response times - p95, p99, p999 - the ... |
-| 4.5 | Availability | **Availability** is the fraction of time a system is operational and serving ... |
-| 4.6 | Reliability | **Reliability** is the probability that a system performs its intended functi... |
-| 4.7 | Durability | **Durability** guarantees that once data is acknowledged as written, it survi... |
-| 4.8 | Fault Tolerance | **Fault tolerance** is the ability of a system to continue operating - possibly... |
-| 4.9 | Resilience | **Resilience** is the capacity to absorb disturbances, adapt to stress, and r... |
-| 4.10 | Redundancy | **Redundancy** duplicates critical components so failure of one does not stop... |
-| 4.11 | Failover | **Failover** is the automatic or manual switch from a failed **primary** comp... |
-| 4.12 | Consistency | **Consistency** in distributed systems defines what guarantees readers observ... |
-| 4.13 | Concurrency | **Concurrency** is the ability of a system to make progress on multiple tasks... |
-| 4.14 | CAP Theorem | The **CAP theorem** (Brewer) states that a distributed data store can provide... |
-| 4.15 | PACELC Theorem | **PACELC** extends CAP: if **P**artition, choose **A** or **C**; **E**lse (no... |
-| 4.16 | Strong Consistency | **Strong consistency** (often implemented as **linearizability** for register... |
-| 4.17 | Eventual Consistency | **Eventual consistency** guarantees that if no new updates occur, all replica... |
-| 4.18 | Causal Consistency | **Causal consistency** preserves **cause-and-effect** order: if operation A h... |
-| 4.19 | Linearizability | **Linearizability** is the strongest single-object consistency model: every o... |
-| 4.20 | Backpressure | **Backpressure** is a flow-control mechanism where an overloaded downstream c... |
-| 4.21 | Graceful Degradation | **Graceful degradation** deliberately reduces functionality or quality during... |
-| 4.22 | Capacity Planning | **Capacity planning** forecasts resource needs (CPU, memory, storage, network... |
-| 4.23 | Bottleneck Analysis | **Bottleneck analysis** identifies the slowest constraint limiting system thr... |
-
----
-
 [Ã¢ - Â Back to master index](../README.md)

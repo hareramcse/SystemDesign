@@ -695,23 +695,4 @@ KSUID offers stronger randomness (128 bits) than ULID's 80 bits while remaining 
 
 ---
 
-
-## Quick Reference
-
-| # | Topic | Summary |
-|---|-------|---------|
-| 13.1 | Bloom Filters | Bloom Filters |
-| 13.2 | HyperLogLog | HyperLogLog |
-| 13.3 | Count Min Sketch | Count Min Sketch |
-| 13.4 | Trie | Trie |
-| 13.5 | Skip Lists | Skip Lists |
-| 13.6 | Merkle Trees | Merkle Trees |
-| 13.7 | Distributed Hash Tables | Distributed Hash Tables |
-| 13.8 | UUID | UUID |
-| 13.9 | Snowflake IDs | Snowflake IDs |
-| 13.10 | ULID | ULID |
-| 13.11 | KSUID | KSUID |
-
----
-
 [Ã¢ - Â Back to master index](../README.md)

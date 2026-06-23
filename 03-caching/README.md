@@ -1174,25 +1174,4 @@ flowchart LR
 
 ---
 
-
-## Quick Reference
-
-| # | Topic | Summary |
-|---|-------|---------|
-| 3.1 | Cache Fundamentals | A cache is a store of data duplicated from a slower **source of truth**, kept... |
-| 3.2 | Cache Aside Pattern | **Cache-aside** (a.k.a. **lazy loading**) puts the application in control: th... |
-| 3.3 | Read Through Cache | In **read-through**, the cache itself is responsible for loading data on a mi... |
-| 3.4 | Write Through Cache | **Write-through** writes synchronously to **both** cache and database on ever... |
-| 3.5 | Write Back Cache | **Write-back** (write-behind) acknowledges writes to the cache immediately an... |
-| 3.6 | Refresh Ahead Cache | **Refresh-ahead** proactively reloads cache entries **before** they expire, b... |
-| 3.7 | Distributed Cache | A **distributed cache** spans multiple nodes, presenting a unified key space ... |
-| 3.8 | Near Cache | A **near cache** (L1) sits in the application process memory in front of a **... |
-| 3.9 | Cache Invalidation | **Cache invalidation** removes or updates cached entries when underlying data... |
-| 3.10 | Cache Stampede | A **cache stampede** (thundering herd) occurs when a popular cache entry expi... |
-| 3.11 | Cache Avalanche | **Cache avalanche** is mass cache failure or simultaneous expiry of **many ke... |
-| 3.12 | Cache Penetration | **Cache penetration** happens when requests query for keys that **do not exis... |
-| 3.13 | Cache Warming | **Cache warming** pre-populates the cache with anticipated data **before** tr... |
-
----
-
 [Ã¢ - Â Back to master index](../README.md)

@@ -1716,33 +1716,4 @@ same key + different hash → 409 Conflict
 
 ---
 
-
-## Quick Reference
-
-| # | Topic | Summary |
-|---|-------|---------|
-| 7.1 | REST | **REST** (Representational State Transfer) models APIs as **resources** (noun... |
-| 7.2 | GraphQL | **GraphQL** is a query language and runtime where clients request exactly the... |
-| 7.3 | gRPC | **gRPC** is a high-performance RPC framework using **Protocol Buffers** over ... |
-| 7.4 | SOAP | **SOAP** (Simple Object Access Protocol) is an XML-based messaging protocol w... |
-| 7.5 | API Gateway | An **API gateway** is a reverse proxy at the edge routing client requests to ... |
-| 7.6 | API Aggregation | **API aggregation** combines data from multiple backend services into **one r... |
-| 7.7 | API Composition | **API composition** (choreographed aggregation) builds a response by **sequen... |
-| 7.8 | API Versioning | **API versioning** manages breaking changes without stranding existing client... |
-| 7.9 | Pagination | **Pagination** splits large result sets into pages - via **offset/limit**, **cu... |
-| 7.10 | Filtering | **Filtering** lets clients narrow collections with query parameters - `?status=... |
-| 7.11 | Sorting | **Sorting** orders results by one or more fields - `?sort=created_at:desc,name:... |
-| 7.12 | OpenAPI | **OpenAPI Specification (OAS)** is a machine-readable YAML/JSON format descri... |
-| 7.13 | Swagger | **Swagger** is the tooling ecosystem around OpenAPI - Swagger UI (interactive d... |
-| 7.14 | Request Validation | **Request validation** checks incoming payloads against schema - types, require... |
-| 7.15 | Contract Testing | **Contract testing** verifies consumer and provider agree on API shape and be... |
-| 7.16 | API Security | **API security** encompasses authentication (who), authorization (what), tran... |
-| 7.17 | Webhooks | **Webhooks** are HTTP callbacks: when an event occurs, the API **POSTs** a pa... |
-| 7.18 | Rate Limiting | **Rate limiting** caps requests per client/IP/API key over a time window - prot... |
-| 7.19 | Throttling | **Throttling** slows or queues requests when load exceeds capacity - graceful d... |
-| 7.20 | Idempotency | An operation is **idempotent** if performing it multiple times has the same e... |
-| 7.21 | Idempotency Keys | An **idempotency key** is a client-generated unique token (UUID) sent in head... |
-
----
-
 [Ã¢ - Â Back to master index](../README.md)

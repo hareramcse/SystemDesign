@@ -1481,33 +1481,4 @@ flowchart LR
 
 ---
 
-
-## Quick Reference
-
-| # | Topic | Summary |
-|---|-------|---------|
-| 10.1 | Authentication | Authentication |
-| 10.2 | Authorization | Authorization |
-| 10.3 | OAuth2 | OAuth2 |
-| 10.4 | OpenID Connect | OpenID Connect |
-| 10.5 | JWT | JWT |
-| 10.6 | Session Management | Session Management |
-| 10.7 | RBAC | RBAC |
-| 10.8 | ABAC | ABAC |
-| 10.9 | Encryption at Rest | Encryption at Rest |
-| 10.10 | Encryption in Transit | Encryption in Transit |
-| 10.11 | KMS | KMS |
-| 10.12 | Secret Management | Secret Management |
-| 10.13 | CSRF | CSRF |
-| 10.14 | XSS | XSS |
-| 10.15 | SQL Injection | SQL Injection |
-| 10.16 | SSRF | SSRF |
-| 10.17 | Clickjacking | Clickjacking |
-| 10.18 | DDoS Protection | DDoS Protection |
-| 10.19 | WAF | WAF |
-| 10.20 | Zero Trust Security | Zero Trust Security |
-| 10.21 | Audit Logging | Audit Logging |
-
----
-
 [Ã¢ - Â Back to master index](../README.md)

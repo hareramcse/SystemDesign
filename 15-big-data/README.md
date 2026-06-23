@@ -559,22 +559,4 @@ flowchart TB
 
 ---
 
-
-## Quick Reference
-
-| # | Topic | Summary |
-|---|-------|---------|
-| 15.1 | Batch Processing | Batch Processing |
-| 15.2 | Stream Processing | Stream Processing |
-| 15.3 | Hadoop | Hadoop |
-| 15.4 | Spark | Spark |
-| 15.5 | Flink | Flink |
-| 15.6 | ETL | ETL |
-| 15.7 | ELT | ELT |
-| 15.8 | Data Lake | Data Lake |
-| 15.9 | Data Warehouse | Data Warehouse |
-| 15.10 | Lakehouse Architecture | Lakehouse Architecture |
-
----
-
 [Ã¢ - Â Back to master index](../README.md)

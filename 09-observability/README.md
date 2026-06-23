@@ -1240,27 +1240,4 @@ flowchart LR
 
 ---
 
-
-## Quick Reference
-
-| # | Topic | Summary |
-|---|-------|---------|
-| 9.1 | Logging | Logging |
-| 9.2 | Structured Logging | Structured Logging |
-| 9.3 | Metrics | Metrics |
-| 9.4 | Monitoring | Monitoring |
-| 9.5 | Distributed Tracing | Distributed Tracing |
-| 9.6 | OpenTelemetry | OpenTelemetry |
-| 9.7 | Correlation IDs | Correlation IDs |
-| 9.8 | SLI | SLI |
-| 9.9 | SLO | SLO |
-| 9.10 | SLA | SLA |
-| 9.11 | Error Budgets | Error Budgets |
-| 9.12 | Alerting | Alerting |
-| 9.13 | Dashboards | Dashboards |
-| 9.14 | Health Checks | Health Checks |
-| 9.15 | Synthetic Monitoring | Synthetic Monitoring |
-
----
-
 [Ã¢ - Â Back to master index](../README.md)

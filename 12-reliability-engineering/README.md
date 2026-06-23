@@ -1082,22 +1082,4 @@ flowchart LR
 
 ---
 
-
-## Quick Reference
-
-| # | Topic | Summary |
-|---|-------|---------|
-| 12.1 | High Availability | High Availability |
-| 12.2 | Active Active | Active Active |
-| 12.3 | Active Passive | Active Passive |
-| 12.4 | RPO | RPO |
-| 12.5 | RTO | RTO |
-| 12.6 | Disaster Recovery | Disaster Recovery |
-| 12.7 | Backup Strategy | Backup Strategy |
-| 12.8 | Restore Strategy | Restore Strategy |
-| 12.9 | Chaos Engineering | Chaos Engineering |
-| 12.10 | Fault Injection | Fault Injection |
-
----
-
 [Ã¢ - Â Back to master index](../README.md)

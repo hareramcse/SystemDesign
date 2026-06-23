@@ -1756,35 +1756,4 @@ flowchart LR
 
 ---
 
-
-## Quick Reference
-
-| # | Topic | Summary |
-|---|-------|---------|
-| 6.1 | Message Queues | A **message queue** is a FIFO buffer between producers and consumers. Produce... |
-| 6.2 | Publish Subscribe | **Publish-subscribe (pub/sub)** routes each published message to **all** subs... |
-| 6.3 | Event Streaming | **Event streaming** treats messages as an **append-only, durable log** retain... |
-| 6.4 | Event Driven Architecture | **Event-driven architecture (EDA)** structures systems around production, det... |
-| 6.5 | Kafka | **Apache Kafka** is a distributed commit log: producers write to **topics** s... |
-| 6.6 | Kafka Partitions | A **Kafka partition** is an ordered, immutable sequence of records within a t... |
-| 6.7 | Kafka Consumer Groups | A **consumer group** is a set of consumers sharing a `group.id` that jointly ... |
-| 6.8 | RabbitMQ | **RabbitMQ** is a message broker implementing AMQP. Messages route through **... |
-| 6.9 | ActiveMQ | **Apache ActiveMQ** (Classic and Artemis) is a JMS-compliant message broker s... |
-| 6.10 | Pulsar | **Apache Pulsar** separates **serving** (brokers) from **storage** (Apache Bo... |
-| 6.11 | Ordering Guarantees | **Ordering guarantees** define whether consumers see messages in send order - g... |
-| 6.12 | At Most Once Delivery | **At-most-once** delivery may lose messages but never duplicates - consumer ACK... |
-| 6.13 | At Least Once Delivery | **At-least-once** delivery guarantees every message is delivered one or more ... |
-| 6.14 | Exactly Once Delivery | **Exactly-once delivery** (more precisely **exactly-once processing semantics... |
-| 6.15 | Dead Letter Queue | A **dead letter queue (DLQ)** holds messages that failed processing after max... |
-| 6.16 | Retry Queue | A **retry queue** (delay queue) holds failed messages for backoff period befo... |
-| 6.17 | Event Sourcing | **Event sourcing** persists state as an append-only sequence of domain events... |
-| 6.18 | CQRS | **Command Query Responsibility Segregation (CQRS)** separates **write model**... |
-| 6.19 | Change Data Capture (CDC) | **Change Data Capture (CDC)** streams row-level database changes (insert, upd... |
-| 6.20 | Outbox Pattern | The **outbox pattern** writes domain changes and outbound message records in ... |
-| 6.21 | Event Replay | **Event replay** re-processes historical events from the log or event store - r... |
-| 6.22 | Event Versioning | **Event versioning** manages schema changes over an immutable event stream - ad... |
-| 6.23 | Schema Registry | A **schema registry** (Confluent Schema Registry, AWS Glue) stores Avro/Proto... |
-
----
-
 [Ã¢ - Â Back to master index](../README.md)
