@@ -1,4 +1,4 @@
-# 1. Networking
+﻿# 1. Networking
 
 > Status: **Documented**  -  master reference
 
@@ -1126,19 +1126,26 @@ flowchart LR
 
 ### What is it?
 
-A **load balancer** distributes incoming traffic across multiple backend servers to improve availability, throughput, and fault tolerance. Operates at L4 (TCP/UDP) or L7 (HTTP) with health checks removing failed nodes.
+A **load balancer (LB)** sits in front of multiple backend servers and **distributes incoming traffic** across them. Goals: higher **throughput**, better **availability** (survive node failure), and horizontal **scalability**.
+
+Two main layers:
+- **L4 (Transport)** - routes TCP/UDP connections by IP:port; fast; no HTTP awareness
+- **L7 (Application)** - routes HTTP/gRPC by URL path, headers, host; TLS termination, cookies
+
+Examples: AWS ALB/NLB, nginx, HAProxy, F5, Envoy, Kubernetes Service + Ingress.
 
 ### Why it matters
 
-Single servers cannot handle modern traffic or provide HA. Load balancers are the entry point for horizontal scaling - every multi-instance web tier uses one (ALB, NLB, nginx, F5).
+No single server handles modern traffic volumes. The load balancer is the **front door** of almost every scaled system - it enables rolling deploys (drain unhealthy nodes), health-based routing, and SSL at the edge.
 
 ### How it works
 
-1. Client connects to LB virtual IP (VIP) or DNS name.
-2. LB selects backend via algorithm (round-robin, least connections).
-3. Forwards connection (L4) or proxies request (L7).
-4. Health checks probe backends; unhealthy removed from pool.
-5. Session persistence (sticky sessions) optional via cookie or source IP.
+1. Client resolves DNS to LB VIP (virtual IP) or hostname (`api.example.com`)
+2. Client connects to LB (TLS often terminates here at L7)
+3. LB selects backend using algorithm (round-robin, least connections, consistent hash)
+4. LB forwards request (L7 proxy) or connection (L4 pass-through)
+5. **Health checks** probe backends (`GET /health` every 10s); unhealthy nodes removed from pool
+6. Optional **session affinity (sticky sessions):** same client always hits same backend via cookie or source IP hash
 
 ```mermaid
 flowchart TB
@@ -1146,31 +1153,56 @@ flowchart TB
     LB --> B1[Backend 1]
     LB --> B2[Backend 2]
     LB --> B3[Backend 3]
+    B1 -.->|health check fail| LB
 ```
+
+**L4 vs L7 decision:**
+
+| | L4 (NLB) | L7 (ALB/nginx) |
+|---|----------|----------------|
+| Speed | Faster (no HTTP parse) | Slightly more CPU |
+| Routing | IP + port only | Path, header, host |
+| TLS | Pass-through or terminate | Terminate + route |
+| Use case | DB proxy, gaming UDP, raw TCP | REST APIs, WebSocket upgrade |
+| WebSocket | TCP pass-through works | Needs upgrade support |
+
+**High availability for the LB itself:**
+- Active-passive pair (keepalived/VRRP) with floating VIP
+- Cloud-managed LB (AWS ELB) spans AZs automatically
+- DNS failover to secondary region (higher TTL trade-off)
+
+**Deployment patterns:**
+- **Active-active:** all backends serve traffic simultaneously
+- **Active-passive:** standby waits for failover
+- **Cross-zone:** LB distributes across availability zones (survive AZ outage)
 
 ### Key details
 
-- **L4 LB:** fast, protocol-agnostic, no URL routing
-- **L7 LB:** content routing, TLS termination, header manipulation
-- **Active-active:** all backends serve; **active-passive:** standby
-- **Cross-zone LB:** distributes across AZs for HA
+- **Health check tuning:** too aggressive -> flapping; too lazy -> send traffic to dead nodes
+- **Connection draining:** on deploy, stop new connections to instance, wait for in-flight to finish
+- **X-Forwarded-For / X-Real-IP:** LB injects client IP for backend logging and rate limiting
+- **WebSocket:** requires L7 with HTTP upgrade support + often **sticky sessions** or shared pub/sub backplane
+- **gRPC:** L7 LB with HTTP/2 aware routing (path, metadata)
+- **SSL/TLS:** terminate at LB (centralized cert management) vs pass-through (end-to-end encryption)
 
 ### When to use
 
-- Any horizontally scaled stateless service
-- TLS termination at edge
-- Blue/green and canary deployments (weighted routing)
+- More than one app server instance (almost always in production)
+- Zero-downtime rolling deployments
+- Geographic or AZ redundancy
+- DDoS absorption at edge (CDN + LB)
 
 ### Trade-offs / Pitfalls
 
-- LB itself must be HA (multi-node, anycast, or cloud managed)
-- Sticky sessions complicate scale-down and can skew load
-- L7 LB adds latency vs. L4 pass-through
-- WebSocket requires L7 with connection upgrade support
+- **Sticky sessions** break even load distribution; required for in-memory session state (prefer external session store)
+- **SSL termination at LB** means traffic LB->backend may be plain HTTP (secure VPC or re-encrypt)
+- **Misconfigured health checks** mark healthy nodes bad (wrong path, auth required on `/health`)
+- **Single LB** is SPOF unless HA pair or managed service
+- **Source IP hash** for stickiness fails behind carrier NAT (many users, one IP)
 
 ### References
 
-- [Load Balancer  -  system design video](https://www.youtube.com/watch?v=TavIqNcnwSA)
+- [Load Balancer Algorithms - comparison video](https://www.youtube.com/watch?v=1fN2UDbtGDQ)
 
 ---
 
@@ -1238,67 +1270,120 @@ flowchart TB
 
 ### What is it?
 
-Three patterns for **server-to-client real-time updates**: **polling** (client repeatedly requests), **SSE (Server-Sent Events)** (one-way HTTP stream from server), and **WebSockets** (full-duplex persistent connection).
+Three families of techniques for **real-time or near-real-time** communication between client and server:
+
+| Pattern | Direction | Connection |
+|---------|-----------|------------|
+| **Short polling** | Client pulls | Repeated HTTP requests every N seconds |
+| **Long polling** | Client pulls (held) | HTTP request stays open until event or timeout |
+| **SSE (Server-Sent Events)** | Server pushes | One persistent HTTP stream (`text/event-stream`) |
+| **WebSocket** | Bidirectional | Single TCP connection upgraded from HTTP; full-duplex framed messages |
+
+**WebSocket** is a protocol (`ws://` or `wss://`) enabling **bidirectional, full-duplex** communication over a **persistent** connection with minimal per-message overhead after the initial handshake.
 
 ### Why it matters
 
-Choosing the right pattern affects latency, server load, and infrastructure compatibility. Notifications, live feeds, chat, and collaborative apps depend on these mechanisms.
+Choosing the wrong pattern wastes bandwidth (polling empty responses), ties up threads (sync long polling), or over-engineers (WebSocket when SSE suffices). Live chat, notifications, collaborative editing, stock tickers, and multiplayer games all depend on picking the right mechanism.
+
+**WebSocket use cases:**
+- **Live chat** - customer support, livestream chat, team messaging
+- **Broadcast** - sports scores, traffic, stock quotes, news alerts (often combined with pub/sub)
+- **Data sync** - DB change pushed to all connected clients (polls, live dashboards)
+- **Multiplayer collaboration** - cursors, presence, shared documents (Figma-style)
+- **In-app notifications** - event-driven alerts
+- **Live location** - rideshare, fleet tracking, delivery ETA
 
 ### How it works
 
-**Polling:**
-1. Client requests endpoint every N seconds.
-2. Server returns current state (often empty).
-3. Simple but wasteful; **long polling** holds request until event.
+**a) Short polling**
 
-**SSE:**
-1. Client opens HTTP GET with `Accept: text/event-stream`.
-2. Server keeps connection open, pushes `data:` lines.
-3. Auto-reconnect built into browser EventSource API.
+1. Client calls API every 1-2 seconds (e.g. `GET /messages?since=...`)
+2. Server returns current state; often **empty** when nothing changed
+3. High HTTP overhead; poor for true real-time
 
-**WebSockets:**
-1. HTTP upgrade handshake (`Upgrade: websocket`).
-2. Bidirectional framed messages over single TCP connection.
-3. Low overhead after establishment.
+**b) Long polling**
+
+1. Client sends HTTP request; server **holds** it until data arrives or timeout
+2. Client immediately opens new long poll after response
+3. Challenges: message ordering with multiple parallel connections; still reconnects after each timeout
+
+**c) Server-Sent Events (SSE)**
+
+1. Client: `GET /events` with `Accept: text/event-stream`
+2. Server keeps connection open; pushes `data: {...}\n\n` lines
+3. Browser `EventSource` API auto-reconnects on disconnect
+4. **One-way only** (server -> client); client still uses normal HTTP for commands
+
+**d) WebSocket**
+
+1. **TCP connection** established (same as HTTP)
+2. **HTTP upgrade handshake:**
+   - Client: `Upgrade: websocket`, `Connection: Upgrade`, `Sec-WebSocket-Key`
+   - Server: `101 Switching Protocols`, `Sec-WebSocket-Accept`
+3. Subprotocol negotiated (e.g. `json`, `mqtt`)
+4. Connection switches to **WebSocket framing** - async bidirectional messages
+5. Uses `ws://` (plain) or **`wss://`** (TLS) - always use `wss://` in production
 
 ```mermaid
 sequenceDiagram
     participant Client
     participant Server
-    Note over Client,Server: WebSocket
-    Client->>Server: Upgrade request
-    Server-->>Client: 101 Switching
-    Client->>Server: message
-    Server->>Client: push
+    Client->>Server: HTTP GET + Upgrade: websocket
+    Server-->>Client: 101 Switching Protocols
+    Note over Client,Server: Persistent WebSocket connection
+    Client->>Server: { type: "subscribe", channel: "chat" }
+    Server->>Client: { type: "message", text: "hello" }
+    Client->>Server: { type: "message", text: "hi" }
 ```
+
+**Comparison at a glance:**
+
+| | Short poll | Long poll | SSE | WebSocket |
+|---|------------|-----------|-----|-----------|
+| Direction | Pull | Pull | Server push | Bidirectional |
+| Overhead | Very high | Medium | Low | Lowest after handshake |
+| Real-time | Poor | Better | Good | Best |
+| Browser API | fetch | fetch | EventSource | WebSocket |
+| Proxy friendly | Yes | Mostly | Yes | Needs L7 proxy support |
+
+**Scaling WebSockets across servers:**
+
+- Connections are **stateful** - server holds socket per client
+- **Sticky sessions** (session affinity) route same client to same instance, OR
+- **Pub/sub backplane** (Redis, Kafka) so any server can push to clients on other nodes
+- Load balancer must support **HTTP upgrade** (L7 ALB/nginx, not naive L4 TCP drain)
+
+**Popular libraries:** Socket.IO (reconnect + fallbacks), SignalR (.NET), SockJS (fallback transports), `ws` (Node.js minimal)
 
 ### Key details
 
-| Pattern | Direction | Protocol | Use case |
-|---------|-----------|----------|----------|
-| Polling | Pull | HTTP | Simple, low frequency |
-| SSE | Server->client | HTTP | Live feeds, notifications |
-| WebSocket | Bidirectional | WS | Chat, gaming, collaboration |
-
-- SSE works through most HTTP proxies; WebSocket needs proxy support
-- Long polling ties up server threads if not async
+- **When NOT to use WebSocket:** CRUD-heavy apps with no realtime need -> HTTP is simpler; audio/video streaming -> WebRTC; server-only push of text -> **SSE is simpler and scales easier**
+- **Drawbacks of WebSocket:** stateful connections consume memory; harder to scale than stateless HTTP; some corporate proxies/firewalls block WS; no built-in reconnect spec (app must implement); presence/detection of disconnects is imperfect
+- **Security:** use `wss://`; validate `Origin` header; authenticate during handshake (JWT in query or cookie); guard against XSS injecting into WS messages
+- **SSE advantages:** automatic reconnect; works over standard HTTP/2; simpler ops than WS cluster
+- **HTTP/1.1 connection limit** (~6 per domain) matters less once upgraded to single WS
 
 ### When to use
 
-- Polling: infrequent updates, simplest implementation
-- SSE: stock tickers, news feeds, progress streams
-- WebSocket: chat, multiplayer, collaborative editing
+| Need | Choose |
+|------|--------|
+| Updates every 30+ seconds, simple app | Short polling |
+| Near-real-time, server push only (scores, logs, notifications) | **SSE** |
+| Chat, gaming, collaboration, bidirectional sync | **WebSocket** |
+| Firewall/proxy uncertainty | SSE or long polling first; SockIO fallbacks |
 
 ### Trade-offs / Pitfalls
 
-- Polling scales poorly (empty responses waste bandwidth)
-- SSE one-way only; need second channel for client commands
-- WebSocket sticky sessions required with multiple servers
-- Connection limits (browser ~6 per domain HTTP/1.1) less issue with WS multiplexing
+- **Polling** - empty responses waste bandwidth; does not scale to millions of clients
+- **Long polling** - ties up worker threads if server is not async (Node, Netty, async servlet)
+- **SSE** - one-way; client commands need separate HTTP/WS channel
+- **WebSocket** - sticky sessions or pub/sub required for multi-server; connection storms on reconnect after outage; heartbeats/ping-pong needed to detect dead peers
+- **Do not default to WebSocket** for every "realtime" feature - SSE covers many notification feeds with less complexity
 
 ### References
 
-- [SSE, Polling, and WebSockets  -  real-time web video](https://www.youtube.com/watch?v=WS352jTTkPU)
+- [WebSockets - Hareram Singh (use cases, handshake, polling vs SSE comparison)](https://medium.com/@hareramcse/websockets-74244f33bff4)
+- [SSE, Polling, and WebSockets - video](https://www.youtube.com/watch?v=WS352jTTkPU)
 
 ---
 

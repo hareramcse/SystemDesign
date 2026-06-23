@@ -1,4 +1,4 @@
-# System Design — Master Reference
+﻿# System Design — Master Reference
 
 A comprehensive, interview-ready knowledge base covering networking, databases, distributed systems, cloud infrastructure, and advanced platform patterns. Each topic folder is a **self-contained master reference** — read any `README.md` top-to-bottom without needing external context.
 
@@ -59,6 +59,8 @@ Every sub-topic in a topic `README.md` follows the same master structure:
 5. **When to use** — decision criteria
 6. **Trade-offs** — pros vs cons table
 7. **References** — links from the spreadsheet and external resources
+
+**Must-know sub-topics** (CAP, cache-aside, consistent hashing, rate limiting, Kafka, etc.) are written in **extra depth** within these same sections — no separate headings — with worked examples, pseudo-code, comparison tables, and production patterns similar to detailed study notes.
 
 ### Interview prep workflow
 

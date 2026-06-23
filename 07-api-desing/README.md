@@ -1,4 +1,4 @@
-# 7. API Design
+﻿# 7. API Design
 
 > Status: **Documented**
 
@@ -1005,55 +1005,139 @@ sequenceDiagram
 
 ### What is it?
 
-**Rate limiting** caps requests per client/IP/API key over a time window - protecting backends from abuse, ensuring fair tenancy, and enforcing SLA tiers.
+**Rate limiting** controls how much traffic a client or service may send over a time window. It caps the number of requests allowed per user, IP, API key, or tenant; when the threshold is exceeded, extra requests are **rejected** (typically HTTP `429 Too Many Requests`) or **queued/throttled**.
+
+Rate limiting can live at different layers:
+- **Client-side** - SDK backoff (cooperative, not security)
+- **Server-side** - inside each app instance (weak in clusters unless shared state)
+- **Middleware / API gateway** - recommended: one enforcement point before backends (Kong, Envoy, nginx, AWS API Gateway, custom Spring filter)
 
 ### Why it matters
 
-Prevents DoS, runaway scripts, and noisy neighbors on shared infrastructure; required for public APIs and cost control.
+- **DoS and abuse protection** - bots and misbehaving clients cannot exhaust CPU, DB connections, or memory
+- **Fair multi-tenancy** - one noisy neighbor cannot starve others on shared infrastructure
+- **Cost control** - expensive endpoints (search, ML inference) stay within budget
+- **SLA tiers** - free vs paid plans get different quotas (`100 req/min` vs `10,000 req/min`)
+- **Brute-force mitigation** - login and OTP endpoints get strict per-IP limits
 
 ### How it works
 
-**Token bucket example:**
-
-1. Each client has bucket capacity C refilling at rate R/sec.
-2. Request consumes one token; reject with `429` if empty.
-3. Gateway or middleware enforces centrally.
-4. Response headers: `X-RateLimit-Remaining`, `Retry-After`.
-5. Different limits per tier (free vs paid).
-
-### Diagram
+**Placement in request path:**
 
 ```mermaid
 flowchart LR
-    Req[Request] --> Bucket{Tokens available?}
-    Bucket -->|yes| API[Backend]
-    Bucket -->|no| R429[429 Too Many Requests]
+    Client --> GW[API Gateway / Middleware]
+    GW --> RL{Rate limit check}
+    RL -->|allowed| API[Backend services]
+    RL -->|denied| R429[429 + Retry-After]
+```
+
+**1. Token bucket**
+
+- Bucket has capacity **b** (max tokens) and refill rate **r** tokens/second
+- Each request consumes **1 token**; if tokens available -> allow; else -> reject
+- Tokens stop refilling when bucket is full (overflow discarded)
+- **Per-client bucket** - typically one bucket per API key, user ID, or IP + endpoint
+
+Example: `b=10`, `r=2/sec` -> burst of 10 requests instantly, then steady 2/sec.
+
+**2. Leaky bucket**
+
+- Requests enter a **FIFO queue** with max size **b**
+- Processor drains queue at **fixed outflow rate** (e.g. 5 req/sec)
+- Queue full -> drop new request
+- Output is smooth (good for protecting downstream with fixed capacity); responses may feel async/delayed
+
+**3. Fixed window counter**
+
+- Timeline split into windows (e.g. 1 minute); counter per window per client
+- Each request increments counter; if counter > limit -> reject until window resets
+- **Edge burst problem:** limit 3/min -> 3 requests at `2:00:59` + 3 at `2:01:00` = **6 in 2 seconds** across window boundary
+
+**4. Sliding window log**
+
+- Store **timestamp of every request** in the lookback window (Redis sorted set is common)
+- On new request: remove timestamps older than `now - window`; count remaining; if count < limit -> allow and add timestamp
+- Most accurate; higher memory (stores every request time even for rejected attempts in some designs)
+
+**5. Sliding window counter (hybrid - production favorite)**
+
+Combines fixed windows with smoothing:
+
+```
+weighted_count = (prev_window_count * (1 - overlap_fraction)) + current_window_count
+```
+
+If `weighted_count > limit` -> reject.
+
+Example: limit **4 req/min**. Previous window had 4 requests; current window (25% elapsed) has 2.  
+`weighted = 4 * (1 - 0.25) + 2 = 5` -> **reject** even though neither window alone exceeded 4.
+
+**Distributed implementation with Redis (atomic):**
+
+For each client key `rate:{userId}`:
+
+1. `ZREMRANGEBYSCORE` - remove entries older than `now - windowMs`
+2. `ZADD` - add current timestamp as score and member
+3. `EXPIRE` - TTL = window size (cleanup)
+4. `ZRANGE 0 -1` - count entries in window
+5. Wrap steps 1-4 in **`MULTI`/`EXEC`** so no race between app instances
+
+Return `429` when count > `maxRequests`; include headers:
+
+| Header | Purpose |
+|--------|---------|
+| `X-RateLimit-Limit` | Max requests in window |
+| `X-RateLimit-Remaining` | Tokens/requests left |
+| `X-RateLimit-Reset` | Unix time when window resets |
+| `Retry-After` | Seconds client should wait |
+
+Pseudo-flow:
+
+```text
+allowed = redis.transaction {
+  zremrangebyscore(key, 0, now - windowMs)
+  zadd(key, now, now)
+  expire(key, windowMs)
+  count = zcard(key)
+  return count <= maxRequests
+}
 ```
 
 ### Key details
 
-| Algorithm | Behavior |
-|-----------|----------|
-| Token bucket | Allows bursts up to bucket size |
-| Fixed window | Simple; boundary burst issue |
-| Sliding window | Smoother; more state |
-| Leaky bucket | Constant outflow rate |
+| Algorithm | Burst behavior | Memory | Distributed-friendly | Best for |
+|-----------|----------------|--------|-------------------|----------|
+| Token bucket | Allows bursts up to bucket size | O(1) per client | Yes (Redis INCR + TTL) | Public APIs, Stripe-style quotas |
+| Leaky bucket | Smooth constant outflow | O(queue size) | Harder (needs queue) | Protecting fixed-capacity workers |
+| Fixed window | Boundary spikes | O(1) | Yes (INCR + key per window) | Simple internal limits |
+| Sliding window log | Accurate | O(requests in window) | Yes (Redis ZSET) | Strict per-minute limits |
+| Sliding window counter | Smooth, approximate | O(1)-O(2) windows | Yes | **High-scale production APIs** |
+
+- **Identity for limiting:** prefer API key or user ID over raw IP (corporate NAT shares one IP)
+- **Granularity:** global limit + per-endpoint limit (e.g. `1000/min` overall, `10/min` on `/search`)
+- **Fail-open vs fail-closed:** if Redis down, allow traffic (availability) or deny (safety) - product decision
+- **429 body:** return structured JSON with `retryAfter` so clients back off correctly
 
 ### When to use
 
-- All public and partner APIs.
-- Expensive endpoints (search, ML inference) with stricter limits.
-- Login endpoints against brute force.
+- All **public and partner APIs**
+- Login, password reset, OTP (anti brute-force)
+- Expensive operations: GraphQL complexity limits, search, file upload
+- Internal microservices calling shared DB or third-party APIs with quotas
 
 ### Trade-offs / Pitfalls
 
-- Distributed rate limiting needs Redis - not per-instance counters.
-- Shared NAT IPs block innocent users behind same corporate IP.
-- 429 without `Retry-After` frustrates well-behaved clients.
+- **Per-instance counters** in a cluster multiply effective limit by instance count - always use shared store (Redis, DynamoDB) for distributed limits
+- **Shared NAT / corporate IP** blocks innocent users - combine IP + API key or use authenticated identity
+- **Fixed window** allows 2x burst at boundaries - use sliding window counter or token bucket instead
+- **429 without `Retry-After`** causes clients to hammer harder
+- **Leaky bucket** can starve recent requests if queue fills with old ones during a spike
+- Rate limit != throttling: rate limit **rejects**; throttling **slows/queues** (see 7.19)
 
 ### References
 
-*(No curated references for this sub-topic in `_topics.json`.)*
+- [Rate Limiting - Hareram Singh (algorithms + Redis sliding window)](https://medium.com/@hareramcse/rate-limiting-cc6702fed0ed)
 
 ---
 

@@ -1,4 +1,4 @@
-# 2. Databases
+﻿# 2. Databases
 
 > Status: **Documented**  -  master reference
 
@@ -124,46 +124,87 @@ flowchart TB
 
 ### What is it?
 
-An **index** is a secondary data structure that speeds lookups by key or column value without scanning the entire table. Indexes trade **extra storage and write overhead** for **faster reads** on indexed columns.
+An **index** is a separate data structure (usually a **B+ tree** in relational DBs) that maps indexed column values to row locations. It lets the database find rows by key in **O(log n)** page lookups instead of scanning every row (**O(n)** sequential scan).
+
+Think of a book index: you look up a term in the index, jump to the page - you don't read every page.
+
+Indexes are **not free** - every `INSERT`/`UPDATE`/`DELETE` must also update index entries.
 
 ### Why it matters
 
-A sequential scan on a billion-row table is unusable at interactive latency. Proper indexing is often the largest single DB performance lever. Wrong indexes waste disk and slow every INSERT/UPDATE.
+On a table with 100 million rows, `WHERE user_id = 123` without an index reads millions of pages (seconds to minutes). With an index on `user_id`, the same query reads ~3-4 pages (milliseconds). Indexing is often the **largest single lever** for OLTP performance.
+
+Wrong indexes waste disk, slow writes, and fool the optimizer into bad plans.
 
 ### How it works
 
-1. Query planner evaluates WHERE/JOIN/ORDER BY clauses.
-2. If useful index exists, planner chooses **index scan** or **index-only scan**.
-3. Index stores sorted keys + pointers (row IDs or primary key) to heap rows.
-4. On write, index entries inserted/updated alongside row (maintains invariant).
-5. Composite indexes support multi-column predicates (left-prefix rule).
+1. Query arrives: `SELECT name FROM users WHERE email = 'a@b.com'`
+2. **Query planner** estimates cost of seq scan vs index scan
+3. If selective enough, planner chooses **index seek** on `email` index
+4. Index returns row IDs (or primary key) pointing to heap/table rows
+5. Database fetches row data (unless **covering index** has all columns)
+
+**Index types:**
+
+| Type | Structure | Best for |
+|------|-----------|----------|
+| B-tree (default) | Balanced tree | Equality, range, sorting |
+| Hash | Hash table | Equality only (PostgreSQL) |
+| GIN/GiST | Inverted/generalized | Full-text, JSON, geo |
+| Partial | Subset of rows | `WHERE status = 'active'` |
+| Composite | Multiple columns | Multi-column WHERE/JOIN |
+
+**Composite index left-prefix rule:**
+
+Index on `(last_name, first_name)` supports:
+- `WHERE last_name = 'Smith'` - yes
+- `WHERE last_name = 'Smith' AND first_name = 'John'` - yes
+- `WHERE first_name = 'John'` alone - **no** (cannot use index efficiently)
+
+**Covering index (index-only scan):**
+
+Index includes all columns in SELECT: `CREATE INDEX idx ON users(email) INCLUDE (name)`  
+Query reads only index pages - never touches heap -> fastest path.
 
 ```mermaid
 flowchart LR
-    Query[SELECT WHERE col=X] --> Plan{Index exists?}
-    Plan -->|Yes| Idx[Index seek O log n]
-    Plan -->|No| Scan[Seq scan O n]
+    Query[SELECT WHERE col=X] --> Plan{Index exists and selective?}
+    Plan -->|Yes| Idx[Index seek - few pages]
+    Plan -->|No| Scan[Seq scan - all pages]
 ```
+
+**Clustered vs non-clustered:**
+
+- **Clustered (InnoDB PK):** row data stored in index leaf pages - table IS the PK index
+- **Non-clustered:** index leaves hold pointer to heap row (PostgreSQL secondary indexes)
 
 ### Key details
 
-- **Clustered index:** row data stored in index order (InnoDB PK)
-- **Covering index:** includes all columns needed - avoids heap lookup
-- **Selectivity:** high-cardinality columns benefit most
-- Types: B-tree (default), hash, GIN/GiST (PostgreSQL), full-text, partial indexes
+- **Selectivity:** index helps when predicate filters small fraction of rows (`user_id` good; `gender` alone often bad)
+- **Write amplification:** 5 indexes on a table = 5 extra writes per INSERT
+- **Index bloat:** dead tuples from updates -> `REINDEX`, `VACUUM` (PostgreSQL)
+- **Functions break indexes:** `WHERE LOWER(email) = 'x'` won't use index on `email` unless expression index
+- **EXPLAIN ANALYZE** is mandatory to verify index usage in production queries
+- Foreign keys should almost always be indexed (JOIN and CASCADE performance)
 
 ### When to use
 
-- Columns in WHERE, JOIN, ORDER BY with high selectivity
-- Foreign keys (join performance)
-- Avoid over-indexing low-cardinality columns alone (gender flag)
+- Columns in `WHERE`, `JOIN ON`, `ORDER BY` with high cardinality
+- Foreign key columns
+- Columns used for range queries (`created_at`, `price`)
+- Avoid indexing boolean/low-cardinality columns alone unless partial index
 
 ### Trade-offs / Pitfalls
 
-- Every index slows writes and consumes space
-- Wrong composite column order wastes index
-- Index bloat requires maintenance (REINDEX, VACUUM)
-- Function on indexed column prevents index use unless expression index
+- Too many indexes slow writes and increase storage (SSD still costs money)
+- Wrong column order in composite index -> index unused
+- Optimizer may choose seq scan if it estimates most rows match anyway
+- Index maintenance during bulk load - drop index, load, recreate is faster
+- Unique index enforces constraint but adds write cost on every insert
+
+### References
+
+- PostgreSQL EXPLAIN documentation; Use The Index, Luke (use-the-index-luke.com)
 
 ---
 

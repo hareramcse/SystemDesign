@@ -1,4 +1,4 @@
-# 3. Caching
+﻿# 3. Caching
 
 > Status: **Documented**  -  master reference
 
@@ -125,57 +125,110 @@ flowchart TB
 
 ### What is it?
 
-**Cache-aside** (a.k.a. **lazy loading**) puts the application in control: the app reads from cache first, on miss loads from DB and writes to cache; on write, the app updates the DB and **invalidates or updates** the cache entry. The cache is not aware of the database.
+**Cache-aside** (also called **lazy loading** or **look-aside**) is the pattern where the **application** owns all cache logic. The cache is a passive key-value store; it does not know about the database.
+
+- **Read:** app checks cache first; on miss, loads from DB and populates cache
+- **Write:** app writes to DB (source of truth), then **invalidates** (deletes) or updates the cache key
+
+This is the default pattern for **Redis + PostgreSQL/MySQL** in most production services.
 
 ### Why it matters
 
-It is the most common production pattern because it is simple, works with any cache and any DB, and only caches data that is actually requested. Redis + PostgreSQL almost always use cache-aside.
+- Only data that is actually read gets cached (no wasted memory on cold rows)
+- Works with any cache (Redis, Memcached, in-process Caffeine) and any database
+- Simple mental model for developers; no cache-vendor magic required
+- Decouples cache failure from DB - if Redis is down, app can still read DB (degraded latency)
 
 ### How it works
 
-**Read path:**
-1. App queries cache for key.
-2. Hit -> return data.
-3. Miss -> query DB, store result in cache with TTL, return data.
+**Read path (cache hit):**
 
-**Write path:**
-1. App writes to DB (source of truth).
-2. App deletes cache key (invalidate) or updates cache entry.
-3. Next read repopulates cache on miss.
+```text
+1. value = cache.get("user:123")
+2. if value != null -> return value   // HIT - no DB call
+```
+
+**Read path (cache miss):**
+
+```text
+1. value = cache.get("user:123")       // MISS
+2. value = db.query("SELECT ... WHERE id=123")
+3. cache.set("user:123", value, TTL=300s)
+4. return value
+```
+
+**Write path (recommended: invalidate-on-write):**
+
+```text
+1. db.update("UPDATE users SET name=? WHERE id=123", ...)
+2. cache.delete("user:123")            // invalidate, do NOT update cache here
+3. Next read will miss and repopulate fresh data from DB
+```
+
+**Why invalidate instead of update-on-write?**
+
+Race scenario with update-on-write:
+1. Thread A writes DB `name=Alice` -> updates cache `name=Alice`
+2. DB write fails/rolls back (still `name=Bob` in DB)
+3. Cache shows `Alice`, DB shows `Bob` -> **inconsistent until TTL**
+
+With invalidate-on-write, failed DB write should skip cache delete; successful write always clears stale cache.
 
 ```mermaid
 sequenceDiagram
     participant App
     participant Cache
     participant DB
-    App->>Cache: GET key
+    App->>Cache: GET user:123
     Cache-->>App: miss
     App->>DB: SELECT
     DB-->>App: row
-    App->>Cache: SET key, TTL
+    App->>Cache: SET user:123, TTL=300s
     App-->>App: return row
+    Note over App,DB: Later write
+    App->>DB: UPDATE
+    App->>Cache: DEL user:123
 ```
+
+**Read-after-write consistency (same user):**
+
+If a user updates their profile then immediately reads it, they may hit stale cache if invalidation is async. Fixes:
+- Delete cache **before** or **synchronously after** DB commit in same request
+- **Read-your-writes:** route that user's reads to DB or use versioned keys for 1-2 seconds
+- Short TTL as safety net (e.g. 60s) even with explicit invalidation
 
 ### Key details
 
-- Application owns cache logic - no magic in the cache layer
-- **Invalidate-on-write** is safer than update-on-write (avoids race conditions where DB write fails but cache shows new value)
-- TTL provides safety net if invalidation is missed
-- Works well when read:write ratio is high (10:1 or greater)
+- **TTL is mandatory** even with invalidation - protects against missed invalidation code paths (new service writes DB but forgets cache)
+- **Cache key design:** `entity:id` (e.g. `product:42`), optional version suffix `product:42:v5`
+- **Null caching:** cache short TTL for "not found" to prevent **cache penetration** (repeated DB lookups for missing keys)
+- **Hit ratio target:** 90%+ on hot paths; monitor `cache_hits / (hits + misses)`
+- **Read:write ratio:** ideal 10:1 or higher; write-heavy tables benefit less from cache-aside
+- **Multiple writers:** use pub/sub (Redis) or CDC (Debezium) so all services evict the same keys
+- **Comparison to other patterns:**
+  - Read-through: cache loads on miss automatically (app only talks to cache)
+  - Write-through: cache and DB updated together on write (stronger consistency, slower writes)
+  - Write-back: write to cache first, async flush to DB (fast writes, durability risk)
 
 ### When to use
 
-- General-purpose caching with Redis/Memcached
-- When you need full control over what gets cached
-- Heterogeneous data where not everything should be cached
-- Teams comfortable implementing invalidation in application code
+- Default choice for application-level caching with Redis/Memcached
+- Read-heavy workloads (product pages, user profiles, config)
+- When you need control over exactly which queries are cached
+- Polyglot persistence (different DBs, one shared Redis cluster)
 
 ### Trade-offs / Pitfalls
 
-- **Stale reads** if invalidation fails silently or races occur (read after write before invalidate completes)
-- First request after invalidation always misses - latency spike per key
-- Application code must handle cache logic everywhere data is accessed
-- Does not help if working set exceeds cache size (constant churn, low hit ratio)
+- **Stale reads** - invalidation bug or race between DB commit and cache delete
+- **Thundering herd** - hot key expires; thousands of concurrent misses hit DB (see 3.10 Cache Stampede)
+- **Cache avalanche** - entire Redis cluster restart causes mass miss (see 3.11)
+- **Duplicated logic** - every service touching the data must implement cache-aside correctly
+- **Cold start** - after deploy, empty cache -> DB load spike until warmed (see 3.13 Cache Warming)
+- **Does not help** if working set >> cache memory (constant eviction, low hit ratio)
+
+### References
+
+- [Cache Fundamentals - video](https://www.youtube.com/watch?v=1NngTUYPdpI)
 
 ---
 
@@ -555,18 +608,26 @@ flowchart LR
 
 ### What is it?
 
-A **cache stampede** (thundering herd) occurs when a popular cache entry expires and **many concurrent requests** simultaneously miss, each triggering an independent expensive recomputation or DB query for the same key.
+A **cache stampede** (also **thundering herd** or **dog-piling**) happens when a **popular cache key expires** (or is evicted) and **many concurrent requests** simultaneously get a cache miss. Each request independently recomputes the value or queries the database for the **same key**, overwhelming the backend.
+
+One hot key expiring can take down the database during peak traffic (Black Friday, viral product page, homepage config).
 
 ### Why it matters
 
-A single hot key expiry can overwhelm the database - exactly when you thought the cache was protecting you. Black Friday outages often involve stampede dynamics.
+Caching exists to protect the DB. Stampede is the failure mode where the cache **stops protecting** at the worst moment - exactly when traffic is highest and the key is hottest.
 
 ### How it works
 
-1. Hot key `product:42` expires at T=0.
-2. 10,000 requests arrive in the same 100 ms window.
-3. All 10,000 miss cache and query DB for `product:42`.
-4. DB connection pool exhausted; latency spikes globally.
+**Timeline of a stampede:**
+
+```text
+T=0     Key "product:42" TTL expires (or Redis flush)
+T=0+1ms 10,000 requests arrive for product page
+T=0+2ms All 10,000 GET cache -> MISS
+T=0+3ms All 10,000 fire SELECT * FROM products WHERE id=42
+T=0+5ms DB connection pool exhausted (max 100 connections)
+T=0+10ms Timeouts cascade; retries double load
+```
 
 ```mermaid
 sequenceDiagram
@@ -575,36 +636,64 @@ sequenceDiagram
     participant Cache
     participant DB
     Note over Cache: key expired
-    R1->>Cache: GET
-    R2->>Cache: GET
+    R1->>Cache: GET product:42
+    R2->>Cache: GET product:42
     Cache-->>R1: miss
     Cache-->>R2: miss
-    R1->>DB: query
-    R2->>DB: query
+    R1->>DB: SELECT (heavy query)
+    R2->>DB: SELECT (same query x N)
 ```
+
+**Mitigation strategies (use in combination):**
+
+| Strategy | How it works | Trade-off |
+|----------|--------------|-----------|
+| **Distributed lock / single-flight** | First miss acquires lock `lock:product:42`; others wait or spin; one thread loads DB, writes cache, releases lock | Waiters see latency spike; lock holder crash needs TTL on lock |
+| **Request coalescing** | Go `singleflight`, Java pattern - duplicate in-flight requests share one result | Language/library support needed |
+| **Probabilistic early expiration** | Refresh cache at random time before TTL (e.g. between 80-100% of TTL) so keys don't all expire together | Slightly stale data possible |
+| **Stale-while-revalidate** | Return stale value immediately; one background worker refreshes | User may see old data briefly |
+| **Never expire hot keys** | Refresh-ahead (3.6) or no TTL + explicit invalidation on write | Requires invalidation discipline |
+| **Circuit breaker on miss path** | Cap concurrent DB queries per key | Legitimate users wait longer |
+| **Pre-warming** | Scheduled job refreshes hot keys before peak (3.13) | Ops overhead |
+
+**Single-flight pseudo-code:**
+
+```text
+on cache_miss(key):
+  if lock.acquire("load:" + key, timeout=5s):
+    try:
+      value = db.load(key)
+      cache.set(key, value, TTL)
+      return value
+    finally:
+      lock.release("load:" + key)
+  else:
+    wait until cache populated OR timeout -> retry get
+```
+
+**Redis lock pattern:** `SET lock:key NX EX 10` (set if not exists, 10s expiry)
 
 ### Key details
 
-| Mitigation | Mechanism |
-|------------|-----------|
-| **Locking / single-flight** | First miss acquires lock; others wait for result |
-| **Probabilistic early expiry** | Jitter TTL so keys don't all expire together |
-| **Request coalescing** | Memcached `gets` + CAS or Go `singleflight` |
-| **Stale-while-revalidate** | Serve stale value while one worker refreshes |
-| **External pre-warming** | Refresh-ahead before expiry |
+- Stampede affects **one key**; **cache avalanche** (3.11) affects **many keys** or whole cluster
+- Hot keys: product launch, config blob, OAuth JWKS, homepage feed
+- **TTL jitter:** `TTL = base + random(0, 60s)` spreads expiry times
+- Memcached `gets` + CAS can implement coalescing at protocol level
+- Monitor: `cache_miss_rate` spike + `db_query_rate` spike on same endpoint
 
 ### When to use mitigations
 
-- Any system with hot keys and TTL-based expiry
-- High fan-out pages (homepage, viral product)
-- Computed aggregates (leaderboards, counts) cached with TTL
+- Any cache with TTL on keys with **high fan-out** (same key, many users)
+- Computed aggregates (leaderboards, counts) cached with expiry
+- High-traffic e-commerce, social feeds, config services
 
 ### Trade-offs / Pitfalls
 
-- Locking adds latency for waiters if refresh is slow
-- Serving stale during revalidate trades consistency for availability
-- Jitter alone doesn't help if traffic spike aligns with expiry
-- Single-flight must handle worker crash (lock timeout required)
+- Locking: if loader is slow, all waiters queue (worse p99 than one slow query)
+- Stale-while-revalidate: user sees outdated price/stock briefly - may be unacceptable for checkout
+- Jitter alone does not help if **all traffic** aligns with natural expiry (scheduled publish)
+- Forgotten lock release (crash) -> 5s blackout until lock TTL expires
+- Single-flight in multi-instance app **requires distributed lock** (Redis), not just in-process mutex
 
 ---
 

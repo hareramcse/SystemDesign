@@ -1,4 +1,4 @@
-# 5. Distributed Databases
+﻿# 5. Distributed Databases
 
 > Status: **Documented**
 
@@ -465,50 +465,82 @@ sequenceDiagram
 
 ### What is it?
 
-**Consistent hashing** maps keys and nodes onto a fixed hash ring. Adding or removing a node only remaps keys adjacent to that node on the ring - not the entire key space.
+**Consistent hashing** maps both **keys** (cache entries, user IDs, objects) and **nodes** (servers) onto a fixed **hash ring** (positions `0` to `2^32-1`). Each key is assigned to the **first node clockwise** from the key's position on the ring.
+
+When a node is **added** or **removed**, only keys in the arc between that node and its predecessor move - not the entire key space. This minimizes data migration during cluster resize.
+
+**Contrast with naive `hash(key) % N`:**
+- When N changes from 3 to 4, **almost all keys** remap -> mass cache miss / data shuffle
+- Consistent hashing: only ~`1/N` of keys move per node change
 
 ### Why it matters
 
-Enables elastic scaling with minimal data movement - critical for caches (Memcached), Dynamo-style stores, and load balancers.
+- **Distributed caches** (Memcached, Redis Cluster) - add/remove nodes without invalidating entire cache
+- **Dynamo-style databases** - partition data across nodes with minimal rebalance
+- **Load balancers** (some L7/L4 designs) - stable backend selection
+- **CDNs and P2P** (Chord, Kademlia) - routing in large peer networks
 
 ### How it works
 
-1. Hash nodes and keys to positions on a 0 - 2Â³Â² ring.
-2. Key belongs to the first node clockwise from its position.
-3. Add node: only keys between predecessor and new node migrate.
-4. Use virtual nodes (vnodes) for even distribution.
-
-### Diagram
+1. Place each physical server at one or more points on the ring (hash of node ID)
+2. Hash the key: `position = hash("user:123")`
+3. Walk clockwise from `position` until you hit the first server -> that server owns the key
+4. **Add node D:** only keys between D's predecessor and D migrate to D
+5. **Remove node B:** keys owned by B migrate to B's successor on the ring
 
 ```mermaid
 flowchart LR
-    Ring[Hash Ring] --> N1[Node A]
+    Ring[Hash Ring 0 to 2^32] --> N1[Node A]
     Ring --> N2[Node B]
     Ring --> N3[Node C]
-    Key[K] -->|clockwise| N2
+    Key[K hash position] -->|clockwise first match| N2
 ```
+
+**Virtual nodes (vnodes):**
+
+One physical server maps to **many** points on the ring (e.g. 100-256 vnodes per host). Without vnodes, uneven arc sizes cause hot servers when node count is small.
+
+Example: 3 physical nodes with 100 vnodes each = 300 ring points -> near-uniform distribution.
+
+**Replication on the ring:**
+
+For replication factor R=3, key owner is first clockwise node; replicas are 2nd and 3rd clockwise nodes.
+
+**Worked example:**
+
+Ring with nodes A, B, C. Key `K` hashes between B and C -> owned by C.  
+Add node D between B and K -> only keys that were on C and fall between D and K move to D (~fraction `1/(N+1)` of keys).
 
 ### Key details
 
-- Typical libraries: Ketama, jump consistent hash (alternative).
-- Without vnodes, physical nodes own uneven arc segments.
-- Replication: walk clockwise to find N successor nodes for copies.
+| Approach | Remap on node change | Load balance | Notes |
+|----------|---------------------|--------------|-------|
+| `hash % N` | ~all keys | Even if uniform hash | Simple; bad for elastic clusters |
+| Consistent hash | ~`1/N` keys per change | Uneven without vnodes | Memcached Ketama |
+| Consistent hash + vnodes | ~`1/N` keys | Good | Cassandra, DynamoDB |
+| Jump consistent hash | Minimal | Good | No ring metadata; Google paper |
+
+- **Hot keys:** consistent hashing spreads **keys** evenly but not **traffic** - `celebrity_user` still hammers one node; fix with key splitting or local cache
+- **Client vs server routing:** client computes owner (Dynamo) or server redirects (Redis Cluster MOVED/ASK)
+- **Metadata service:** ring membership must be consistent across clients; gossip or ZooKeeper/KRaft
+- Libraries: **Ketama** (Memcached), **libketama**, **jump hash** (no virtual nodes needed)
 
 ### When to use
 
-- Dynamic cluster membership (frequent add/remove).
-- Distributed caches and peer-to-peer systems.
-- Minimizing data migration during scale events.
+- Clusters that **grow and shrink** frequently (auto-scaling cache pools)
+- Distributed storage where rebalancing terabytes is expensive
+- Any system design interview involving "how do you shard data across servers?"
 
 ### Trade-offs / Pitfalls
 
-- Basic consistent hash still uneven with few physical nodes - use vnodes.
-- Hot keys remain hot; hashing does not fix access skew.
-- Ring metadata must be consistent across clients and servers.
+- Few physical nodes without vnodes -> **uneven load** (one node owns 50% of ring)
+- Hot keys are **not solved** by hashing alone
+- Ring membership changes during migration need **handoff protocol** (read from old + new owner during move)
+- Jump consistent hash avoids vnodes but limits flexibility for heterogeneous node capacities (weighted vnodes help)
 
 ### References
 
-*(No curated references for this sub-topic in `_topics.json`.)*
+- Used in Dynamo (Amazon), Cassandra, Riak, Memcached client libraries
 
 ---
 

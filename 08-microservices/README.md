@@ -1,4 +1,4 @@
-# 8. Microservices
+﻿# 8. Microservices
 
 > Status: **Documented**
 
@@ -901,21 +901,40 @@ flowchart LR
 
 ### What is it?
 
-A **circuit breaker** stops calling a failing downstream service after error threshold - failing fast in **open** state, probing recovery in **half-open**, resuming in **closed**.
+A **circuit breaker** is a resilience pattern that **stops calling a failing downstream service** after errors exceed a threshold - like an electrical breaker that trips to prevent fire. Instead of waiting for timeouts on every call, the caller **fails fast** while the dependency is unhealthy.
+
+Named states mirror electrical circuits: **Closed** (normal), **Open** (tripped), **Half-Open** (testing recovery).
+
+Popularized by **Netflix Hystrix**; modern equivalents: **Resilience4j**, **Istio outlier detection**, **Envoy** passive health checks.
 
 ### Why it matters
 
-Prevents retry storms and thread exhaustion cascading through call chains - the difference between one slow dependency and total outage.
+Without a circuit breaker, one slow/failing dependency causes:
+1. Caller threads block waiting for timeout (thread pool exhaustion)
+2. Retries amplify load on already-failing service
+3. Cascade failure across the call chain (**cascading outage**)
+
+Circuit breaker converts slow failure into fast failure, preserving resources for healthy paths and enabling **fallback** responses.
 
 ### How it works
 
-**States:**
+**State machine:**
 
-1. **Closed:** normal calls; count failures in sliding window.
-2. **Open:** failures exceed threshold -> reject calls immediately (fast fail).
-3. **Half-open:** after timeout, allow probe requests; success -> closed, failure -> open.
+```text
+CLOSED (normal)
+  -> count failures in sliding window (e.g. last 10 calls, or 50% failure rate in 30s)
+  -> threshold exceeded -> OPEN
 
-### Diagram
+OPEN (tripped)
+  -> all calls fail immediately (no network call to downstream)
+  -> return fallback or error to caller
+  -> after waitDuration (e.g. 30s) -> HALF-OPEN
+
+HALF-OPEN (probe)
+  -> allow limited probe requests (e.g. 1 in 5)
+  -> probe success -> CLOSED
+  -> probe failure -> OPEN again
+```
 
 ```mermaid
 stateDiagram-v2
@@ -926,27 +945,55 @@ stateDiagram-v2
     HalfOpen --> Open: probe failure
 ```
 
+**Example with Resilience4j-style config:**
+
+| Parameter | Example | Meaning |
+|-----------|---------|---------|
+| `failureRateThreshold` | 50% | Trip when half of calls fail |
+| `slidingWindowSize` | 20 | Evaluate last 20 calls |
+| `waitDurationInOpenState` | 30s | Stay open before half-open |
+| `permittedCallsInHalfOpenState` | 3 | Probe calls allowed |
+
+**Combined patterns:**
+
+- **Circuit breaker + retry:** retry only when closed; never retry when open
+- **Circuit breaker + timeout:** cap wait per call (e.g. 2s) before counting as failure
+- **Circuit breaker + bulkhead:** isolate thread pools per dependency
+- **Fallback:** return cached default, degraded feature, or friendly error message
+
+```text
+try:
+  result = circuitBreaker.execute(() -> paymentService.charge())
+except CircuitOpen:
+  return cachedQuote()  // fallback
+```
+
 ### Key details
 
-- Libraries: Resilience4j, Istio outlier detection, Hystrix (legacy).
-- Combine with fallback (cached default, degraded response).
-- Monitor state transitions as alerting signal.
+- Monitor **state transition metrics** (`circuit_opened_total`) - alert before users notice
+- Tune thresholds per dependency - payment service stricter than avatar image service
+- **Do not put circuit breaker on database** in a way that hides connection pool misconfiguration
+- Service mesh (Istio) can eject unhealthy hosts without app code changes
+- Half-open flapping: increase `waitDuration` or require multiple successful probes
 
 ### When to use
 
-- Every synchronous cross-service call in critical path.
-- Unreliable third-party APIs.
-- During dependency incidents to protect caller pool.
+- Every **synchronous** cross-service call on critical user paths
+- Third-party APIs with variable reliability (payments, SMS, maps)
+- During incidents to prevent retry storms from amplifying outage
+- Microservices with deep call chains (A -> B -> C -> D)
 
 ### Trade-offs / Pitfalls
 
-- Open circuit returns errors to users - need graceful degradation UX.
-- Threshold tuning wrong -> flapping or slow failure detection.
-- Circuit breaker on wrong layer (DB) may mask root cause.
+- **Open circuit = errors to users** unless fallback exists - design degraded UX ("payments temporarily unavailable")
+- Wrong threshold -> **flapping** (open/close/open rapidly) or slow detection (too many failures before trip)
+- Circuit breaker on wrong granularity (whole service vs single endpoint) blocks healthy operations
+- Does not replace **root cause fix** - only contains blast radius
+- Async/event-driven paths need different patterns (DLQ, backpressure)
 
 ### References
 
-*(No curated references for this sub-topic in `_topics.json`.)*
+- Netflix Hystrix design docs; Resilience4j user guide
 
 ---
 

@@ -1,4 +1,4 @@
-# 6. Messaging & Events
+﻿# 6. Messaging & Events
 
 > Status: **Documented**
 
@@ -298,55 +298,104 @@ flowchart TB
 
 ### What is it?
 
-**Apache Kafka** is a distributed commit log: producers write to **topics** split into **partitions**; consumers read via **consumer groups** with offset tracking. Built for high throughput, horizontal scale, and durable retention.
+**Apache Kafka** is a distributed **commit log** (not a traditional message queue). Producers append immutable, ordered records to **topics**; topics are split into **partitions** for parallelism; consumers read at their own pace using **offsets**. Data is **retained on disk** for days or weeks (configurable), enabling **replay**.
+
+Mental model: **distributed, fault-tolerant, append-only log** that many producers write to and many consumer groups read from independently.
 
 ### Why it matters
 
-De facto enterprise event streaming platform - powers real-time pipelines, microservice communication, and log aggregation at LinkedIn-scale patterns.
+Kafka is the de facto **event streaming platform** for microservices, real-time analytics, log aggregation, CDC pipelines, and stream processing (Kafka Streams, Flink). It decouples services in time (async) and space (publishers don't know subscribers).
 
 ### How it works
 
-1. Cluster of brokers; topics partitioned across brokers.
-2. Producer picks partition (key hash or round-robin), appends batch.
-3. Leader replica accepts; followers replicate ISR (in-sync replicas).
-4. Consumer group coordinator assigns partitions to members.
-5. Consumers commit offsets after processing (auto or manual).
-
-### Diagram
-
-```mermaid
-flowchart TB
-    Prod[Producer] --> B1[Broker 1]
-    Prod --> B2[Broker 2]
-    B1 --> Topic[Topic Partitions]
-    B2 --> Topic
-    Topic --> CG[Consumer Group]
-```
-
-### Key details
+**Core components:**
 
 | Component | Role |
 |-----------|------|
-| ZooKeeper/KRaft | Cluster metadata & controller |
-| ISR | Replicas caught up with leader |
-| Offset | Consumer position in partition |
-| Replication factor | Durability per partition |
+| **Broker** | Server storing partitions on disk |
+| **Topic** | Named stream of records (like a table log) |
+| **Partition** | Ordered, immutable sequence within a topic; unit of parallelism |
+| **Offset** | Monotonic position of consumer within a partition |
+| **Producer** | Writes batches to a partition (key hash or round-robin) |
+| **Consumer group** | Set of consumers sharing work; one consumer per partition max |
+| **ISR** | In-sync replicas - followers caught up with leader |
+| **Controller** | Manages leader election (ZooKeeper legacy or **KRaft** mode) |
+
+**Write path:**
+
+1. Producer picks partition: `hash(key) % numPartitions` (same key -> same partition -> **ordering per key**)
+2. Producer sends batch to **partition leader** broker
+3. Leader appends to log; followers in ISR replicate
+4. ACK after `acks=0` (fire-forget), `acks=1` (leader only), or `acks=all` (all ISR)
+
+**Read path:**
+
+1. Consumer joins **consumer group**; coordinator assigns partitions (rebalance on join/leave)
+2. Consumer polls records from assigned partitions
+3. After processing, commits offset (auto or manual `commitSync`)
+4. On restart, resumes from last committed offset
+
+```mermaid
+flowchart TB
+    Prod[Producer] --> B1[Broker 1 Leader]
+    Prod --> B2[Broker 2]
+    B1 --> P0[Partition 0]
+    B1 --> P1[Partition 1]
+    P0 --> CG1[Consumer Group A]
+    P1 --> CG1
+    P0 --> CG2[Consumer Group B]
+```
+
+**Ordering guarantees:**
+
+- **Within a partition:** strict order
+- **Across partitions:** no global order
+- Need global order -> single partition (limits throughput) or design for per-key ordering
+
+**Retention and replay:**
+
+- Messages not deleted after consume (unlike RabbitMQ ack-and-delete default)
+- New consumer group starts at `earliest` or `latest` offset
+- Enables **event replay** for new services, bug fixes, backfill
+
+### Key details
+
+- **Replication factor** 3 is common production default (survive 2 broker loss with `min.insync.replicas=2`)
+- **Hot partition problem:** bad key choice (all `key=null`) -> one partition gets all traffic
+- **Consumer lag:** `high_watermark - committed_offset` - primary health metric
+- **Exactly-once:** idempotent producer (`enable.idempotence=true`) + transactions for read-process-write
+- **Compaction:** `log.cleanup.policy=compact` keeps latest value per key (changelog topics)
+- **KRaft:** removes ZooKeeper dependency (Kafka 3.3+ production ready)
+
+**Kafka vs traditional queue:**
+
+| | Kafka | RabbitMQ |
+|---|-------|----------|
+| Model | Log (retain) | Queue (delete on ack) |
+| Consumers | Multiple independent groups | Competing consumers share queue |
+| Replay | Yes | Limited |
+| Throughput | Very high | Moderate |
+| Ordering | Per partition | Per queue |
 
 ### When to use
 
-- Millions of events/sec with retention and replay.
-- Multiple independent consumers on same data.
-- Stream processing with Kafka Streams/Flink.
+- High-throughput event streaming (millions msg/sec)
+- Multiple services need same event stream independently
+- Audit log, activity feed, metrics pipeline
+- Stream processing with windowed aggregations
+- CDC (Debezium) from database to Kafka
 
 ### Trade-offs / Pitfalls
 
-- Ops complexity: tuning partitions, rebalancing, ISR shrink.
-- Poor key choice -> hot partitions.
-- Exactly-once requires idempotent producer + transactional API discipline.
+- **Operational complexity:** partition count planning, rebalance storms, ISR shrink alerts
+- **Not a task queue** - no native per-message delay/retry UI (use retry topics + DLQ pattern)
+- Small clusters with over-partitioning -> overhead; under-partitioning -> no parallelism
+- `acks=1` can lose messages if leader dies before replication
+- Consumer rebalance stops processing briefly - tune `session.timeout.ms`, cooperative rebalancing
 
 ### References
 
-*(No curated references for this sub-topic in `_topics.json`.)*
+- Apache Kafka documentation; Confluent blog (design papers)
 
 ---
 
@@ -730,49 +779,84 @@ flowchart LR
 
 ### What is it?
 
-**At-least-once** delivery guarantees every message is delivered one or more times - never silently lost - if the consumer ACKs after processing but crashes before ACK, or network retries occur.
+**At-least-once** delivery means the broker will deliver a message **one or more times** - it will **never silently drop** a persisted message, but **duplicates are possible**.
+
+Achieved when: message is **persisted** before ACK to producer, consumer **ACKs after processing**, and broker **redelivers** on missing ACK or consumer crash.
 
 ### Why it matters
 
-The **default practical guarantee** for durable messaging. Achievable with persistence + ACK + redelivery; consumers must be idempotent.
+This is the **default practical guarantee** for production messaging. It is achievable without exotic infrastructure. The trade-off is explicit: **you must make consumers idempotent** (safe to process the same message twice).
+
+Most teams should default to at-least-once + idempotency rather than chasing true exactly-once everywhere.
 
 ### How it works
 
-1. Broker persists message until ACKed.
-2. Consumer processes message.
-3. Consumer sends ACK; if crash before ACK, broker redelivers.
-4. Duplicate delivery possible -> consumer dedupes by message ID.
+**Happy path:**
 
-### Diagram
+```text
+1. Producer sends message -> broker persists to disk/replicas
+2. Broker ACKs producer
+3. Consumer receives message
+4. Consumer processes (e.g. update DB)
+5. Consumer sends ACK / commits offset
+6. Broker marks message consumed
+```
+
+**Failure -> duplicate:**
+
+```text
+1-4. Same as above
+5. Consumer crashes BEFORE ACK
+6. Broker redelivers same message to another consumer
+7. Consumer processes again -> DUPLICATE unless idempotent
+```
 
 ```mermaid
 flowchart LR
     M[Message] --> Process[Process]
-    Process -->|success| ACK[ACK]
-    Process -->|crash| Redeliver[Redeliver]
+    Process -->|success + ACK| Done[Done]
+    Process -->|crash before ACK| Redeliver[Broker redelivers]
     Redeliver --> Process
 ```
 
+**Kafka offset commit timing (critical):**
+
+| Strategy | Guarantee | Risk |
+|----------|-----------|------|
+| Commit **after** process | At-least-once | Duplicate on crash before commit |
+| Commit **before** process | At-most-once | **Loss** on crash after commit |
+| Transactional commit with process | Exactly-once (Kafka) | Complexity |
+
+**Idempotency patterns:**
+
+1. **Natural idempotency:** `SET status = PAID WHERE id=X` (same result if run twice)
+2. **Idempotency key:** client sends `Idempotency-Key: uuid`; store in DB with UNIQUE constraint
+3. **Message ID dedup table:** `INSERT INTO processed(message_id)` - duplicate insert fails
+4. **Upsert by business key:** `ON CONFLICT DO NOTHING`
+
 ### Key details
 
-- Kafka: commit offset after processing (or before - at-most-once risk).
-- Pattern: store processed IDs in DB with unique constraint.
-- Preferred over exactly-once when idempotency is cheap.
+- RabbitMQ: manual ACK after successful processing; `nack` with requeue on transient failure
+- Kafka: `enable.auto.commit=false`; commit offset in `finally` block after DB commit
+- **Ordering + redelivery:** duplicate may arrive out of order - design for per-key idempotency
+- Pair with **DLQ** after N retries to stop poison message loops
 
 ### When to use
 
-- Default for most microservice event handlers.
-- When duplicate handling is simpler than transactional overhead.
+- Default for microservice event handlers, webhooks, async jobs
+- When duplicate handling is cheaper than distributed transactions
+- Payment-adjacent flows with strong idempotency keys
 
 ### Trade-offs / Pitfalls
 
-- Without idempotency, duplicates corrupt state.
-- Committing offset before processing -> message loss on crash (not at-least-once).
-- Poison message infinite retry without DLQ.
+- **No idempotency = data corruption** (double charge, duplicate email)
+- Commit-before-process is NOT at-least-once - it is at-most-once with message loss
+- Infinite retry on poison message without DLQ blocks partition
+- Side effects outside DB (send email) need outbox pattern or idempotent provider APIs
 
 ### References
 
-*(No curated references for this sub-topic in `_topics.json`.)*
+- Kafka consumer delivery semantics documentation
 
 ---
 
@@ -782,55 +866,82 @@ flowchart LR
 
 ### What is it?
 
-**Exactly-once delivery** (more precisely **exactly-once processing semantics**) ensures each message side effect happens once despite retries, duplicates, and failures - combining idempotent consumers, transactional writes, and deduplication.
+**Exactly-once semantics** (EOS) means the **effect** of each message is applied **once**, even when the network retries, consumers crash, or producers resend. True end-to-end exactly-once across heterogeneous systems is **impossible** without cooperation at every layer; in practice we mean **exactly-once processing** within a bounded pipeline.
+
+Marketing says "exactly-once"; engineering means **idempotent producer + atomic offset commit + idempotent consumer** or equivalent.
 
 ### Why it matters
 
-Payments, inventory, and ledger systems cannot tolerate duplicate processing. Interviewers probe whether you know true end-to-end exactly-once is impossible without cooperation at producer, broker, and consumer.
+Payments, inventory deduction, ledger postings cannot tolerate duplicates. Interviewers test whether you know the difference between **broker guarantee**, **producer guarantee**, and **end-to-end business guarantee**.
 
 ### How it works
 
-**Kafka exactly-once pipeline example:**
+**Three layers of "exactly once":**
 
-1. Idempotent producer: broker dedupes by PID + sequence.
-2. Transactions: atomic write across partitions + offset commit.
-3. Consumer: read-process-write in single transaction to output topic + offsets.
-4. Application: idempotent handlers with business-key dedup store.
+1. **Idempotent producer (Kafka):** `enable.idempotence=true` - broker dedupes by `PID + sequence number` per partition
+2. **Transactional writes (Kafka):** `transactional.id` - atomic write to multiple partitions + consumer offset in one transaction
+3. **Idempotent consumer:** business-level dedup even if message delivered twice
 
-### Diagram
+**Kafka exactly-once pipeline:**
+
+```text
+Producer (idempotent + transactional)
+  -> consume from input topic
+  -> process
+  -> produce to output topic + commit consumer offset
+  ALL in single transaction
+```
+
+**Outbox pattern (database + message broker):**
+
+```text
+BEGIN TRANSACTION
+  UPDATE orders SET status='PAID'
+  INSERT INTO outbox(event_id, payload) VALUES (...)
+COMMIT
+-- separate relay process reads outbox, publishes to Kafka, marks sent
+```
+
+Ensures DB and event are consistent without dual-write race.
 
 ```mermaid
-sequenceDiagram
-    participant P as Idempotent Producer
-    participant K as Kafka
-    participant C as Transactional Consumer
-    participant DB as External Store
-    P->>K: txn begin + events
-    C->>K: read + process
-    C->>DB: idempotent upsert
-    C->>K: commit offsets in txn
+flowchart TB
+    P[Idempotent Producer] --> B[Broker dedup PID+seq]
+    B --> C[Consumer]
+    C --> T{Atomic}
+    T --> DB[(Database write)]
+    T --> O[Offset commit]
 ```
+
+**What "exactly once" does NOT cover:**
+
+- Email sent twice if SMTP called outside transaction
+- External API without idempotency key
+- Consumer crash after DB commit but before offset commit -> duplicate on replay (need idempotent consumer anyway)
 
 ### Key details
 
-- Broker guarantees â‰  application guarantees without idempotent sinks.
-- EOS in Kafka: `enable.idempotence=true`, `isolation.level=read_committed`.
-- Alternative: at-least-once + idempotency keys (Stripe, SQS).
+- Kafka EOS requires: `acks=all`, `min.insync.replicas>=2`, idempotent producer, transactions
+- Performance cost: transactional overhead ~10-20% vs at-least-once
+- **Simpler alternative:** at-least-once + idempotency key in DB (Stripe model) - often preferred
+- Flink/Kafka Streams provide EOS within stream topology
 
 ### When to use
 
-- Financial events, inventory decrements, state machine transitions.
-- Stream processing joining multiple inputs with no duplicate output.
+- Financial transactions, inventory, accounting entries
+- Stream processing where duplicate aggregation corrupts results
+- When idempotency at consumer is hard (complex multi-table side effects)
 
 ### Trade-offs / Pitfalls
 
-- Higher latency and throughput cost for transactional mode.
-- External side effects (email, HTTP) never truly exactly-once - use outbox + idempotency.
-- Debugging transactional aborts is harder than at-least-once.
+- **EOS != end-to-end** across email, HTTP callbacks, third parties
+- Operational complexity: transaction timeout, `abortTransaction` on failure
+- Cross-service EOS needs **distributed transactions** or saga - not Kafka alone
+- Many teams over-engineer EOS when idempotency key would suffice
 
 ### References
 
-*(No curated references for this sub-topic in `_topics.json`.)*
+- Kafka exactly-once semantics (Confluent); Transactional outbox pattern (microservices.io)
 
 ---
 

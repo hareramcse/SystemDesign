@@ -1,4 +1,4 @@
-# 4. Distributed System
+﻿# 4. Distributed System
 
 > Status: **Documented**  -  master reference
 
@@ -725,18 +725,42 @@ Single-threaded servers cannot use modern multi-core hardware. Concurrent design
 
 ### What is it?
 
-The **CAP theorem** (Brewer) states that a distributed data store can provide at most **two of three** during a **network partition**: **Consistency** (all nodes see same data), **Availability** (every request gets a response), **Partition tolerance** (system continues despite network splits).
+The **CAP theorem** (Eric Brewer, 2000) states that a distributed data store cannot simultaneously provide all three of the following **during a network partition**:
+
+| Property | Meaning |
+|----------|---------|
+| **C - Consistency** | Every read receives the most recent write (or an error) - all nodes agree on the same data |
+| **A - Availability** | Every request to a non-failing node receives a non-error response (no indefinite blocking) |
+| **P - Partition tolerance** | System continues operating despite arbitrary message loss or delay between nodes |
+
+You can have at most **two** during a partition. In practice **P is mandatory** (networks always fail eventually), so the real choice is **CP vs AP** when a partition occurs.
 
 ### Why it matters
 
-Partitions happen in production (switch failures, AZ outages). You must choose whether to reject requests (CP) or serve possibly stale data (AP) during the partition.
+Partitions are not theoretical - AZ failures, switch misconfigurations, GC pauses, and cross-region link cuts happen in production. Your architecture must define: *when replicas cannot talk, do we reject requests or serve possibly stale/conflicting data?*
+
+This drives database selection (Cassandra vs etcd), failover behavior, and incident response playbooks.
 
 ### How it works
 
-1. **Partition occurs:** nodes cannot communicate.
-2. **CP choice:** reject writes/reads that cannot be verified quorum -> consistent but unavailable to some clients.
-3. **AP choice:** accept reads/writes on isolated sides -> available but divergent until merge.
-4. After partition heals, reconcile divergent state (conflict resolution, anti-entropy).
+**Normal operation (no partition):** systems can often provide strong consistency AND availability - CAP's constraint applies when the network **splits** replicas into isolated groups.
+
+**Step-by-step during partition:**
+
+1. Network splits Node A (DC-1) from Node B (DC-2); they cannot exchange messages
+2. Client in DC-1 writes `balance=80` to A; client in DC-2 reads from B
+
+**CP path (Consistency + Partition tolerance):**
+- Reject reads/writes that cannot reach a **quorum** (majority of replicas)
+- DC-2 client gets error/timeout instead of stale `balance=100`
+- After heal: single truth from consensus log; no silent divergence
+- Examples: **etcd, ZooKeeper, Consul**, PostgreSQL with synchronous replication (writes blocked if standby unreachable)
+
+**AP path (Availability + Partition tolerance):**
+- Both sides accept reads and writes independently
+- DC-2 may return stale data OR accept conflicting writes (`balance=50` on both sides)
+- After heal: **conflict resolution** - last-write-wins, vector clocks, CRDTs, or manual merge
+- Examples: **Cassandra, DynamoDB, Riak** (with weak consistency settings)
 
 ```mermaid
 flowchart TB
@@ -747,25 +771,49 @@ flowchart TB
     AP --> Diverge[Allow divergent writes]
 ```
 
+**After partition heals:**
+- CP systems replay missed log entries; clients retry failed ops
+- AP systems run **anti-entropy** (repair replicas), merge conflicts, or alert operators
+
 ### Key details
 
-- **Partition tolerance is not optional** in distributed systems - effectively choose C vs. A under partition
-- CAP applies to **linearizability-style consistency**, not all consistency definitions
-- Most systems are **AP with tunable consistency** (quorum reads/writes)
-- No partition -> can achieve CA on single node (not useful at scale)
+- **"CA systems"** (e.g. single-node RDBMS) are not truly distributed - they avoid partitions by not scaling across networks
+- CAP **Consistency** means linearizable replica agreement - not the same as ACID **serializability** across multiple keys
+- Most production stores are **AP with tunable consistency** - Cassandra/DynamoDB let you choose quorum size per read/write
+- **Microservices do not escape CAP** - each datastore, cache, and queue makes its own CAP choice; your API composes them
+- Interview framing: *"We use CP etcd for leader election and AP Cassandra for the high-write event log"*
+
+| System | Typical posture | Behavior on partition |
+|--------|-----------------|----------------------|
+| etcd / ZooKeeper | CP | Minority partition unavailable for writes |
+| Cassandra | AP (tunable) | Quorum W+R>N for strong; ONE for eventual |
+| DynamoDB | AP (tunable) | `ConsistentRead=true` costs latency |
+| Redis Cluster | AP | Async replication; failover may lose writes |
+| CockroachDB | CP | Requires majority for commits |
+
+**Common misconceptions:**
+- "We chose all three with our microservices" - No; each component still faces CAP
+- "CAP only matters during disasters" - Partition definition includes slow networks and dropped packets
+- "AP means no consistency ever" - AP means availability during partition; quorums restore consistency when possible
 
 ### When to use
 
-- Explaining Dynamo/Cassandra (AP) vs. etcd/ZooKeeper (CP) positioning
-- Interview framing for database selection
-- Designing behavior during regional failover
+- Comparing **Dynamo/Cassandra (AP)** vs **etcd/ZooKeeper (CP)** in architecture reviews
+- Deciding payment ledger (CP) vs product catalog cache (AP) storage
+- Designing regional failover: which APIs fail closed vs degrade gracefully
+- Every system design interview involving distributed databases
 
 ### Trade-offs / Pitfalls
 
-- CAP oversimplified - consistency and availability are spectrums
-- PACELC extends the model for normal operation
-- "CA systems" usually aren't truly distributed
-- Application-level consistency may differ from storage CAP class
+- CAP is a **simplified model** - consistency and availability are spectrums, not binary switches
+- Use **PACELC** (4.15) for trade-offs when the network is healthy (latency vs consistency)
+- Choosing AP without a **merge/reconciliation story** causes silent data loss after partition heal
+- Choosing CP without **client retry logic** causes poor UX during partial outages
+- Application caches add another consistency layer on top of the database's CAP choice
+
+### References
+
+- [Consistency - Hareram Singh](https://medium.com/@hareramcse/consistency-1a80d8d63580)
 
 ---
 
