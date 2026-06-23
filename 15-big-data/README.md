@@ -1,4 +1,4 @@
-# 15. Big Data
+﻿# 15. Big Data
 
 > Status: **Documented**  -  self-contained master reference for distributed processing frameworks, data pipelines, and modern data platform architectures.
 
@@ -165,7 +165,7 @@ Hadoop pioneered the "scale-out on cheap hardware" paradigm. While MapReduce is 
 
 ### How it works
 
-1. **HDFS:** files split into blocks (128 - 256 MB); each block replicated 3Ã— across DataNodes; NameNode tracks metadata.
+1. **HDFS:** files split into blocks (128 - 256 MB); each block replicated 3× across DataNodes; NameNode tracks metadata.
 2. **MapReduce:** Map tasks process local splits -> shuffle/sort -> Reduce tasks aggregate.
 3. **YARN:** cluster resource manager allocates containers to applications (MapReduce, Spark, Tez).
 4. Data locality: schedule compute on nodes holding the data  -  minimizes network shuffle.
@@ -204,7 +204,7 @@ Hadoop pioneered the "scale-out on cheap hardware" paradigm. While MapReduce is 
 
 ### What is it
 
-**Apache Spark** is a unified analytics engine for large-scale data processing  -  in-memory batch, SQL (Spark SQL), streaming (Structured Streaming), ML (MLlib), and graph (GraphX) with DAG-based execution up to 100Ã— faster than MapReduce for iterative workloads.
+**Apache Spark** is a unified analytics engine for large-scale data processing  -  in-memory batch, SQL (Spark SQL), streaming (Structured Streaming), ML (MLlib), and graph (GraphX) with DAG-based execution up to 100× faster than MapReduce for iterative workloads.
 
 ### Why it matters
 
@@ -220,7 +220,7 @@ Spark is the default batch/interactive processing engine on cloud data platforms
 ### Key details
 
 - **RDD** (legacy) vs **DataFrame/Dataset** (Catalyst-optimized)  -  always prefer DataFrame API.
-- **Partition count** drives parallelism  -  rule of thumb: 2 - 3Ã— total CPU cores, ~128 MB per partition.
+- **Partition count** drives parallelism  -  rule of thumb: 2 - 3× total CPU cores, ~128 MB per partition.
 - **Caching** (`persist`) for iterative ML; spill to disk if memory exhausted.
 - **Structured Streaming:** micro-batch (default) or continuous processing  -  unified batch/stream API.
 
@@ -559,4 +559,4 @@ flowchart TB
 
 ---
 
-[Ã¢ - Â Back to master index](../README.md)
+[<- Back to master index](../README.md)

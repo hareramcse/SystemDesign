@@ -1,4 +1,4 @@
-# 12. Reliability Engineering
+﻿# 12. Reliability Engineering
 
 > Status: **Documented**  -  MASTER reference depth for all sub-topics below.
 
@@ -271,7 +271,7 @@ flowchart TB
 | Pros | Cons |
 |------|------|
 | Lowest RTO/RPO potential | Write conflict complexity |
-| Geographic performance | 2Ã—+ operational cost |
+| Geographic performance | 2×+ operational cost |
 | No cold standby waste | Hard to debug cross-region |
 
 ### References
@@ -1082,4 +1082,4 @@ flowchart LR
 
 ---
 
-[Ã¢ - Â Back to master index](../README.md)
+[<- Back to master index](../README.md)

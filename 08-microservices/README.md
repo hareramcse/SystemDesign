@@ -1,4 +1,4 @@
-# 8. Microservices
+﻿# 8. Microservices
 
 > Status: **Documented**
 
@@ -500,7 +500,7 @@ flowchart LR
 
 - Context map documents relationships: upstream/downstream, conformist, ACL.
 - Shared kernel only for truly stable tiny shared model - use sparingly.
-- "Customer" in CRM â‰  "Customer" in billing - don't unify prematurely.
+- "Customer" in CRM ≠ "Customer" in billing - don't unify prematurely.
 
 ### When to use
 
@@ -1486,4 +1486,4 @@ sequenceDiagram
 
 ---
 
-[Ã¢ - Â Back to master index](../README.md)
+[<- Back to master index](../README.md)

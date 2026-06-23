@@ -1,4 +1,4 @@
-# 11. Cloud & Kubernetes
+﻿# 11. Cloud & Kubernetes
 
 > Status: **Documented**  -  MASTER reference depth for all sub-topics below.
 
@@ -1838,7 +1838,7 @@ flowchart TB
 
 | Pros | Cons |
 |------|------|
-| Automatic per-node coverage | Resource use Ã— node count |
+| Automatic per-node coverage | Resource use × node count |
 | Survives node addition | Privileged access risk |
 
 ### References
@@ -2026,7 +2026,7 @@ flowchart LR
 
 ### Key details
 
-- Base64 â‰  encryption - enable etcd encryption
+- Base64 ≠ encryption - enable etcd encryption
 - Never commit Secrets to Git (use Sealed Secrets)
 - Rotate credentials; short-lived tokens preferred
 - Limit RBAC `get secrets` to necessary SAs
@@ -2460,4 +2460,4 @@ flowchart TB
 
 ---
 
-[Ã¢ - Â Back to master index](../README.md)
+[<- Back to master index](../README.md)

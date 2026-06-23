@@ -1716,4 +1716,4 @@ same key + different hash → 409 Conflict
 
 ---
 
-[Ã¢ - Â Back to master index](../README.md)
+[<- Back to master index](../README.md)

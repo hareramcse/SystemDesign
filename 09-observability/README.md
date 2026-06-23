@@ -1,4 +1,4 @@
-# 9. Observability
+﻿# 9. Observability
 
 > Status: **Documented**  -  MASTER reference depth for all sub-topics below.
 
@@ -1240,4 +1240,4 @@ flowchart LR
 
 ---
 
-[Ã¢ - Â Back to master index](../README.md)
+[<- Back to master index](../README.md)

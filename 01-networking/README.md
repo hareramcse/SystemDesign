@@ -1,4 +1,4 @@
-# 1. Networking
+﻿# 1. Networking
 
 > Status: **Documented**  -  master reference
 
@@ -92,7 +92,7 @@ flowchart TB
 | 3 | Packet | IPv4, IPv6 |
 | 2 | Frame | Ethernet |
 
-- TCP/IP model (4 layers) maps loosely: App â‰ˆ 5 - 7, Transport â‰ˆ 4, Internet â‰ˆ 3, Link â‰ˆ 1 - 2
+- TCP/IP model (4 layers) maps loosely: App ≈ 5-7, Transport ≈ 4, Internet ≈ 3, Link ≈ 1-2
 - Real stacks blur layers 5 - 7 into "application"
 
 ### When to use
@@ -1949,4 +1949,4 @@ sequenceDiagram
 
 ---
 
-[Ã¢ - Â Back to master index](../README.md)
+[<- Back to master index](../README.md)

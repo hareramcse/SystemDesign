@@ -1,4 +1,4 @@
-# 6. Messaging & Events
+﻿# 6. Messaging & Events
 
 > Status: **Documented**
 
@@ -422,7 +422,7 @@ flowchart TB
 ### Key details
 
 - Ordering guaranteed **within** partition only.
-- Partition count â‰¥ max consumers in group for full parallelism.
+- Partition count ≥ max consumers in group for full parallelism.
 - Increasing partitions does not reorder existing keys retroactively.
 
 ### When to use
@@ -1756,4 +1756,4 @@ flowchart LR
 
 ---
 
-[Ã¢ - Â Back to master index](../README.md)
+[<- Back to master index](../README.md)

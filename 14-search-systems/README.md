@@ -1,4 +1,4 @@
-# 14. Search Systems
+﻿# 14. Search Systems
 
 > Status: **Documented**  -  self-contained master reference for full-text search, indexing, ranking, and production search engines.
 
@@ -445,7 +445,7 @@ Interviewers ask "how does Elasticsearch score documents?" BM25's saturation and
 **BM25 formula (conceptual):**
 
 ```
-score(D,Q) = Î£ IDF(qi) Â· (f(qi,D) Â· (k1+1)) / (f(qi,D) + k1Â·(1âˆ’b+bÂ·|D|/avgdl))
+score(D,Q) = Σ IDF(qi) · (f(qi,D) · (k1+1)) / (f(qi,D) + k1·(1−b+b·|D|/avgdl))
 ```
 
 - `f(qi,D)`  -  term frequency in document
@@ -590,7 +590,7 @@ Mobile keyboards and fast typing produce typos; strict term matching returns zer
 1. **Levenshtein distance:** minimum single-char insert/delete/substitute operations between strings.
 2. **ES `fuzziness`:** `AUTO` allows 1 edit for 3 - 5 char terms, 2 for longer; uses Damerau-Levenshtein (includes transpositions).
 3. **Implementation:** expand query to all terms within edit distance in index dictionary  -  expensive at high fuzziness.
-4. **Phonetic filters:** Metaphone/Soundex for name search ("Smith" â‰ˆ "Smyth").
+4. **Phonetic filters:** Metaphone/Soundex for name search ("Smith" ≈ "Smyth").
 
 ### Key details
 
@@ -619,4 +619,4 @@ Mobile keyboards and fast typing produce typos; strict term matching returns zer
 
 ---
 
-[Ã¢ - Â Back to master index](../README.md)
+[<- Back to master index](../README.md)

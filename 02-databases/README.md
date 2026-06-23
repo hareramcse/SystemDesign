@@ -1,4 +1,4 @@
-# 2. Databases
+﻿# 2. Databases
 
 > Status: **Documented**  -  master reference
 
@@ -974,7 +974,7 @@ The **page cache** (buffer pool) is DB-managed memory holding frequently accesse
 
 ### Why it matters
 
-Disk is 1000Ã— slower than RAM. Cache hit ratio dominates OLTP performance. Sizing buffer pool correctly is primary DB tuning knob.
+Disk is 1000× slower than RAM. Cache hit ratio dominates OLTP performance. Sizing buffer pool correctly is primary DB tuning knob.
 
 ### How it works
 
@@ -1479,4 +1479,4 @@ flowchart TB
 
 ---
 
-[Ã¢ - Â Back to master index](../README.md)
+[<- Back to master index](../README.md)

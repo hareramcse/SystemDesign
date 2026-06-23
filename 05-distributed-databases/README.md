@@ -1,4 +1,4 @@
-# 5. Distributed Databases
+﻿# 5. Distributed Databases
 
 > Status: **Documented**
 
@@ -1774,7 +1774,7 @@ flowchart LR
 
 - Requires majority (quorum) for fault tolerance: `2f+1` nodes tolerate `f` failures.
 - FLP impossibility: no deterministic async consensus with one faulty process - protocols use timeouts/randomization.
-- Consensus â‰  distributed transactions (but transactions can use consensus per shard).
+- Consensus ≠ distributed transactions (but transactions can use consensus per shard).
 
 ### When to use
 
@@ -2160,7 +2160,7 @@ Enables **true concurrency detection** for multi-leader and leaderless stores - 
 2. Local event: V[self]++.
 3. Send message with V attached.
 4. On receive: V[i] = max(V[i], msg.V[i]) for all i; then V[self]++.
-5. Compare: V1 < V2 if all V1[i]â‰¤V2[i] and strict; incomparable = concurrent.
+5. Compare: V1 < V2 if all V1[i]≤V2[i] and strict; incomparable = concurrent.
 
 ### Diagram
 
@@ -2305,4 +2305,4 @@ flowchart TB
 
 ---
 
-[Ã¢ - Â Back to master index](../README.md)
+[<- Back to master index](../README.md)

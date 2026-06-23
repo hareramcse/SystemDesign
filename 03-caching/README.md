@@ -1,4 +1,4 @@
-# 3. Caching
+﻿# 3. Caching
 
 > Status: **Documented**  -  master reference
 
@@ -664,7 +664,7 @@ sequenceDiagram
 ### Trade-offs / Pitfalls
 
 - **Consistency:** pods see different L1 state briefly
-- Total memory = near cache Ã— number of pods (multiplied footprint)
+- Total memory = near cache × number of pods (multiplied footprint)
 - Invalidation complexity increases significantly
 - Harder to debug "works on one pod, stale on another"
 
@@ -1174,4 +1174,4 @@ flowchart LR
 
 ---
 
-[Ã¢ - Â Back to master index](../README.md)
+[<- Back to master index](../README.md)

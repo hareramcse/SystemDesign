@@ -1,4 +1,4 @@
-# 4. Distributed System
+﻿# 4. Distributed System
 
 > Status: **Documented**  -  master reference
 
@@ -84,14 +84,14 @@ flowchart LR
 
 ### Key details
 
-- **Scalable â‰  fast:** a slow system can scale by adding nodes but remain slow per request
+- **Scalable ≠ fast:** a slow system can scale by adding nodes but remain slow per request
 - **Amdahl's Law:** serial portions of work limit speedup from parallelization
 - **Elasticity:** cloud auto-scaling responds to load automatically
 - Bottleneck migrates as you scale (DB often becomes limit after app scales)
 
 ### When to use
 
-- Designing any system expected to grow 10Ã— or more
+- Designing any system expected to grow 10× or more
 - Choosing between monolith scale-up vs. microservices scale-out
 - Capacity reviews before product launches
 
@@ -114,7 +114,7 @@ flowchart LR
 
 ### Why it matters
 
-Throughput determines how much traffic a system can serve before saturation. Capacity planning and load testing target throughput headroom (e.g., 2Ã— peak load).
+Throughput determines how much traffic a system can serve before saturation. Capacity planning and load testing target throughput headroom (e.g., 2× peak load).
 
 ### How it works
 
@@ -133,7 +133,7 @@ flowchart LR
 ### Key details
 
 - Throughput and latency often inversely related under load (queueing theory)
-- **Little's Law:** L = Î» Ã— W (concurrency = arrival rate Ã— response time)
+- **Little's Law:** L = λ × W (concurrency = arrival rate × response time)
 - Peak vs. sustained throughput differ (burst buffers hide peaks briefly)
 - Horizontal scale increases aggregate throughput if bottleneck is parallelizable
 
@@ -295,7 +295,7 @@ flowchart LR
 
 ### Why it matters
 
-If 1% of requests are 10Ã— slower, with fan-out (one request calling 100 backends) the probability of hitting a slow backend approaches certainty. Google - s "Tail at Scale" paper showed why p99 matters more than mean.
+If 1% of requests are 10× slower, with fan-out (one request calling 100 backends) the probability of hitting a slow backend approaches certainty. Google - s "Tail at Scale" paper showed why p99 matters more than mean.
 
 ### How it works
 
@@ -529,7 +529,7 @@ A service that is "available" but returns wrong answers or loses data is unrelia
 
 - **MTBF:** average time between failures; higher is better
 - **MTTR:** mean time to repair; lower improves effective availability
-- Effective uptime â‰ˆ MTBF / (MTBF + MTTR)
+- Effective uptime ≈ MTBF / (MTBF + MTTR)
 - Reliability includes data integrity, not just request success
 
 ### When to use
@@ -582,7 +582,7 @@ sequenceDiagram
 - **Sync replication:** ack after replica confirms (stronger durability, higher latency)
 - **Async replication:** ack after local write (faster, risk of loss on crash)
 - Object storage (S3) achieves 11 nines durability via erasure coding across AZs
-- Durability â‰  consistency: data can be durable but stale on reads
+- Durability ≠ consistency: data can be durable but stale on reads
 
 ### When to use
 
@@ -772,7 +772,7 @@ flowchart TB
 
 - **Active-passive:** standby idle until failover
 - **Active-active:** all nodes serve traffic; need conflict handling
-- **Erasure coding:** storage redundancy with less overhead than 3Ã— replication
+- **Erasure coding:** storage redundancy with less overhead than 3× replication
 - Correlated failures (same bug on all nodes) defeat redundancy
 
 ### When to use
@@ -1810,7 +1810,7 @@ flowchart LR
 
 ### Key details
 
-- **Utilization law:** Ï = Î»/Î¼; near 100% utilization -> queueing delays explode
+- **Utilization law:** ρ = λ/μ; near 100% utilization -> queueing delays explode
 - Common bottlenecks: DB connections, lock contention, GC, single hot shard
 - **Profiling** vs. **load testing:** need both micro and macro views
 - External dependencies (payment API) become bottleneck outside your control
@@ -1819,7 +1819,7 @@ flowchart LR
 
 - Performance incidents and post-mortems
 - Before and after optimization projects
-- Architecture reviews ("what breaks first at 10Ã—?")
+- Architecture reviews ("what breaks first at 10×?")
 
 ### Trade-offs / Pitfalls
 
@@ -1830,4 +1830,4 @@ flowchart LR
 
 ---
 
-[Ã¢ - Â Back to master index](../README.md)
+[<- Back to master index](../README.md)

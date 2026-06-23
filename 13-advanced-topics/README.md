@@ -1,4 +1,4 @@
-# 13. Advanced Topics
+﻿# 13. Advanced Topics
 
 > Status: **Documented**  -  self-contained master reference for probabilistic structures, specialized data structures, distributed routing, and ID generation.
 
@@ -162,7 +162,7 @@ Exact distinct counts require O(n) memory. Analytics ("unique visitors today", "
 
 ### Key details
 
-- **Mergeable:** union of two HLL sketches â‰ˆ distinct count of combined streams (critical for distributed aggregation).
+- **Mergeable:** union of two HLL sketches ≈ distinct count of combined streams (critical for distributed aggregation).
 - Redis: `PFADD`, `PFCOUNT`, `PFMERGE`.
 - Error is relative (~1 - 2%), not absolute  -  bad for small cardinalities (< ~1000) without sparse mode.
 - Not suitable when you need exact counts or to list distinct values.
@@ -201,7 +201,7 @@ Finding "top K heavy hitters" in a firehose (network packets, API calls, trendin
 
 ### How it works
 
-1. Maintain `d` rows Ã— `w` columns of counters (a 2D array).
+1. Maintain `d` rows × `w` columns of counters (a 2D array).
 2. Each row uses a different hash function; `hash_i(x)` selects a column in row `i`.
 3. **Increment:** on item `x`, increment counter at `(i, hash_i(x))` for all rows.
 4. **Estimate frequency:** return the **minimum** across all `d` counters for `x` (overestimates are possible; minimum reduces bias).
@@ -209,7 +209,7 @@ Finding "top K heavy hitters" in a firehose (network packets, API calls, trendin
 ### Key details
 
 - **Overestimates, never underestimates** (with proper parameters)  -  safe for rate limiting thresholds.
-- Width `w` and depth `d` trade memory for accuracy; `Îµ` error bound with probability `1âˆ’Î´`.
+- Width `w` and depth `d` trade memory for accuracy; `ε` error bound with probability `1−δ`.
 - Variants: **Count-Min-Log** for heavy tail distributions; **Conservative update** reduces overcounting.
 - Used in network monitoring (DDoS detection), CDN cache admission, streaming analytics.
 
@@ -294,15 +294,15 @@ Redis sorted sets (`ZSET`) are implemented as skip lists. They offer tree-like p
 ### How it works
 
 1. Base level: sorted singly linked list of all elements.
-2. Randomly promote each inserted element to higher levels with probability `p` (often Â½).
+2. Randomly promote each inserted element to higher levels with probability `p` (often ½).
 3. **Search:** start at top level, move right while next < target, then drop down; repeat until found or bottom.
-4. Expected levels â‰ˆ log_{1/p}(n); expected pointers per node â‰ˆ 1/(1âˆ’p).
+4. Expected levels ≈ log_{1/p}(n); expected pointers per node ≈ 1/(1−p).
 
 ### Key details
 
 - **Deterministic variants** exist but probabilistic is standard.
 - Easier to implement **lock-free concurrency** than rebalancing trees.
-- Memory overhead: ~1/(1âˆ’p) pointers per element on average.
+- Memory overhead: ~1/(1−p) pointers per element on average.
 - Redis uses skip list + hash table dual index for O(1) member lookup + O(log n) rank/range.
 
 ### When to use
@@ -385,7 +385,7 @@ DHTs power peer-to-peer systems (BitTorrent, IPFS, Cassandra ring), distributed 
 
 ### How it works
 
-1. Hash keys and node IDs onto a ring (0  -  2^160âˆ’1 for SHA-1 style).
+1. Hash keys and node IDs onto a ring (0  -  2^160−1 for SHA-1 style).
 2. Key `K` is owned by the **first node clockwise** from `hash(K)` (successor).
 3. **Virtual nodes (vnodes):** each physical node claims multiple ring positions  -  smoother load distribution.
 4. **Lookup:** maintain finger table (Chord) or replica set (Cassandra) to find successor in log N steps.
@@ -617,7 +617,7 @@ ULID combines UUID's uniqueness with **lexicographic sortability** and compact s
 
 1. First 10 characters encode timestamp (ms precision).
 2. Last 16 characters encode 80 random bits.
-3. Sorting strings lexicographically â‰ˆ sorting by creation time (within same ms, random order).
+3. Sorting strings lexicographically ≈ sorting by creation time (within same ms, random order).
 4. Monotonic ULID variant: increment random portion within same ms for strict ordering in single process.
 
 ### Key details
@@ -695,4 +695,4 @@ KSUID offers stronger randomness (128 bits) than ULID's 80 bits while remaining 
 
 ---
 
-[Ã¢ - Â Back to master index](../README.md)
+[<- Back to master index](../README.md)
