@@ -52,25 +52,6 @@ flowchart TB
     S1 -.->|async| MQ[Message Queue]
 ```
 
-## Reading order
-
-Sub-topics are sequenced for progressive learning: foundations first, then related concepts, then specialized topics.
-
-| Group | Sections | Focus |
-|-------|----------|-------|
-| **1. Performance** | 4.1-4.4 | Scale, throughput, latency, tail latency |
-| **2. Reliability** | 4.5-4.11 | Availability through failover |
-| **3. Consistency** | 4.12-4.17 | Models from CAP to linearizability |
-| **4. Operations** | 4.18-4.23 | Backpressure, degradation, capacity, bottlenecks |
-
-## Related topics
-
-- [Distributed Databases](../05-distributed-databases/README.md)  -  sharding, replication, consensus
-- [Caching](../03-caching/README.md)  -  performance, consistency at the edge
-- [Messaging & Events](../06-messaging-and-events/README.md)  -  async communication, ordering
-- [Reliability Engineering](../12-reliability-engineering/README.md)  -  DR, HA, chaos engineering
-- [Observability](../09-observability/README.md)  -  SLI/SLO, tracing, alerting
-
 ---
 
 

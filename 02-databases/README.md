@@ -1,4 +1,4 @@
-﻿# 2. Databases
+# 2. Databases
 
 > Status: **Documented**  -  master reference
 
@@ -45,23 +45,6 @@ flowchart TB
     Idx --> PC[Page Cache]
     PC --> Disk[(Disk + WAL)]
 ```
-
-## Reading order
-
-Sub-topics are sequenced for progressive learning: foundations first, then related concepts, then specialized topics.
-
-| Group | Sections | Focus |
-|-------|----------|-------|
-| **1. Schema and queries** | 2.1-2.5 | Normalization, indexes, B-tree, planner, views |
-| **2. Transactions and storage** | 2.6-2.11 | Isolation, MVCC, logs, LSM, page cache, vacuum |
-| **3. Database families** | 2.12-2.19 | KV, document, wide-column, graph, specialized stores |
-
-## Related topics
-
-- [Caching](../03-caching/README.md)  -  reducing DB read load
-- [Distributed Databases](../05-distributed-databases/README.md)  -  sharding, replication, consensus
-- [Distributed System](../04-distributed-system/README.md)  -  consistency, durability, CAP
-- [Search Systems](../14-search-systems/README.md)  -  inverted indexes, Elasticsearch
 
 ---
 

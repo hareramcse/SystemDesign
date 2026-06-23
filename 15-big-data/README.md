@@ -1,4 +1,4 @@
-﻿# 15. Big Data
+# 15. Big Data
 
 > Status: **Documented**  -  self-contained master reference for distributed processing frameworks, data pipelines, and modern data platform architectures.
 
@@ -34,17 +34,6 @@ flowchart LR
     Lake --> WH[Warehouse / Lakehouse]
     WH --> BI[Analytics / ML]
 ```
-
-## Reading order
-
-Sub-topics are sequenced for progressive learning: foundations first, then related concepts, then specialized topics.
-
-| Group | Sections | Focus |
-|-------|----------|-------|
-| **1. Processing models** | 15.1-15.2 | Batch vs stream |
-| **2. Engines** | 15.3-15.5 | Hadoop, Spark, Flink |
-| **3. Pipelines** | 15.6-15.7 | ETL vs ELT |
-| **4. Data platforms** | 15.8-15.10 | Lake, warehouse, lakehouse |
 
 ---
 
@@ -116,7 +105,7 @@ flowchart TB
 ---
 
 
-## 15.2 Stream Processing
+5.2 Stream Processing
 
 
 ### What is it
@@ -163,7 +152,7 @@ Real-time fraud, live dashboards, inventory sync, and push notifications require
 ---
 
 
-## 15.3 Hadoop
+5.3 Hadoop
 
 
 ### What is it
@@ -210,7 +199,7 @@ Hadoop pioneered the "scale-out on cheap hardware" paradigm. While MapReduce is 
 ---
 
 
-## 15.4 Spark
+5.4 Spark
 
 
 ### What is it
@@ -257,7 +246,7 @@ Spark is the default batch/interactive processing engine on cloud data platforms
 ---
 
 
-## 15.5 Flink
+5.5 Flink
 
 
 ### What is it
@@ -304,7 +293,7 @@ When latency matters (fraud detection, real-time dashboards, CDC pipelines), Fli
 ---
 
 
-## 15.6 ETL
+5.6 ETL
 
 
 ### What is it
@@ -351,7 +340,7 @@ Traditional enterprise analytics relied on ETL to enforce schema, quality, and b
 ---
 
 
-## 15.7 ELT
+5.7 ELT
 
 
 ### What is it
@@ -398,7 +387,7 @@ Cloud warehouses (Snowflake, BigQuery, Redshift) and lakehouses (Databricks) hav
 ---
 
 
-## 15.8 Data Lake
+5.8 Data Lake
 
 
 ### What is it
@@ -445,7 +434,7 @@ Data lakes decouple storage from compute  -  cheap durable storage for everythin
 ---
 
 
-## 15.9 Data Warehouse
+5.9 Data Warehouse
 
 
 ### What is it
@@ -492,7 +481,7 @@ Business intelligence, executive dashboards, and SQL analytics run on warehouses
 ---
 
 
-## 15.10 Lakehouse Architecture
+5.10 Lakehouse Architecture
 
 
 ### What is it

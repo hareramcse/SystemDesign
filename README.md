@@ -47,7 +47,7 @@ Follow topics **1 → 15** for breadth-first system design fundamentals:
 
 ### Topic sequencing
 
-Within each topic README, sub-topics are **ordered for learning flow** (foundations -> related concepts -> specialized/advanced). Use the **Reading order** table at the top of each topic file to see how sections group together.
+Within each topic README, sub-topics are **ordered for learning flow** (foundations -> related concepts -> specialized/advanced). Follow the sub-topic table and numbered section headings in each file.
 ### Per sub-topic reference format
 
 Every sub-topic in a topic `README.md` follows the same master structure:

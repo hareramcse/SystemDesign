@@ -60,18 +60,6 @@ flowchart TB
 ---
 
 
-## Reading order
-
-Sub-topics are sequenced for progressive learning: foundations first, then related concepts, then specialized topics.
-
-| Group | Sections | Focus |
-|-------|----------|-------|
-| **1. Architecture evolution** | 8.1-8.5 | Monolith -> microservices, strangler, BFF |
-| **2. Domain design** | 8.6-8.11 | DDD, bounded context, layered architectures |
-| **3. Runtime platform** | 8.12-8.15 | Discovery, mesh, sidecar |
-| **4. Resilience and sagas** | 8.16-8.21 | Breaker, retry, bulkhead, saga patterns |
-
----
 ---
 
 ## 8.1 Monolith

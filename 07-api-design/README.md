@@ -57,19 +57,6 @@ flowchart LR
 ---
 
 
-## Reading order
-
-Sub-topics are sequenced for progressive learning: foundations first, then related concepts, then specialized topics.
-
-| Group | Sections | Focus |
-|-------|----------|-------|
-| **1. Protocols** | 7.1-7.4 | REST, GraphQL, gRPC, SOAP |
-| **2. Gateway and composition** | 7.5-7.7 | Gateway, aggregation, composition |
-| **3. API design** | 7.8-7.11 | Versioning, pagination, filtering, sorting |
-| **4. Contracts and quality** | 7.12-7.15 | OpenAPI, Swagger, validation, contract tests |
-| **5. Production concerns** | 7.16-7.21 | Security, webhooks, limits, idempotency |
-
----
 ---
 
 ## 7.1 REST

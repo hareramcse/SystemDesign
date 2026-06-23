@@ -28,10 +28,6 @@
 
 
 
-
-
----
-
 ## Overview
 
 Observability is the ability to understand internal system state from externally emitted signals - logs, metrics, and traces - without redeploying code. In distributed systems, it answers *what broke*, *where*, and *for whom* by correlating telemetry across services, infrastructure, and user journeys.
@@ -94,19 +90,6 @@ flowchart LR
 ---
 
 
-## Reading order
-
-Sub-topics are sequenced for progressive learning: foundations first, then related concepts, then specialized topics.
-
-| Group | Sections | Focus |
-|-------|----------|-------|
-| **1. Logs** | 9.1-9.2 | Logging, structured logging |
-| **2. Metrics** | 9.3-9.4 | Metrics, monitoring |
-| **3. Traces** | 9.5-9.7 | Distributed tracing, OpenTelemetry, correlation |
-| **4. SRE framework** | 9.8-9.11 | SLI -> SLO -> SLA -> error budgets |
-| **5. Response** | 9.12-9.15 | Alerting, dashboards, probes, synthetics |
-
----
 ---
 
 ## 9.1 Logging

@@ -1,4 +1,4 @@
-﻿# 5. Distributed Databases
+# 5. Distributed Databases
 
 > Status: **Documented**
 
@@ -66,19 +66,6 @@ flowchart TB
 ---
 
 
-## Reading order
-
-Sub-topics are sequenced for progressive learning: foundations first, then related concepts, then specialized topics.
-
-| Group | Sections | Focus |
-|-------|----------|-------|
-| **1. Partitioning** | 5.1-5.7 | Sharding strategies, hot keys, rebalancing |
-| **2. Routing** | 5.8-5.10 | Consistent hashing, vnodes, rendezvous |
-| **3. Replication** | 5.11-5.15 | Leader models, quorums |
-| **4. Transactions** | 5.16-5.20 | 2PC/3PC, locks, split brain |
-| **5. Coordination** | 5.21-5.28 | Consensus, clocks, gossip, membership |
-
----
 ---
 
 ## 5.1 Partitioning

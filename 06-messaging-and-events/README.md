@@ -59,18 +59,6 @@ flowchart LR
 ---
 
 
-## Reading order
-
-Sub-topics are sequenced for progressive learning: foundations first, then related concepts, then specialized topics.
-
-| Group | Sections | Focus |
-|-------|----------|-------|
-| **1. Messaging models** | 6.1-6.4 | Queues, pub/sub, streaming, EDA |
-| **2. Brokers** | 6.5-6.10 | Kafka ecosystem, RabbitMQ, Pulsar |
-| **3. Delivery guarantees** | 6.11-6.16 | Ordering, semantics, DLQ, retry |
-| **4. Event patterns** | 6.17-6.23 | ES, CQRS, CDC, outbox, schema registry |
-
----
 ---
 
 ## 6.1 Message Queues

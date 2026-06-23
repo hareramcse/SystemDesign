@@ -1,4 +1,4 @@
-﻿# 10. Security
+# 10. Security
 
 > Status: **Documented**  -  MASTER reference depth for all sub-topics below.
 
@@ -33,10 +33,6 @@
 | 10.21 | [Audit Logging](#1021-audit-logging) | Done |
 
 
-
-
-
----
 
 ## Overview
 
@@ -74,19 +70,6 @@ flowchart TB
 ---
 
 
-## Reading order
-
-Sub-topics are sequenced for progressive learning: foundations first, then related concepts, then specialized topics.
-
-| Group | Sections | Focus |
-|-------|----------|-------|
-| **1. Identity** | 10.1-10.6 | AuthN, AuthZ, OAuth, OIDC, JWT, sessions |
-| **2. Access control** | 10.7-10.8 | RBAC, ABAC |
-| **3. Cryptography and secrets** | 10.9-10.12 | Encryption, KMS, secret management |
-| **4. Application threats** | 10.13-10.17 | OWASP-class attacks |
-| **5. Perimeter and governance** | 10.18-10.21 | DDoS, WAF, zero trust, audit |
-
----
 ---
 
 ## 10.1 Authentication
@@ -142,7 +125,7 @@ flowchart LR
 ---
 
 
-## 10.2 Authorization
+0.2 Authorization
 
 
 ### What is it
@@ -195,7 +178,7 @@ flowchart TB
 ---
 
 
-## 10.3 OAuth2
+0.3 OAuth2
 
 
 ### What is it
@@ -374,7 +357,7 @@ Resource server must **enforce scopes** — validating token signature alone is 
 ---
 
 
-## 10.4 OpenID Connect
+0.4 OpenID Connect
 
 
 ### What is it
@@ -428,7 +411,7 @@ flowchart LR
 ---
 
 
-## 10.5 JWT
+0.5 JWT
 
 
 ### What is it
@@ -635,7 +618,7 @@ sequenceDiagram
 ---
 
 
-## 10.6 Session Management
+0.6 Session Management
 
 
 ### What is it
@@ -695,7 +678,7 @@ sequenceDiagram
 ---
 
 
-## 10.7 RBAC
+0.7 RBAC
 
 
 ### What is it
@@ -751,7 +734,7 @@ flowchart TB
 ---
 
 
-## 10.8 ABAC
+0.8 ABAC
 
 
 ### What is it
@@ -809,7 +792,7 @@ flowchart LR
 ---
 
 
-## 10.9 Encryption at Rest
+0.9 Encryption at Rest
 
 
 ### What is it
@@ -862,7 +845,7 @@ flowchart LR
 ---
 
 
-## 10.10 Encryption in Transit
+0.10 Encryption in Transit
 
 
 ### What is it
@@ -922,7 +905,7 @@ sequenceDiagram
 ---
 
 
-## 10.11 KMS
+0.11 KMS
 
 
 ### What is it
@@ -975,7 +958,7 @@ flowchart TB
 ---
 
 
-## 10.12 Secret Management
+0.12 Secret Management
 
 
 ### What is it
@@ -1030,7 +1013,7 @@ flowchart LR
 ---
 
 
-## 10.13 CSRF
+0.13 CSRF
 
 
 ### What is it
@@ -1081,7 +1064,7 @@ flowchart LR
 ---
 
 
-## 10.14 XSS
+0.14 XSS
 
 
 ### What is it
@@ -1133,7 +1116,7 @@ flowchart LR
 ---
 
 
-## 10.15 SQL Injection
+0.15 SQL Injection
 
 
 ### What is it
@@ -1183,7 +1166,7 @@ flowchart LR
 ---
 
 
-## 10.16 SSRF
+0.16 SSRF
 
 
 ### What is it
@@ -1233,7 +1216,7 @@ flowchart LR
 ---
 
 
-## 10.17 Clickjacking
+0.17 Clickjacking
 
 
 ### What is it
@@ -1287,7 +1270,7 @@ flowchart TB
 ---
 
 
-## 10.18 DDoS Protection
+0.18 DDoS Protection
 
 
 ### What is it
@@ -1338,7 +1321,7 @@ flowchart LR
 ---
 
 
-## 10.19 WAF
+0.19 WAF
 
 
 ### What is it
@@ -1391,7 +1374,7 @@ flowchart LR
 ---
 
 
-## 10.20 Zero Trust Security
+0.20 Zero Trust Security
 
 
 ### What is it
@@ -1444,7 +1427,7 @@ flowchart TB
 ---
 
 
-## 10.21 Audit Logging
+0.21 Audit Logging
 
 
 ### What is it

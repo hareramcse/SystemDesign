@@ -1,4 +1,4 @@
-﻿# 11. Cloud & Kubernetes
+# 11. Cloud & Kubernetes
 
 > Status: **Documented**  -  MASTER reference depth for all sub-topics below.
 
@@ -47,10 +47,6 @@
 | 11.35 | [Cluster Autoscaler](#1135-cluster-autoscaler) | Done |
 
 
-
-
-
----
 
 ## Overview
 
@@ -111,20 +107,6 @@ flowchart TB
 ---
 
 
-## Reading order
-
-Sub-topics are sequenced for progressive learning: foundations first, then related concepts, then specialized topics.
-
-| Group | Sections | Focus |
-|-------|----------|-------|
-| **1. Cloud models** | 11.1-11.4 | IaaS, PaaS, SaaS, serverless |
-| **2. Cloud infrastructure** | 11.5-11.12 | Regions, VPC, storage, managed DB |
-| **3. Containers** | 11.13-11.18 | Docker, images, namespaces, cgroups |
-| **4. Kubernetes core** | 11.19-11.24 | K8s, pods, deployments, services, ingress |
-| **5. K8s workloads and config** | 11.25-11.33 | StatefulSets, jobs, ConfigMaps, secrets, etcd |
-| **6. Scaling** | 11.34-11.35 | HPA, cluster autoscaler |
-
----
 ---
 
 ## 11.1 IaaS
@@ -178,7 +160,7 @@ flowchart LR
 ---
 
 
-## 11.2 PaaS
+1.2 PaaS
 
 
 ### What is it
@@ -230,7 +212,7 @@ flowchart LR
 ---
 
 
-## 11.3 SaaS
+1.3 SaaS
 
 
 ### What is it
@@ -281,7 +263,7 @@ flowchart LR
 ---
 
 
-## 11.4 Serverless
+1.4 Serverless
 
 
 ### What is it
@@ -333,7 +315,7 @@ flowchart LR
 ---
 
 
-## 11.5 Regions
+1.5 Regions
 
 
 ### What is it
@@ -389,7 +371,7 @@ flowchart LR
 ---
 
 
-## 11.6 Availability Zones
+1.6 Availability Zones
 
 
 ### What is it
@@ -444,7 +426,7 @@ flowchart TB
 ---
 
 
-## 11.7 Multi Region Deployment
+1.7 Multi Region Deployment
 
 
 ### What is it
@@ -497,7 +479,7 @@ flowchart TB
 ---
 
 
-## 11.8 VPC
+1.8 VPC
 
 
 ### What is it
@@ -552,7 +534,7 @@ flowchart TB
 ---
 
 
-## 11.9 Cloud Networking
+1.9 Cloud Networking
 
 
 ### What is it
@@ -606,7 +588,7 @@ flowchart LR
 ---
 
 
-## 11.10 Cloud Storage
+1.10 Cloud Storage
 
 
 ### What is it
@@ -659,7 +641,7 @@ flowchart LR
 ---
 
 
-## 11.11 Managed Databases
+1.11 Managed Databases
 
 
 ### What is it
@@ -712,7 +694,7 @@ flowchart LR
 ---
 
 
-## 11.12 Autoscaling
+1.12 Autoscaling
 
 
 ### What is it
@@ -765,7 +747,7 @@ flowchart LR
 ---
 
 
-## 11.13 Docker
+1.13 Docker
 
 
 ### What is it
@@ -932,7 +914,7 @@ flowchart LR
 ---
 
 
-## 11.14 Container Runtime
+1.14 Container Runtime
 
 
 ### What is it
@@ -983,7 +965,7 @@ flowchart TB
 ---
 
 
-## 11.15 Container Images
+1.15 Container Images
 
 
 ### What is it
@@ -1035,7 +1017,7 @@ flowchart LR
 ---
 
 
-## 11.16 Image Layers
+1.16 Image Layers
 
 
 ### What is it
@@ -1087,7 +1069,7 @@ flowchart TB
 ---
 
 
-## 11.17 Namespaces
+1.17 Namespaces
 
 
 ### What is it
@@ -1136,7 +1118,7 @@ flowchart TB
 ---
 
 
-## 11.18 cgroups
+1.18 cgroups
 
 
 ### What is it
@@ -1186,7 +1168,7 @@ flowchart LR
 ---
 
 
-## 11.19 Kubernetes
+1.19 Kubernetes
 
 
 ### What is it
@@ -1357,7 +1339,7 @@ flowchart TB
 ---
 
 
-## 11.20 Pods
+1.20 Pods
 
 
 ### What is it
@@ -1410,7 +1392,7 @@ flowchart TB
 ---
 
 
-## 11.21 ReplicaSets
+1.21 ReplicaSets
 
 
 ### What is it
@@ -1458,7 +1440,7 @@ flowchart LR
 ---
 
 
-## 11.22 Deployments
+1.22 Deployments
 
 
 ### What is it
@@ -1658,7 +1640,7 @@ flowchart TB
 ---
 
 
-## 11.23 Services
+1.23 Services
 
 
 ### What is it
@@ -1711,7 +1693,7 @@ flowchart LR
 ---
 
 
-## 11.24 Ingress
+1.24 Ingress
 
 
 ### What is it
@@ -1764,7 +1746,7 @@ flowchart LR
 ---
 
 
-## 11.25 StatefulSets
+1.25 StatefulSets
 
 
 ### What is it
@@ -1816,7 +1798,7 @@ flowchart LR
 ---
 
 
-## 11.26 DaemonSets
+1.26 DaemonSets
 
 
 ### What is it
@@ -1866,7 +1848,7 @@ flowchart TB
 ---
 
 
-## 11.27 Jobs
+1.27 Jobs
 
 
 ### What is it
@@ -1916,7 +1898,7 @@ flowchart LR
 ---
 
 
-## 11.28 CronJobs
+1.28 CronJobs
 
 
 ### What is it
@@ -1967,7 +1949,7 @@ flowchart LR
 ---
 
 
-## 11.29 ConfigMaps
+1.29 ConfigMaps
 
 
 ### What is it
@@ -2018,7 +2000,7 @@ flowchart LR
 ---
 
 
-## 11.30 Secrets
+1.30 Secrets
 
 
 ### What is it
@@ -2069,7 +2051,7 @@ flowchart LR
 ---
 
 
-## 11.31 Scheduler
+1.31 Scheduler
 
 
 ### What is it
@@ -2120,7 +2102,7 @@ flowchart LR
 ---
 
 
-## 11.32 etcd
+1.32 etcd
 
 
 ### What is it
@@ -2173,7 +2155,7 @@ flowchart TB
 ---
 
 
-## 11.33 Operators
+1.33 Operators
 
 
 ### What is it
@@ -2227,7 +2209,7 @@ flowchart LR
 ---
 
 
-## 11.34 HPA
+1.34 HPA
 
 
 ### What is it
@@ -2425,7 +2407,7 @@ flowchart TB
 ---
 
 
-## 11.35 Cluster Autoscaler
+1.35 Cluster Autoscaler
 
 
 ### What is it

@@ -32,17 +32,6 @@ flowchart LR
     Route --> IDs[Sortable unique IDs]
 ```
 
-## Reading order
-
-Sub-topics are sequenced for progressive learning: foundations first, then related concepts, then specialized topics.
-
-| Group | Sections | Focus |
-|-------|----------|-------|
-| **1. Probabilistic structures** | 13.1-13.3 | Bloom, HyperLogLog, Count-Min Sketch |
-| **2. Classic structures** | 13.4-13.6 | Trie, skip lists, Merkle trees |
-| **3. Distributed routing** | 13.7 | DHT / consistent hashing |
-| **4. Distributed IDs** | 13.8-13.11 | UUID, Snowflake, ULID, KSUID |
-
 ---
 
 ## 13.1 Bloom Filters
@@ -153,7 +142,7 @@ Request key K
 ---
 
 
-## 13.2 HyperLogLog
+3.2 HyperLogLog
 
 
 ### What is it
@@ -199,7 +188,7 @@ Exact distinct counts require O(n) memory. Analytics ("unique visitors today", "
 ---
 
 
-## 13.3 Count Min Sketch
+3.3 Count Min Sketch
 
 
 ### What is it
@@ -245,7 +234,7 @@ Finding "top K heavy hitters" in a firehose (network packets, API calls, trendin
 ---
 
 
-## 13.4 Trie
+3.4 Trie
 
 
 ### What is it
@@ -291,7 +280,7 @@ Autocomplete, IP routing tables (CIDR longest-prefix match), spell checkers, and
 ---
 
 
-## 13.5 Skip Lists
+3.5 Skip Lists
 
 
 ### What is it
@@ -337,7 +326,7 @@ Redis sorted sets (`ZSET`) are implemented as skip lists. They offer tree-like p
 ---
 
 
-## 13.6 Merkle Trees
+3.6 Merkle Trees
 
 
 ### What is it
@@ -383,7 +372,7 @@ Comparing two multi-terabyte datasets byte-by-byte is impractical. Merkle roots 
 ---
 
 
-## 13.7 Distributed Hash Tables
+3.7 Distributed Hash Tables
 
 
 ### What is it
@@ -444,7 +433,7 @@ flowchart TB
 ---
 
 
-## 13.8 UUID
+3.8 UUID
 
 
 ### What is it
@@ -488,7 +477,7 @@ UUIDs provide globally unique IDs without a central allocator  -  essential for 
 ---
 
 
-## 13.9 Snowflake IDs
+3.9 Snowflake IDs
 
 
 ### What is it
@@ -613,7 +602,7 @@ Run **chrony** or **ntpd** with slew (not step) on ID-generating hosts; alert on
 ---
 
 
-## 13.10 ULID
+3.10 ULID
 
 
 ### What is it
@@ -660,7 +649,7 @@ ULID combines UUID's uniqueness with **lexicographic sortability** and compact s
 ---
 
 
-## 13.11 KSUID
+3.11 KSUID
 
 
 ### What is it

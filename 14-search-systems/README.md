@@ -32,16 +32,6 @@ flowchart LR
     Rank --> Results[Ranked Results]
 ```
 
-## Reading order
-
-Sub-topics are sequenced for progressive learning: foundations first, then related concepts, then specialized topics.
-
-| Group | Sections | Focus |
-|-------|----------|-------|
-| **1. Search fundamentals** | 14.1-14.2 | Full-text search, inverted index |
-| **2. Engines** | 14.3-14.4 | Lucene, Elasticsearch |
-| **3. Ranking and UX** | 14.5-14.9 | Scoring, facets, autocomplete, fuzzy |
-
 ---
 
 ## 14.1 Full Text Search
@@ -91,7 +81,7 @@ Users expect Google-quality search inside products (e-commerce, support portals,
 ---
 
 
-## 14.2 Inverted Index
+4.2 Inverted Index
 
 
 ### What is it
@@ -213,7 +203,7 @@ Raw text → CharFilter (strip HTML) → Tokenizer (split) → TokenFilter (lowe
 ---
 
 
-## 14.3 Lucene
+4.3 Lucene
 
 
 ### What is it
@@ -259,7 +249,7 @@ Elasticsearch interviews often reduce to Lucene concepts: segments, merges, anal
 ---
 
 
-## 14.4 Elasticsearch
+4.4 Elasticsearch
 
 
 ### What is it
@@ -393,7 +383,7 @@ POST /index/_doc  →  in-memory buffer  →  refresh (1s)  →  searchable segm
 ---
 
 
-## 14.5 Ranking
+4.5 Ranking
 
 
 ### What is it
@@ -439,7 +429,7 @@ Users rarely look past the first page. Poor ranking destroys product value even 
 ---
 
 
-## 14.6 Relevance Scoring
+4.6 Relevance Scoring
 
 
 ### What is it
@@ -492,7 +482,7 @@ score(D,Q) = Î£ IDF(qi) Â· (f(qi,D) Â· (k1+1)) / (f(qi,D) + k1Â·(1âˆ�
 ---
 
 
-## 14.7 Faceted Search
+4.7 Faceted Search
 
 
 ### What is it
@@ -538,7 +528,7 @@ E-commerce and enterprise catalogs with heterogeneous attributes need browse + f
 ---
 
 
-## 14.8 Autocomplete
+4.8 Autocomplete
 
 
 ### What is it
@@ -584,7 +574,7 @@ Search boxes are the primary navigation for large catalogs. Fast suggestions red
 ---
 
 
-## 14.9 Fuzzy Search
+4.9 Fuzzy Search
 
 
 ### What is it

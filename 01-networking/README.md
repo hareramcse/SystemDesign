@@ -1,4 +1,4 @@
-﻿# 1. Networking
+# 1. Networking
 
 > Status: **Documented**  -  master reference
 
@@ -48,25 +48,6 @@ flowchart LR
     CDN --> LB[Load Balancer]
     LB --> App[Application Server]
 ```
-
-## Reading order
-
-Sub-topics are sequenced for progressive learning: foundations first, then related concepts, then specialized topics.
-
-| Group | Sections | Focus |
-|-------|----------|-------|
-| **1. Foundations** | 1.1-1.4 | OSI, TCP/IP, handshake, UDP |
-| **2. IP layer** | 1.5-1.6 | Addressing, CIDR, MTU |
-| **3. Naming and app protocols** | 1.7-1.13 | DNS, HTTP, TLS, HTTP/2/3, QUIC, keep-alive |
-| **4. Edge and routing** | 1.14-1.17 | Proxy, NAT, VPN, multicast |
-| **5. Scale and delivery** | 1.18-1.22 | CDN, load balancing, real-time patterns |
-
-## Related topics
-
-- [Caching](../03-caching/README.md)  -  CDN edge caching, cache headers
-- [Distributed System](../04-distributed-system/README.md)  -  latency, availability, tail latency
-- [Security](../10-security/README.md)  -  TLS, encryption in transit
-- [Cloud & Kubernetes](../11-cloud-and-kubernetes/README.md)  -  VPC, ingress, service mesh
 
 ---
 

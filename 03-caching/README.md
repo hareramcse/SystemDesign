@@ -1,4 +1,4 @@
-﻿# 3. Caching
+# 3. Caching
 
 > Status: **Documented**  -  master reference
 
@@ -39,24 +39,6 @@ flowchart LR
     L2 --> DB[(Database)]
     CDN[CDN Edge] --> App
 ```
-
-## Reading order
-
-Sub-topics are sequenced for progressive learning: foundations first, then related concepts, then specialized topics.
-
-| Group | Sections | Focus |
-|-------|----------|-------|
-| **1. Basics** | 3.1 | Fundamentals |
-| **2. Cache patterns** | 3.2-3.6 | Aside, read/write-through, write-back, refresh-ahead |
-| **3. Deployment** | 3.7-3.9 | Distributed, near cache, invalidation |
-| **4. Failure modes** | 3.10-3.13 | Stampede, avalanche, penetration, warming |
-
-## Related topics
-
-- [Databases](../02-databases/README.md)  -  storage engines, page cache, query optimization
-- [Distributed System](../04-distributed-system/README.md)  -  consistency, latency, availability trade-offs
-- [Distributed Databases](../05-distributed-databases/README.md)  -  replication and partitioning at scale
-- [Networking](../01-networking/README.md)  -  CDN, load balancing, keep-alive
 
 ---
 

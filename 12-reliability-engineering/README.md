@@ -23,10 +23,6 @@
 
 
 
-
-
----
-
 ## Overview
 
 Reliability engineering builds systems that survive failures - hardware, software, human, and regional - through redundancy, tested recovery paths, and deliberate experimentation. It connects business continuity (RPO/RTO) with operational practice (backups, failover, chaos).
@@ -60,18 +56,6 @@ flowchart TB
 ---
 
 
-## Reading order
-
-Sub-topics are sequenced for progressive learning: foundations first, then related concepts, then specialized topics.
-
-| Group | Sections | Focus |
-|-------|----------|-------|
-| **1. Availability patterns** | 12.1-12.3 | HA, active-active, active-passive |
-| **2. Recovery objectives** | 12.4-12.5 | RPO, RTO |
-| **3. Disaster recovery** | 12.6-12.8 | DR, backup, restore |
-| **4. Testing resilience** | 12.9-12.10 | Chaos engineering, fault injection |
-
----
 ---
 
 ## 12.1 High Availability
@@ -242,7 +226,7 @@ flowchart TB
 ---
 
 
-## 12.2 Active Active
+2.2 Active Active
 
 
 ### What is it
@@ -297,7 +281,7 @@ flowchart TB
 ---
 
 
-## 12.3 Active Passive
+2.3 Active Passive
 
 
 ### What is it
@@ -351,7 +335,7 @@ flowchart LR
 ---
 
 
-## 12.4 RPO
+2.4 RPO
 
 
 ### What is it
@@ -497,7 +481,7 @@ flowchart TB
 ---
 
 
-## 12.5 RTO
+2.5 RTO
 
 
 ### What is it
@@ -667,7 +651,7 @@ flowchart LR
 ---
 
 
-## 12.6 Disaster Recovery
+2.6 Disaster Recovery
 
 
 ### What is it
@@ -727,7 +711,7 @@ flowchart TB
 ---
 
 
-## 12.7 Backup Strategy
+2.7 Backup Strategy
 
 
 ### What is it
@@ -780,7 +764,7 @@ flowchart LR
 ---
 
 
-## 12.8 Restore Strategy
+2.8 Restore Strategy
 
 
 ### What is it
@@ -836,7 +820,7 @@ flowchart TB
 ---
 
 
-## 12.9 Chaos Engineering
+2.9 Chaos Engineering
 
 
 ### What is it
@@ -1041,7 +1025,7 @@ flowchart TB
 ---
 
 
-## 12.10 Fault Injection
+2.10 Fault Injection
 
 
 ### What is it
