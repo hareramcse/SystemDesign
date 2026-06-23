@@ -1,4 +1,4 @@
-﻿# 5. Distributed Databases
+# 5. Distributed Databases
 
 > Status: **Documented**
 
@@ -114,14 +114,14 @@ Poor partition design creates hot spots, expensive cross-partition transactions,
 ```mermaid
 flowchart TB
     subgraph Logical
-        Table[Logical Table: orders]
+        Table["Logical Table: orders"]
     end
-    Table --> P1["Partition 0<br/>keys hash 0..33%"]
-    Table --> P2["Partition 1<br/>keys hash 34..66%"]
-    Table --> P3["Partition 2<br/>keys hash 67..100%"]
-    P1 --> RG1["Replica Group A<br/>Node 1,2,3"]
-    P2 --> RG2["Replica Group B"]
-    P3 --> RG3["Replica Group C"]
+    Table --> P1['Partition 0 / keys hash 0..33%']
+    Table --> P2['Partition 1 / keys hash 34..66%']
+    Table --> P3['Partition 2 / keys hash 67..100%']
+    P1 --> RG1['Replica Group A / Node 1,2,3']
+    P2 --> RG2['Replica Group B']
+    P3 --> RG3['Replica Group C']
     Client[Client] --> Meta[Partition Map]
     Meta --> RG1
     Meta --> RG2
@@ -218,9 +218,9 @@ A **shard key** (partition key) determines shard ownership on every read/write.
 ```mermaid
 flowchart TB
     App[Application] --> Router{Shard Router}
-    Router -->|"hash(user_id)=0"| S1[(Shard 1<br/>users 0-33M)]
-    Router -->|"hash(user_id)=1"| S2[(Shard 2<br/>users 33-66M)]
-    Router -->|"hash(user_id)=2"| S3[(Shard 3<br/>users 66-100M)]
+    Router -->|"hash(user_id)=0"| S1[(Shard 1 / users 0-33M)]
+    Router -->|"hash(user_id)=1"| S2[(Shard 2 / users 33-66M)]
+    Router -->|"hash(user_id)=2"| S3[(Shard 3 / users 66-100M)]
     S1 --> R1[Replicas]
     S2 --> R2[Replicas]
     S3 --> R3[Replicas]
@@ -865,12 +865,12 @@ Replication is non-negotiable for production data you cannot afford to lose.
 
 ```mermaid
 flowchart LR
-    subgraph Sync["Synchronous (strong)"]
+    subgraph Sync['Synchronous (strong)']
         W1[Write] --> L1[Leader]
         L1 --> F1[Follower ACK]
         F1 --> ACK[Client ACK]
     end
-    subgraph Async["Asynchronous (fast)"]
+    subgraph Async['Asynchronous (fast)']
         W2[Write] --> L2[Leader]
         L2 --> ACK2[Client ACK]
         L2 -.->|background| F2[Follower]
@@ -1287,7 +1287,7 @@ sequenceDiagram
     Co->>D: replicate v4
     A-->>Co: ACK
     B-->>Co: ACK
-    Note over Co: W=2 met → success
+    Note over Co: W=2 met -> success
     Co-->>C: OK
     D-->>Co: ACK (async catch-up)
 ```
@@ -1453,8 +1453,8 @@ The textbook answer for cross-node atomicity — and a **cautionary tale** for b
 ```mermaid
 sequenceDiagram
     participant TC as Coordinator
-    participant P1 as Participant 1 (Shard A)
-    participant P2 as Participant 2 (Shard B)
+    participant  as "Participant 1 (Shard A)"
+    participant  as "Participant 2 (Shard B)"
     TC->>TC: write decision log (START)
     TC->>P1: PREPARE(txn_id)
     TC->>P2: PREPARE(txn_id)
@@ -1916,12 +1916,12 @@ sequenceDiagram
     participant F2 as Follower 2
     participant F3 as Follower 3
     Note over F1,F3: Leader died
-    F1->>F1: timeout → Candidate term=5
+    F1->>F1: timeout -> Candidate term=5
     F1->>F2: RequestVote term=5
     F1->>F3: RequestVote term=5
     F2-->>F1: Grant vote
     F3-->>F1: Grant vote
-    Note over F1: Majority → Leader term=5
+    Note over F1: Majority -> Leader term=5
     F1->>F2: AppendEntries heartbeat
     F1->>F3: AppendEntries heartbeat
 ```
@@ -1949,7 +1949,7 @@ sequenceDiagram
     L->>F2: AppendEntries index=10
     F1-->>L: success
     F2-->>L: success
-    Note over L: majority=2/3 → commit index 10
+    Note over L: majority=2/3 -> commit index 10
     L->>L: apply to state machine
     L-->>C: OK
 ```
@@ -2179,8 +2179,8 @@ Enables **true concurrency detection** for multi-leader and leaderless stores - 
 
 ```mermaid
 flowchart LR
-    E1[Event A: 1,0] --> E2[Event B: 1,1]
-    E3[Event C: 0,1] --> E2
+    E1["Event A: 1,0"] --> E2["Event B: 1,1"]
+    E3["Event C: 0,1"] --> E2
     E1 -.concurrent.- E3
 ```
 

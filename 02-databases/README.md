@@ -1,4 +1,4 @@
-﻿# 2. Databases
+# 2. Databases
 
 > Status: **Documented**  -  master reference
 
@@ -266,13 +266,13 @@ Understanding **splits**, **fill factor**, and **clustered vs secondary** indexe
 
 ```mermaid
 flowchart TB
-    Root["Root [10 | 50]"]
-    I1["Internal [10 | 20 | 30]"]
-    I2["Internal [50 | 70]"]
-    L1["Leaf 1–9"]
-    L2["Leaf 10–19"]
-    L3["Leaf 20–29"]
-    L4["Leaf 50–69"]
+    Root["Root 10 | 50"]
+    I1["Internal 10 | 20 | 30"]
+    I2["Internal 50 | 70"]
+    L1[Leaf 1-9]
+    L2[Leaf 10-19]
+    L3[Leaf 20-29]
+    L4[Leaf 50-69]
     Root --> I1
     Root --> I2
     I1 --> L1
@@ -550,10 +550,10 @@ Lock waits on hot rows → p99 latency spikes
 
 ```mermaid
 flowchart TB
-    RU["READ UNCOMMITTED<br/>dirty ✓ non-repeat ✓ phantom ✓"]
-    RC["READ COMMITTED<br/>dirty ✗ non-repeat ✓ phantom ✓"]
-    RR["REPEATABLE READ<br/>dirty ✗ non-repeat ✗ phantom ✓*"]
-    SER["SERIALIZABLE<br/>dirty ✗ non-repeat ✗ phantom ✗"]
+    RU['READ UNCOMMITTED / dirty OK non-repeat OK phantom OK']
+    RC['READ COMMITTED / dirty NO non-repeat OK phantom OK']
+    RR['REPEATABLE READ / dirty NO non-repeat NO phantom OK*']
+    SER['SERIALIZABLE / dirty NO non-repeat NO phantom NO']
     RU --> RC --> RR --> SER
 ```
 
@@ -616,9 +616,9 @@ sequenceDiagram
     participant T1
     participant T2
     T1->>T1: BEGIN RR snapshot
-    T1->>T1: SELECT id=1 → 100
-    T2->>T2: UPDATE id=1 → 50, COMMIT
-    T1->>T1: SELECT id=1 → 100 (still snapshot)
+    T1->>T1: SELECT id=1 -> 100
+    T2->>T2: UPDATE id=1 -> 50, COMMIT
+    T1->>T1: SELECT id=1 -> 100 (still snapshot)
     T1->>T1: COMMIT
 ```
 
@@ -743,16 +743,16 @@ Txn 200 UPDATE balance=80:
 
 ```mermaid
 sequenceDiagram
-    participant T100 as Txn 100 (reader)
-    participant T200 as Txn 200 (writer)
+    participant  as "Txn 100 (reader)"
+    participant  as "Txn 200 (writer)"
     participant Heap as Table heap
 
     T100->>Heap: BEGIN; snapshot at xid 100
-    T100->>Heap: SELECT id=1 → balance 100 (v1 visible)
+    T100->>Heap: SELECT id=1 -> balance 100 (v1 visible)
     T200->>Heap: BEGIN
-    T200->>Heap: UPDATE id=1 → v2 inserted, v1 xmax=200
+    T200->>Heap: UPDATE id=1 -> v2 inserted, v1 xmax=200
     T200->>Heap: COMMIT
-    T100->>Heap: SELECT id=1 → still 100 (v2 xmin=200 after snap)
+    T100->>Heap: SELECT id=1 -> still 100 (v2 xmin=200 after snap)
     T100->>Heap: COMMIT
 ```
 
@@ -1218,8 +1218,8 @@ Optimized for **massive scale writes**, time-series, and access by known row key
 ```mermaid
 flowchart TB
     RK[Row key] --> P[Partition]
-    P --> CF1[Column family: profile]
-    P --> CF2[Column family: activity]
+    P --> CF1["Column family: profile"]
+    P --> CF2["Column family: activity"]
 ```
 
 ### Key details

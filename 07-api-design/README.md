@@ -1,4 +1,4 @@
-﻿# 7. API Design
+# 7. API Design
 
 > Status: **Documented**
 
@@ -129,8 +129,8 @@ Each request must contain everything the server needs: auth token, resource ID, 
 
 ```mermaid
 flowchart LR
-    C1[Client Request 1<br/>Authorization + body] --> API[REST API]
-    C2[Client Request 2<br/>Authorization + body] --> API
+    C1[Client Request 1 / Authorization + body] --> API[REST API]
+    C2[Client Request 2 / Authorization + body] --> API
     API --> DB[(Resource Store)]
 ```
 
@@ -198,7 +198,7 @@ Use **problem+json** (`application/problem+json`) for consistent error bodies:
 sequenceDiagram
     participant C as Client
     participant API as REST API
-    participant CDN as CDN / Cache
+    participant  as "CDN / Cache"
 
     C->>CDN: GET /users/42 (If-None-Match: "etag-xyz")
     alt cache hit
@@ -887,7 +887,7 @@ Clients need subsets without downloading full collections; filtering must be ind
 
 ```mermaid
 flowchart LR
-    Q["?status=open&priority=high"] --> API
+    Q['?status=open&priority=high'] --> API
     API --> Valid[Validate whitelist]
     Valid --> DB[(Indexed query)]
 ```
@@ -939,7 +939,7 @@ Consistent ordering required for cursor pagination and user-visible lists; arbit
 
 ```mermaid
 flowchart LR
-    Sort["sort=-price"] --> API
+    Sort['sort=-price'] --> API
     API --> IDX[(Index on price)]
     IDX --> Ordered[Ordered page]
 ```
@@ -1510,7 +1510,7 @@ sequenceDiagram
     Note over API: Payment succeeds
     Note over C,API: Network drops response
     C->>API: RETRY POST /charges
-    Note over API: Without idempotency → DOUBLE CHARGE
+    Note over API: Without idempotency -> DOUBLE CHARGE
 ```
 
 Without idempotency: duplicate orders, double charges, repeated emails, inventory oversell.
@@ -1658,7 +1658,7 @@ sequenceDiagram
     API->>DB: INSERT key=uuid-1, status=processing
     API->>API: Execute payment
     API->>DB: UPDATE status=completed, store response
-    Note over C,API: Response lost — client retries
+    Note over C,API: Response lost - client retries
     C->>API: POST Idempotency-Key: uuid-1 (attempt 2)
     API->>DB: SELECT key=uuid-1
     DB-->>API: completed + cached response

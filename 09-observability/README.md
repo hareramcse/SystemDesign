@@ -1,4 +1,4 @@
-﻿# 9. Observability
+# 9. Observability
 
 > Status: **Documented**  -  MASTER reference depth for all sub-topics below.
 
@@ -38,24 +38,24 @@ Observability is the ability to understand internal system state from externally
 
 ```mermaid
 flowchart TB
-    subgraph Apps["Application Layer"]
+    subgraph Apps['Application Layer']
         S1[Service A]
         S2[Service B]
         S3[Service C]
     end
 
-    subgraph Pillars["Three Pillars"]
-        L[Logs<br/>Discrete events]
-        M[Metrics<br/>Aggregated numbers]
-        T[Traces<br/>Request paths]
+    subgraph Pillars['Three Pillars']
+        L[Logs / Discrete events]
+        M[Metrics / Aggregated numbers]
+        T[Traces / Request paths]
     end
 
-    subgraph Pipeline["Telemetry Pipeline"]
+    subgraph Pipeline['Telemetry Pipeline']
         C[OTel Collector]
         ST[(Storage)]
     end
 
-    subgraph Consume["Consumption"]
+    subgraph Consume['Consumption']
         D[Dashboards]
         A[Alerts]
         I[Investigation]
@@ -182,7 +182,7 @@ The logging library serializes each event to JSON with standard fields (`timesta
 ```mermaid
 flowchart TB
     E[Event] --> F{Format}
-    F -->|Unstructured| T["2024-01-15 ERROR payment failed"]
+    F -->|Unstructured| T['2024-01-15 ERROR payment failed']
     F -->|Structured| J["{level:ERROR, service:payment, orderId:123}"]
     J --> Q[Field Queries]
     T --> R[Regex Parsing]
@@ -235,7 +235,7 @@ Instrumentation libraries expose metrics via pull (Prometheus scrapes `/metrics`
 
 ```mermaid
 flowchart LR
-    S[Service] -->|expose| EP["/metrics"]
+    S[Service] -->|expose| EP['/metrics']
     P[Prometheus] -->|scrape| EP
     P --> TSDB[(Time Series DB)]
     TSDB --> G[Grafana Dashboard]
@@ -375,9 +375,9 @@ In monoliths, a stack trace suffices. In microservices:
 
 ```mermaid
 flowchart TB
-    Root[gateway span<br/>trace_id=abc]
-    Root --> S1[order span<br/>parent=abc:gateway]
-    Root --> S2[payment span<br/>parent=abc:gateway]
+    Root[gateway span / trace_id=abc]
+    Root --> S1["order span / parent=abc:gateway"]
+    Root --> S2["payment span / parent=abc:gateway"]
     S1 --> S3[db query span]
     S1 --> S4[inventory grpc span]
     S2 --> S5[stripe http span]
@@ -400,9 +400,9 @@ sequenceDiagram
     participant O as Order Service
     participant P as Payment Service
 
-    C->>GW: GET /checkout<br/>traceparent: 00-abc-span1-01
-    Note over GW: Start root span<br/>trace_id=abc
-    GW->>O: Forward<br/>traceparent: 00-abc-span2-01
+    C->>GW: GET /checkout / traceparent: 00-abc-span1-01
+    Note over GW: Start root span / trace_id=abc
+    GW->>O: Forward / traceparent: 00-abc-span2-01
     Note over O: Child span, parent=span2
     O->>P: gRPC metadata traceparent
     Note over P: Child span under O
@@ -564,8 +564,8 @@ The API gateway generates an ID (UUID) if the client did not send one. The ID is
 
 ```mermaid
 flowchart LR
-    GW[Gateway<br/>reqId: 7f3a] --> S1[Order<br/>reqId: 7f3a]
-    S1 --> S2[Payment<br/>reqId: 7f3a]
+    GW["Gateway / reqId: 7f3a"] --> S1["Order / reqId: 7f3a"]
+    S1 --> S2["Payment / reqId: 7f3a"]
     S1 --> L1[(Logs)]
     S2 --> L2[(Logs)]
     L1 & L2 --> Q["Query: reqId=7f3a"]
@@ -665,7 +665,7 @@ flowchart LR
     V -->|yes| G{Good event?}
     G -->|2xx in 200ms| Good[Good +1]
     G -->|5xx or slow| Bad[Bad +1]
-    Good & Bad --> SLI["SLI = good / (good+bad)"]
+    Good & Bad --> SLI['SLI = good / (good+bad)']
     SLI --> SLO[Compare to SLO target]
 ```
 
@@ -947,12 +947,12 @@ Error budget = 0.1% × 100M = 100,000 failed requests allowed
 
 ```mermaid
 flowchart TB
-    SLO["SLO 99.9%"] --> EB["Total budget: 43.2 min / month"]
-    EB --> Used["Consumed by incidents,<br/>bad deploys, experiments"]
-    EB --> Remaining["Remaining budget"]
+    SLO['SLO 99.9%'] --> EB["Total budget: 43.2 min / month"]
+    EB --> Used['Consumed by incidents, / bad deploys, experiments']
+    EB --> Remaining['Remaining budget']
     Remaining -->|> 50%| Green[Ship features freely]
-    Remaining -->|10–50%| Yellow[Cautious deploys, more canaries]
-    Remaining -->|< 10% or 0| Red[Feature freeze — reliability sprint]
+    Remaining -->|10-50%| Yellow[Cautious deploys, more canaries]
+    Remaining -->|< 10% or 0| Red[Feature freeze - reliability sprint]
 ```
 
 **What consumes error budget:**
@@ -989,9 +989,9 @@ burn_rate = 0.01 / 0.001 = 10×
 ```mermaid
 flowchart LR
     subgraph Alerts
-        B1["1h window: 14.4× burn → PAGE"]
-        B2["6h window: 6× burn → PAGE"]
-        B3["3d window: 3× burn → TICKET"]
+        B1["1h window: 14.4× burn -> PAGE"]
+        B2["6h window: 6× burn -> PAGE"]
+        B3["3d window: 3× burn -> TICKET"]
     end
     SLI[SLI error rate] --> Burn[Burn rate calc]
     Burn --> B1 & B2 & B3
@@ -1111,7 +1111,7 @@ Tools like Grafana connect to metric and log data sources. Panels run PromQL or 
 
 ```mermaid
 flowchart TB
-    subgraph Overview["Golden Signals Dashboard"]
+    subgraph Overview['Golden Signals Dashboard']
         L[Latency p99]
         T[Traffic RPS]
         E[Error Rate]

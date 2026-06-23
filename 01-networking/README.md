@@ -1,4 +1,4 @@
-﻿# 1. Networking
+# 1. Networking
 
 > Status: **Documented**  -  master reference
 
@@ -238,13 +238,13 @@ On a 100 ms cross-region link, 3 RTTs = **300 ms** of pure wait before your API 
 sequenceDiagram
     participant C as Client
     participant S as Server
-    Note over C: CLOSED → SYN_SENT
+    Note over C: CLOSED -> SYN_SENT
     C->>S: SYN seq=1000
-    Note over S: LISTEN → SYN_RECEIVED
+    Note over S: LISTEN -> SYN_RECEIVED
     S->>C: SYN-ACK seq=5000 ack=1001
-    Note over C: SYN_SENT → ESTABLISHED
+    Note over C: SYN_SENT -> ESTABLISHED
     C->>S: ACK ack=5001
-    Note over S: SYN_RECEIVED → ESTABLISHED
+    Note over S: SYN_RECEIVED -> ESTABLISHED
     Note over C,S: Application data flows both ways
     C->>S: FIN
     S->>C: ACK
@@ -616,11 +616,11 @@ DNS also enables **traffic management** without app changes: weighted records, g
 
 ```mermaid
 flowchart TB
-    Client[Stub resolver / OS] --> Rec[Recursive resolver<br/>8.8.8.8]
+    Client[Stub resolver / OS] --> Rec[Recursive resolver / 8.8.8.8]
     Rec -->|cache miss| Root[Root servers .]
     Root --> TLD[TLD .com]
-    TLD --> Auth[Authoritative NS<br/>ns1.example.com]
-    Auth --> Ans[A 203.0.113.10<br/>TTL=300]
+    TLD --> Auth[Authoritative NS / ns1.example.com]
+    Auth --> Ans[A 203.0.113.10 / TTL=300]
     Ans --> Rec
     Rec --> Client
 ```
@@ -749,10 +749,10 @@ A slow or blocking `getaddrinfo()` can **stall an entire event loop** in Node.js
 sequenceDiagram
     participant Browser
     participant OS as OS stub resolver
-    participant Rec as Recursive resolver<br/>(8.8.8.8)
+    participant  as "Recursive resolver / (8.8.8.8)"
     participant Root as Root DNS
     participant TLD as .com TLD
-    participant Auth as Authoritative NS<br/>(example.com)
+    participant  as "Authoritative NS / (example.com)"
 
     Browser->>Browser: Check browser DNS cache
     Browser->>OS: getaddrinfo(api.example.com)
@@ -924,9 +924,9 @@ sequenceDiagram
 
     Note over Client,Server: 1. TCP 3-way handshake
     Note over Client,Server: 2. TLS handshake (cert verify, key exchange)
-    Client->>Server: GET /api/users HTTP/1.1<br/>Host: api.example.com
+    Client->>Server: GET /api/users HTTP/1.1 / Host: api.example.com
     Server->>Server: Route, auth, business logic
-    Server-->>Client: HTTP/1.1 200 OK<br/>Content-Type: application/json
+    Server-->>Client: HTTP/1.1 200 OK / Content-Type: application/json
     Note over Client,Server: 3. Connection kept alive (reuse for next request)
 ```
 
@@ -1742,7 +1742,7 @@ Best when requests hold connections for **variable or long** durations (TLS, DB 
 flowchart TB
     Req[New TCP connection] --> LC{Least connections}
     LC --> B1["Server A: 120 conn"]
-    LC --> B2["Server B: 45 conn  ← chosen"]
+    LC --> B2["Server B: 45 conn  <- chosen"]
     LC --> B3["Server C: 89 conn"]
 ```
 
@@ -1765,8 +1765,8 @@ flowchart LR
         N2[Node B]
         N3[Node C]
     end
-    K1[hash user:42] --> N2
-    K2[hash user:99] --> N3
+    K1["hash user:42"] --> N2
+    K2["hash user:99"] --> N3
 ```
 
 When a node is **added/removed**, only keys **adjacent** to that node on the ring move—not all keys (unlike `hash % N`).

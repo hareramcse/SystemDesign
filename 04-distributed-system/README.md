@@ -1,4 +1,4 @@
-﻿# 4. Distributed System
+# 4. Distributed System
 
 > Status: **Documented**  -  master reference
 
@@ -96,8 +96,8 @@ A system that doesn't scale hits hard ceilings: latency degrades, errors spike, 
 ```mermaid
 flowchart LR
     Load[More traffic] --> Scale{Strategy}
-    Scale --> H[Horizontal: add nodes]
-    Scale --> V[Vertical: bigger machine]
+    Scale --> H["Horizontal: add nodes"]
+    Scale --> V["Vertical: bigger machine"]
     Scale --> P[Partition data]
 ```
 
@@ -441,8 +441,8 @@ Downtime directly costs revenue, trust, and SLA penalties. Availability targets 
 ```mermaid
 flowchart TB
     Users --> LB[Load Balancer + health checks]
-    LB --> A1[AZ-1: App × N]
-    LB --> A2[AZ-2: App × N]
+    LB --> A1["AZ-1: App × N"]
+    LB --> A2["AZ-2: App × N"]
     A1 --> DB1[(Primary DB)]
     A2 --> DB2[(Replica DB)]
     DB1 -.->|sync/async rep| DB2
@@ -682,11 +682,11 @@ Good: primary AZ-a, replicas AZ-b, AZ-c → survives single AZ
 
 ```mermaid
 flowchart TB
-    subgraph Bulkhead["Thread pools (bulkheads)"]
-        API[API threads: 100]
-        API --> PoolA[Payment pool: 20]
-        API --> PoolB[Catalog pool: 50]
-        API --> PoolC[Search pool: 30]
+    subgraph Bulkhead['Thread pools (bulkheads)']
+        API["API threads: 100"]
+        API --> PoolA["Payment pool: 20"]
+        API --> PoolB["Catalog pool: 50"]
+        API --> PoolC["Search pool: 30"]
     end
     PoolA --> Pay[Payment Svc]
     PoolB --> Cat[Catalog Svc]
@@ -1075,8 +1075,8 @@ This drives database selection (Cassandra vs etcd), failover behavior, and incid
 ```mermaid
 flowchart TB
     P[Network Partition] --> Choice{Pick 2 of 3}
-    Choice --> CP[CP: Consistency + Partition tolerance]
-    Choice --> AP[AP: Availability + Partition tolerance]
+    Choice --> CP["CP: Consistency + Partition tolerance"]
+    Choice --> AP["AP: Availability + Partition tolerance"]
     CP --> Reject[Reject ambiguous ops]
     AP --> Diverge[Allow divergent writes]
 ```
@@ -1161,11 +1161,11 @@ Most of a system's life runs without partitions - you still trade latency for co
 flowchart TB
     Op[Read or Write] --> Part{Network partition?}
     Part -->|Yes| CAP{CAP trade-off}
-    CAP --> PA[PA: stay available, may diverge]
-    CAP --> PC[PC: reject ops, stay consistent]
+    CAP --> PA["PA: stay available, may diverge"]
+    CAP --> PC["PC: reject ops, stay consistent"]
     Part -->|No - Else| PAC{PACELC trade-off}
-    PAC --> EL[EL: async replication, low latency]
-    PAC --> EC[EC: sync replication, consistent]
+    PAC --> EL["EL: async replication, low latency"]
+    PAC --> EC["EC: sync replication, consistent"]
 ```
 
 **During partition (same as CAP):**
@@ -1378,9 +1378,9 @@ Enables highly available, low-latency global systems (DNS, CDN, Dynamo-style KV)
 
 ```mermaid
 flowchart LR
-    W[Write v=2 to A] --> A[Replica A: v=2]
-    A -.->|async 200ms| B[Replica B: v=1 stale]
-    A -.->|async 200ms| C[Replica C: v=1 stale]
+    W[Write v=2 to A] --> A["Replica A: v=2"]
+    A -.->|async 200ms| B["Replica B: v=1 stale"]
+    A -.->|async 200ms| C["Replica C: v=1 stale"]
     R[Read from B] --> Stale[Returns v=1]
     B -.->|later| Sync[B converges to v=2]
 ```
@@ -1824,7 +1824,7 @@ flowchart LR
     C[Client] -->|5ms| App
     App -->|200ms| DB
     DB -->|2ms| Disk
-    Note[Bottleneck: DB query]
+    Note["Bottleneck: DB query"]
 ```
 
 ### Key details

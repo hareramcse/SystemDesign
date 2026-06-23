@@ -1,4 +1,4 @@
-﻿# 10. Security
+# 10. Security
 
 > Status: **Documented**  -  MASTER reference depth for all sub-topics below.
 
@@ -44,24 +44,24 @@ Security in distributed systems spans identity (who), access control (what they 
 
 ```mermaid
 flowchart TB
-    subgraph Edge["Perimeter"]
+    subgraph Edge['Perimeter']
         WAF[WAF]
         DDoS[DDoS Mitigation]
         TLS[TLS Termination]
     end
 
-    subgraph Identity["Identity & Access"]
+    subgraph Identity['Identity & Access']
         AuthN[Authentication]
         AuthZ[Authorization]
         IAM[IAM / RBAC / ABAC]
     end
 
-    subgraph App["Application Layer"]
+    subgraph App['Application Layer']
         Input[Input Validation]
         OWASP[OWASP Defenses]
     end
 
-    subgraph Data["Data Layer"]
+    subgraph Data['Data Layer']
         ETR[Encryption in Transit]
         EAR[Encryption at Rest]
         KMS[KMS / Secrets]
@@ -239,10 +239,10 @@ Roles:
 
 ```mermaid
 sequenceDiagram
-    participant U as User / Browser
+    participant  as "User / Browser"
     participant C as Client App
     participant AS as Authorization Server
-    participant RS as Resource Server (API)
+    participant  as "Resource Server (API)"
 
     C->>C: Generate code_verifier + code_challenge (S256)
     C->>U: Redirect to /authorize
@@ -488,13 +488,13 @@ HS256:  HMAC-SHA256( base64url(header) + "." + base64url(payload), shared_secret
 ```mermaid
 flowchart LR
     subgraph JWT
-        H[Header<br/>alg, typ, kid]
-        P[Payload<br/>claims]
+        H[Header / alg, typ, kid]
+        P[Payload / claims]
         S[Signature]
     end
     H --> P --> S
-    Issuer[Authorization Server<br/>private key] -->|sign| S
-    API[Resource Server<br/>public key from JWKS] -->|verify| S
+    Issuer[Authorization Server / private key] -->|sign| S
+    API[Resource Server / public key from JWKS] -->|verify| S
     API -->|extract claims| AuthZ[Authorization decision]
 ```
 
@@ -517,11 +517,11 @@ flowchart LR
 
 ```mermaid
 flowchart TB
-    T[Incoming Bearer JWT] --> V1{Algorithm allowed?<br/>Reject alg:none}
-    V1 -->|RS256/ES256 OK| V2{Signature valid?<br/>JWKS public key}
+    T[Incoming Bearer JWT] --> V1{Algorithm allowed? / Reject alg:none}
+    V1 -->|RS256/ES256 OK| V2{Signature valid? / JWKS public key}
     V2 -->|yes| V3{iss matches IdP?}
     V3 -->|yes| V4{aud matches this API?}
-    V4 -->|yes| V5{exp / nbf valid?<br/>clock skew ±60s}
+    V4 -->|yes| V5{exp / nbf valid? / clock skew ±60s}
     V5 -->|yes| V6{scope/roles sufficient?}
     V6 -->|yes| Allow[Allow request]
     V1 & V2 & V3 & V4 & V5 & V6 -->|no| Deny[401 Unauthorized]
@@ -577,7 +577,7 @@ sequenceDiagram
     AS->>AS: Validate refresh token in store
     AS->>C: New access_token + rotated refresh_token
     C->>API: Request with new access_token
-    Note over C,AS: On refresh token reuse detection → revoke all sessions
+    Note over C,AS: On refresh token reuse detection -> revoke all sessions
 ```
 
 **Refresh token rotation (security best practice):**
@@ -714,11 +714,11 @@ Define roles and permission sets. Assign users to roles (directly or via groups)
 
 ```mermaid
 flowchart TB
-    U1[User Alice] --> R1[Role: Admin]
-    U2[User Bob] --> R2[Role: Editor]
-    R1 --> P1[permissions: *]
-    R2 --> P2[read:posts]
-    R2 --> P3[write:posts]
+    U1[User Alice] --> R1["Role: Admin"]
+    U2[User Bob] --> R2["Role: Editor"]
+    R1 --> P1["permissions: *"]
+    R2 --> P2["read:posts"]
+    R2 --> P3["write:posts"]
     API[API Endpoint] -->|requires write:posts| Check{Has permission?}
     Check -->|Bob| Allow[Allow]
 ```
@@ -1152,9 +1152,9 @@ Input like `' OR '1'='1` appended to query string changes logic. Attackers use U
 
 ```mermaid
 flowchart LR
-    Input["input: ' OR 1=1 --"] --> Bad["query = 'SELECT * FROM users WHERE id=' + input"]
+    Input[Untrusted input OR 1=1] --> Bad[String concat query]
     Bad --> DB[(Database)]
-    Input --> Good["preparedStatement.setString(1, input)"]
+    Input --> Good[Prepared statement bind]
     Good --> Safe[Safe Query]
 ```
 
@@ -1254,7 +1254,7 @@ Attacker overlays iframe (opacity 0) over decoy buttons. User clicks thinking th
 flowchart TB
     subgraph Attacker Page
         Fake[Fake Button]
-        IFrame[Invisible iframe: yoursite.com]
+        IFrame["Invisible iframe: yoursite.com"]
     end
     Fake -.->|overlay| IFrame
     User[User click] --> Fake
@@ -1360,7 +1360,7 @@ flowchart LR
     Client[Client] --> WAF[WAF]
     WAF -->|allow| App[Application]
     WAF -->|block| Log[Security Log]
-    Rules[Rule Sets<br/>OWASP CRS] --> WAF
+    Rules[Rule Sets / OWASP CRS] --> WAF
 ```
 
 ### Key details

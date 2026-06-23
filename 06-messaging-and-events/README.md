@@ -1,4 +1,4 @@
-﻿# 6. Messaging & Events
+# 6. Messaging & Events
 
 > Status: **Documented**
 
@@ -155,7 +155,7 @@ Enables event notification to many independent services - order placed -> invent
 
 ```mermaid
 flowchart TB
-    Pub[Publisher] --> Topic[Topic: OrderPlaced]
+    Pub[Publisher] --> Topic["Topic: OrderPlaced"]
     Topic --> Sub1[Inventory Service]
     Topic --> Sub2[Analytics Service]
     Topic --> Sub3[Email Service]
@@ -423,7 +423,7 @@ Partition design determines ordering scope, max consumer count per group, and lo
 
 ```mermaid
 flowchart TB
-    Topic[Topic: orders] --> P0[Partition 0]
+    Topic["Topic: orders"] --> P0[Partition 0]
     Topic --> P1[Partition 1]
     Topic --> P2[Partition 2]
     P0 --> C1[Consumer 1]
@@ -822,7 +822,7 @@ Also called **fire-and-forget** or **best-effort** semantics.
 
 ```mermaid
 flowchart LR
-    subgraph AtMostOnce["At-most-once path"]
+    subgraph AtMostOnce['At-most-once path']
         M[Message] --> ACK[ACK / discard]
         ACK --> P[Process]
         P -->|crash here| X[Message gone forever]
@@ -863,7 +863,7 @@ sequenceDiagram
     C->>C: process msg_42
     Note over C: CRASH before finish
     C->>B: restart, offset=43
-    Note over B,C: msg_42 never processed — LOST
+    Note over B,C: msg_42 never processed - LOST
 ```
 
 ```text
@@ -1429,7 +1429,7 @@ The **transactional outbox pattern** atomically persists **business state** and 
 
 ```mermaid
 flowchart TB
-    subgraph SameTxn["Single DB transaction"]
+    subgraph SameTxn['Single DB transaction']
         BR[Business row UPDATE]
         OB[Outbox INSERT]
     end
@@ -1492,7 +1492,7 @@ sequenceDiagram
     participant DB as Database
     participant R as Outbox Relay
     participant K as Kafka
-    S->>DB: BEGIN — UPDATE order + INSERT outbox
+    S->>DB: BEGIN - UPDATE order + INSERT outbox
     S->>DB: COMMIT
     loop poll or CDC
         R->>DB: read unpublished outbox rows

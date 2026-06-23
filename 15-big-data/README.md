@@ -63,23 +63,23 @@ Most analytics, reporting, ML training, and billing reconciliation are batch. Ch
 
 ```mermaid
 flowchart TB
-    subgraph Batch["Batch Processing"]
+    subgraph Batch['Batch Processing']
         direction TB
-        S1[Accumulate data\nhour / day / week]
-        S2[Schedule job\nAirflow / cron]
-        S3[Process full dataset\nSpark / MapReduce]
-        S4[Write results\nWarehouse / DB]
+        S1["Accumulate data\nhour / day / week"]
+        S2["Schedule job\nAirflow / cron"]
+        S3["Process full dataset\nSpark / MapReduce"]
+        S4["Write results\nWarehouse / DB"]
         S1 --> S2 --> S3 --> S4
     end
-    subgraph Stream["Stream Processing"]
+    subgraph Stream['Stream Processing']
         direction TB
         E1[Event arrives]
-        E2[Process immediately\nFlink / Kafka Streams]
+        E2["Process immediately\nFlink / Kafka Streams"]
         E3[Update state / sink]
         E1 --> E2 --> E3
     end
-    Batch -.->|Latency: minutes - hours\nThroughput: maximal| KPI1[Reports Â· ML training Â· Billing]
-    Stream -.->|Latency: ms - seconds\nThroughput: per-event| KPI2[Fraud Â· Dashboards Â· Alerts]
+    Batch -.->|Latency: minutes - hours\nThroughput: maximal| KPI1[Reports / ML training / Billing]
+    Stream -.->|Latency: ms - seconds\nThroughput: per-event| KPI2[Fraud / Dashboards / Alerts]
 ```
 
 1. **Land** data in lake/warehouse staging (files, partitions by date).
@@ -507,34 +507,34 @@ Lakehouse eliminates the traditional two-system tax (lake + warehouse sync). Dat
 
 ```mermaid
 flowchart TB
-    subgraph Sources["Sources"]
+    subgraph Sources['Sources']
         OLTP[(OLTP DBs)]
         Logs[Logs / Events]
         APIs[APIs / SaaS]
     end
 
-    subgraph Lakehouse["Lakehouse on Object Storage"]
+    subgraph Lakehouse['Lakehouse on Object Storage']
         Bronze[Bronze  -  raw files]
         Silver[Silver  -  cleaned Parquet]
         Gold[Gold  -  business tables]
-        TF[Table Format\nDelta / Iceberg / Hudi]
+        TF["Table Format\nDelta / Iceberg / Hudi"]
         Bronze --> Silver --> Gold
         TF -.-> Bronze & Silver & Gold
     end
 
-    subgraph WH["Traditional Warehouse"]
+    subgraph WH['Traditional Warehouse']
         MPP[MPP SQL Engine]
-        Schema[Enforced schema\nStar schema]
+        Schema["Enforced schema\nStar schema"]
     end
 
     Sources --> Bronze
     Gold --> Compute[Spark / Trino / Presto]
-    Compute --> BI[BI Â· ML Â· Reverse ETL]
+    Compute --> BI[BI / ML / Reverse ETL]
     Sources -.->|ELT path| MPP
     MPP --> Schema --> BI
 
-    Lakehouse ---|"Open formats\nACID Â· time travel\nSchema evolution"| Adv[Single platform\nbatch + stream + ML]
-    WH ---|"Mature BI\nWorkload isolation"| Adv2[Best for certified\nenterprise metrics]
+    Lakehouse ---|"Open formats\nACID / time travel\nSchema evolution"| Adv["Single platform\nbatch + stream + ML"]
+    WH ---|"Mature BI\nWorkload isolation"| Adv2["Best for certified\nenterprise metrics"]
 ```
 
 1. Store data in Parquet on S3/ADLS with **Delta/Iceberg/Hudi** metadata layer.

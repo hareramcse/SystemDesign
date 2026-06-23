@@ -1,4 +1,4 @@
-﻿# 8. Microservices
+# 8. Microservices
 
 > Status: **Documented**
 
@@ -220,7 +220,7 @@ flowchart TB
 
 ```mermaid
 flowchart TB
-    subgraph Triggers["Split triggers"]
+    subgraph Triggers['Split triggers']
         T1[Team autonomy]
         T2[Independent scale]
         T3[Fault isolation]
@@ -1184,8 +1184,8 @@ Named after ship compartments: one hull breach floods one section, not the whole
 
 ```mermaid
 flowchart TB
-    App[Service] --> PoolA[Pool: Payments]
-    App --> PoolB[Pool: Inventory]
+    App[Service] --> PoolA["Pool: Payments"]
+    App --> PoolB["Pool: Inventory"]
     PoolA --> Pay[Payment API]
     PoolB --> Inv[Inventory API]
 ```
@@ -1260,8 +1260,8 @@ sequenceDiagram
     participant I as Inventory Service
     participant P as Payment Service
 
-    O->>I: Reserve stock ✓
-    O->>P: Charge card ✗
+    O->>I: Reserve stock OK
+    O->>P: Charge card NO
     O->>I: Compensate: ReleaseReservation
     O->>O: Compensate: Cancel order
 ```
@@ -1308,8 +1308,8 @@ flowchart LR
     I -->|InventoryReserved| Bus
     Bus --> P[Payment Svc]
     P -->|PaymentFailed| Bus
-    Bus --> I2[Inventory: ReleaseStock]
-    Bus --> O2[Order: Cancelled]
+    Bus --> I2["Inventory: ReleaseStock"]
+    Bus --> O2["Order: Cancelled"]
 ```
 
 **Orchestration diagram:**

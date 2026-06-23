@@ -1,4 +1,4 @@
-﻿# 13. Advanced Topics
+# 13. Advanced Topics
 
 > Status: **Documented**  -  self-contained master reference for probabilistic structures, specialized data structures, distributed routing, and ID generation.
 
@@ -65,15 +65,15 @@ At scale, storing every key in a hash set is expensive. Bloom filters let you sk
 
 ```mermaid
 flowchart TB
-    subgraph Insert["Insert 'user:42'"]
-        H1["hashâ‚ -> bit 3"] --> B[(Bit Array m bits)]
-        H2["hashâ‚‚ -> bit 17"] --> B
-        H3["hashâ‚ƒ -> bit 91"] --> B
+    subgraph Insert[Insert user 42]
+        H1[hash1 to bit 3] --> B[(Bit Array m bits)]
+        H2[hash2 to bit 17] --> B
+        H3[hash3 to bit 91] --> B
     end
-    subgraph Query["Query 'user:99'"]
+    subgraph Query[Query user 99]
         Q1{All k bits = 1?}
         Q1 -->|No| DEF[Definitely NOT in set]
-        Q1 -->|Yes| MAYBE[Possibly in set  -  check backing store]
+        Q1 -->|Yes| MAYBE[Possibly in set - check backing store]
     end
 ```
 
@@ -403,7 +403,7 @@ DHTs power peer-to-peer systems (BitTorrent, IPFS, Cassandra ring), distributed 
 
 ```mermaid
 flowchart TB
-    subgraph Ring["Consistent Hash Ring"]
+    subgraph Ring['Consistent Hash Ring']
         direction LR
         N1((Node A))
         N2((Node B))
@@ -411,7 +411,7 @@ flowchart TB
         N4((Node D))
         N1 --- N2 --- N3 --- N4 --- N1
     end
-    K["key K -> hash(K)"] --> Succ[First node clockwise]
+    K['key K -> hash(K)'] --> Succ[First node clockwise]
     Succ --> N2
     N2 --> Replica[Replicate to N+1, N+2 successors]
 ```
@@ -503,11 +503,11 @@ Auto-increment IDs don't scale across shards; random UUIDs fragment indexes. Sno
 
 ```mermaid
 flowchart LR
-    subgraph Snowflake["64-bit Snowflake ID"]
+    subgraph Snowflake['64-bit Snowflake ID']
         direction LR
         T["41 bits  -  timestamp ms\n(custom epoch)"]
-        DC["5 bits  -  datacenter ID"]
-        W["5 bits  -  worker / machine ID"]
+        DC['5 bits  -  datacenter ID']
+        W['5 bits  -  worker / machine ID']
         S["12 bits  -  sequence per ms\n(4096 IDs/ms)"]
         T --- DC --- W --- S
     end

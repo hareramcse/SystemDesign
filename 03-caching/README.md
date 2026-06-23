@@ -1,4 +1,4 @@
-﻿# 3. Caching
+# 3. Caching
 
 > Status: **Documented**  -  master reference
 
@@ -154,9 +154,9 @@ Redis default: `maxmemory-policy` options include `allkeys-lru`, `volatile-lru`,
 ```mermaid
 flowchart LR
     Full[Cache full] --> Policy{Eviction policy}
-    Policy --> LRU[LRU: evict coldest]
-    Policy --> LFU[LFU: evict rarest]
-    Policy --> TTL[TTL: evict expired first]
+    Policy --> LRU["LRU: evict coldest"]
+    Policy --> LFU["LFU: evict rarest"]
+    Policy --> TTL["TTL: evict expired first"]
 ```
 
 #### Locality in practice
@@ -720,9 +720,9 @@ Wrong invalidation causes users to see outdated prices, permissions, or content 
 flowchart TB
     Write[DB Write succeeds] --> Path{Invalidation path}
     Path --> Del[Direct DEL cache key]
-    Path --> Pub[Redis PUBLISH evict:user:123]
-    Path --> CDC[Debezium → Kafka → Evict service]
-    Path --> Ver[Bump version user:123:v6]
+    Path --> Pub["Redis PUBLISH evict:user:123"]
+    Path --> CDC[Debezium -> Kafka -> Evict service]
+    Path --> Ver["Bump version user:123:v6"]
     Pub --> L1[Near cache pods evict L1]
     Pub --> L2[Redis DEL]
     CDC --> SvcB[Service B evicts its cache]
@@ -749,8 +749,8 @@ flowchart TB
 
 ```mermaid
 sequenceDiagram
-    participant T1 as Thread 1 (read)
-    participant T2 as Thread 2 (write)
+    participant  as "Thread 1 (read)"
+    participant  as "Thread 2 (write)"
     participant Cache
     participant DB
     T2->>DB: UPDATE name=Alice
@@ -932,7 +932,7 @@ Redis cluster restart, network partition, or uniform TTL on millions of keys can
 
 ```mermaid
 flowchart TB
-    Event[Trigger: restart / mass TTL / flush] --> Empty[Cache empty or expired]
+    Event["Trigger: restart / mass TTL / flush"] --> Empty[Cache empty or expired]
     Empty --> Miss[90%+ miss rate]
     Miss --> Flood[DB QPS 10-100x]
     Flood --> Slow[DB latency spikes]
@@ -1057,7 +1057,7 @@ sequenceDiagram
         Cache-->>Attacker: miss
         Attacker->>DB: SELECT (full cost)
         DB-->>Attacker: empty
-        Note over Cache: Nothing stored → repeat forever
+        Note over Cache: Nothing stored -> repeat forever
     end
 ```
 

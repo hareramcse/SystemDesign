@@ -1,4 +1,4 @@
-﻿# 14. Search Systems
+# 14. Search Systems
 
 > Status: **Documented**  -  self-contained master reference for full-text search, indexing, ranking, and production search engines.
 
@@ -106,20 +106,20 @@ Scanning every document for every query is O(documents). Inverted indexes make l
 
 ```mermaid
 flowchart TB
-    subgraph Build["Index Build"]
-        D1["Doc1: 'quick brown fox'"]
-        D2["Doc2: 'quick blue sky'"]
+    subgraph Build[Index Build]
+        D1[Doc1: quick brown fox]
+        D2[Doc2: quick blue sky]
         D1 --> Tok[Tokenize + Normalize]
         D2 --> Tok
         Tok --> Inv[(Inverted Index)]
     end
-    subgraph Index["Inverted Index Structure"]
-        Inv --> quick["quick -> [(D1, pos1), (D2, pos1)]"]
-        Inv --> brown["brown -> [(D1, pos2)]"]
-        Inv --> fox["fox -> [(D1, pos3)]"]
-        Inv --> blue["blue -> [(D2, pos2)]"]
+    subgraph Index[Inverted Index Structure]
+        Inv --> quick[quick to D1,D2]
+        Inv --> brown[brown to D1]
+        Inv --> fox[fox to D1]
+        Inv --> blue[blue to D2]
     end
-    subgraph Query["Query: 'quick fox'"]
+    subgraph Query[Query: quick fox]
         Q[Intersect posting lists] --> Score[Score + Rank]
     end
 ```

@@ -1,4 +1,4 @@
-﻿# 11. Cloud & Kubernetes
+# 11. Cloud & Kubernetes
 
 > Status: **Documented**  -  MASTER reference depth for all sub-topics below.
 
@@ -58,23 +58,23 @@ Cloud computing delivers on-demand compute, storage, and networking over the int
 
 ```mermaid
 flowchart TB
-    subgraph Models["Cloud Service Models"]
-        SaaS[SaaS<br/>Applications]
-        PaaS[PaaS<br/>Platforms]
-        IaaS[IaaS<br/>Infrastructure]
+    subgraph Models['Cloud Service Models']
+        SaaS[SaaS / Applications]
+        PaaS[PaaS / Platforms]
+        IaaS[IaaS / Infrastructure]
     end
 
-    subgraph Region["Cloud Region"]
-        subgraph AZ1["Availability Zone A"]
+    subgraph Region['Cloud Region']
+        subgraph AZ1['Availability Zone A']
             N1[Nodes]
         end
-        subgraph AZ2["Availability Zone B"]
+        subgraph AZ2['Availability Zone B']
             N2[Nodes]
         end
         VPC[VPC Network]
     end
 
-    subgraph K8s["Kubernetes Cluster"]
+    subgraph K8s['Kubernetes Cluster']
         CP[Control Plane]
         SCH[Scheduler]
         W1[Worker Nodes]
@@ -91,20 +91,20 @@ flowchart TB
 
 ```mermaid
 flowchart TB
-    subgraph YouManage["You Manage"]
+    subgraph YouManage['You Manage']
         App[Applications & Data]
         Runtime[Runtime / Middleware]
         OS[Operating System]
     end
 
-    subgraph ProviderManage["Provider Manages"]
+    subgraph ProviderManage['Provider Manages']
         Virt[Virtualization]
         Servers[Servers / Storage / Network]
     end
 
-    SaaS["SaaS  -  use software"] --> App
-    PaaS["PaaS  -  deploy code"] --> Runtime
-    IaaS["IaaS  -  rent VMs"] --> OS
+    SaaS['SaaS  -  use software'] --> App
+    PaaS['PaaS  -  deploy code'] --> Runtime
+    IaaS['IaaS  -  rent VMs'] --> OS
     Virt & Servers --> ProviderManage
 ```
 
@@ -146,7 +146,7 @@ Provider virtualizes hardware (hypervisor). You provision EC2/GCE/Azure VM, atta
 
 ```mermaid
 flowchart LR
-    You[You: OS + App] --> VM[Virtual Machine]
+    You["You: OS + App"] --> VM[Virtual Machine]
     VM --> Hypervisor[Hypervisor]
     Hypervisor --> HW[Physical Hardware]
 ```
@@ -409,9 +409,9 @@ Deploy instances/pods in multiple AZ subnets. Load balancer distributes across A
 ```mermaid
 flowchart TB
     subgraph Region
-        AZ1[AZ-1<br/>Subnet]
-        AZ2[AZ-2<br/>Subnet]
-        AZ3[AZ-3<br/>Subnet]
+        AZ1[AZ-1 / Subnet]
+        AZ2[AZ-2 / Subnet]
+        AZ3[AZ-3 / Subnet]
     end
     LB[Regional LB] --> AZ1 & AZ2 & AZ3
 ```
@@ -516,9 +516,9 @@ Define CIDR block (e.g., `10.0.0.0/16`). Create public subnets (IGW route) and p
 
 ```mermaid
 flowchart TB
-    subgraph VPC["VPC 10.0.0.0/16"]
-        Pub[Public Subnet<br/>LB, Bastion]
-        Priv[Private Subnet<br/>Apps, DB]
+    subgraph VPC['VPC 10.0.0.0/16']
+        Pub[Public Subnet / LB, Bastion]
+        Priv[Private Subnet / Apps, DB]
     end
     IGW[Internet Gateway] --> Pub
     Priv --> NAT[NAT Gateway] --> IGW
@@ -796,10 +796,10 @@ In system design interviews, Docker questions often pivot to: *images vs contain
 
 ```mermaid
 flowchart LR
-    DF[Dockerfile] -->|docker build| Image[Image<br/>layered + tagged]
-    Image -->|docker push| Reg[Registry<br/>Docker Hub / ECR / GCR]
+    DF[Dockerfile] -->|docker build| Image[Image / layered + tagged]
+    Image -->|docker push| Reg[Registry / Docker Hub / ECR / GCR]
     Reg -->|docker pull| Node[Host / CI / K8s node]
-    Node -->|docker run| C[Container<br/>writable layer + process]
+    Node -->|docker run| C[Container / writable layer + process]
 ```
 
 1. **Dockerfile** — declarative build recipe (`FROM`, `COPY`, `RUN`, `CMD`)
@@ -813,7 +813,7 @@ flowchart LR
 flowchart TB
     CLI[docker CLI] -->|REST API| Daemon[dockerd]
     Daemon --> Builder[Image Builder]
-    Daemon --> Runtime[containerd → runc]
+    Daemon --> Runtime[containerd -> runc]
     Runtime --> C1[Container A]
     Runtime --> C2[Container B]
     Builder --> Reg[Registry pull/push]
@@ -833,11 +833,11 @@ flowchart TB
 
 ```mermaid
 flowchart TB
-    subgraph VM["Virtual Machine"]
+    subgraph VM['Virtual Machine']
         App1[App] --> GuestOS[Guest OS]
         GuestOS --> Hypervisor[Hypervisor]
     end
-    subgraph CTR["Container"]
+    subgraph CTR['Container']
         App2[App] --> Runtime[Container Runtime]
         Runtime --> HostOS[Host OS Kernel]
     end
@@ -866,16 +866,16 @@ docker logs -f api
 
 ```mermaid
 flowchart LR
-    subgraph Dev["Developer / CI"]
+    subgraph Dev['Developer / CI']
         Code[Source Code] --> DF[Dockerfile]
         DF --> Build[docker build]
-        Build --> Img[Image :tag + :digest]
+        Build --> Img["Image :tag + :digest"]
     end
-    subgraph Registry["Container Registry"]
+    subgraph Registry['Container Registry']
         Img --> Push[docker push]
         Push --> Store[(Layer storage)]
     end
-    subgraph Runtime["Execution"]
+    subgraph Runtime['Execution']
         Store --> Pull[docker pull]
         Pull --> Run[docker run]
         Run --> CTR[Container process]
@@ -1054,9 +1054,9 @@ Layer caching speeds CI builds and reduces registry storage/pull time when base 
 
 ```mermaid
 flowchart TB
-    L1[Layer 1: Base OS] --> L2[Layer 2: Runtime]
-    L2 --> L3[Layer 3: Dependencies]
-    L3 --> L4[Layer 4: App Code]
+    L1["Layer 1: Base OS"] --> L2["Layer 2: Runtime"]
+    L2 --> L3["Layer 3: Dependencies"]
+    L3 --> L4["Layer 4: App Code"]
     L4 --> Container[Union FS View]
 ```
 
@@ -1106,8 +1106,8 @@ Namespaces are foundational to container isolation - process in container cannot
 
 ```mermaid
 flowchart TB
-    Host[Host Namespace] --> NS1[Container A<br/>PID / Net / Mount]
-    Host --> NS2[Container B<br/>PID / Net / Mount]
+    Host[Host Namespace] --> NS1[Container A / PID / Net / Mount]
+    Host --> NS2[Container B / PID / Net / Mount]
 ```
 
 ### Key details
@@ -1155,8 +1155,8 @@ Processes assigned to cgroup hierarchy. Set `memory.max`, `cpu.weight`, `pids.ma
 
 ```mermaid
 flowchart LR
-    Node[Physical Node] --> CG1[cgroup: Pod A<br/>CPU 500m, Mem 512Mi]
-    Node --> CG2[cgroup: Pod B<br/>CPU 1000m, Mem 1Gi]
+    Node[Physical Node] --> CG1["cgroup: Pod A / CPU 500m, Mem 512Mi"]
+    Node --> CG2["cgroup: Pod B / CPU 1000m, Mem 1Gi"]
 ```
 
 ### Key details
@@ -1235,24 +1235,24 @@ Interview focus: explain **control plane components individually**, how a pod ge
 
 ```mermaid
 sequenceDiagram
-    participant U as kubectl / User
+    participant  as "kubectl / User"
     participant API as API Server
     participant ETCD as etcd
     participant CM as Controller Manager
     participant SCH as Scheduler
     participant K as kubelet
-    participant RT as containerd/runc
+    participant  as "containerd/runc"
 
     U->>API: POST Deployment
     API->>ETCD: persist desired state
     CM->>API: watch Deployment
     CM->>API: create ReplicaSet + Pods (Pending)
     SCH->>API: watch unscheduled Pods
-    SCH->>API: bind Pod → Node X
+    SCH->>API: bind Pod -> Node X
     K->>API: watch Pods on Node X
     K->>RT: pull image, start containers
     RT-->>K: container running
-    K->>API: update Pod status → Running
+    K->>API: update Pod status -> Running
 ```
 
 **Scheduler overview (filter → score → bind):**
@@ -1260,8 +1260,8 @@ sequenceDiagram
 ```mermaid
 flowchart TB
     P[Pending Pod] --> SCH[Scheduler]
-    SCH --> F[Filter Phase<br/>CPU/mem fit, taints, affinity, PVC]
-    F --> S[Score Phase<br/>spread, least allocated, topology]
+    SCH --> F[Filter Phase / CPU/mem fit, taints, affinity, PVC]
+    F --> S[Score Phase / spread, least allocated, topology]
     S --> B[Bind to top node]
     B --> K[kubelet on node starts pod]
 ```
@@ -1278,17 +1278,17 @@ flowchart TB
 
 ```mermaid
 flowchart TB
-    subgraph CP["Control Plane (usually 3+ nodes for HA)"]
-        API[API Server<br/>REST + auth + admission]
-        ETCD[(etcd<br/>cluster state)]
-        SCH[Scheduler<br/>pod → node placement]
-        CM[Controller Manager<br/>reconciliation loops]
+    subgraph CP['Control Plane (usually 3+ nodes for HA)']
+        API[API Server / REST + auth + admission]
+        ETCD[(etcd / cluster state)]
+        SCH[Scheduler / pod -> node placement]
+        CM[Controller Manager / reconciliation loops]
         CCM[Cloud Controller Manager]
         API <--> ETCD
         SCH & CM & CCM --> API
     end
 
-    subgraph W1["Worker Node 1"]
+    subgraph W1['Worker Node 1']
         K1[kubelet]
         KP1[kube-proxy]
         CR1[containerd]
@@ -1296,7 +1296,7 @@ flowchart TB
         CR1 --> P1[Pods]
     end
 
-    subgraph W2["Worker Node 2"]
+    subgraph W2['Worker Node 2']
         K2[kubelet]
         KP2[kube-proxy]
         CR2[containerd]
@@ -1376,7 +1376,7 @@ Pod spec defines containers, resources, volumes, probes. Scheduled to node; kube
 
 ```mermaid
 flowchart TB
-    subgraph Pod["Pod (shared network IP)"]
+    subgraph Pod['Pod (shared network IP)']
         C1[App Container]
         C2[Sidecar Container]
         Vol[Shared Volumes]
@@ -1429,7 +1429,7 @@ Selector matches pod labels. Compares desired vs actual count; creates or delete
 
 ```mermaid
 flowchart LR
-    RS[ReplicaSet<br/>desired: 3] -->|creates| Pods[Matching Pods]
+    RS["ReplicaSet / desired: 3"] -->|creates| Pods[Matching Pods]
     RS -->|deletes excess| X[Terminated Pods]
 ```
 
@@ -1489,8 +1489,8 @@ Interview staple: explain rolling update parameters, what happens during a faile
 
 ```mermaid
 flowchart TB
-    Dep[Deployment<br/>replicas: 5<br/>strategy: RollingUpdate] --> RSnew[ReplicaSet rev:3<br/>desired: 5]
-    Dep -.->|kept for rollback| RSold[ReplicaSet rev:2<br/>desired: 0]
+    Dep["Deployment / replicas: 5 / strategy: RollingUpdate"] --> RSnew["ReplicaSet rev:3 / desired: 5"]
+    Dep -.->|kept for rollback| RSold["ReplicaSet rev:2 / desired: 0"]
     RSnew --> P1[Pod]
     RSnew --> P2[Pod]
     RSnew --> P3[Pod]
@@ -1502,12 +1502,12 @@ flowchart TB
 
 ```mermaid
 sequenceDiagram
-    participant U as User / CI
+    participant  as "User / CI"
     participant D as Deployment Controller
     participant RS as New ReplicaSet
     participant P as Pods
 
-    U->>D: change image tag v1 → v2
+    U->>D: change image tag v1 -> v2
     D->>RS: create new ReplicaSet (rev+1)
     loop Until all replicas on v2
         RS->>P: create new pod (v2)
@@ -1571,7 +1571,7 @@ kubectl rollout undo deployment/api --to-revision=3    # specific revision
 
 ```mermaid
 flowchart LR
-    V3[rev 3 : v2.1.0<br/>current] -->|rollout undo| V2[rev 2 : v2.0.0<br/>restored]
+    V3["rev 3 : v2.1.0 / current"] -->|rollout undo| V2["rev 2 : v2.0.0 / restored"]
     V2 --> RS2[ReplicaSet scaled up]
     RS2 --> Pods[Pods on old image]
 ```
@@ -1597,7 +1597,7 @@ flowchart LR
 
 ```mermaid
 flowchart TB
-    subgraph Rollout["Rolling Update v1 → v2"]
+    subgraph Rollout['Rolling Update v1 -> v2']
         direction LR
         subgraph Before
             O1[v1] --- O2[v1] --- O3[v1]
@@ -1935,7 +1935,7 @@ Replaces in-container crontab with cluster-managed, observable scheduled tasks w
 
 ```mermaid
 flowchart LR
-    CJ[CronJob<br/>0 2 * * *] -->|triggers| Job[Job]
+    CJ[CronJob / 0 2 * * *] -->|triggers| Job[Job]
     Job --> Pod[Pod executes]
 ```
 
@@ -2252,10 +2252,10 @@ Interview focus: metric types, replica formula, why CPU-only HPA fails, and scal
 
 ```mermaid
 flowchart TB
-    subgraph Metrics["Metrics Sources"]
-        MS[metrics-server<br/>CPU / memory]
-        PM[Prometheus Adapter<br/>custom metrics]
-        EM[External metrics<br/>SQS lag, Pub/Sub]
+    subgraph Metrics['Metrics Sources']
+        MS[metrics-server / CPU / memory]
+        PM[Prometheus Adapter / custom metrics]
+        EM[External metrics / SQS lag, Pub/Sub]
     end
     MS & PM & EM --> API[Metrics API]
     API --> HPA[HPA Controller]
@@ -2339,11 +2339,11 @@ spec:
 
 ```mermaid
 flowchart LR
-    subgraph ScaleUp["Scale Up (aggressive)"]
+    subgraph ScaleUp['Scale Up (aggressive)']
         SU1[+100% pods / 60s]
         SU2[No stabilization window]
     end
-    subgraph ScaleDown["Scale Down (conservative)"]
+    subgraph ScaleDown['Scale Down (conservative)']
         SD1[-10% pods / 60s]
         SD2[5 min stabilization window]
     end
@@ -2361,12 +2361,12 @@ flowchart LR
 flowchart TB
     Traffic[Traffic spike] --> Pods[Pods CPU rises]
     Pods --> MS[metrics-server]
-    MS --> HPA[HPA: 70% > target 50%]
-    HPA -->|scale 5 → 8| Dep[Deployment]
+    MS --> HPA["HPA: 70% > target 50%"]
+    HPA -->|scale 5 -> 8| Dep[Deployment]
     Dep --> NewPods[New pods starting]
     NewPods -->|readiness OK| SVC[Service receives traffic]
     HPA -->|nodes full?| Pending[Pending pods]
-    Pending --> CA[Cluster Autoscaler<br/>adds nodes]
+    Pending --> CA[Cluster Autoscaler / adds nodes]
 ```
 
 ### Key details

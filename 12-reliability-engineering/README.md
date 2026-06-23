@@ -1,4 +1,4 @@
-﻿# 12. Reliability Engineering
+# 12. Reliability Engineering
 
 > Status: **Documented**  -  MASTER reference depth for all sub-topics below.
 
@@ -33,18 +33,18 @@ Reliability engineering builds systems that survive failures - hardware, softwar
 
 ```mermaid
 flowchart TB
-    subgraph Design["Reliability Design"]
+    subgraph Design['Reliability Design']
         HA[High Availability]
         AA[Active-Active / Passive]
         DR[Disaster Recovery]
     end
 
-    subgraph Metrics["Recovery Objectives"]
-        RPO[RPO<br/>Data loss tolerance]
-        RTO[RTO<br/>Downtime tolerance]
+    subgraph Metrics['Recovery Objectives']
+        RPO[RPO / Data loss tolerance]
+        RTO[RTO / Downtime tolerance]
     end
 
-    subgraph Practice["Operational Practice"]
+    subgraph Practice['Operational Practice']
         BK[Backup Strategy]
         RS[Restore Strategy]
         CE[Chaos Engineering]
@@ -93,11 +93,11 @@ HA is measured in **nines** — the percentage of uptime in a year:
 
 ```mermaid
 flowchart LR
-    subgraph Nines["Cost vs Availability"]
-        N2[99%<br/>cheap]
-        N3[99.9%<br/>multi-AZ]
-        N4[99.99%<br/>multi-region + chaos]
-        N5[99.999%<br/>extreme redundancy]
+    subgraph Nines['Cost vs Availability']
+        N2[99% / cheap]
+        N3[99.9% / multi-AZ]
+        N4[99.99% / multi-region + chaos]
+        N5[99.999% / extreme redundancy]
     end
     N2 --> N3 --> N4 --> N5
 ```
@@ -140,11 +140,11 @@ Interview focus: calculate nines, identify SPOFs, and explain redundancy pattern
 
 ```mermaid
 flowchart TB
-    LB[Load Balancer<br/>multi-AZ] --> A1[App AZ-a]
+    LB[Load Balancer / multi-AZ] --> A1[App AZ-a]
     LB --> A2[App AZ-b]
     LB --> A3[App AZ-c]
-    A1 & A2 & A3 --> DBP[(DB Primary<br/>AZ-a)]
-    DBP -->|sync repl| DBS[(Standby<br/>AZ-b)]
+    A1 & A2 & A3 --> DBP[(DB Primary / AZ-a)]
+    DBP -->|sync repl| DBS[(Standby / AZ-b)]
     A1 & A2 & A3 --> Cache[(Redis Cluster)]
     HC[Health Checks] --> LB
     HC --> DBP
@@ -182,11 +182,11 @@ sequenceDiagram
 
 ```mermaid
 flowchart TB
-    subgraph WithoutHA["Without HA — SPOF"]
+    subgraph WithoutHA['Without HA - SPOF']
         U1[Users] --> S1[Single Server]
         S1 --> DB1[(Single DB)]
     end
-    subgraph WithHA["With HA — N+1"]
+    subgraph WithHA['With HA - N+1']
         U2[Users] --> LB2[LB]
         LB2 --> S2a[Server 1]
         LB2 --> S2b[Server 2]
@@ -262,8 +262,8 @@ Global load balancer geo-routes users. Data replicated multi-master or partition
 ```mermaid
 flowchart TB
     GLB[Global Load Balancer]
-    GLB --> R1[Region US<br/>Read + Write]
-    GLB --> R2[Region EU<br/>Read + Write]
+    GLB --> R1[Region US / Read + Write]
+    GLB --> R2[Region EU / Read + Write]
     R1 <-->|replication| R2
     U1[US Users] --> GLB
     U2[EU Users] --> GLB
@@ -316,8 +316,8 @@ Primary serves traffic; async replication to standby. On failure, promote replic
 
 ```mermaid
 flowchart LR
-    Users[Users] --> Primary[Active Site<br/>Serving Traffic]
-    Primary -->|async repl| Passive[Passive Site<br/>Standby]
+    Users[Users] --> Primary[Active Site / Serving Traffic]
+    Primary -->|async repl| Passive[Passive Site / Standby]
     Primary -.->|failure| Failover[DNS / LB Failover]
     Failover --> Passive
     Passive --> Users
@@ -390,9 +390,9 @@ timeline
     title RPO = 15 minutes (async replication)
     section Normal operation
         Last durable snapshot : 10:00
-        Continuous writes : 10:01 – 10:14
+        Continuous writes : 10:01 - 10:14
     section Failure at 10:15
-        Unreplicated writes LOST : 10:00 – 10:15 window
+        Unreplicated writes LOST : 10:00 - 10:15 window
         Recoverable data : up to 10:00 snapshot + partial WAL
 ```
 
@@ -410,9 +410,9 @@ timeline
 ```mermaid
 flowchart LR
     App[Application writes] --> Primary[(Primary DB)]
-    Primary -->|sync ACK| SyncRep[(Sync Replica<br/>RPO ≈ 0)]
-    Primary -->|async lag 30s| AsyncRep[(Async Replica<br/>RPO ≈ 30s)]
-    Primary -->|WAL every 5min| S3[(Backup + WAL<br/>RPO ≈ 5min)]
+    Primary -->|sync ACK| SyncRep[(Sync Replica / RPO ~ 0)]
+    Primary -->|async lag 30s| AsyncRep[(Async Replica / RPO ~ 30s)]
+    Primary -->|WAL every 5min| S3[(Backup + WAL / RPO ~ 5min)]
 ```
 
 **Measuring actual RPO (not just target):**
@@ -436,15 +436,15 @@ flowchart LR
 
 ```mermaid
 flowchart TB
-    subgraph Primary["Primary Region"]
+    subgraph Primary['Primary Region']
         W[Live Writes] --> DB[(Production DB)]
     end
-    subgraph Protection["RPO Controls"]
-        DB -->|sync| R0[Replica — RPO 0]
-        DB -->|async lag| R1[Replica — RPO = lag]
-        DB -->|snapshot + WAL| BK[Backup Store — RPO = interval]
+    subgraph Protection['RPO Controls']
+        DB -->|sync| R0[Replica - RPO 0]
+        DB -->|async lag| R1[Replica - RPO = lag]
+        DB -->|snapshot + WAL| BK[Backup Store - RPO = interval]
     end
-    subgraph Failure["On Failure"]
+    subgraph Failure['On Failure']
         BK --> Restore[Restore to last durable point]
         R0 --> Promote[Promote replica]
     end
@@ -586,10 +586,10 @@ gantt
 ```mermaid
 flowchart TB
     Fail[Failure detected] --> T{Triage}
-    T -->|region down| AA[Active-Active<br/>RTO ~ 0]
-    T -->|DB primary down| Hot[Promote replica<br/>RTO ~ 5 min]
-    T -->|data corruption| Restore[PITR restore<br/>RTO ~ 1–4 hr]
-    T -->|total loss| Cold[Backup restore<br/>RTO ~ 4–24 hr]
+    T -->|region down| AA[Active-Active / RTO ~ 0]
+    T -->|DB primary down| Hot[Promote replica / RTO ~ 5 min]
+    T -->|data corruption| Restore[PITR restore / RTO ~ 1-4 hr]
+    T -->|total loss| Cold[Backup restore / RTO ~ 4-24 hr]
 ```
 
 **Example — payment service RTO = 5 min:**
@@ -606,13 +606,13 @@ flowchart TB
 
 ```mermaid
 flowchart LR
-    subgraph Clock["RTO Clock"]
+    subgraph Clock['RTO Clock']
         D[Detect] --> T[Triage]
         T --> R[Recover]
         R --> V[Validate]
         V --> C[Cutover]
     end
-    subgraph Parallel["Run in Parallel"]
+    subgraph Parallel['Run in Parallel']
         P1[Restore DB]
         P2[Deploy apps]
         P3[Update DNS]
@@ -686,11 +686,11 @@ Classify tiers by criticality. Choose DR pattern (backup-restore, pilot light, w
 
 ```mermaid
 flowchart TB
-    subgraph Primary["Primary Region"]
+    subgraph Primary['Primary Region']
         PApp[Applications]
         PDB[(Database)]
     end
-    subgraph DR["DR Region"]
+    subgraph DR['DR Region']
         DApp[Standby Apps]
         DDB[(Replica)]
     end
@@ -864,10 +864,10 @@ Chaos engineering converts unknown-unknowns into known-knowns and validates that
 
 ```mermaid
 flowchart LR
-    H[1. Hypothesis<br/>"AZ failure won't affect checkout"] --> SS[2. Define Steady State<br/>SLO metrics, error rate, latency]
-    SS --> BR[3. Define Blast Radius<br/>canary %, abort conditions]
+    H[1. Hypothesis / 'AZ failure won't affect checkout'] --> SS[2. Define Steady State / SLO metrics, error rate, latency]
+    SS --> BR[3. Define Blast Radius / canary %, abort conditions]
     BR --> IN[4. Inject Fault]
-    IN --> OB[5. Observe<br/>dashboards, alerts, user impact]
+    IN --> OB[5. Observe / dashboards, alerts, user impact]
     OB --> V{Weakness found?}
     V -->|yes| FX[6. Fix & Harden]
     V -->|no| AU[7. Automate in CI/CD]
@@ -912,15 +912,15 @@ flowchart LR
 
 ```mermaid
 flowchart TB
-    subgraph Staging["Phase 1 — Staging"]
+    subgraph Staging['Phase 1 - Staging']
         S1[Single pod kill]
         S2[Dependency timeout]
     end
-    subgraph Canary["Phase 2 — Prod Canary"]
+    subgraph Canary['Phase 2 - Prod Canary']
         C1[1% traffic AZ shift]
         C2[Kill pod in canary pool]
     end
-    subgraph Prod["Phase 3 — Prod (controlled)"]
+    subgraph Prod['Phase 3 - Prod (controlled)']
         P1[AZ failure simulation]
         P2[Regional failover drill]
     end
@@ -943,7 +943,7 @@ flowchart TB
 
 ```mermaid
 gantt
-    title Game Day — AZ Failure Drill
+    title Game Day - AZ Failure Drill
     dateFormat HH:mm
     axisFormat %H:%M
 
@@ -974,15 +974,15 @@ gantt
 ```mermaid
 flowchart TB
     subgraph Hypothesis["Hypothesis: Multi-AZ survives node loss"]
-        SS[Steady State<br/>99.9% success, p99 < 100ms]
+        SS[Steady State / 99.9% success, p99 < 100ms]
     end
-    subgraph Experiment["Controlled Experiment"]
-        FI[Inject: drain node in AZ-b]
-        MON[Monitor: Grafana, PagerDuty]
+    subgraph Experiment['Controlled Experiment']
+        FI["Inject: drain node in AZ-b"]
+        MON["Monitor: Grafana, PagerDuty"]
     end
-    subgraph Outcome["Outcomes"]
-        OK[✓ Traffic rerouted — hypothesis confirmed]
-        FAIL[✗ 500 errors for 3 min — fix PDB + probe]
+    subgraph Outcome['Outcomes']
+        OK[OK Traffic rerouted - hypothesis confirmed]
+        FAIL[NO 500 errors for 3 min - fix PDB + probe]
     end
     SS --> FI --> MON --> OK & FAIL
 ```
