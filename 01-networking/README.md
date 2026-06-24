@@ -1,4 +1,4 @@
-# 1. Networking
+﻿# 1. Networking
 
 > Status: **Documented** — master reference
 
@@ -32,13 +32,13 @@
 
 ---
 
-This chapter is a **networking reference for system design**: protocol layers, transport (TCP/UDP/QUIC), IP addressing, DNS, HTTP/TLS, and edge infrastructure (CDN, load balancers, proxies). When topics overlap, sections **cross-link** to the canonical deep dive rather than repeat the same walkthrough.
+This chapter is a **networking reference for system design**: protocol layers, transport (TCP/UDP/QUIC), IP addressing, DNS, HTTP/TLS, and edge infrastructure (CDN, load balancers, proxies).
+
+> **Diagrams:** Flow charts use [Mermaid](https://mermaid.js.org/). Open this file in **Markdown Preview** (Cursor/VS Code: `Ctrl+Shift+V`) or view on GitHub to render them.
 
 ---
 
 ## 1.1 OSI Model
-
-TCP/IP model (4 layers): [1.2 TCP/IP](#12-tcpip) · Transport deep dives: [1.3 TCP Handshake](#13-tcp-handshake), [1.4 UDP](#14-udp)
 
 The **OSI (Open Systems Interconnection) Model** is a conceptual framework that explains how data travels from one computer to another over a network.
 
@@ -160,8 +160,6 @@ TCP detects the loss and sends Packet 2 again.
 
 **Real-world analogy:** A courier service that requires a delivery confirmation.
 
-See also: [1.3 TCP Handshake](#13-tcp-handshake)
-
 #### UDP (User Datagram Protocol)
 
 UDP focuses on **speed**.
@@ -176,8 +174,6 @@ UDP focuses on **speed**.
 **Used by:** Video streaming, online gaming, voice calls, DNS queries
 
 **Real-world analogy:** Making an announcement through a loudspeaker — you simply broadcast the message and do not wait for confirmation.
-
-See also: [1.4 UDP](#14-udp)
 
 #### Ports
 
@@ -295,7 +291,6 @@ At this layer there is no HTTP, TCP, UDP, IP, or JSON. Everything becomes **0 an
 
 ---
 
-
 ## 1.2 TCP/IP
 
 The **TCP/IP Model** is the practical networking model used on the Internet today.
@@ -347,8 +342,6 @@ This layer focuses on: *What information should be sent?*
 It does not care about: IP addresses, routing, packets, cables, or wireless signals.
 
 **Real-world analogy:** You write a letter and decide what information should be sent.
-
-See also: [1.10 HTTP/HTTPS](#110-httphttps), [1.8 DNS](#18-dns)
 
 ---
 
@@ -408,8 +401,6 @@ Before sending data, TCP establishes a connection.
 
 Connection is now established. This process is called the **three-way handshake**.
 
-Deep dive: [1.3 TCP Handshake](#13-tcp-handshake)
-
 #### UDP (User Datagram Protocol)
 
 **Purpose:** Fast communication.
@@ -427,8 +418,6 @@ Deep dive: [1.3 TCP Handshake](#13-tcp-handshake)
 **Applications using UDP:** Video streaming, voice calls, online gaming, DNS
 
 **Real-world analogy:** Public announcement system — you announce something and do not wait to verify whether everyone heard it.
-
-See also: [1.4 UDP](#14-udp)
 
 #### Ports
 
@@ -478,8 +467,6 @@ Move packets from one network to another and find the destination machine.
 **Examples:** `192.168.1.10`, `10.0.0.5`, `8.8.8.8`
 
 Think of an IP address as a postal address — without an address, a package cannot be delivered.
-
-See also: [1.6 IP Addressing/Subnetting](#16-ip-addressingsubnetting), [1.7 CIDR](#17-cidr)
 
 #### Routers
 
@@ -591,10 +578,10 @@ This process is called **encapsulation**.
 
 ```mermaid
 flowchart BT
-    D[HTTP Data] --> T[TCP Header + Data]
-    T --> I[IP Header + TCP + Data]
-    I --> M[MAC Header + IP + TCP + Data]
-    M --> W[Bits on wire]
+    D["HTTP data"] --> T["TCP segment"]
+    T --> I["IP packet"]
+    I --> M["Ethernet frame"]
+    M --> W["Bits on wire"]
 ```
 
 ---
@@ -626,10 +613,7 @@ This process is called **de-encapsulation**.
 | Layer 3 (Network) | **Internet Layer** |
 | Layer 2 + Layer 1 (Data Link + Physical) | **Network Access Layer** |
 
-See also: [1.1 OSI Model](#11-osi-model)
-
 ---
-
 
 ## 1.3 TCP Handshake
 
@@ -746,28 +730,10 @@ Connection is now fully open.
 sequenceDiagram
     participant C as Client
     participant S as Server
-    Note over C: SYN_SENT
-    C->>S: SYN (Seq=1000)
-    Note over S: SYN_RECEIVED
-    S->>C: SYN-ACK (Seq=5000, Ack=1001)
-    Note over C,S: ESTABLISHED
-    C->>S: ACK (Ack=5001)
-```
-
-```text
-Client                              Server
-
-SYN (Seq=1000)
----------------------------------->
-
-                 SYN-ACK
-       (Seq=5000 Ack=1001)
-<----------------------------------
-
-ACK (Ack=5001)
----------------------------------->
-
-Connection Established
+    C->>S: SYN
+    S->>C: SYN-ACK
+    C->>S: ACK
+    Note over C,S: Connection established
 ```
 
 ---
@@ -996,10 +962,9 @@ sequenceDiagram
     participant S as Server
     C->>S: FIN
     S->>C: ACK
-    Note over S: May still send data
     S->>C: FIN
     C->>S: ACK
-    Note over C: TIME_WAIT (60–120s)
+    Note over C: TIME_WAIT
 ```
 
 ---
@@ -1135,8 +1100,6 @@ Connection reused.
 
 **Benefits:** Lower latency, lower CPU usage, fewer handshakes
 
-See also: [1.14 Keep-Alive Connections](#114-keep-alive-connections)
-
 ---
 
 ### Why connection pooling exists
@@ -1222,8 +1185,6 @@ Unlike TCP, UDP does not establish a connection before sending data.
 - More latency
 
 **Examples:** HTTP, HTTPS, database connections, file transfers
-
-See also: [1.3 TCP Handshake](#13-tcp-handshake)
 
 #### UDP
 
@@ -1397,8 +1358,6 @@ When browser requests `google.com`, DNS request is typically sent using UDP.
 
 **Reason:** Request is very small. Response is very small. Using TCP handshake would add unnecessary overhead.
 
-See also: [1.8 DNS](#18-dns)
-
 ---
 
 ### UDP header
@@ -1492,8 +1451,6 @@ QUIC adds:
 
 **Result:** HTTP/3 is built on UDP rather than TCP.
 
-See also: [1.13 QUIC](#113-quic), [1.12 HTTP/2 & HTTP/3](#112-http2-http3)
-
 ---
 
 ### When to use TCP
@@ -1543,7 +1500,6 @@ UDP: Speed first
 ```
 
 ---
-
 
 ## 1.5 MTU
 
@@ -1624,8 +1580,6 @@ IP Header   = 20 bytes
 TCP Header  = 20 bytes
 MSS         = 1460 bytes
 ```
-
-See also: [1.3 TCP Handshake](#13-tcp-handshake) (MSS negotiated during handshake)
 
 ---
 
@@ -1837,7 +1791,6 @@ Small MTU  = better compatibility
 
 ---
 
-
 ## 1.6 IP Addressing/Subnetting
 
 **IP (Internet Protocol) address** is a logical address assigned to a device on a network.
@@ -1982,8 +1935,6 @@ Last 8 bits   = Host
 
 ### CIDR notation
 
-CIDR history, aggregation (supernetting), and why `/23` beats `/16` for 500 hosts: [1.7 CIDR](#17-cidr)
-
 **Example:** `192.168.1.0/24` means 24 bits for network, 8 bits for hosts.
 
 **CIDR** = Classless Inter-Domain Routing
@@ -1998,8 +1949,6 @@ Instead of writing `255.255.255.0`, we write `/24`.
 | `255.255.255.128` | `/25` |
 
 CIDR simply tells how many bits belong to the network.
-
-See also: [1.7 CIDR](#17-cidr)
 
 ---
 
@@ -2225,7 +2174,6 @@ Host formula: 2^(Host Bits) - 2
 
 ---
 
-
 ## 1.7 CIDR
 
 **CIDR (Classless Inter-Domain Routing)** is a method used to define how many bits of an IP address belong to the **network** portion and how many belong to the **host** portion.
@@ -2233,8 +2181,6 @@ Host formula: 2^(Host Bits) - 2
 CIDR was introduced to solve the inefficiency and wastage of IP addresses caused by the older Class A, B, and C networking system.
 
 Today, almost all modern networks use CIDR.
-
-See also: [1.6 IP Addressing/Subnetting](#16-ip-addressingsubnetting)
 
 ---
 
@@ -2333,12 +2279,6 @@ CIDR and subnet mask represent the **same thing**.
 
 ---
 
-### How to calculate hosts
-
-Host math, network address, broadcast address, and usable ranges: [1.6 IP Addressing/Subnetting](#16-ip-addressingsubnetting) (`2^(host bits) - 2`, `/24` = 254 hosts, etc.).
-
----
-
 ### Why is CIDR important?
 
 CIDR allows networks to allocate **exactly** the number of IPs they need.
@@ -2384,12 +2324,6 @@ Imagine the Internet.
 **With CIDR aggregation:** Many smaller routes become one larger route.
 
 **Result:** Better scalability of the Internet.
-
----
-
-### Subnetting using CIDR
-
-Worked example (splitting `192.168.1.0/24` into four `/26` subnets): [1.6 IP Addressing/Subnetting](#16-ip-addressingsubnetting#subnetting-example).
 
 ---
 
@@ -2451,7 +2385,6 @@ CIDR = Flexible IP allocation + route aggregation
 
 ---
 
-
 ## 1.8 DNS
 
 **DNS (Domain Name System)** is the Internet's phonebook.
@@ -2465,8 +2398,6 @@ google.com  →  142.250.xxx.xxx
 ```
 
 Humans remember names. Computers communicate using IP addresses. DNS acts as the translator between the two.
-
-For the step-by-step lookup chain (browser cache → root → TLD → authoritative), see [1.9 DNS Resolution](#19-dns-resolution).
 
 ---
 
@@ -2527,7 +2458,7 @@ DNS works like a contact book for the Internet.
 
 This hierarchical structure allows DNS to scale globally.
 
-Four server roles exist in the system — **recursive resolver**, **root**, **TLD**, and **authoritative**. How they work together during a lookup is in [1.9 DNS Resolution](#19-dns-resolution).
+Four server roles exist in the system — **recursive resolver**, **root**, **TLD**, and **authoritative**.
 
 ---
 
@@ -2609,8 +2540,6 @@ Most DNS queries use **UDP port 53**.
 
 **Reason:** Small request, small response — faster than TCP.
 
-See also: [1.4 UDP](#14-udp)
-
 ---
 
 ### When does DNS use TCP?
@@ -2636,8 +2565,6 @@ Modern CDNs use DNS heavily.
 
 DNS helps route users to the nearest server.
 
-See also: [1.19 CDN](#119-cdn)
-
 ---
 
 ### DNS load balancing
@@ -2654,8 +2581,6 @@ DNS may return:
 
 Traffic distributed across multiple servers. This is called **DNS load balancing**.
 
-See also: [1.20 Load Balancer](#120-load-balancer)
-
 ---
 
 ### Common DNS failures
@@ -2669,12 +2594,9 @@ See also: [1.20 Load Balancer](#120-load-balancer)
 
 ---
 
-
 ## 1.9 DNS Resolution
 
 When you enter `https://google.com`, the browser needs an **IP address**. This section covers **how** that lookup happens — cache by cache, server by server.
-
-For DNS concepts, record types, TTL, and failures, see [1.8 DNS](#18-dns).
 
 ---
 
@@ -2745,20 +2667,18 @@ Resolver caches the result → returns IP to browser → browser connects to `14
 ```mermaid
 sequenceDiagram
     participant B as Browser
-    participant R as Recursive Resolver
+    participant R as Resolver
     participant Root as Root DNS
-    participant TLD as .com TLD
+    participant TLD as TLD DNS
     participant Auth as Authoritative DNS
-    B->>B: 1. Browser cache (miss)
-    B->>B: 2. OS cache (miss)
-    B->>R: 3. Query google.com
-    R->>Root: 4. Who handles .com?
-    Root-->>R: TLD nameservers
-    R->>TLD: 5. Who handles google.com?
-    TLD-->>R: Authoritative nameservers
-    R->>Auth: 6. A record for google.com?
-    Auth-->>R: 142.250.xxx.xxx
-    R-->>B: 7. IP (cached at resolver)
+    B->>R: Query google.com
+    R->>Root: Lookup com TLD
+    Root-->>R: TLD servers
+    R->>TLD: Lookup google.com
+    TLD-->>R: Auth servers
+    R->>Auth: A record lookup
+    Auth-->>R: IP address
+    R-->>B: IP address
 ```
 
 ---
@@ -2873,10 +2793,7 @@ dig @8.8.8.8 api.example.com   # query a specific recursive resolver
 
 ---
 
-
 ## 1.10 HTTP/HTTPS
-
-TLS deep dive: [1.11 SSL/TLS](#111-ssltls) · HTTP/2 & HTTP/3: [1.12](#112-http2-http3)
 
 ### HTTP
 
@@ -2946,8 +2863,6 @@ HTTP provides communication between client and server. TLS adds:
 
 Without HTTPS, data is sent in plain text. With HTTPS, data is encrypted before transmission.
 
-Full TLS deep dive: [1.11 SSL/TLS](#111-ssltls)
-
 ---
 
 #### Why do we need HTTPS?
@@ -2971,28 +2886,23 @@ User opens:
 https://google.com
 ```
 
-| Step | What happens | Section |
-|------|--------------|---------|
-| 1 | DNS lookup | [1.9](#19-dns-resolution) |
-| 2 | TCP handshake | [1.3](#13-tcp-handshake) |
-| 3 | TLS handshake | [1.11](#111-ssltls) |
-| 4 | Secure HTTP communication | (this section) |
-
-Full certificate + handshake walkthrough: [1.11 SSL/TLS](#111-ssltls)
+| Step | What happens |
+|------|--------------|
+| 1 | DNS lookup |
+| 2 | TCP handshake |
+| 3 | TLS handshake |
+| 4 | Secure HTTP communication |
 
 ```mermaid
 sequenceDiagram
     participant B as Browser
-    participant DNS as DNS
+    participant D as DNS
     participant S as Server
-    B->>DNS: 1. Resolve google.com
-    DNS-->>B: IP address
-    B->>S: 2. TCP SYN
-    S-->>B: SYN-ACK / ACK
-    B->>S: 3. TLS ClientHello
-    S-->>B: ServerHello + Certificate
-    B->>B: Verify cert + derive session key
-    B->>S: 4. Encrypted HTTP GET
+    B->>D: Resolve domain
+    D-->>B: IP address
+    B->>S: TCP handshake
+    B->>S: TLS handshake
+    B->>S: Encrypted HTTP request
     S-->>B: Encrypted HTTP response
 ```
 
@@ -3020,14 +2930,9 @@ HTTPS does **not** completely hide:
 **Network can know:** you visited `google.com`  
 **Network cannot see:** what you searched
 
-See also: [1.14 Keep-Alive](#114-keep-alive-connections) · [1.12 HTTP/2 & HTTP/3](#112-http2-http3)
-
 ---
 
-
 ## 1.11 SSL/TLS
-
-HTTPS overview (why HTTPS, request flow, what it protects): [1.10 HTTP/HTTPS](#110-httphttps) · TCP must be up first: [1.3 TCP Handshake](#13-tcp-handshake)
 
 **HTTPS / TLS communication flow**
 
@@ -3082,10 +2987,10 @@ The CA signature proves: *"This public key belongs to this domain."*
 ```mermaid
 sequenceDiagram
     participant S as Server
-    participant CA as Certificate Authority
+    participant CA as CA
     S->>S: Generate key pair
-    S->>CA: CSR (domain + public key)
-    CA->>CA: Verify domain ownership
+    S->>CA: CSR
+    CA->>CA: Verify domain
     CA->>S: Signed certificate
 ```
 
@@ -3126,13 +3031,13 @@ If verification succeeds, client trusts the server's public key.
 sequenceDiagram
     participant C as Client
     participant S as Server
-    C->>S: ClientHello (+ client random)
-    S->>C: ServerHello + Certificate (+ server random)
-    C->>C: Verify certificate chain
-    C->>S: Key exchange + prove private key
-    Note over C,S: Both derive session key (never on wire)
-    C->>S: Encrypted HTTP request
-    S->>C: Encrypted HTTP response
+    C->>S: ClientHello
+    S->>C: ServerHello and certificate
+    C->>C: Verify certificate
+    C->>S: Key exchange
+    Note over C,S: Derive session key
+    C->>S: Encrypted HTTP
+    S->>C: Encrypted HTTP
 ```
 
 ---
@@ -3232,10 +3137,7 @@ Server → Encrypted response  → Client
 
 ---
 
-
 ## 1.12 HTTP/2 & HTTP/3
-
-QUIC transport details: [1.13 QUIC](#113-quic) · HTTP/HTTPS basics: [1.10](#110-httphttps)
 
 ---
 
@@ -3283,15 +3185,18 @@ HTTP/3 → QUIC → UDP → IP
 ```
 
 ```mermaid
-flowchart LR
-    subgraph H1["HTTP/1.1"]
-        A1[HTTP] --> T1[TCP] --> I1[IP]
+flowchart TB
+    subgraph h1["HTTP/1.1"]
+        direction LR
+        a1[HTTP] --> b1[TCP] --> c1[IP]
     end
-    subgraph H2["HTTP/2"]
-        A2[HTTP/2] --> T2[TCP] --> TLS2[TLS] --> I2[IP]
+    subgraph h2["HTTP/2"]
+        direction LR
+        a2[HTTP/2] --> b2[TCP] --> c2[TLS] --> d2[IP]
     end
-    subgraph H3["HTTP/3"]
-        A3[HTTP/3] --> Q[QUIC] --> U[UDP] --> I3[IP]
+    subgraph h3["HTTP/3"]
+        direction LR
+        a3[HTTP/3] --> b3[QUIC] --> c3[UDP] --> d3[IP]
     end
 ```
 
@@ -3342,16 +3247,12 @@ If Stream A loses a packet → **only Stream A waits** → Stream B and Stream C
 **Result:** Better performance on unreliable networks.
 
 ```mermaid
-flowchart TB
-    subgraph H2["HTTP/2 — packet loss in Stream A"]
-        S1[Stream A — lost packet] --> TCP[TCP blocks ALL streams]
-        S2[Stream B — waiting]
-        S3[Stream C — waiting]
+flowchart LR
+    subgraph http2["HTTP/2"]
+        l2[Packet loss] --> blk[All streams blocked]
     end
-    subgraph H3["HTTP/3 — packet loss in Stream A"]
-        S4[Stream A — lost packet] --> W[Only Stream A waits]
-        S5[Stream B — continues]
-        S6[Stream C — continues]
+    subgraph http3["HTTP/3"]
+        l3[Packet loss] --> one[Only that stream blocked]
     end
 ```
 
@@ -3400,7 +3301,7 @@ Packet loss affects **only the impacted stream**. Other streams continue process
 |---|--------|--------|
 | Network change (Wi-Fi → mobile data) | May require reconnecting; noticeable degradation | Handles transitions better — connection can continue more smoothly |
 
-See [1.13 QUIC](#113-quic) for connection migration (connection ID).
+.
 
 ---
 
@@ -3494,10 +3395,7 @@ Most beneficial on:
 
 ---
 
-
 ## 1.13 QUIC
-
-HTTP/2 vs HTTP/3 comparison: [1.12 HTTP/2 & HTTP/3](#112-http2-http3) · UDP basics: [1.4](#14-udp)
 
 **QUIC (Quick UDP Internet Connections)** is a modern transport protocol developed by Google. It was created to overcome some of TCP's limitations and improve web performance.
 
@@ -3555,8 +3453,6 @@ QUIC implements reliability in user space.
 ```text
 HTTP/3 → QUIC → UDP → IP
 ```
-
-Full comparison with HTTP/1.1 and HTTP/2 stacks: [1.12](#112-http2-http3)
 
 ---
 
@@ -3724,10 +3620,7 @@ HTTP/3 = Multiplexing over QUIC
 
 ---
 
-
 ## 1.14 Keep-Alive Connections
-
-TCP handshake details: [1.3 TCP Handshake](#13-tcp-handshake) · HTTP/2 multiplexing: [1.12 HTTP/2 & HTTP/3](#112-http2-http3) · HTTPS: [1.10](#110-httphttps)
 
 **HTTP Keep-Alive** is a mechanism that allows multiple HTTP requests and responses to reuse the same TCP connection.
 
@@ -3964,7 +3857,7 @@ Both are expensive.
 | **Without Keep-Alive** | Every request pays TCP setup + TLS setup |
 | **With Keep-Alive** | TCP setup once, TLS setup once — multiple requests reuse the secure connection |
 
-Huge performance improvement. TLS details: [1.11 SSL/TLS](#111-ssltls)
+Huge performance improvement.
 
 ---
 
@@ -3988,7 +3881,7 @@ Huge performance improvement. TLS details: [1.11 SSL/TLS](#111-ssltls)
 | Connection | One connection reused | One connection reused |
 | Requests | Generally processed **sequentially** | Multiple requests processed **simultaneously** (multiplexing) |
 
-HTTP/2 still uses Keep-Alive but is much more efficient. See [1.12](#112-http2-http3).
+HTTP/2 still uses Keep-Alive but is much more efficient.
 
 ---
 
@@ -4006,10 +3899,7 @@ With Keep-Alive:
 
 ---
 
-
 ## 1.15 Forward & Reverse Proxy
-
-Load balancing deep dive: [1.20 Load Balancer](#120-load-balancer) · CDN edge caching: [1.19 CDN](#119-cdn) · TLS: [1.11 SSL/TLS](#111-ssltls)
 
 A **proxy** is an intermediary that sits between two parties and forwards requests and responses.
 
@@ -4113,17 +4003,19 @@ Home User → VPN / Corporate Proxy → google.com
 
 Think: **proxy representing the client**
 
+**Forward proxy:**
+
 ```mermaid
 flowchart LR
-    subgraph FP["Forward proxy"]
-        C1[Client] --> FPX[Forward Proxy]
-        FPX --> WWW[Internet / google.com]
-    end
-    subgraph RP["Reverse proxy"]
-        C2[Internet client] --> RPX[Reverse Proxy]
-        RPX --> B1[Backend 1]
-        RPX --> B2[Backend 2]
-    end
+    C[Client] --> P[Forward Proxy] --> W[Internet]
+```
+
+**Reverse proxy:**
+
+```mermaid
+flowchart LR
+    C[Client] --> P[Reverse Proxy] --> B1[Backend 1]
+    P --> B2[Backend 2]
 ```
 
 ---
@@ -4247,10 +4139,7 @@ Traffic distributed evenly. See algorithms above (including **consistent hashing
 
 ---
 
-
 ## 1.16 NAT
-
-Private IP addressing: [1.6 IP Addressing/Subnetting](#16-ip-addressingsubnetting) · Proxy (L7): [1.15 Forward & Reverse Proxy](#115-forward-reverse-proxy) · VPN: [1.17 VPN](#117-vpn)
 
 **NAT (Network Address Translation)** is a technique used by routers, firewalls, and cloud gateways to translate one IP address into another.
 
@@ -4318,14 +4207,14 @@ Google has no idea the original device was `192.168.1.10`.
 
 ```mermaid
 sequenceDiagram
-    participant L as Laptop 192.168.1.10
-    participant R as Router NAT 49.205.100.50
-    participant G as google.com
-    L->>R: Src 192.168.1.10:5000 → google.com
-    Note over R: NAT table: 192.168.1.10:5000 ↔ 49.205.100.50:30001
-    R->>G: Src 49.205.100.50:30001 → google.com
-    G-->>R: Response to 49.205.100.50:30001
-    R-->>L: Forward to 192.168.1.10:5000
+    participant L as Laptop
+    participant R as Router NAT
+    participant G as Internet
+    L->>R: Request from private IP
+    Note over R: Rewrite to public IP
+    R->>G: Forward request
+    G-->>R: Response to public IP
+    R-->>L: Forward to private IP
 ```
 
 ---
@@ -4479,14 +4368,9 @@ Now internet users can access the internal server.
 | Layer | Network layer (L3/L4) | Application layer (L7) |
 | Changes | IP addresses and ports | Can inspect and modify HTTP/HTTPS requests |
 
-See [1.15](#115-forward-reverse-proxy) for proxy details.
-
 ---
 
-
 ## 1.17 VPN
-
-HTTPS (browser-to-site): [1.10 HTTP/HTTPS](#110-httphttps) · Proxy: [1.15 Forward & Reverse Proxy](#115-forward-reverse-proxy) · NAT: [1.16 NAT](#116-nat)
 
 **VPN (Virtual Private Network)** creates a secure, encrypted connection between your device and a VPN server over the public internet.
 
@@ -4537,9 +4421,7 @@ Google sees **VPN server IP address** instead of your real IP.
 
 ```mermaid
 flowchart LR
-    L[Laptop] -->|encrypted tunnel| V[VPN Server]
-    V --> I[Internet / google.com]
-    L -.->|hidden| R[Real IP not seen by site]
+    L[Laptop] -->|encrypted tunnel| V[VPN Server] --> I[Internet]
 ```
 
 ---
@@ -4626,8 +4508,6 @@ Both offices communicate securely.
 | Security | More secure | Mostly forwards traffic |
 | IP address | Changes visible IP | May hide IP (forward proxy) |
 
-See [1.15](#115-forward-reverse-proxy) for proxy details.
-
 ---
 
 ### Does VPN make you completely anonymous?
@@ -4692,10 +4572,7 @@ This is one of the most common enterprise VPN use cases.
 
 ---
 
-
 ## 1.18 Unicast, Broadcast, Multicast & Anycast
-
-DNS anycast: [1.8 DNS](#18-dns) · CDN edges: [1.19 CDN](#119-cdn) · VPN: [1.17 VPN](#117-vpn)
 
 ---
 
@@ -4781,8 +4658,6 @@ All devices receive the request. Router responds.
 
 **Important:** Broadcast generally works only inside a local network. Routers typically do **not** forward broadcast traffic.
 
-*(Subnet broadcast addresses — e.g. `192.168.1.255` — are covered in [1.6 IP Addressing/Subnetting](#16-ip-addressingsubnetting).)*
-
 ---
 
 ### 3. Multicast
@@ -4867,8 +4742,8 @@ Users automatically reach the closest server, lowest-latency server, or availabl
 
 #### Real-world use cases
 
-- CDNs ([1.19](#119-cdn))
-- DNS servers ([1.8](#18-dns))
+- CDNs
+- DNS servers
 - Cloudflare
 - Google DNS (`8.8.8.8`)
 - AWS global services
@@ -4934,10 +4809,7 @@ Anycast:    Sender → Nearest server
 
 ---
 
-
 ## 1.19 CDN
-
-DNS routing to CDN: [1.8 DNS](#18-dns) · Load balancer: [1.20 Load Balancer](#120-load-balancer) · Reverse proxy: [1.15](#115-forward-reverse-proxy)
 
 **CDN (Content Delivery Network)** is a geographically distributed network of servers that stores and delivers content closer to users.
 
@@ -4989,34 +4861,18 @@ File exists in CDN. CDN returns file immediately. **Origin server is not contact
 
 File not found. CDN fetches from origin, stores locally, returns response. Future requests become cache hits.
 
-```mermaid
-flowchart TB
-  U[User] --> E[CDN Edge]
-  E -->|Cache hit| U2[Fast response — origin not contacted]
-  E -->|Cache miss| O[Origin Server]
-  O --> E
-  E --> U3[Response + cache updated]
-```
-
----
-
-### Visual flow
-
-```text
-User → CDN Edge Server → Origin Server
-```
-
 **Cache hit:**
 
-```text
-User → CDN → Response
-(Origin not contacted)
+```mermaid
+flowchart LR
+    U[User] --> E[CDN Edge] --> R[Response]
 ```
 
 **Cache miss:**
 
-```text
-User → CDN → Origin Server → CDN cache updated → Response
+```mermaid
+flowchart LR
+    U[User] --> E[CDN Edge] --> O[Origin] --> E --> R[Response]
 ```
 
 ---
@@ -5221,10 +5077,7 @@ Later: User → CDN (content already available)
 
 ---
 
-
 ## 1.20 Load Balancer
-
-CDN: [1.19 CDN](#119-cdn) · Reverse proxy: [1.15 Forward & Reverse Proxy](#115-forward-reverse-proxy)
 
 A **load balancer** distributes incoming requests across multiple backend servers.
 
@@ -5287,12 +5140,9 @@ Request arrives → load balancer selects a server → request forwarded → res
 ```mermaid
 flowchart TB
     C[Client] --> LB[Load Balancer]
-    LB --> A1[App1]
-    LB --> A2[App2]
-    LB --> A3[App3]
-    A1 -.->|health check| LB
-    A2 -.->|health check| LB
-    A3 -.->|health check| LB
+    LB --> A1[App 1]
+    LB --> A2[App 2]
+    LB --> A3[App 3]
 ```
 
 ---
@@ -5419,13 +5269,9 @@ consistent hash:                ~25% of keys remap
 
 ```mermaid
 flowchart LR
-    subgraph ring["Hash ring"]
-        N1[Node A]
-        N2[Node B]
-        N3[Node C]
-    end
-    K1["hash(user:42)"] --> N2
-    K2["hash(user:99)"] --> N3
+    K1["user 42"] --> N2[Node B]
+    K2["user 99"] --> N3[Node C]
+    N1[Node A] --- N2 --- N3
 ```
 
 ---
@@ -5463,7 +5309,7 @@ Normally: Request 1 → App1, Request 2 → App2.
 Client → HTTPS → Load Balancer → HTTP → Backend Servers
 ```
 
-Load balancer performs TLS handshake, certificate management, and decryption. Backend services remain simpler. TLS details: [1.11 SSL/TLS](#111-ssltls)
+Load balancer performs TLS handshake, certificate management, and decryption. Backend services remain simpler.
 
 ---
 
@@ -5513,10 +5359,7 @@ Users → CDN → Load Balancer → App1 / App2 / App3 → Database
 
 ---
 
-
 ## 1.22 SSE, Polling & WebSockets
-
-Load balancer + sticky sessions: [1.20 Load Balancer](#120-load-balancer) · HTTP/2 multiplexing: [1.12 HTTP/2 & HTTP/3](#112-http2-http3) · Keep-Alive: [1.14](#114-keep-alive-connections) · HTTP basics: [1.10](#110-httphttps)
 
 ---
 
@@ -5725,30 +5568,6 @@ Messages delivered instantly.
 ---
 
 ### Connection comparison
-
-```mermaid
-sequenceDiagram
-    participant C as Client
-    participant S as Server
-    Note over C,S: Short polling
-    C->>S: GET /updates
-    S-->>C: Response (close)
-    C->>S: GET /updates
-    S-->>C: Response (close)
-    Note over C,S: Long polling
-    C->>S: GET /updates (held open)
-    S-->>C: Response when data ready
-    Note over C,S: SSE
-    C->>S: GET /events
-    loop Server push
-        S-->>C: event stream
-    end
-    Note over C,S: WebSocket
-    C->>S: HTTP Upgrade
-    S-->>C: 101 Switching Protocols
-    C->>S: bidirectional messages
-    S->>C: bidirectional messages
-```
 
 **Short polling:**
 
