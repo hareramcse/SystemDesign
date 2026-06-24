@@ -1510,53 +1510,293 @@ UDP: Speed first
 
 ## 1.5 MTU
 
+**MTU (Maximum Transmission Unit)** is the maximum amount of data that can be transmitted in a single network packet over a network interface without fragmentation.
 
-### What is it?
+In simple words: MTU defines the **largest packet size** that can travel through a network in one piece.
 
-**Maximum Transmission Unit (MTU)** is the largest IP packet payload size a link can carry without fragmentation. Ethernet standard MTU is **1500 bytes**; loopback often 65536. **Path MTU** is the minimum MTU along a route.
+---
 
-### Why it matters
+### Simple analogy
 
-MTU mismatches cause fragmentation (performance hit) or **PMTUD black holes** (packets dropped silently when DF bit set). VPN overlays reduce effective MTU (e.g., 1400 bytes).
+Imagine a road that allows trucks carrying a maximum load of 1000 kg.
 
-### How it works
+| Shipment | Result |
+|----------|--------|
+| 800 kg | One truck is enough |
+| 1500 kg | Shipment must be split across multiple trucks |
 
-1. Sender creates packet up to interface MTU.
-2. If packet exceeds next hop MTU and **Don't Fragment (DF)** set, router drops and sends ICMP "fragmentation needed."
-3. Sender reduces size (TCP MSS negotiation) and retransmits.
-4. If ICMP blocked, **PMTUD fails** - connection hangs or times out.
-5. **MSS clamping** on routers fixes TCP MSS for VPN clients.
+Similarly:
 
-```mermaid
-flowchart LR
-    Send[1500 byte packet] --> Router{MTU 1400?}
-    Router -->|DF set| Drop[Drop + ICMP]
-    Router -->|DF clear| Frag[Fragment]
+| Data size | Result |
+|-----------|--------|
+| Data size ≤ MTU | One packet |
+| Data size > MTU | Data must be fragmented into multiple packets |
+
+---
+
+### Common MTU values
+
+| Network | MTU |
+|---------|-----|
+| Ethernet | 1500 bytes |
+| Jumbo frames | 9000 bytes |
+| PPPoE | 1492 bytes |
+| VPN networks | Often 1300–1400 bytes |
+| Cloud networks | Typically 1500 bytes |
+
+---
+
+### What does MTU include?
+
+MTU refers to the **entire IP packet size**.
+
+**Example:** MTU = 1500 bytes
+
+Inside those 1500 bytes:
+
+```text
+IP Header     = 20 bytes
+TCP Header    = 20 bytes
+Payload       = 1460 bytes
+
+Total: 20 + 20 + 1460 = 1500 bytes
 ```
 
-### Key details
+---
 
-- **TCP MSS** = MTU - IP header - TCP header (typically 1460 for 1500 MTU)
-- **Jumbo frames:** 9000 MTU in datacenter (lower CPU overhead)
-- Cloud VPC MTU often 9001 (enhanced networking) or 1500
-- QUIC/UDP apps must handle PMTUD themselves
+### MTU vs MSS
 
-### When to use
+Many people confuse MTU and MSS.
 
-- Debugging mysterious VPN or cross-cloud connectivity failures
-- Tuning database replication over WAN
-- Configuring Docker/Kubernetes CNI overlay networks
+| | MTU | MSS (Maximum Segment Size) |
+|---|-----|----------------------------|
+| Meaning | Maximum IP packet size | Maximum TCP payload size |
+| Includes | Entire packet (headers + data) | Actual application data only |
 
-### Trade-offs / Pitfalls
+**Formula:**
 
-- ICMP filtering breaks PMTUD - common misconfiguration
-- Fragmentation increases loss probability (lose one fragment = whole datagram lost)
-- Mixed MTU paths hard to diagnose without `tracepath`
-- Oversized UDP -> silent black hole if no fragmentation
+```text
+MSS = MTU - IP Header - TCP Header
+```
 
-### References
+**Example:**
 
-- [MTU and path MTU discovery — video](https://www.youtube.com/watch?v=XMcYwr-yJGA)
+```text
+MTU         = 1500
+IP Header   = 20 bytes
+TCP Header  = 20 bytes
+MSS         = 1460 bytes
+```
+
+See also: [1.3 TCP Handshake](#13-tcp-handshake) (MSS negotiated during handshake)
+
+---
+
+### Visual representation
+
+```text
+MTU = 1500 bytes
+
++--------------------+
+| IP Header  20B     |
++--------------------+
+| TCP Header 20B     |
++--------------------+
+| Payload    1460B   |
++--------------------+
+
+Total = 1500 bytes
+```
+
+---
+
+### What happens when data is larger than MTU?
+
+Suppose MTU = 1500 bytes and application sends 5000 bytes.
+
+Network cannot send 5000 bytes as a single packet. It must split the data.
+
+**Example:**
+
+```text
+Packet 1 = 1500 bytes
+Packet 2 = 1500 bytes
+Packet 3 = 1500 bytes
+Packet 4 = remaining bytes
+```
+
+This process is called **fragmentation**.
+
+---
+
+### What is fragmentation?
+
+Fragmentation means breaking a large packet into smaller packets so that each packet fits within the MTU limit.
+
+**Example:**
+
+```text
+Original packet: 4000 bytes
+MTU:             1500 bytes
+
+Result:
+  Fragment 1
+  Fragment 2
+  Fragment 3
+```
+
+Receiver later reassembles them.
+
+---
+
+### Why is fragmentation bad?
+
+Fragmentation introduces:
+
+- Additional CPU overhead
+- Additional memory usage
+- More network overhead
+- Higher latency
+- Higher packet loss probability
+
+**Example:**
+
+| | Packets |
+|---|---------|
+| Original | 1 packet |
+| After fragmentation | 3 packets |
+
+If even **one fragment** is lost, the entire packet may need retransmission.
+
+Therefore fragmentation is generally avoided.
+
+---
+
+### Path MTU
+
+Data usually travels through multiple networks.
+
+```text
+Laptop → Wi-Fi router → ISP → Internet → Cloud server
+```
+
+Each network may support a different MTU.
+
+**Example:**
+
+```text
+Network A = 1500
+Network B = 1400
+Network C = 1300
+
+Effective MTU = 1300
+```
+
+Because packets must fit through every network segment. This smallest supported MTU is called **path MTU**.
+
+---
+
+### Path MTU Discovery (PMTUD)
+
+**Purpose:** Discover the largest packet size that can travel through the entire network path without fragmentation.
+
+**How it works:**
+
+1. Sender initially sends large packets
+2. If a router cannot forward them, router responds: *"Packet too big"*
+3. Sender reduces packet size
+4. Eventually sender finds the optimal MTU
+
+This process is called **Path MTU Discovery (PMTUD)**.
+
+#### Example
+
+```text
+Client MTU        = 1500
+Server MTU        = 1500
+Intermediate VPN  = 1400
+
+Client sends 1500-byte packet → VPN cannot forward it
+Router responds: Packet too big
+Client reduces to 1400-byte packet → transmission succeeds
+```
+
+---
+
+### Why MTU matters in system design
+
+#### Large MTU
+
+| Pros | Cons |
+|------|------|
+| Fewer packets | Larger retransmissions |
+| Less protocol overhead | Higher impact if packet is lost |
+| Better throughput | |
+
+#### Small MTU
+
+| Pros | Cons |
+|------|------|
+| Less impact from packet loss | More packets |
+| Better compatibility | More headers, more CPU overhead |
+
+---
+
+### Jumbo frames
+
+| | Standard Ethernet | Jumbo frames |
+|---|-------------------|--------------|
+| MTU | 1500 bytes | 9000 bytes |
+
+**Benefits:** Fewer packets, lower CPU overhead, higher throughput
+
+**Commonly used in:** Data centers, storage networks, high-speed internal networks
+
+**Requirement:** Every device on the path must support jumbo frames.
+
+---
+
+### Real-world example
+
+Suppose application needs to send **1 MB** of data.
+
+| MTU | Effect |
+|-----|--------|
+| 1500 bytes | Many packets required |
+| 9000 bytes | Much fewer packets required |
+
+**Result with jumbo frames:** Lower CPU usage, better throughput, higher efficiency
+
+---
+
+### Common interview questions
+
+| Question | Answer |
+|----------|--------|
+| What is MTU? | Maximum packet size that can be transmitted without fragmentation |
+| What is MSS? | Maximum TCP payload size. `MSS = MTU - IP Header - TCP Header` |
+| Difference between MTU and MSS? | **MTU:** entire IP packet size. **MSS:** actual TCP payload size |
+| Why is fragmentation bad? | More packets, more overhead, higher latency, higher packet loss risk |
+| What is path MTU? | Smallest MTU supported across the entire network path |
+| What is PMTUD? | Mechanism to discover the largest packet size that can travel without fragmentation |
+
+---
+
+### Memory trick
+
+```text
+MTU = Maximum packet size
+MSS = Maximum TCP payload size
+
+MTU = 1500
+MSS = 1460
+
+MTU includes headers
+MSS excludes headers
+
+Large MTU  = better throughput
+Small MTU  = better compatibility
+```
 
 ---
 
