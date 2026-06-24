@@ -99,61 +99,242 @@ Every **new** HTTPS connection pays setup cost before application data flows:
 ## 1.1 OSI Model
 
 
-### What is it?
+> **One-liner:** The OSI model is a **7-layer map** for how data travels over a network — not something you install, but the vocabulary engineers use to explain *where* things happen.
 
-The **Open Systems Interconnection (OSI) model** is a seven-layer conceptual framework describing how data moves from application to physical wire and back. Each layer provides services to the layer above and uses services from the layer below.
+---
 
-### Why it matters
+### What is the OSI model?
 
-It provides a shared vocabulary for troubleshooting ("layer 4 timeout" = transport) and separates concerns so protocols can evolve independently. Interviews use OSI to frame where encryption, routing, and framing occur.
+When your browser loads a page, data does not jump straight from your app to a cable. It passes through **seven layers** — each with one job — on the way out, and the same seven layers in reverse on the way back.
 
-### How it works
+The **OSI (Open Systems Interconnection) model** is a **reference framework** (published by ISO) that describes this journey. You will never "configure OSI" on a server. You use it to answer:
 
-Data descends the stack on send (encapsulation) and ascends on receive (decapsulation):
+- *Where does HTTP live?* → Layer 7  
+- *Where does routing happen?* → Layer 3  
+- *Why is my connection timing out?* → Maybe Layer 4 (TCP)
 
-1. **Application (7):** HTTP, DNS, SMTP — user-facing protocols.
-2. **Presentation (6):** Encoding, encryption, compression (often folded into app layer in practice).
-3. **Session (5):** Session management (rarely distinct today).
-4. **Transport (4):** TCP, UDP — end-to-end delivery, ports.
-5. **Network (3):** IP — routing, addressing.
-6. **Data Link (2):** Ethernet, MAC addresses, frames.
-7. **Physical (1):** Bits on wire/fiber/radio.
+**Remember the order (bottom → top):**
+
+```text
+Please  Do  Not  Throw  Sausage  Pizza  Away
+
+  1 Physical
+  2 Data Link
+  3 Network
+  4 Transport
+  5 Session
+  6 Presentation
+  7 Application
+```
+
+---
+
+### The seven layers — one at a time
 
 ```mermaid
 flowchart TB
-    L7[Application] --> L4[Transport]
-    L4 --> L3[Network IP]
-    L3 --> L2[Data Link]
-    L2 --> L1[Physical]
+    L7["Layer 7 — Application<br/>HTTP, DNS, gRPC"]
+    L6["Layer 6 — Presentation<br/>TLS, JSON, compression"]
+    L5["Layer 5 — Session<br/>login sessions, sockets"]
+    L4["Layer 4 — Transport<br/>TCP, UDP"]
+    L3["Layer 3 — Network<br/>IP, routing"]
+    L2["Layer 2 — Data Link<br/>Ethernet, MAC"]
+    L1["Layer 1 — Physical<br/>cables, Wi-Fi, fiber"]
+
+    L7 --> L6 --> L5 --> L4 --> L3 --> L2 --> L1
 ```
 
-### Key details
+---
 
-| Layer | PDU | Example protocols |
-|-------|-----|-------------------|
-| 7 Application | Data | HTTP, gRPC, DNS |
-| 6 Presentation | Data | TLS, compression, encoding |
-| 5 Session | Data | (rarely distinct today) |
-| 4 Transport | Segment / Datagram | TCP, UDP |
-| 3 Network | Packet | IPv4, IPv6 |
-| 2 Data Link | Frame | Ethernet |
-| 1 Physical | Bits | Fiber, radio |
+#### Layer 7 — Application
 
-- TCP/IP model (4 layers) maps loosely: App ≈ 5–7, Transport ≈ 4, Internet ≈ 3, Link ≈ 1–2
-- Real stacks blur layers 5–7 into "application"
-- **TLS** sits between application and transport in practice — see [1.11 SSL/TLS](#111-ssltls)
+**What it does:** Talks directly to your software — the layer the user (or API client) actually sees.
 
-### When to use
+**Examples:** HTTP, HTTPS, DNS, SMTP, FTP, gRPC, WebSocket
 
-- Troubleshooting network issues by isolation layer
-- Explaining where TLS sits (between app and transport, historically "layer 6")
-- Teaching protocol layering in interviews
+**Think of it as:** The language two programs use to communicate ("GET /users", "resolve google.com").
 
-### Trade-offs / Pitfalls
+---
 
-- OSI is theoretical - production debugging uses TCP/IP model more
-- Strict layer boundaries don't always match implementation (TLS in libraries)
-- Memorizing all seven layers without understanding function is low value
+#### Layer 6 — Presentation
+
+**What it does:** Translates, encrypts, and compresses data so the sender and receiver understand the same format.
+
+**Examples:** TLS encryption, JSON/XML encoding, gzip compression, character sets (UTF-8)
+
+**Think of it as:** A translator — makes sure both sides speak the same dialect and that outsiders cannot read the message.
+
+> In practice, TLS often sits here conceptually (between app and transport). See [1.11 SSL/TLS](#111-ssltls).
+
+---
+
+#### Layer 5 — Session
+
+**What it does:** Opens, manages, and closes conversations between two hosts.
+
+**Examples:** Login sessions, RPC (Remote Procedure Call) connection state, database connection pools
+
+**Think of it as:** The "call manager" — who is talking to whom, and for how long.
+
+> Today, layers 5–7 are usually folded into "application" in real code. You rarely debug "layer 5" separately.
+
+---
+
+#### Layer 4 — Transport
+
+**What it does:** Delivers data **end-to-end** between two processes on different machines — using **port numbers** to reach the right app.
+
+**Examples:** TCP (reliable), UDP (fast, unreliable)
+
+**PDU name:** Segment (TCP) or Datagram (UDP)
+
+**Think of it as:** The postal service between cities — tracks delivery, handles retries (TCP), or just drops mail in a box (UDP).
+
+Deep dive: [1.3 TCP](#13-tcp-transmission-control-protocol), [1.4 UDP](#14-udp--tcp-vs-udp).
+
+---
+
+#### Layer 3 — Network
+
+**What it does:** Routes packets across **multiple networks** using logical addresses (IP).
+
+**Examples:** IPv4, IPv6, ICMP (ping), routers
+
+**PDU name:** Packet
+
+**Think of it as:** GPS for packets — "send this to 203.0.113.50" hop by hop until it arrives.
+
+---
+
+#### Layer 2 — Data Link
+
+**What it does:** Moves frames **within one local network segment** (same Wi-Fi, same switch) using **MAC addresses**.
+
+**Examples:** Ethernet, Wi-Fi (802.11), switches
+
+**PDU name:** Frame
+
+**Think of it as:** Delivery within one building — your apartment number (MAC), not the full city address (IP).
+
+---
+
+#### Layer 1 — Physical
+
+**What it does:** Sends raw **bits** as electrical signals, light pulses, or radio waves.
+
+**Examples:** Ethernet cables, fiber optics, Wi-Fi radio, NIC (Network Interface Card) hardware
+
+**PDU name:** Bits
+
+**Think of it as:** The road itself — no addresses, just the medium data travels on.
+
+---
+
+### Encapsulation — how data actually moves
+
+On the **sender**, each layer wraps the data from above with its own **header** (and sometimes trailer). This is **encapsulation**. On the **receiver**, each layer strips its header — **decapsulation**.
+
+**Worked example — browser sends `GET /index.html`:**
+
+| Step | Layer | What gets added |
+|------|-------|-----------------|
+| 1 | **Application (7)** | `GET /index.html HTTP/1.1` |
+| 2 | **Transport (4)** | TCP header — src port 54321, dst port 443 |
+| 3 | **Network (3)** | IP header — src IP 192.168.1.5, dst IP 93.184.216.34 |
+| 4 | **Data Link (2)** | Ethernet header — src MAC, dst MAC (next hop) |
+| 5 | **Physical (1)** | Bits on the wire / Wi-Fi / fiber |
+
+```text
+[Sending host — top to bottom]
+
+  HTTP request bytes
+       ↓ wrap TCP header      →  TCP segment
+       ↓ wrap IP header       →  IP packet
+       ↓ wrap Ethernet header →  Ethernet frame
+       ↓ convert to signals   →  bits on cable
+
+[Receiving host — bottom to top]
+
+  bits → frame → packet → segment → HTTP response to browser
+```
+
+Each wrapped unit at a layer is called a **PDU (Protocol Data Unit)**:
+
+| Layer | PDU name |
+|-------|----------|
+| 7–5 Application / Session / Presentation | Data |
+| 4 Transport | Segment (TCP) / Datagram (UDP) |
+| 3 Network | Packet |
+| 2 Data Link | Frame |
+| 1 Physical | Bits |
+
+---
+
+### OSI vs TCP/IP — what the internet actually uses
+
+The internet runs on the **TCP/IP model** (4 layers), not OSI literally. OSI is the **teaching map**; TCP/IP is the **real stack**.
+
+| OSI (7 layers) | TCP/IP (4 layers) | What's in it |
+|----------------|-------------------|--------------|
+| 7 Application | | |
+| 6 Presentation | **Application** | HTTP, DNS, TLS, gRPC |
+| 5 Session | | |
+| 4 Transport | **Transport** | TCP, UDP |
+| 3 Network | **Internet** | IP, ICMP, routing |
+| 2 Data Link | | |
+| 1 Physical | **Link** | Ethernet, Wi-Fi |
+
+For system design interviews, **both names come up**:
+
+- *"Layer 4 load balancer"* → TCP/UDP (transport)  
+- *"Layer 7 load balancer"* → HTTP routing (application)  
+- See [1.20 Load Balancer](#120-load-balancer)
+
+Full TCP/IP chapter: [1.2](#12-tcpip).
+
+---
+
+### Troubleshooting with OSI — a real scenario
+
+**Problem:** User cannot load `https://api.example.com`.
+
+Work **top to bottom** (or bottom to top) to isolate the layer:
+
+| Layer | Check | If broken, you might see |
+|-------|-------|--------------------------|
+| **7 Application** | Is the API server running? Wrong URL? | HTTP 500, 404 |
+| **6 Presentation** | TLS cert expired? Cipher mismatch? | SSL handshake error |
+| **4 Transport** | TCP connection refused? Firewall blocking port? | Connection timeout, `ECONNREFUSED` |
+| **3 Network** | Can you ping the IP? Routing issue? | `No route to host`, ping fails |
+| **2 Data Link** | Switch port down? ARP failure? | Works on Wi-Fi, fails on Ethernet |
+| **1 Physical** | Cable unplugged? Bad NIC? | Link light off |
+
+**Interview line:** *"I'd start at layer 7 — is the service up? — then work down to DNS, TCP, and routing."*
+
+---
+
+### Common interview questions
+
+| Question | Answer |
+|----------|--------|
+| What is the OSI model? | A 7-layer **reference model** for network communication — not a protocol |
+| Name the 7 layers | Physical, Data Link, Network, Transport, Session, Presentation, Application |
+| Where does HTTP sit? | Layer 7 (Application) |
+| Where does TCP sit? | Layer 4 (Transport) |
+| Where does IP sit? | Layer 3 (Network) |
+| Where does TLS sit? | Layer 6 (Presentation) — between app and transport in practice |
+| OSI vs TCP/IP? | OSI = 7 layers for teaching; TCP/IP = 4 layers the internet uses |
+| What is encapsulation? | Each layer adds a header on send; strips it on receive |
+
+---
+
+### Key takeaways
+
+1. OSI is a **map**, not software — it classifies protocols and helps you troubleshoot  
+2. **Mnemonic:** Please Do Not Throw Sausage Pizza Away (layers 1→7)  
+3. **Encapsulation** wraps data with headers as it goes down; **decapsulation** unwraps on the way up  
+4. The real internet uses **TCP/IP** (4 layers); OSI layers 5–7 merge into "application"  
+5. **L4 vs L7 load balancer** is the most common OSI reference in system design interviews  
 
 ### References
 
