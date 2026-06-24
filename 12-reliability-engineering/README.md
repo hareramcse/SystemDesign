@@ -226,7 +226,7 @@ flowchart TB
 ---
 
 
-2.2 Active Active
+## 12.2 Active Active
 
 
 ### What is it
@@ -281,7 +281,7 @@ flowchart TB
 ---
 
 
-2.3 Active Passive
+## 12.3 Active Passive
 
 
 ### What is it
@@ -335,7 +335,7 @@ flowchart LR
 ---
 
 
-2.4 RPO
+## 12.4 RPO
 
 
 ### What is it
@@ -481,7 +481,7 @@ flowchart TB
 ---
 
 
-2.5 RTO
+## 12.5 RTO
 
 
 ### What is it

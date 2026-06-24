@@ -142,7 +142,7 @@ Request key K
 ---
 
 
-3.2 HyperLogLog
+## 13.2 HyperLogLog
 
 
 ### What is it
@@ -188,7 +188,7 @@ Exact distinct counts require O(n) memory. Analytics ("unique visitors today", "
 ---
 
 
-3.3 Count Min Sketch
+## 13.3 Count Min Sketch
 
 
 ### What is it
@@ -234,7 +234,7 @@ Finding "top K heavy hitters" in a firehose (network packets, API calls, trendin
 ---
 
 
-3.4 Trie
+## 13.4 Trie
 
 
 ### What is it
@@ -280,7 +280,7 @@ Autocomplete, IP routing tables (CIDR longest-prefix match), spell checkers, and
 ---
 
 
-3.5 Skip Lists
+## 13.5 Skip Lists
 
 
 ### What is it
@@ -326,7 +326,7 @@ Redis sorted sets (`ZSET`) are implemented as skip lists. They offer tree-like p
 ---
 
 
-3.6 Merkle Trees
+## 13.6 Merkle Trees
 
 
 ### What is it
@@ -372,7 +372,7 @@ Comparing two multi-terabyte datasets byte-by-byte is impractical. Merkle roots 
 ---
 
 
-3.7 Distributed Hash Tables
+## 13.7 Distributed Hash Tables
 
 
 ### What is it
@@ -433,7 +433,7 @@ flowchart TB
 ---
 
 
-3.8 UUID
+## 13.8 UUID
 
 
 ### What is it
@@ -477,7 +477,7 @@ UUIDs provide globally unique IDs without a central allocator  -  essential for 
 ---
 
 
-3.9 Snowflake IDs
+## 13.9 Snowflake IDs
 
 
 ### What is it
@@ -602,7 +602,7 @@ Run **chrony** or **ntpd** with slew (not step) on ID-generating hosts; alert on
 ---
 
 
-3.10 ULID
+## 13.10 ULID
 
 
 ### What is it
@@ -649,7 +649,7 @@ ULID combines UUID's uniqueness with **lexicographic sortability** and compact s
 ---
 
 
-3.11 KSUID
+## 13.11 KSUID
 
 
 ### What is it

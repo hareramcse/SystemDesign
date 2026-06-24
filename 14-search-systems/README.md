@@ -81,7 +81,7 @@ Users expect Google-quality search inside products (e-commerce, support portals,
 ---
 
 
-4.2 Inverted Index
+## 14.2 Inverted Index
 
 
 ### What is it
@@ -203,7 +203,7 @@ Raw text → CharFilter (strip HTML) → Tokenizer (split) → TokenFilter (lowe
 ---
 
 
-4.3 Lucene
+## 14.3 Lucene
 
 
 ### What is it
@@ -249,7 +249,7 @@ Elasticsearch interviews often reduce to Lucene concepts: segments, merges, anal
 ---
 
 
-4.4 Elasticsearch
+## 14.4 Elasticsearch
 
 
 ### What is it
@@ -383,7 +383,7 @@ POST /index/_doc  →  in-memory buffer  →  refresh (1s)  →  searchable segm
 ---
 
 
-4.5 Ranking
+## 14.5 Ranking
 
 
 ### What is it
@@ -429,7 +429,7 @@ Users rarely look past the first page. Poor ranking destroys product value even 
 ---
 
 
-4.6 Relevance Scoring
+## 14.6 Relevance Scoring
 
 
 ### What is it
@@ -482,7 +482,7 @@ score(D,Q) = Σ IDF(qi) · (f(qi,D) · (k1+1)) / (f(qi,D) + k1·(1−b+b·|D|/av
 ---
 
 
-4.7 Faceted Search
+## 14.7 Faceted Search
 
 
 ### What is it
@@ -528,7 +528,7 @@ E-commerce and enterprise catalogs with heterogeneous attributes need browse + f
 ---
 
 
-4.8 Autocomplete
+## 14.8 Autocomplete
 
 
 ### What is it
@@ -574,7 +574,7 @@ Search boxes are the primary navigation for large catalogs. Fast suggestions red
 ---
 
 
-4.9 Fuzzy Search
+## 14.9 Fuzzy Search
 
 
 ### What is it

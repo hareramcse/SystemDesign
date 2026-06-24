@@ -43,7 +43,7 @@
 | 11.31 | [Scheduler](#1131-scheduler) | Done |
 | 11.32 | [etcd](#1132-etcd) | Done |
 | 11.33 | [Operators](#1133-operators) | Done |
-| 11.34 | [HPA (Horizontal Pod Autoscaler)](#1134-hpa) | Done |
+| 11.34 | [HPA — Horizontal Pod Autoscaler](#1134-hpa) | Done |
 | 11.35 | [Cluster Autoscaler](#1135-cluster-autoscaler) | Done |
 
 
@@ -154,7 +154,7 @@ Use for: non-differentiating capabilities (CRM, email, monitoring).
 ---
 
 
-1.4 Serverless
+## 11.4 Serverless
 
 
 ### What is it
@@ -206,7 +206,7 @@ flowchart LR
 ---
 
 
-1.5 Regions
+## 11.5 Regions
 
 
 ### What is it
@@ -262,7 +262,7 @@ flowchart LR
 ---
 
 
-1.6 Availability Zones
+## 11.6 Availability Zones
 
 
 ### What is it
@@ -317,7 +317,7 @@ flowchart TB
 ---
 
 
-1.7 Multi Region Deployment
+## 11.7 Multi Region Deployment
 
 
 ### What is it
@@ -466,7 +466,7 @@ sequenceDiagram
 ---
 
 
-1.8 VPC
+## 11.8 VPC
 
 
 ### What is it
@@ -521,7 +521,7 @@ flowchart TB
 ---
 
 
-1.9 Cloud Networking
+## 11.9 Cloud Networking
 
 
 ### What is it
@@ -575,7 +575,7 @@ flowchart LR
 ---
 
 
-1.10 Cloud Storage
+## 11.10 Cloud Storage
 
 
 ### What is it
@@ -628,7 +628,7 @@ flowchart LR
 ---
 
 
-1.11 Managed Databases
+## 11.11 Managed Databases
 
 
 ### What is it
@@ -681,7 +681,7 @@ flowchart LR
 ---
 
 
-1.12 Autoscaling
+## 11.12 Autoscaling
 
 
 ### What is it
@@ -810,7 +810,7 @@ flowchart LR
 ---
 
 
-1.13 Docker
+## 11.13 Docker
 
 
 ### What is it
@@ -977,7 +977,7 @@ flowchart LR
 ---
 
 
-1.14 Container Runtime
+## 11.14 Container Runtime
 
 
 ### What is it
@@ -1028,7 +1028,7 @@ flowchart TB
 ---
 
 
-1.15 Container Images
+## 11.15 Container Images
 
 
 ### What is it
@@ -1080,7 +1080,7 @@ flowchart LR
 ---
 
 
-1.16 Image Layers
+## 11.16 Image Layers
 
 
 ### What is it
@@ -1132,7 +1132,7 @@ flowchart TB
 ---
 
 
-1.17 Namespaces
+## 11.17 Namespaces
 
 
 ### What is it
@@ -1181,7 +1181,7 @@ flowchart TB
 ---
 
 
-1.18 cgroups
+## 11.18 cgroups
 
 
 ### What is it
@@ -1231,7 +1231,7 @@ flowchart LR
 ---
 
 
-1.19 Kubernetes
+## 11.19 Kubernetes
 
 
 ### What is it
@@ -1402,7 +1402,7 @@ flowchart TB
 ---
 
 
-1.20 Pods
+## 11.20 Pods
 
 
 ### What is it
@@ -1455,7 +1455,7 @@ flowchart TB
 ---
 
 
-1.21 ReplicaSets
+## 11.21 ReplicaSets
 
 
 ### What is it
@@ -1503,7 +1503,7 @@ flowchart LR
 ---
 
 
-1.22 Deployments
+## 11.22 Deployments
 
 
 ### What is it
@@ -1837,7 +1837,7 @@ flowchart LR
 ---
 
 
-1.24 Ingress
+## 11.24 Ingress
 
 
 ### What is it
@@ -1890,7 +1890,7 @@ flowchart LR
 ---
 
 
-1.25 StatefulSets
+## 11.25 StatefulSets
 
 
 ### What is it
@@ -2056,7 +2056,7 @@ flowchart LR
 ---
 
 
-1.26 DaemonSets
+## 11.26 DaemonSets
 
 
 ### What is it
@@ -2106,7 +2106,7 @@ flowchart TB
 ---
 
 
-1.27 Jobs
+## 11.27 Jobs
 
 
 ### What is it
@@ -2156,7 +2156,7 @@ flowchart LR
 ---
 
 
-1.28 CronJobs
+## 11.28 CronJobs
 
 
 ### What is it
@@ -2207,7 +2207,7 @@ flowchart LR
 ---
 
 
-1.29 ConfigMaps
+## 11.29 ConfigMaps
 
 
 ### What is it
@@ -2258,7 +2258,7 @@ flowchart LR
 ---
 
 
-1.30 Secrets
+## 11.30 Secrets
 
 
 ### What is it
@@ -2309,7 +2309,7 @@ flowchart LR
 ---
 
 
-1.31 Scheduler
+## 11.31 Scheduler
 
 
 ### What is it
@@ -2385,7 +2385,7 @@ Interview one-liner: "Operator = human SRE runbook compiled into a control loop.
 ---
 
 
-## 11.34 HPA (Horizontal Pod Autoscaler)
+## 11.34 HPA
 
 
 ### What is it
@@ -2608,7 +2608,7 @@ flowchart TB
 ---
 
 
-1.35 Cluster Autoscaler
+## 11.35 Cluster Autoscaler
 
 
 ### What is it

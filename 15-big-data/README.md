@@ -105,7 +105,7 @@ flowchart TB
 ---
 
 
-5.2 Stream Processing
+## 15.2 Stream Processing
 
 
 ### What is it
@@ -152,7 +152,7 @@ Real-time fraud, live dashboards, inventory sync, and push notifications require
 ---
 
 
-5.3 Hadoop
+## 15.3 Hadoop
 
 
 ### What is it
@@ -199,7 +199,7 @@ Hadoop pioneered the "scale-out on cheap hardware" paradigm. While MapReduce is 
 ---
 
 
-5.4 Spark
+## 15.4 Spark
 
 
 ### What is it
@@ -246,7 +246,7 @@ Spark is the default batch/interactive processing engine on cloud data platforms
 ---
 
 
-5.5 Flink
+## 15.5 Flink
 
 
 ### What is it
@@ -293,7 +293,7 @@ When latency matters (fraud detection, real-time dashboards, CDC pipelines), Fli
 ---
 
 
-5.6 ETL
+## 15.6 ETL
 
 
 ### What is it
@@ -340,7 +340,7 @@ Traditional enterprise analytics relied on ETL to enforce schema, quality, and b
 ---
 
 
-5.7 ELT
+## 15.7 ELT
 
 
 ### What is it
@@ -387,7 +387,7 @@ Cloud warehouses (Snowflake, BigQuery, Redshift) and lakehouses (Databricks) hav
 ---
 
 
-5.8 Data Lake
+## 15.8 Data Lake
 
 
 ### What is it
@@ -434,7 +434,7 @@ Data lakes decouple storage from compute  -  cheap durable storage for everythin
 ---
 
 
-5.9 Data Warehouse
+## 15.9 Data Warehouse
 
 
 ### What is it
@@ -481,7 +481,7 @@ Business intelligence, executive dashboards, and SQL analytics run on warehouses
 ---
 
 
-5.10 Lakehouse Architecture
+## 15.10 Lakehouse Architecture
 
 
 ### What is it

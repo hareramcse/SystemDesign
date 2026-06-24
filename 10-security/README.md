@@ -125,7 +125,7 @@ flowchart LR
 ---
 
 
-0.2 Authorization
+## 10.2 Authorization
 
 
 ### What is it
@@ -178,7 +178,7 @@ flowchart TB
 ---
 
 
-0.3 OAuth2
+## 10.3 OAuth2
 
 
 ### What is it
@@ -402,7 +402,7 @@ M2M?
 ---
 
 
-0.4 OpenID Connect
+## 10.4 OpenID Connect
 
 
 ### What is it
@@ -456,7 +456,7 @@ flowchart LR
 ---
 
 
-0.5 JWT
+## 10.5 JWT
 
 
 ### What is it
@@ -705,7 +705,7 @@ Typical leeway: 60 seconds across services
 ---
 
 
-0.6 Session Management
+## 10.6 Session Management
 
 
 ### What is it
@@ -765,7 +765,7 @@ sequenceDiagram
 ---
 
 
-0.7 RBAC
+## 10.7 RBAC
 
 
 ### What is it
@@ -821,7 +821,7 @@ flowchart TB
 ---
 
 
-0.8 ABAC
+## 10.8 ABAC
 
 
 ### What is it
@@ -879,7 +879,7 @@ flowchart LR
 ---
 
 
-0.9 Encryption at Rest
+## 10.9 Encryption at Rest
 
 
 ### What is it
@@ -932,7 +932,7 @@ flowchart LR
 ---
 
 
-0.10 Encryption in Transit
+## 10.10 Encryption in Transit
 
 
 ### What is it
@@ -992,7 +992,7 @@ sequenceDiagram
 ---
 
 
-0.11 KMS
+## 10.11 KMS
 
 
 ### What is it
@@ -1045,7 +1045,7 @@ flowchart TB
 ---
 
 
-0.12 Secret Management
+## 10.12 Secret Management
 
 
 ### What is it
@@ -1178,7 +1178,7 @@ T=3   Alert if any connection still uses v1 (audit log)
 ---
 
 
-0.13 CSRF
+## 10.13 CSRF
 
 
 ### What is it
@@ -1229,7 +1229,7 @@ flowchart LR
 ---
 
 
-0.14 XSS
+## 10.14 XSS
 
 
 ### What is it
@@ -1281,7 +1281,7 @@ flowchart LR
 ---
 
 
-0.15 SQL Injection
+## 10.15 SQL Injection
 
 
 ### What is it
@@ -1331,7 +1331,7 @@ flowchart LR
 ---
 
 
-0.16 SSRF
+## 10.16 SSRF
 
 
 ### What is it
@@ -1381,7 +1381,7 @@ flowchart LR
 ---
 
 
-0.17 Clickjacking
+## 10.17 Clickjacking
 
 
 ### What is it
@@ -1435,7 +1435,7 @@ flowchart TB
 ---
 
 
-0.18 DDoS Protection
+## 10.18 DDoS Protection
 
 
 ### What is it
@@ -1550,7 +1550,7 @@ Shield Advanced: 24/7 DRT, cost protection, advanced metrics ($3K/mo)
 ---
 
 
-0.19 WAF
+## 10.19 WAF
 
 
 ### What is it
@@ -1603,7 +1603,7 @@ flowchart LR
 ---
 
 
-0.20 Zero Trust Security
+## 10.20 Zero Trust Security
 
 
 ### What is it
@@ -1656,7 +1656,7 @@ flowchart TB
 ---
 
 
-0.21 Audit Logging
+## 10.21 Audit Logging
 
 
 ### What is it
