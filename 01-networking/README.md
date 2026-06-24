@@ -293,53 +293,327 @@ At this layer there is no HTTP, TCP, UDP, IP, or JSON. Everything becomes **0 an
 
 ## 1.2 TCP/IP
 
+The **TCP/IP Model** is the practical networking model used on the Internet today.
 
-### What is it?
+While the OSI model has 7 layers, the TCP/IP model simplifies networking into **4 layers**.
 
-The **TCP/IP model** is the practical four-layer stack underlying the Internet: **Link**, **Internet (IP)**, **Transport (TCP/UDP)**, and **Application**. It is the implementation counterpart to the OSI reference model.
+Every website, mobile application, cloud service, API call, database connection, email, and video stream on the Internet relies on the TCP/IP model.
 
-### Why it matters
+The TCP/IP model focuses on how data is **actually transmitted** over networks rather than describing networking responsibilities in a highly theoretical manner.
 
-Every web request, API call, and database connection over a network uses TCP/IP. Understanding encapsulation, IP routing, and TCP reliability is mandatory for backend and infrastructure engineers.
+---
 
-### How it works
+### TCP/IP model layers
 
-1. Application generates payload (HTTP request).
-2. TCP segments data, adds ports, sequence numbers, checksums.
-3. IP adds source/destination addresses; routers forward hop-by-hop.
-4. Link layer frames packets with MAC addresses on local segment.
-5. Reverse on receive; demultiplexing by port delivers to correct socket.
-
-```mermaid
-flowchart LR
-    HTTP --> TCP
-    TCP --> IP
-    IP --> ETH[Ethernet]
+```text
+Application Layer
+Transport Layer
+Internet Layer
+Network Access Layer
 ```
 
-### Key details
+Data travels from the **top layer to the bottom layer** on the sender side and from the **bottom layer to the top layer** on the receiver side.
 
-- **IPv4:** 32-bit addresses, NAT common, header 20+ bytes
-- **IPv6:** 128-bit addresses, no NAT needed ideally, simplified header
-- **ICMP:** control messages (ping, unreachable)
-- **Ports:** 0 - 65535; well-known 0 - 1023, ephemeral high ports for clients
+---
 
-### When to use
+### Layer 4 — Application Layer
 
-- Foundation for all subsequent networking topics
-- Choosing TCP vs. UDP for a service
-- Configuring firewalls (layer 3 vs. layer 4 rules)
+**Purpose:**  
+This layer contains all protocols and services that applications use to communicate over a network.
 
-### Trade-offs / Pitfalls
+**Examples:** HTTP, HTTPS, DNS, SMTP, POP3, IMAP, FTP, SSH, WebSocket, gRPC
 
-- IPv4 exhaustion mitigated by NAT but complicates P2P and logging
-- IPv6 adoption still incomplete in some corporate networks
-- "TCP/IP" colloquially means entire internet stack including app protocols
-- TLS/HTTPS detail lives in [1.11 SSL/TLS](#111-ssltls) — TCP/IP section covers layers; TLS is application-adjacent security on top of TCP
+**What happens here?**
 
-### References
+Suppose you open a browser and visit:
 
-- [TCP/IP — networking fundamentals video](https://www.youtube.com/watch?v=2QGgEk20RXM)
+```text
+https://google.com
+```
+
+The browser creates an HTTP request.
+
+Suppose you send an email — the email client creates an SMTP request.
+
+Suppose you send a WhatsApp message — the application creates a request that must be transmitted to another device.
+
+This layer focuses on: *What information should be sent?*
+
+It does not care about: IP addresses, routing, packets, cables, or wireless signals.
+
+**Real-world analogy:** You write a letter and decide what information should be sent.
+
+See also: [1.10 HTTP/HTTPS](#110-httphttps), [1.8 DNS](#18-dns)
+
+---
+
+### Layer 3 — Transport Layer
+
+**Purpose:**  
+Provide communication between applications running on different machines.
+
+**Main protocols:** TCP, UDP
+
+**Responsibilities:** Reliable communication, flow control, error detection, segmentation, port management
+
+#### TCP (Transmission Control Protocol)
+
+**Purpose:** Reliable communication.
+
+**Features:**
+
+- Connection-oriented
+- Guaranteed delivery
+- Ordered delivery
+- Acknowledgement mechanism
+- Retransmission of lost packets
+
+**How TCP works:**
+
+1. Connection established
+2. Data sent
+3. Receiver acknowledges receipt
+4. Sender transmits next data
+
+If a packet is lost, the sender automatically retransmits it.
+
+**Example:**
+
+```text
+Packet 1 → Received
+Packet 2 → Lost
+Packet 3 → Received
+
+TCP detects Packet 2 is missing and sends it again.
+```
+
+**Applications using TCP:** HTTP, HTTPS, database connections, banking systems, payment systems, file transfers
+
+**Real-world analogy:** Registered courier service — the sender expects confirmation that the package was delivered.
+
+#### TCP three-way handshake
+
+Before sending data, TCP establishes a connection.
+
+| Step | Message | Meaning |
+|------|---------|---------|
+| 1 | Client → **SYN** | "Can we communicate?" |
+| 2 | Server → **SYN + ACK** | "Yes, I received your request and I am ready." |
+| 3 | Client → **ACK** | "Great, let's start communication." |
+
+Connection is now established. This process is called the **three-way handshake**.
+
+Deep dive: [1.3 TCP Handshake](#13-tcp-handshake)
+
+#### UDP (User Datagram Protocol)
+
+**Purpose:** Fast communication.
+
+**Features:**
+
+- Connectionless
+- No delivery guarantee
+- No acknowledgement
+- No retransmission
+- Lower overhead
+
+**How UDP works:** Sender sends data. No confirmation is expected.
+
+**Applications using UDP:** Video streaming, voice calls, online gaming, DNS
+
+**Real-world analogy:** Public announcement system — you announce something and do not wait to verify whether everyone heard it.
+
+See also: [1.4 UDP](#14-udp)
+
+#### Ports
+
+**Purpose:** Identify which application should receive incoming data.
+
+| Port | Application |
+|------|-------------|
+| 80 | HTTP |
+| 443 | HTTPS |
+| 22 | SSH |
+| 3306 | MySQL |
+| 5432 | PostgreSQL |
+| 6379 | Redis |
+
+**Example:**
+
+```text
+192.168.1.10:3306
+
+IP Address:   192.168.1.10
+Port:         3306
+Application:  MySQL
+```
+
+Think of it like:
+
+- **Apartment building** → IP address
+- **Apartment number** → port
+
+---
+
+### Layer 2 — Internet Layer
+
+**Purpose:**  
+Move packets from one network to another and find the destination machine.
+
+**Main protocol:** IP (Internet Protocol)
+
+**Supporting protocols:** ICMP, ARP, IGMP
+
+**Responsibilities:** Logical addressing, routing, packet forwarding
+
+#### IP address
+
+**Purpose:** Uniquely identify a machine on a network.
+
+**Examples:** `192.168.1.10`, `10.0.0.5`, `8.8.8.8`
+
+Think of an IP address as a postal address — without an address, a package cannot be delivered.
+
+See also: [1.6 IP Addressing/Subnetting](#16-ip-addressingsubnetting), [1.7 CIDR](#17-cidr)
+
+#### Routers
+
+**Purpose:** Forward packets between networks.
+
+Routers examine source IP and destination IP, then decide: *What is the next best path?*
+
+Routers do not care about HTTP, JSON, images, videos, or database queries. They only care about: *Where should this packet go next?*
+
+#### ICMP (Internet Control Message Protocol)
+
+**Purpose:** Network diagnostics and error reporting.
+
+**Examples:** Ping, traceroute
+
+**Common messages:** Destination unreachable, time exceeded, echo request, echo reply
+
+**Example:** `ping google.com` uses ICMP internally.
+
+#### ARP (Address Resolution Protocol)
+
+**Purpose:** Convert IP address into MAC address.
+
+**Example:** For IP `192.168.1.50` — before sending data inside a local network, the machine must know: *What MAC address belongs to this IP?* ARP helps discover that information.
+
+---
+
+### Layer 1 — Network Access Layer
+
+**Purpose:**  
+Handle communication within the local network and physically transmit data.
+
+This layer combines **OSI Layer 1 (Physical)** and **OSI Layer 2 (Data Link)**.
+
+**Technologies:** Ethernet, Wi-Fi, fiber, cable networks
+
+**Responsibilities:** MAC addressing, frame creation, error detection, signal transmission
+
+#### MAC address
+
+**Purpose:** Identify a physical network device.
+
+**Example:** `AA:BB:CC:DD:EE:FF`
+
+Every network card has a MAC address.
+
+Think of:
+
+- **IP address** = house address
+- **MAC address** = specific person inside that house
+
+#### Switches
+
+**Purpose:** Forward frames within the same local network.
+
+The switch checks the destination MAC address, then forwards traffic to the correct device. Switches do not use IP addresses for forwarding decisions.
+
+#### Physical transmission
+
+Data eventually becomes binary bits:
+
+```text
+01010101
+10110011
+11001010
+```
+
+These bits are transmitted through network cables, fiber optics, or Wi-Fi radio signals.
+
+At this stage there is no HTTP, TCP, UDP, or IP — only bits moving through a physical medium.
+
+---
+
+### How a web request travels
+
+User enters:
+
+```text
+https://google.com
+```
+
+| Step | What happens |
+|------|--------------|
+| 1 | **Application layer** creates HTTP request |
+| 2 | **Transport layer** creates TCP connection using three-way handshake |
+| 3 | **Transport layer** breaks data into segments |
+| 4 | **Internet layer** adds source and destination IP addresses |
+| 5 | **Network access layer** adds MAC addresses |
+| 6 | Data is converted into electrical, optical, or wireless signals |
+| 7 | Traffic passes through switches and routers |
+| 8 | Google receives the packet |
+| 9 | Google processes layers in reverse order |
+| 10 | Google returns the response |
+
+---
+
+### Encapsulation
+
+Each layer adds its own information.
+
+| Layer | What is added |
+|-------|----------------|
+| Application | HTTP request |
+| Transport | `[TCP Header + HTTP Data]` |
+| Internet | `[IP Header + TCP Header + HTTP Data]` |
+| Network Access | `[MAC Header + IP Header + TCP Header + HTTP Data]` |
+
+This process is called **encapsulation**.
+
+---
+
+### De-encapsulation
+
+On the receiver side:
+
+1. **Network access layer** removes MAC header
+2. **Internet layer** removes IP header
+3. **Transport layer** removes TCP header
+4. **Application layer** receives original data
+
+This process is called **de-encapsulation**.
+
+---
+
+### OSI vs TCP/IP
+
+| | OSI Model | TCP/IP Model |
+|---|-----------|--------------|
+| Layers | 7 layers | 4 layers |
+| Nature | Theoretical model — used for learning networking concepts | Practical model — actually used on the Internet |
+
+| OSI | TCP/IP |
+|-----|--------|
+| Layer 7, 6, 5 (Application, Presentation, Session) | **Application Layer** |
+| Layer 4 (Transport) | **Transport Layer** |
+| Layer 3 (Network) | **Internet Layer** |
+| Layer 2 + Layer 1 (Data Link + Physical) | **Network Access Layer** |
+
+See also: [1.1 OSI Model](#11-osi-model)
 
 ---
 
