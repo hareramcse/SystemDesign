@@ -25,7 +25,7 @@
 | 1.15 | [Forward & Reverse Proxy](#115-forward-reverse-proxy) | Done |
 | 1.16 | [NAT](#116-nat) | Done |
 | 1.17 | [VPN](#117-vpn) | Done |
-| 1.18 | [Anycast/Multicast/Broadcast](#118-anycastmulticastbroadcast) | Done |
+| 1.18 | [Unicast, Broadcast, Multicast & Anycast](#118-unicast-broadcast-multicast--anycast) | Done |
 | 1.19 | [CDN](#119-cdn) | Done |
 | 1.20 | [Load Balancer](#120-load-balancer) | Done |
 | 1.21 | [Load Balancer Algorithm](#121-load-balancer-algorithm) | Done |
@@ -3000,98 +3000,7 @@ https://google.com
 | 3 | TLS handshake | [1.11](#111-ssltls) |
 | 4 | Secure HTTP communication | (this section) |
 
----
-
-#### TLS handshake (overview)
-
-**Purpose:**
-
-- Verify server identity
-- Exchange encryption keys
-- Establish secure channel
-
-##### Step 1 — Client Hello
-
-Browser sends:
-
-- Supported TLS versions
-- Supported cipher suites
-- Random value
-
-Example: *"I support TLS 1.2 and TLS 1.3"*
-
-##### Step 2 — Server Hello
-
-Server responds with:
-
-- Selected TLS version
-- Selected cipher suite
-- Server certificate
-
-Example: *"I choose TLS 1.3"*
-
-##### Step 3 — Certificate verification
-
-Browser validates:
-
-- Certificate is not expired
-- Domain name matches
-- Certificate issued by trusted CA
-- Certificate signature is valid
-
-If validation fails, browser displays: **"Your connection is not private"**
-
-##### What is a certificate?
-
-A certificate is a website's **digital identity card**.
-
-**Contains:** domain name, public key, issuer (CA), expiry date
-
-Example: `google.com` certificate proves *"This server really belongs to google.com"*
-
-##### What is a Certificate Authority (CA)?
-
-A CA is a trusted organization that issues certificates.
-
-**Examples:** Let's Encrypt, DigiCert, GlobalSign
-
-Browsers already trust these authorities.
-
-##### Step 4 — Key exchange
-
-Client and server securely generate a shared secret used to create **session keys**. After this step, secure communication begins.
-
----
-
-#### Why two types of encryption?
-
-**Asymmetric encryption** — uses public key + private key
-
-- **Purpose:** Securely exchange keys
-- **Examples:** RSA, ECDHE
-
-**Symmetric encryption** — uses a single shared key
-
-- **Purpose:** Encrypt actual data (much faster)
-- **Examples:** AES, ChaCha20
-
----
-
-#### Session keys
-
-Once the TLS handshake completes, client and server generate temporary session keys. All requests and responses are encrypted using these keys.
-
-**Benefits:** Fast encryption, better performance, unique per connection
-
----
-
-#### TLS 1.2 vs TLS 1.3
-
-| | TLS 1.2 | TLS 1.3 |
-|---|---------|---------|
-| Handshake | More steps | Faster handshake |
-| Security | Older algorithms allowed | Fewer insecure algorithms |
-| Today | Still seen | **Preferred** |
+Full certificate + handshake walkthrough: [1.11 SSL/TLS](#111-ssltls)
 
 ---
 
@@ -3124,161 +3033,185 @@ See also: [1.14 Keep-Alive](#114-keep-alive-connections) · [1.12 HTTP/2 & HTTP/
 
 ## 1.11 SSL/TLS
 
-HTTPS overview (why HTTPS, request flow, what it protects): [1.10 HTTP/HTTPS](#110-httphttps).
+HTTPS overview (why HTTPS, request flow, what it protects): [1.10 HTTP/HTTPS](#110-httphttps) · TCP must be up first: [1.3 TCP Handshake](#13-tcp-handshake)
 
-**TLS (Transport Layer Security)**, successor to SSL, provides **encryption**, **integrity**, and **server authentication** (optional client auth) for TCP connections. **HTTPS = HTTP + TLS**.
+**HTTPS / TLS communication flow**
 
-TLS sits **above TCP** in the stack — TCP must be established first (see [1.3 TCP Handshake](#13-tcp-handshake)), then TLS runs its own handshake before any HTTP bytes flow.
+**Actors:**
 
-```mermaid
-flowchart TB
-    HTTP[HTTP request/response] --> TLS[TLS encrypt/decrypt]
-    TLS --> TCP[TCP reliable transport]
-    TCP --> IP[IP routing]
-```
+1. Browser / client
+2. Server (e.g. `google.com`)
+3. Certificate Authority (CA)
 
-### Why it matters
+TLS sits above TCP — TCP handshake completes first, then TLS runs before any HTTP bytes flow.
 
-TLS protects credentials, PII, and session tokens from interception and tampering. Certificate validation prevents man-in-the-middle attacks. TLS handshake cost affects connection latency (often +1–2 RTTs on top of TCP).
+---
 
-**Interview framing:** "HTTPS is not just encryption — the client must **trust** the server's identity via a CA-signed certificate, then both sides derive a **session key** that never crosses the wire."
+### Part 1: Certificate creation (one-time setup)
 
-### How it works
+#### Step 1 — Server generates keys
 
-#### 1. Certificate issuance (one-time setup)
+Server creates:
 
-Before any client connects, the server obtains a **digital certificate** from a **Certificate Authority (CA)**.
+- Server public key
+- Server private key
 
-**Actors:** Browser/client · Server (e.g. `google.com`) · Certificate Authority (Let's Encrypt, DigiCert, etc.)
+**Important:**
 
-**Server generates a key pair:**
+- Public key can be shared
+- Private key always remains on the server
 
-| Key | Where it lives | Purpose |
-|-----|----------------|---------|
-| **Server public key** | Embedded in certificate; shared with world | Encrypt/verify; identity binding |
-| **Server private key** | **Only on server** — never sent | Prove ownership of certificate |
+#### Step 2 — Server requests certificate from CA
 
-**Server requests certificate** — sends domain name + public key (CSR) to CA. CA verifies domain ownership (HTTP challenge, DNS TXT) and issues:
+Server sends **domain name** and **server public key** to the CA.
+
+#### Step 3 — CA issues certificate
+
+CA verifies domain ownership and creates a certificate.
+
+**Certificate contains:**
+
+- Domain name
+- Server public key
+- CA signature
+
+CA sends certificate back to the server.
+
+#### Important note
+
+Certificate is **not encrypted**.
+
+Think of it as: **identity card + trusted authority stamp**
+
+The CA signature proves: *"This public key belongs to this domain."*
+
+---
+
+### Part 2: TLS handshake
+
+#### Step 4 — Client connects
+
+Client sends **Client Hello** containing:
+
+- Supported TLS versions
+- Security options
+- Client random value
+
+#### Step 5 — Server responds
+
+Server sends:
+
+- Server Hello
+- Certificate
+- Server random value
+
+#### Step 6 — Client verifies certificate
+
+Client already has trusted CA public keys.
+
+Client verifies:
+
+- Certificate is valid
+- Certificate is not expired
+- Domain name matches
+- CA signature is valid
+
+If verification succeeds, client trusts the server's public key.
+
+---
+
+### Part 3: Server authentication
+
+At this point client knows the **server public key** from the trusted certificate.
+
+The client must ensure: *"I am really talking to the owner of this public key."*
+
+The server proves this using the **server private key**. This confirms the server's identity.
+
+---
+
+### Part 4: Session key creation
+
+**Goal:** Create one shared secret key that both client and server know. This key encrypts all communication.
+
+Both sides already have:
+
+- Client random value
+- Server random value
+- Shared secret
+
+Using these, both independently generate the **session key**.
+
+**Important:** Session key is **never sent across the network**. Both sides calculate it separately and end up with exactly the same key.
+
+#### Why random values are used
 
 ```text
-Certificate contents:
-  - Domain name
-  - Server public key
-  - CA signature (proves CA vouches for this binding)
-  - Validity dates, serial number
+Connection 1 → Session Key A
+Connection 2 → Session Key B
+Connection 3 → Session Key C
 ```
 
-**Important:** The certificate is **not encrypted** — it is **signed** (identity card + trusted authority stamp). Anyone can read it; only the CA could produce a valid signature using the **CA private key**.
+Every connection gets a unique session key.
 
-```mermaid
-sequenceDiagram
-    participant Server
-    participant CA
-    Server->>Server: Generate key pair
-    Server->>CA: CSR (domain + public key)
-    CA->>CA: Verify domain ownership
-    CA->>Server: Signed certificate
-```
+---
 
-#### 2. TLS handshake
+### Part 5: Encrypted communication
 
-**ClientHello** — client sends supported TLS versions, cipher suites, **client random**, and **SNI** (hostname, e.g. `api.example.com`).
+Both client and server have the **same session key**.
 
-**ServerHello** — server responds with chosen params, **server random**, and **certificate chain** (leaf → intermediate → root).
+**Client request** — `GET /users` is encrypted before sending.
 
-**Client verifies certificate** using OS trust store:
+**Server** decrypts using session key, processes request, encrypts response.
 
-| Check | Failure result |
-|-------|----------------|
-| Not expired | Reject connection |
-| Domain matches SNI (CN/SAN) | Name mismatch warning |
-| CA signature valid | Untrusted certificate |
-| Chain to trusted root | Unknown issuer |
+**Client** decrypts response using the same key.
 
-**Server proves private key ownership** — typically **CertificateVerify** (TLS 1.3): signs handshake transcript with server private key. Blocks MITM even if an attacker has a stolen cert without the private key.
+---
 
-#### 3. Session key derivation
-
-Both sides independently compute the same **symmetric session key** — it is **never sent on the network**.
-
-| Input | Source |
-|-------|--------|
-| Client random | ClientHello |
-| Server random | ServerHello |
-| Shared secret | ECDHE key exchange |
-
-A **key derivation function (KDF)** combines these into session keys (separate encrypt/decrypt keys in practice). Unique randoms per connection enable **forward secrecy** with ECDHE.
-
-#### 4. Encrypted application data
-
-1. Client encrypts `GET /users` → ciphertext over TCP.
-2. Server decrypts with session key → processes request.
-3. Server encrypts response → client decrypts.
-
-Bulk traffic uses **symmetric** ciphers (AES-GCM, ChaCha20-Poly1305). Asymmetric keys are used only during the handshake.
-
-```mermaid
-sequenceDiagram
-    participant Client
-    participant Server
-    Client->>Server: ClientHello (+ client random)
-    Server->>Client: ServerHello + Certificate (+ server random)
-    Client->>Client: Verify certificate chain
-    Client->>Server: Key exchange + CertificateVerify proof
-    Note over Client,Server: Both derive session key (never on wire)
-    Client->>Server: Encrypted HTTP request
-    Server->>Client: Encrypted HTTP response
-```
-
-**Handshake quick reference:**
-
-1. ClientHello → 2. ServerHello + cert → 3. Verify + key exchange → 4. Finished → 5. Encrypted HTTP
-
-### Key details
-
-#### Who uses which key?
+### Who uses which key?
 
 | Key | Used by | Purpose |
 |-----|---------|---------|
-| **CA private key** | CA only | Sign certificates |
-| **CA public key** | Client (trust store) | Verify certificate signature |
-| **Server public key** | Client | Know server's identity; key exchange |
-| **Server private key** | Server only | Prove cert ownership |
-| **Session key** | Client **and** server | Encrypt/decrypt all HTTPS traffic |
+| **CA private key** | CA | Sign certificates |
+| **CA public key** | Client | Verify certificate signature |
+| **Server public key** | Client | Trust server identity |
+| **Server private key** | Server | Prove ownership of the certificate |
+| **Session key** | Client and server | Encrypt and decrypt all HTTPS traffic |
 
-- **TLS 1.3:** 1-RTT full handshake; **0-RTT resumption** with replay risk
-- **TLS 1.2:** often 2-RTT full handshake; still common on legacy systems
-- **Certificate chain:** leaf → intermediate → root CA in trust store
-- **mTLS:** client also presents a certificate — mutual auth for service mesh / internal APIs
-- **Termination:** LB decrypts TLS at edge, forwards HTTP to backend (or re-encrypts)
-- **Session resumption:** TLS tickets / PSK skip full handshake on repeat connections
+---
 
-**Summary:**
+### Complete flow in one view
 
-1. Server gets **CA-signed certificate** binding domain → public key.
-2. Client **verifies** cert via trusted CA public keys.
-3. Server **proves** private key ownership.
-4. Both **derive** the same session key (never on the wire).
-5. All HTTPS traffic encrypted with session key.
+**Certificate setup:**
 
-### When to use
+```text
+Server → Request certificate → CA
+CA     → Signed certificate  → Server
+```
 
-- All public web traffic (HTTPS everywhere)
-- gRPC over TLS, database connections (PostgreSQL SSL)
-- Service mesh sidecar mTLS
+**Live connection:**
 
-### Trade-offs / Pitfalls
+```text
+Client → Client Hello        → Server
+Server → Server Hello        → Client
+Server → Certificate         → Client
+Client → Verify certificate
+Client & Server → Create session key (independently)
+Client → Encrypted request   → Server
+Server → Encrypted response  → Client
+```
 
-- Certificate expiry outages (automate with Let's Encrypt / ACME)
-- TLS termination at LB — traffic LB→app may be plaintext unless re-encrypted
-- TLS inspection proxies break end-to-end trust
-- 0-RTT data vulnerable to replay attacks
-- CPU cost of encryption — hardware AES-NI mitigates
-- Confusing **certificate** (public, signed identity) with **encrypted channel** (session key does bulk encryption)
+---
 
-### References
+### Final summary
 
-- [SSL/TLS — encryption handshake video](https://www.youtube.com/watch?v=LJDsdSh1CYM)
+1. Server gets a certificate from a trusted CA
+2. Client verifies the certificate using the CA's public key
+3. Client trusts the server's public key contained in the certificate
+4. Server proves it owns the corresponding private key
+5. Client and server independently create the same session key
+6. All HTTPS communication is encrypted using the session key
+7. The session key is never transmitted over the network
 
 ---
 
@@ -4264,784 +4197,1484 @@ Traffic distributed evenly. Algorithms and pitfalls: [1.20](#120-load-balancer)
 
 ## 1.16 NAT
 
+Private IP addressing: [1.6 IP Addressing & Subnetting](#16-ip-addressing-subnetting) · Proxy (L7): [1.15 Forward & Reverse Proxy](#115-forward-reverse-proxy)
 
-### What is it?
+**NAT (Network Address Translation)** is a technique used by routers, firewalls, and cloud gateways to translate one IP address into another.
 
-**Network Address Translation (NAT)** maps private IP addresses inside a network to public IP(s) on the internet, modifying packet headers in transit. Most home routers and cloud NAT gateways use **NAPT** (port-level translation).
+Most commonly:
 
-### Why it matters
-
-NAT conserves scarce IPv4 addresses and hides internal topology. It also breaks inbound connections unless port forwarding configured - affecting P2P, WebRTC, and debugging client IPs.
-
-### How it works
-
-1. Internal host (192.168.1.10:5000) sends packet to external server.
-2. NAT router replaces source with (public_ip:ephemeral_port).
-3. NAT table maps ephemeral_port -> internal host:port.
-4. Return packets reverse translation using table.
-5. Table entries timeout after idle period.
-
-```mermaid
-flowchart LR
-    H[Private 10.0.0.5] --> NAT[NAT Gateway]
-    NAT -->|Public IP| Internet
+```text
+Private IP → Public IP
 ```
 
-### Key details
+This allows devices in a private network to access the internet using a **single public IP address**.
 
-- **SNAT:** source translation (outbound from private)
-- **DNAT:** destination translation (port forwarding inbound)
-- Cloud **NAT Gateway** for private subnet egress without public IPs
-- **Carrier-grade NAT (CGNAT)** shares public IP across ISP customers
+---
 
-### When to use
+### Why do we need NAT?
 
-- Private subnet internet access in VPC
-- Home/office networks on IPv4
-- Hiding internal server IPs from clients
+IPv4 addresses are limited — **~4.3 billion** total.
 
-### Trade-offs / Pitfalls
+With billions of phones, laptops, servers, and IoT devices, we would quickly run out of public IPs if every device needed one.
 
-- Breaks end-to-end connectivity - needs STUN/TURN for WebRTC
-- Log correlation harder (many clients share one public IP)
-- NAT table exhaustion under high connection count
-- IPv6 designed to reduce NAT need
+NAT solves this by allowing **many devices to share a single public IP**.
 
-### References
+---
 
-- [NAT — network address translation video](https://www.youtube.com/watch?v=FTUV0t6JaDA)
+### Real-world example
+
+**Home Wi-Fi network:**
+
+```text
+Laptop  → 192.168.1.10
+Mobile  → 192.168.1.20
+TV      → 192.168.1.30
+
+Router public IP → 49.205.100.50
+```
+
+| | Behavior |
+|---|----------|
+| **Without NAT** | Each device needs a public IP |
+| **With NAT** | All devices share `49.205.100.50` |
+
+This is how most home networks work.
+
+---
+
+### How NAT works
+
+**Step 1** — Laptop sends request:
+
+```text
+Source IP      = 192.168.1.10
+Destination IP = google.com
+```
+
+**Step 2** — Router receives packet and replaces `192.168.1.10` with `49.205.100.50`
+
+**Step 3** — Google receives:
+
+```text
+Source IP = 49.205.100.50
+```
+
+Google has no idea the original device was `192.168.1.10`.
+
+**Step 4** — Response comes back to `49.205.100.50`. Router checks NAT table and forwards response to `192.168.1.10`.
+
+---
+
+### Visual flow
+
+```text
+Laptop (192.168.1.10)
+    |
+Home Router (NAT) — Public IP = 49.205.100.50
+    |
+Internet
+    |
+google.com
+```
+
+---
+
+### NAT translation table
+
+Router maintains a mapping table:
+
+| Private IP | Port | Public IP | Port |
+|------------|------|-----------|------|
+| 192.168.1.10 | 5000 | 49.205.100.50 | 30001 |
+| 192.168.1.20 | 5001 | 49.205.100.50 | 30002 |
+| 192.168.1.30 | 5002 | 49.205.100.50 | 30003 |
+
+This allows many devices to share one public IP.
+
+---
+
+### What is PAT?
+
+**PAT (Port Address Translation)** — also called **NAT overload** — is the most common NAT implementation today.
+
+Instead of using only IP addresses, NAT uses **IP + port** to uniquely identify connections.
+
+---
+
+### PAT example
+
+Three devices access Google simultaneously:
+
+```text
+Laptop → 192.168.1.10:5000
+Mobile → 192.168.1.20:5000
+TV     → 192.168.1.30:5000
+```
+
+Router translates to:
+
+```text
+49.205.100.50:30001
+49.205.100.50:30002
+49.205.100.50:30003
+```
+
+Now responses can be routed correctly.
+
+---
+
+### Types of NAT
+
+#### 1. Static NAT
+
+One private IP ↔ one public IP — permanent mapping.
+
+```text
+192.168.1.10 ↔ 49.205.100.50
+```
+
+Used when a server must always have the same public IP.
+
+#### 2. Dynamic NAT
+
+Private IPs are mapped from a **pool** of public IPs:
+
+```text
+Private Network → Public IP Pool
+                  49.205.100.50
+                  49.205.100.51
+                  49.205.100.52
+```
+
+Mapping assigned dynamically.
+
+#### 3. PAT (NAT overload)
+
+Many private IPs → **one public IP** using different ports.
+
+Most common type. Used in home routers, offices, and cloud NAT gateways.
+
+---
+
+### NAT in cloud
+
+**AWS example** — private subnet:
+
+```text
+10.0.2.10
+10.0.2.20
+```
+
+No public IPs assigned. Need internet access? Install a **NAT Gateway**:
+
+```text
+Private Servers → NAT Gateway → Internet
+```
+
+Servers can download packages, updates, and Docker images — but remain **inaccessible from the internet**.
+
+---
+
+### Advantages of NAT
+
+1. **Conserves public IP addresses** — thousands of devices can share a few public IPs
+2. **Improves security** — private IPs are hidden from the internet
+3. **Easy network management** — internal addressing can change without affecting the internet
+4. **Cost savings** — fewer public IPs required
+
+---
+
+### Limitations of NAT
+
+1. **Breaks end-to-end connectivity** — internet cannot directly reach private devices
+2. **Port exhaustion** — large number of connections may exhaust available ports
+3. **Extra processing** — router must maintain NAT table
+4. **Some protocols don't like NAT** — SIP, FTP, peer-to-peer apps often require additional configuration
+
+---
+
+### NAT and port forwarding
+
+**Problem:** Internet cannot directly access `192.168.1.10`
+
+**Solution:** Port forwarding on the router:
+
+```text
+49.205.100.50:80 → 192.168.1.10:80
+```
+
+Now internet users can access the internal server.
+
+---
+
+### NAT vs proxy
+
+| | NAT | Proxy |
+|---|-----|-------|
+| Layer | Network layer (L3/L4) | Application layer (L7) |
+| Changes | IP addresses and ports | Can inspect and modify HTTP/HTTPS requests |
+
+See [1.15](#115-forward-reverse-proxy) for proxy details.
 
 ---
 
 
 ## 1.17 VPN
 
+HTTPS: [1.10 HTTP/HTTPS](#110-httphttps) · Proxy: [1.15 Forward & Reverse Proxy](#115-forward-reverse-proxy)
 
-### What is it?
+**VPN (Virtual Private Network)** creates a secure, encrypted connection between your device and a VPN server over the public internet.
 
-A **Virtual Private Network (VPN)** creates an encrypted tunnel over a public network, making remote hosts appear on a private network. Protocols include IPsec, OpenVPN, WireGuard, and TLS-based corporate VPNs.
+Once connected, all your network traffic is routed through the VPN server.
 
-### Why it matters
-
-VPNs secure remote access, connect site-to-site networks, and bypass geo-restrictions. Zero-trust architectures reduce blanket VPN reliance but VPN remains common for admin access and hybrid cloud.
-
-### How it works
-
-1. Client authenticates to VPN concentrator.
-2. Encrypted tunnel established (IPsec SA or WireGuard handshake).
-3. Client receives virtual IP in VPN address space.
-4. Traffic routed through tunnel (full or split tunnel).
-5. Decrypted at gateway; forwarded to internal resources.
-
-```mermaid
-flowchart LR
-    Remote[Remote user] -->|encrypted tunnel| GW[VPN Gateway]
-    GW --> Internal[Internal network]
+```text
+Your Device
+    |
+Encrypted Tunnel
+    |
+VPN Server
+    |
+Internet
 ```
 
-### Key details
+Traffic inside the tunnel is encrypted and protected.
 
-- **Split tunnel:** only corporate traffic via VPN; internet direct
-- **Full tunnel:** all traffic via corporate (inspection, DLP)
-- **WireGuard:** modern, minimal, fast kernel implementation
-- **Site-to-site:** gateway-to-gateway for datacenter/cloud linking
+---
 
-### When to use
+### Why do we need a VPN?
 
-- Remote employee access to internal tools
-- Connecting cloud VPC to on-prem datacenter
-- Secure admin access to production (bastion alternative)
+VPNs are mainly used for:
 
-### Trade-offs / Pitfalls
+1. **Security** — protect data when using public Wi-Fi or untrusted networks
+2. **Remote access** — allow employees to securely access company resources from home
+3. **Privacy** — hide your real public IP address from websites
+4. **Connecting private networks** — connect two office networks securely over the internet
 
-- VPN concentrator SPOF and bandwidth bottleneck
-- Full tunnel adds latency for SaaS apps
-- Compromised VPN creds grant broad network access
-- Zero-trust replaces "perimeter VPN trust" with per-request auth
+---
 
-### References
+### How VPN works
 
-- [VPN — virtual private networks video](https://www.youtube.com/watch?v=R-JUOpCgTZc)
+**Without VPN:**
+
+```text
+Laptop → Internet → google.com
+```
+
+Google sees **your public IP address**.
+
+**With VPN:**
+
+```text
+Laptop → Encrypted VPN Tunnel → VPN Server → google.com
+```
+
+Google sees **VPN server IP address** instead of your real IP.
+
+---
+
+### Simple example
+
+Suppose your ISP assigned `49.205.100.50` to your home network.
+
+You connect to a VPN server with IP `20.50.10.100`.
+
+When you browse `google.com`:
+
+| | What Google sees |
+|---|------------------|
+| **Without VPN** | `49.205.100.50` |
+| **With VPN** | `20.50.10.100` |
+
+---
+
+### What is a VPN tunnel?
+
+A **VPN tunnel** is an encrypted communication channel between:
+
+```text
+Client Device ↔ VPN Server
+```
+
+All traffic passes through this secure tunnel. Anyone intercepting packets on the internet sees **encrypted data only**.
+
+---
+
+### What does VPN encrypt?
+
+VPN encrypts traffic before sending it through the internet.
+
+```text
+Original:  Username = hareram, Password = mypassword
+Encrypted: Random unreadable encrypted data
+```
+
+This prevents attackers from reading sensitive information.
+
+---
+
+### Common types of VPN
+
+#### 1. Remote access VPN
+
+Used by employees working from home.
+
+```text
+Employee Laptop → VPN Tunnel → Company Network
+```
+
+Employee can access internal applications, databases, and file servers.
+
+#### 2. Site-to-site VPN
+
+Used to connect entire office networks.
+
+```text
+Bangalore Office ↔ VPN Tunnel ↔ Mumbai Office
+```
+
+Both offices communicate securely.
+
+---
+
+### VPN vs HTTPS
+
+| | HTTPS | VPN |
+|---|-------|-----|
+| Protects | Browser ↔ website | Device ↔ VPN server |
+| Scope | Single site (e.g. Chrome ↔ `google.com`) | **All** device traffic — browser, databases, email, SSH |
+
+---
+
+### VPN vs proxy
+
+| | VPN | Proxy |
+|---|-----|-------|
+| Encryption | **Yes** — encrypts traffic | Usually no encryption by default |
+| Scope | Entire device | Often application-specific |
+| Security | More secure | Mostly forwards traffic |
+| IP address | Changes visible IP | May hide IP (forward proxy) |
+
+See [1.15](#115-forward-reverse-proxy) for proxy details.
+
+---
+
+### Does VPN make you completely anonymous?
+
+**No.**
+
+| | Reality |
+|---|---------|
+| VPN hides | Your IP from websites |
+| VPN provider | Can still see your traffic |
+| Websites | Can still track using cookies/accounts |
+| ISPs / governments | May know you are using a VPN |
+
+VPN **improves privacy** but does not provide complete anonymity.
+
+---
+
+### Advantages of VPN
+
+- Secure communication
+- Safe use of public Wi-Fi
+- Remote access to company resources
+- Hides real IP address
+- Connects private networks securely
+
+---
+
+### Disadvantages of VPN
+
+- Extra latency — traffic goes through VPN server
+- Encryption consumes CPU resources
+- VPN server can become a bottleneck
+- Requires trust in VPN provider
+
+---
+
+### Real-world system design use case
+
+Company employees work from home.
+
+Instead of exposing databases and internal applications to the internet:
+
+```text
+Employee → VPN → Corporate Network
+```
+
+Only authenticated VPN users can access internal systems.
+
+This is one of the most common enterprise VPN use cases.
+
+---
+
+### Interview questions
+
+| Question | Answer |
+|----------|--------|
+| What is a VPN? | An encrypted tunnel between a device and a VPN server over the internet |
+| Why use a VPN? | Security, privacy, and remote access |
+| What is a VPN tunnel? | An encrypted communication channel between client and VPN server |
+| Difference between VPN and HTTPS? | HTTPS secures browser-to-website traffic; VPN secures all traffic between device and VPN server |
+| Difference between VPN and Proxy? | VPN encrypts and routes all device traffic; proxy mainly forwards application traffic |
 
 ---
 
 
-## 1.18 Anycast/Multicast/Broadcast
+## 1.18 Unicast, Broadcast, Multicast & Anycast
 
-**Broadcast** — one-to-all on a LAN subnet (e.g., ARP, DHCP); does not cross routers.
+DNS anycast: [1.8 DNS](#18-dns) · CDN edges: [1.19 CDN](#119-cdn)
 
-**Multicast** — one-to-many to subscribed hosts (IGMP, `224.0.0.0/4`); common inside datacenters; limited on the public internet.
+---
 
-**Anycast** — same IP announced from multiple sites via BGP; routers deliver to the **nearest** node. Powers global **DNS (Domain Name System)** resolvers (`8.8.8.8`), **CDN (Content Delivery Network)** edges, and DDoS scrubbing.
+### The problem
 
-**When asked in interviews:** contrast the three delivery semantics; note anycast + stateful TCP breaks if BGP path changes mid-session; multicast is rarely available in cloud VPCs.
+Suppose a device wants to send a packet.
 
-See [1.8 DNS](#18-dns) and [1.19 CDN](#119-cdn) for production examples.
+**Question:** Who should receive the packet?
+
+- One device?
+- All devices?
+- A specific group of devices?
+- The nearest available device?
+
+Different communication models exist for different use cases.
+
+---
+
+### 1. Unicast
+
+#### What is it?
+
+**Unicast** means: **one sender → one receiver**
+
+This is the most common type of network communication.
+
+```text
+Client → Server
+```
+
+One source. One destination.
+
+#### Example
+
+When you open `https://google.com`, your browser sends requests to a specific Google server. This is unicast communication.
+
+#### Real-world use cases
+
+- Web browsing
+- REST APIs
+- Database connections
+- SSH
+- Email
+
+| Advantages | Disadvantages |
+|------------|---------------|
+| Simple, reliable, direct communication | If the same data must be sent to 1 million users, server sends it 1 million times — high bandwidth usage |
+
+---
+
+### 2. Broadcast
+
+#### What is it?
+
+**Broadcast** means: **one sender → everyone on the network**
+
+Packet is delivered to all devices in the broadcast domain.
+
+```text
+                 Device A
+                      |
+Sender ---------------+------------------
+          |           |           |
+       Device B    Device C    Device D
+```
+
+Everyone receives the packet.
+
+#### Example
+
+When your laptop joins a Wi-Fi network, it does not know who the router is. So it broadcasts: *"Who has IP 192.168.1.1?"*
+
+All devices receive the request. Router responds.
+
+#### Common use cases
+
+- ARP (Address Resolution Protocol)
+- DHCP discovery
+
+| Advantages | Disadvantages |
+|------------|---------------|
+| Easy device discovery; useful for local networks | Wastes bandwidth; every device processes packet; doesn't scale well |
+
+**Important:** Broadcast generally works only inside a local network. Routers typically do **not** forward broadcast traffic.
+
+*(Subnet broadcast addresses — e.g. `192.168.1.255` — are covered in [1.6 IP Addressing](#16-ip-addressing-subnetting).)*
+
+---
+
+### 3. Multicast
+
+#### What is it?
+
+**Multicast** means: **one sender → many interested receivers**
+
+Only devices that joined the multicast group receive the packet.
+
+```text
+                    Receiver A
+                         |
+Sender ------------------|
+                         |
+                    Receiver B
+```
+
+Devices not interested do **not** receive packets.
+
+#### Example
+
+**Live sports streaming** — 100,000 users watching the same match.
+
+| | Behavior |
+|---|----------|
+| **Without multicast** | Server sends 100,000 separate streams |
+| **With multicast** | Server sends **one** stream; network duplicates packets only where needed |
+
+#### Use cases
+
+- IPTV
+- Live video broadcasting
+- Stock market feeds
+- Financial trading systems
+- Online classrooms
+
+| Advantages | Disadvantages |
+|------------|---------------|
+| Saves bandwidth; efficient distribution; one transmission serves many users | Complex network support; not widely supported across internet; mostly used inside private networks |
+
+#### Multicast group
+
+Devices join a multicast group — e.g. `239.1.1.1`. Only members receive packets sent to that address.
+
+---
+
+### 4. Anycast
+
+#### What is it?
+
+**Anycast** means: **one sender → nearest available receiver**
+
+Multiple servers share the **same IP address**. Network routing automatically chooses the nearest or best destination.
+
+```text
+                     Server (Mumbai)
+                           |
+User ----------------------|
+                           |
+                     Server (Singapore)
+                           |
+                     Server (London)
+```
+
+User reaches the nearest server.
+
+#### Example
+
+Cloudflare has servers in Mumbai, Singapore, London, and New York — all advertise the same anycast IP.
+
+| User location | Routed to |
+|---------------|-----------|
+| Bangalore | Mumbai |
+| Europe | London |
+
+Both users access the **same IP address**.
+
+#### Why is anycast powerful?
+
+Users automatically reach the closest server, lowest-latency server, or available server — without changing configuration.
+
+#### Real-world use cases
+
+- CDNs ([1.19](#119-cdn))
+- DNS servers ([1.8](#18-dns))
+- Cloudflare
+- Google DNS (`8.8.8.8`)
+- AWS global services
+
+#### Example: Google DNS
+
+You configure `8.8.8.8`.
+
+**Question:** Which Google DNS server receives your request?
+
+**Answer:** Nearest available Google DNS server. This is **anycast**.
+
+| Advantages | Disadvantages |
+|------------|---------------|
+| Low latency, automatic failover, global scalability, better availability | Complex routing setup; harder troubleshooting |
+
+---
+
+### Comparison
+
+| Communication type | Meaning |
+|--------------------|---------|
+| **Unicast** | One → one |
+| **Broadcast** | One → all |
+| **Multicast** | One → many (interested group) |
+| **Anycast** | One → nearest one |
+
+#### Visual comparison
+
+```text
+Unicast:    Sender → Receiver
+
+Broadcast:  Sender → All devices
+
+Multicast:  Sender → Interested group only
+
+Anycast:    Sender → Nearest server
+```
+
+---
+
+### System design relevance
+
+| Domain | Typical model |
+|--------|---------------|
+| Web applications | Mostly **unicast** |
+| Local network discovery | **Broadcast** |
+| Live streaming systems | May use **multicast** |
+| CDNs and DNS systems | Commonly **anycast** |
+
+---
+
+### Interview questions
+
+| Question | Answer |
+|----------|--------|
+| What is unicast? | One sender communicates with one receiver |
+| What is broadcast? | One sender communicates with all devices on a network |
+| What is multicast? | One sender communicates with a selected group of receivers |
+| What is anycast? | One sender communicates with the nearest available receiver |
+| Why do CDNs use anycast? | Route users automatically to the nearest edge server |
+| Why doesn't broadcast scale? | Every device receives and processes the packet |
 
 ---
 
 
 ## 1.19 CDN
 
+DNS routing to CDN: [1.8 DNS](#18-dns) · Load balancer: [1.20 Load Balancer](#120-load-balancer) · Reverse proxy: [1.15](#115-forward-reverse-proxy)
 
-### What is it?
+**CDN (Content Delivery Network)** is a geographically distributed network of servers that stores and delivers content closer to users.
 
-A **Content Delivery Network (CDN)** distributes cached copies of static (and sometimes dynamic) content to **edge PoPs** geographically close to users, reducing latency and origin load.
+Its primary goals:
 
-### Why it matters
+- Reduce latency
+- Increase speed
+- Reduce load on origin servers
 
-Users globally expect fast page loads. CDN offloads 80 - 90% of static traffic, absorbs DDoS, and provides TLS at edge. Essential for media, e-commerce, and any global web property.
+Think of a CDN as a **network of cache servers spread across the world**.
 
-### How it works
+---
 
-1. Origin (S3, nginx) serves content; CDN pulls on first request (**cache miss**).
-2. CDN caches at edge PoP with TTL from `Cache-Control`.
-3. Subsequent nearby users get **cache hit** from edge.
-4. DNS (or anycast) routes user to nearest PoP.
-5. Purge API invalidates cached objects on content update.
+### Why do we need a CDN?
 
-```mermaid
-flowchart LR
-    User --> Edge[CDN Edge PoP]
-    Edge -->|miss| Origin[Origin Server]
-    Edge -->|hit| User
-```
+Suppose your application is hosted in **Mumbai, India**. Users access it from Bangalore, Delhi, London, New York, and Sydney.
 
-### Key details
+| | Behavior |
+|---|----------|
+| **Without CDN** | Every request travels to Mumbai — higher latency, slower page loads, increased backend load |
+| **With CDN** | Users served from nearest CDN location — faster responses, lower latency, better UX |
 
-- **Cache keys** include URL, query string, headers (Vary)
-- **Dynamic acceleration:** route API through CDN private backbone
-- Providers: Cloudflare, Akamai, Fastly, CloudFront
-- **Stale-while-revalidate** serves old while refreshing
+---
 
-#### Push CDN vs pull CDN
+### Real-world example
 
-CDNs populate edge caches in two fundamentally different ways:
+Netflix stores a movie in a **US data center**. User is in **Bangalore**.
 
-| Model | How content reaches edge | Who initiates upload | Storage at edge | Best for |
-|-------|--------------------------|----------------------|-----------------|----------|
-| **Pull CDN** | Edge fetches from origin on first user request (cache miss) | Origin passive; CDN pulls on demand | Minimized — only recently requested content | High-traffic sites; content accessed unpredictably |
-| **Push CDN** | You upload or pre-publish content directly to CDN | Developer/CI pushes to CDN | Higher — you control what is stored | Low-traffic sites; infrequent updates; large releases you want live immediately |
+| | Path |
+|---|------|
+| **Without CDN** | Bangalore user → US data center (long network journey) |
+| **With CDN** | Bangalore user → Bangalore CDN edge server (much faster) |
 
-**Pull CDN flow:**
-1. User requests `cdn.example.com/app.js`.
-2. Edge PoP has miss → fetches from origin.
-3. Caches with TTL from `Cache-Control`.
-4. Subsequent users at that PoP get cache hit.
+---
 
-**Push CDN flow:**
-1. Build pipeline uploads assets to CDN storage (S3 + CloudFront invalidation, or FTP/API upload).
-2. URLs point directly to CDN hostname.
-3. Content is at edge before first user request — no cold-start latency on first hit.
+### How CDN works
 
-```mermaid
-flowchart LR
-    subgraph Pull["Pull CDN"]
-        U1[User] --> E1[Edge]
-        E1 -->|miss| O1[Origin]
-    end
-    subgraph Push["Push CDN"]
-        CI[CI / deploy] --> E2[Edge storage]
-        U2[User] --> E2
-    end
-```
+User requests `https://cdn.company.com/logo.png`
 
-**Trade-offs:**
-- **Pull:** simpler origin integration; first request per PoP is slow; TTL expiry can cause redundant origin fetches if content unchanged.
-- **Push:** predictable go-live; you manage upload + purge; wasted edge storage if content is rarely accessed.
+**Step 1** — DNS routes user to nearest CDN server
 
-Most modern CDNs (CloudFront, Cloudflare, Fastly) support **both** — static sites often use pull with origin (S3/nginx); release artifacts and versioned bundles are often pushed via deploy hooks.
+**Step 2** — CDN checks cache: *"Do I already have `logo.png`?"*
 
-### Production rules
+#### Case 1: Cache hit
 
-#### Purge and invalidation
+File exists in CDN. CDN returns file immediately. **Origin server is not contacted.**
 
-| Operation | Scope | Propagation | Use when |
-|-----------|-------|-------------|----------|
-| **URL purge** | Single path | Seconds–minutes per PoP | One bad object, emergency fix |
-| **Wildcard / prefix purge** | `/*` or `/assets/*` | Minutes; may rate-limit | Bad deploy of static bundle |
-| **Surrogate-key purge** | Tag-based (Fastly, Cloudflare) | Fast, batched | Purge all objects for `product-123` |
-| **Versioned URLs** | No purge needed | Instant (new URL) | **Preferred** — `app.a1b2c3.js` immutable |
+#### Case 2: Cache miss
+
+File not found. CDN fetches from origin, stores locally, returns response. Future requests become cache hits.
+
+---
+
+### Visual flow
 
 ```text
-Runbook — "users still see old JS after deploy":
-1. Confirm deploy uploaded NEW object (check origin ETag/hash)
-2. If cache-busted URL (hash in filename): purge NOT needed — check HTML still references old URL
-3. If purge API called: check API response 200 + purge ID; verify not rate-limited (429)
-4. dig edge IP → curl -H "Cache-Control: no-cache" https://cdn.../app.js — compare PoPs
-5. If partial PoP stale: open provider ticket; temporary fix = lower TTL on that path
-6. Nuclear: purge /* (expect origin spike on next global miss wave)
+User → CDN Edge Server → Origin Server
 ```
 
-#### Purge failure modes
+**Cache hit:**
 
-| Failure | Symptom | Mitigation |
-|---------|---------|------------|
-| **Rate limit** | 429; partial purge | Batch surrogate keys; use versioning instead |
-| **Wrong cache key** | Purge "succeeds" but object stale | Include query string / `Vary` headers in key; purge exact URL |
-| **PoP propagation lag** | Fixed in US, stale in EU for 5 min | Wait SLA (provider-specific); don't chain deploys |
-| **Stale-while-revalidate** | Old content served while refresh async | Set `stale-while-revalidate=0` for HTML; immutable for assets |
-| **Purge API down** | Deploy blocked | Fallback: new versioned filename; bypass CDN to origin temporarily |
-| **Origin still old** | Purge irrelevant | Fix origin first — CDN re-fetches stale on miss |
+```text
+User → CDN → Response
+(Origin not contacted)
+```
 
-#### Sizing
+**Cache miss:**
 
-| Signal | Rule | Notes |
-|--------|------|-------|
-| Origin spike after purge | Every PoP may refetch same object | Purge off-peak; warm critical paths |
-| Bandwidth | Cache hit ratio < 85% on static | Review TTL; versioned assets |
-| Purge API quota | ~100–1000 paths/min (provider-dependent) | Surrogate keys beat 10k URL purges |
-| HTML TTL | 60–300 s max if not versioned | Long TTL only with fingerprinted assets |
+```text
+User → CDN → Origin Server → CDN cache updated → Response
+```
 
-### When to use
+---
 
-- Static assets (JS, CSS, images, video)
-- Downloadable files, software updates
-- DDoS protection and WAF at edge
+### Important terminologies
 
-### Trade-offs / Pitfalls
+| Term | Meaning |
+|------|---------|
+| **Origin server** | Original server where content is stored — application server, S3 bucket, nginx |
+| **Edge server** | CDN server located close to users — Mumbai, Bangalore, London, Tokyo |
+| **POP (Point of Presence)** | Physical CDN location — e.g. Mumbai POP, Delhi POP, Singapore POP. Each POP contains multiple edge servers |
 
-| Pitfall | Consequence | Mitigation |
-|---------|-------------|------------|
-| Cache invalidation delay after deploy | Users see stale assets | Versioned URLs; surrogate-key purge |
-| Personalized content hard to cache | Low hit ratio | Edge logic; short TTL; cache key design |
-| Dynamic HTML caching | Wrong user sees wrong page | `private`, `Vary`, don't cache authenticated HTML |
-| Cost scales with bandwidth egress | Bill shock | Compress; hit ratio; tiered pricing |
-| Purge without versioned URLs | Every deploy needs global invalidation | Fingerprint assets; purge HTML only |
-| Full-site purge at peak | Origin miss storm; latency spike | Purge off-peak; warm cache; versioned bundles |
-| Ignoring `Vary: Accept-Encoding` | Purged gzip; brotli variant still stale | Purge all variants or normalize encoding at edge |
+---
 
-### References
+### What content can CDN cache?
 
-- [CDN — content delivery networks video](https://www.youtube.com/watch?v=ouqqU0FJjhQ)
+**Best for static content:**
+
+- Images, CSS, JavaScript, videos, PDFs, fonts
+
+**Sometimes dynamic content** — API responses, GraphQL responses, HTML pages — if caching rules permit.
+
+---
+
+### CDN cache hit vs cache miss
+
+| | Cache hit | Cache miss |
+|---|-----------|------------|
+| Meaning | Content already exists in CDN | Content not present — CDN fetches from origin |
+| Latency | Fast | Higher on first request |
+| Origin load | None | Origin contacted |
+
+---
+
+### Latency example
+
+User in Bangalore, origin server in US:
+
+| | Latency |
+|---|---------|
+| **Without CDN** | ~250ms |
+| **With CDN edge in Bangalore** | ~10ms |
+
+Huge improvement.
+
+---
+
+### CDN benefits
+
+1. **Lower latency** — content served from nearby servers
+2. **Reduced origin load** — CDN handles many requests
+3. **Better scalability** — traffic distributed across many servers
+4. **Higher availability** — multiple edge locations
+5. **Improved user experience** — faster page loads
+
+---
+
+### CDN and caching
+
+CDN relies heavily on caching.
+
+```http
+Cache-Control: max-age=3600
+```
+
+Meaning: store response for **1 hour**. Future requests served directly from CDN.
+
+---
+
+### CDN and video streaming
+
+Platforms like Netflix, YouTube, and Prime Video use CDNs extensively.
+
+Without CDN, millions of users would hit central servers — impossible to scale efficiently.
+
+---
+
+### CDN and system design
+
+Typical architecture:
+
+```text
+User → CDN → Load Balancer → Application Servers → Database
+```
+
+| Traffic type | Handled by |
+|--------------|------------|
+| Images, videos, static files | **CDN** |
+| Authentication, payments, business logic | **Backend services** |
+
+---
+
+### CDN and DDoS protection
+
+CDNs often provide rate limiting, traffic filtering, and DDoS protection. Malicious traffic is blocked **before** reaching backend servers.
+
+---
+
+### Common CDN providers
+
+- Cloudflare
+- Akamai
+- Amazon CloudFront
+- Google Cloud CDN
+- Azure CDN
+- Fastly
+
+---
+
+### When should we use a CDN?
+
+**Use CDN when application serves:**
+
+- Images, videos, static assets
+- Global traffic
+- Large downloads
+
+**Not very useful when:**
+
+- Users are in a single region
+- Content changes every request
+- Responses cannot be cached
+
+---
+
+### Pull CDN vs push CDN
+
+The main difference: **who is responsible for putting content into the CDN?**
+
+#### 1. Pull CDN
+
+Most commonly used CDN model. Content remains on the **origin server**.
+
+When a user requests content:
+
+1. CDN checks cache
+2. If content exists → cache hit
+3. If not → cache miss
+4. CDN fetches from origin
+5. CDN stores in cache
+6. Future requests served from CDN
+
+**Flow (cache miss):**
+
+```text
+User → CDN → (cache miss) → Origin Server
+```
+
+**After first request:**
+
+```text
+User → CDN cache
+```
+
+**Example:** User requests `logo.png`. CDN does not have it — automatically fetches from origin and stores it. Next users receive it directly from CDN.
+
+| Advantages | Disadvantages |
+|------------|---------------|
+| Easy to configure | First request is slower (cache miss) |
+| No manual uploads to CDN | Origin receives traffic during cache misses |
+| Content automatically cached | |
+| Origin remains source of truth | |
+
+**Common examples:** Cloudflare, AWS CloudFront, Fastly, Akamai — most websites use pull CDN.
+
+#### 2. Push CDN
+
+Content is **proactively uploaded** to CDN servers before users request it.
+
+**Flow:**
+
+```text
+Origin Server → Push content → CDN
+
+Later: User → CDN (content already available)
+```
+
+**Example:** Company releases `movie.mp4` — uploaded to CDN in advance. When users request it, CDN serves immediately. **No cache miss.**
+
+| Advantages | Disadvantages |
+|------------|---------------|
+| No first-request penalty | More management effort |
+| Faster initial access | Need upload/synchronization process |
+| Good for large static files | Storage costs may be higher |
+| Predictable performance | |
+
+**When to use push CDN:** Video streaming, software downloads, large media files, frequently accessed static content.
+
+---
+
+### Pull vs push CDN
+
+| Feature | Pull CDN | Push CDN |
+|---------|----------|----------|
+| Content loading | On demand | Preloaded |
+| Cache miss | Possible | Rare |
+| Setup | Simple | More complex |
+| Origin traffic | Higher | Lower |
+| First request | Slower | Faster |
+| Management | Minimal | More effort |
+| Most common | **Yes** | No |
 
 ---
 
 
 ## 1.20 Load Balancer
 
+CDN: [1.19 CDN](#119-cdn) · Reverse proxy: [1.15 Forward & Reverse Proxy](#115-forward-reverse-proxy) · Consistent hashing deep dive: [1.21](#121-load-balancer-algorithm)
 
-### What is it?
+A **load balancer** distributes incoming requests across multiple backend servers.
 
-A **load balancer (LB)** sits in front of multiple backend servers and **distributes incoming traffic** across them. Goals: higher **throughput**, better **availability** (survive node failure), and horizontal **scalability**.
-
-Two main layers:
-- **L4 (Transport)** - routes TCP/UDP connections by IP:port; fast; no HTTP awareness
-- **L7 (Application)** - routes HTTP/gRPC by URL path, headers, host; TLS termination, cookies
-
-Examples: AWS ALB/NLB, nginx, HAProxy, F5, Envoy, Kubernetes Service + Ingress.
-
-### Why it matters
-
-No single server handles modern traffic volumes. The load balancer is the **front door** of almost every scaled system - it enables rolling deploys (drain unhealthy nodes), health-based routing, and SSL at the edge.
-
-### How it works
-
-1. Client resolves DNS to LB VIP (virtual IP) or hostname (`api.example.com`)
-2. Client connects to LB (TLS often terminates here at L7)
-3. LB selects backend using algorithm — see [1.21 Load Balancer Algorithm](#121-load-balancer-algorithm) (round-robin, least connections, consistent hash)
-4. LB forwards request (L7 proxy) or connection (L4 pass-through)
-5. **Health checks** probe backends (`GET /health` every 10s); unhealthy nodes removed from pool
-6. Optional **session affinity (sticky sessions):** same client always hits same backend via cookie or source IP hash
-
-```mermaid
-flowchart TB
-    Users --> LB[Load Balancer]
-    LB --> B1[Backend 1]
-    LB --> B2[Backend 2]
-    LB --> B3[Backend 3]
-    B1 -.->|health check fail| LB
-```
-
-**L4 vs L7 decision:**
-
-| | L4 (NLB) | L7 (ALB/nginx) |
-|---|----------|----------------|
-| Speed | Faster (no HTTP parse) | Slightly more CPU |
-| Routing | IP + port only | Path, header, host |
-| TLS | Pass-through or terminate | Terminate + route |
-| Use case | DB proxy, gaming UDP, raw TCP | REST APIs, WebSocket upgrade |
-| WebSocket | TCP pass-through works | Needs upgrade support |
-
-**High availability for the LB itself:**
-- Active-passive pair (keepalived/VRRP) with floating VIP
-- Cloud-managed LB (AWS ELB) spans AZs automatically
-- DNS failover to secondary region (higher TTL trade-off)
-
-**Deployment patterns:**
-- **Active-active:** all backends serve traffic simultaneously
-- **Active-passive:** standby waits for failover
-- **Cross-zone:** LB distributes across availability zones (survive AZ outage)
-
-### Key details
-
-- **Health check tuning:** too aggressive -> flapping; too lazy -> send traffic to dead nodes
-- **Connection draining:** on deploy, stop new connections to instance, wait for in-flight to finish
-- **X-Forwarded-For / X-Real-IP:** LB injects client IP for backend logging and rate limiting
-- **WebSocket:** requires L7 with HTTP upgrade support + often **sticky sessions** or shared pub/sub backplane
-- **gRPC:** L7 LB with HTTP/2 aware routing (path, metadata)
-- **SSL/TLS:** terminate at LB (centralized cert management) vs pass-through (end-to-end encryption)
-
-### Production rules
-
-#### Health checks — avoid flapping
-
-Flapping: backend alternates healthy ↔ unhealthy → connections churn, alerts noise, uneven load.
-
-| Parameter | Too aggressive | Too lazy | Production starting point |
-|-----------|----------------|----------|---------------------------|
-| **Interval** | CPU spike from probes; false fail on slow GC | Traffic to dying node 30+ s | 10–30 s |
-| **Timeout** | Fails during normal latency spike | Hung backends stay in pool | 2–5 s (match p99 app latency) |
-| **Healthy threshold** | Slow to mark up after deploy | — | 2–3 consecutive successes |
-| **Unhealthy threshold** | **Flapping** on single timeout | — | 2–5 consecutive failures |
-| **Path** | 200 on `/` that hits DB | — | Dedicated `/health` or `/ready` (liveness vs readiness) |
+Instead of clients directly contacting application servers:
 
 ```text
-Split probes:
-  Liveness  (/health)  → process up; LB keeps sending traffic
-  Readiness (/ready)   → can serve traffic; K8s removes from Service, LB should mirror
-
-Runbook — "LB flapping during deploy":
-1. Check if health path shares fate with DB (mark unhealthy when DB slow → cascade)
-2. Increase unhealthy threshold temporarily OR use preStop hook + drain
-3. Verify probe not hitting auth-gated path (401 → unhealthy)
-4. Align LB idle timeout > app graceful shutdown window
+Client
+   |
+Load Balancer
+   |
+--------------------
+|        |         |
+App1     App2     App3
 ```
 
-#### Connection draining (deploy runbook)
+The load balancer decides which server should handle each request.
 
-| Step | AWS ALB | nginx / generic |
-|------|---------|-----------------|
-| 1. Stop new traffic | Target deregistration delay | `weight=0` or remove from upstream |
-| 2. Wait in-flight | `deregistration_delay` (default 300 s) | `proxy_read_timeout` + worker drain |
-| 3. App shutdown | `preStop` sleep ≥ drain period | `SIGTERM` handler stops accept, finishes requests |
-| 4. Force kill | After `terminationGracePeriodSeconds` | `worker_shutdown_timeout` |
+---
+
+### Why do we need a load balancer?
+
+**Single server:**
 
 ```text
-Sizing drain window:
-  drain_seconds ≥ p99_request_duration + p99_websocket_idle_between_messages
-  Typical API: 30–60 s
-  WebSocket/chat: 300–3600 s OR force disconnect with client reconnect
+Client → Server
 ```
 
-**Rule:** `LB deregistration delay` ≥ `app graceful shutdown` ≥ longest in-flight request. If app exits first, LB RSTs active connections.
+Problems: server can become overloaded, single point of failure, limited scalability.
 
-#### Sizing
+**With load balancer:**
 
-| Resource | Rule of thumb | Notes |
-|----------|---------------|-------|
-| Connections per L7 LB | 10k–100k+ (managed ELB scales) | Watch `SurgeQueueLength`, `TargetConnectionErrorCount` |
-| Health check QPS | `N_targets × (1/interval)` | 100 targets @ 10s = 10 RPS probe load — use `/ready` lightweight |
-| New connections/sec | SYN rate limit at LB under viral spike | Pre-warm; use CDN; connection pooling from clients |
-| Cross-zone LB | +1–2 ms latency | Worth it for AZ survival; enable on ALB |
+```text
+Client → Load Balancer → App1 / App2 / App3
+```
 
-### When to use
+Benefits: scalability, high availability, fault tolerance, better resource utilization.
 
-- More than one app server instance (almost always in production)
-- Zero-downtime rolling deployments
-- Geographic or AZ redundancy
-- DDoS absorption at edge (CDN + LB)
+---
 
-### Trade-offs / Pitfalls
+### What does a load balancer do?
 
-| Pitfall | Consequence | Mitigation |
-|---------|-------------|------------|
-| Sticky sessions | Uneven load; required for in-memory state | External session store (Redis) |
-| SSL termination at LB | Plaintext LB→backend | TLS to backend or private VPC |
-| Misconfigured health checks | Healthy nodes marked bad | Dedicated `/health`; no auth on probe |
-| Single LB SPOF | Full outage if LB fails | HA pair or managed multi-AZ LB |
-| Source IP hash + carrier NAT | Hot backend; unfair distribution | Cookie or user-id affinity |
-| Health check flapping | Traffic yo-yo; alert fatigue; session drops | Raise unhealthy threshold; liveness vs readiness |
-| Drain shorter than in-flight | RST mid-request; 502 burst on deploy | `deregistration_delay` ≥ p99 request time |
-| No preStop / graceful shutdown | Pod killed while LB still sends traffic | `preStop` sleep; SIGTERM handler |
-| Readiness tied to dependency | One DB blip drains entire fleet | Readiness = local only; degrade gracefully |
+1. Distributes traffic
+2. Detects unhealthy servers
+3. Removes failed servers
+4. Supports SSL termination
+5. Supports rate limiting
+6. Supports sticky sessions
+7. Improves availability
 
-### References
+---
 
-- [Load Balancer Algorithms - comparison video](https://www.youtube.com/watch?v=1fN2UDbtGDQ)
+### Load balancer flow
+
+```text
+Client → Load Balancer → App1 / App2 / App3
+```
+
+Request arrives → load balancer selects a server → request forwarded → response returns through load balancer.
+
+---
+
+### Types of load balancers
+
+Load balancers are generally categorized by OSI layer.
+
+#### 1. Layer 4 load balancer
+
+Works at the **transport layer**. Uses IP address, TCP port, UDP port. Does **not** inspect HTTP data.
+
+**Example decision:** forward based on `192.168.1.10:8080` without looking at URL.
+
+**Examples:** AWS NLB, HAProxy (L4 mode)
+
+| Advantages | Disadvantages |
+|------------|---------------|
+| Very fast, low latency, high throughput | Cannot inspect HTTP requests; limited routing |
+
+#### 2. Layer 7 load balancer
+
+Works at the **application layer**. Can inspect URL, headers, cookies, query parameters, HTTP methods.
+
+**Example:**
+
+```text
+/api/users  → User Service
+/api/orders → Order Service
+```
+
+**Examples:** Nginx, Envoy, AWS ALB, Traefik
+
+| Advantages | Disadvantages |
+|------------|---------------|
+| Intelligent routing, API gateway style routing, SSL termination, content-based routing | More CPU intensive; slightly slower than L4 |
+
+---
+
+### Load balancing algorithms
+
+The load balancer must decide: *"Which server gets the next request?"*
+
+#### 1. Round robin
+
+Requests distributed sequentially.
+
+```text
+Request 1 → App1
+Request 2 → App2
+Request 3 → App3
+Request 4 → App1
+```
+
+Best for servers with similar capacity.
+
+#### 2. Weighted round robin
+
+Servers have weights — e.g. App1 = 5, App2 = 3, App3 = 2. App1 receives more traffic.
+
+Useful when servers have different capacities.
+
+#### 3. Least connections
+
+Request goes to server with fewest active connections.
+
+```text
+App1 = 100 connections
+App2 = 20 connections  ← next request
+App3 = 50 connections
+```
+
+Useful when request duration varies.
+
+#### 4. Weighted least connections
+
+Combination of server capacity and active connections. More intelligent than simple least connections.
+
+#### 5. Least response time
+
+Choose server responding fastest — e.g. App1 = 10ms, App2 = 30ms, App3 = 15ms → request goes to App1.
+
+Useful for latency-sensitive systems.
+
+#### 6. Random
+
+Server selected randomly. Simple but uncommon.
+
+#### 7. Hash based
+
+Server selected using hash function — e.g. `Hash(UserId)`, `Hash(SessionId)`, `Hash(ClientIP)`.
+
+Same user often goes to same server. Useful for session affinity.
+
+#### 8. IP hash
+
+Hash based on client IP — User A always goes to App1, User B always goes to App3.
+
+Useful for sticky sessions.
+
+---
+
+### Health checks
+
+Load balancer continuously checks server health.
+
+```http
+GET /health
+```
+
+| Status | Action |
+|--------|--------|
+| **Healthy** — `200 OK` | Server stays in pool |
+| **Unhealthy** — `500` error or timeout | Server removed from routing |
+
+---
+
+### Sticky sessions (session affinity)
+
+Normally: Request 1 → App1, Request 2 → App2.
+
+**Problem:** Session stored locally on App1.
+
+**Solution:** Sticky sessions — user always routed to same server.
+
+**Techniques:** Cookie based, IP hash, session hash
+
+---
+
+### SSL termination
+
+```text
+Client → HTTPS → Load Balancer → HTTP → Backend Servers
+```
+
+Load balancer performs TLS handshake, certificate management, and decryption. Backend services remain simpler. TLS details: [1.11 SSL/TLS](#111-ssltls)
+
+---
+
+### Active-active load balancing
+
+```text
+LB1 ─┐
+     ├─ Both serve traffic simultaneously
+LB2 ─┘
+```
+
+**Advantages:** Higher throughput, better utilization
+
+---
+
+### Active-passive load balancing
+
+```text
+LB1 → Active
+LB2 → Standby (takes over only when LB1 fails)
+```
+
+---
+
+### Common load balancers
+
+**Open source:** Nginx, HAProxy, Envoy, Traefik
+
+**Cloud managed:** AWS ALB, AWS NLB, Google Cloud Load Balancer, Azure Load Balancer
+
+---
+
+### System design example
+
+```text
+Users → CDN → Load Balancer → App1 / App2 / App3 → Database
+```
+
+**Flow:**
+
+1. User sends request
+2. CDN serves cached content if available
+3. Request reaches load balancer
+4. Load balancer selects backend
+5. Backend processes request
+6. Response returned
 
 ---
 
 
 ## 1.21 Load Balancer Algorithm
 
+Algorithm overview (round robin, weighted RR, least connections, IP hash, etc.): [1.20 Load Balancer](#120-load-balancer)
 
-### What is it?
+This section covers **consistent hashing** — used when adding or removing backends should not remap most existing keys (caches, sharded state).
 
-A **load balancing algorithm** is the policy a load balancer (L4 or L7) uses to pick **one backend** from a healthy pool for each incoming connection or request. The algorithm sees only what the LB tracks—connection counts, weights, hashes of IP/URL/header—not application-level "CPU busy" unless exposed via custom metrics or slow-start.
+---
 
-**Core algorithms (tier-1):**
+### Consistent hashing
 
-| Algorithm | Selection rule |
-|-----------|----------------|
-| **Round robin** | Rotate through backends in fixed order |
-| **Weighted round robin** | Round robin proportional to weight |
-| **Least connections** | Backend with fewest active connections |
-| **IP hash** | `hash(client_ip) % N` → fixed backend |
-| **Consistent hash** | Hash into ring; minimal remap when nodes added/removed |
-
-### Why it matters
-
-The wrong algorithm creates **false capacity**: three servers at 90% CPU while two sit idle, or sticky sessions break when mobile clients change IP. Algorithm choice interacts with **connection duration**, **request cost variance**, and **statefulness**.
-
-| Workload shape | Bad choice | Symptom |
-|----------------|------------|---------|
-| Long WebSocket sessions | Round robin | Even count but one server holds all heavy rooms |
-| Heterogeneous instance sizes | Plain round robin | Small nodes overwhelmed |
-| In-memory session cache | Round robin | Cache miss storm on every server |
-| Sharded cache cluster | Round robin | Same key on all nodes—no locality |
-
-**Interview point:** L4 LB sees TCP connections; L7 LB sees HTTP requests. One HTTP/2 connection with 100 streams = **1 connection** for least-conn but **100 requests** for per-request RR.
-
-### How it works
-
-**Round robin (RR)**
+Place backends and keys on a **hash ring** (0 to 2³²−1). A key walks clockwise to the first backend on the ring.
 
 ```text
-Backends: [A, B, C]
-Request 1 → A,  Request 2 → B,  Request 3 → C,  Request 4 → A, ...
+hash(user:42) → Node B
+hash(user:99) → Node C
 ```
 
-Pseudo-code:
+When a node is **added or removed**, only keys **adjacent** to that node on the ring move — not all keys (unlike `hash % N`).
 
 ```text
-index = 0
-on each request:
-    backend = pool[index % pool.size]
-    index++
-    forward(backend)
+hash % N with 3 → 4 backends:  ~75% of keys remap
+consistent hash:                ~25% of keys remap
 ```
 
-Assumes **equal capacity**, **stateless** handlers, and **uniform** request cost.
+**Virtual nodes (vnodes):** Each physical server gets many points on the ring (e.g. 100) to spread load evenly when server count is small.
 
-**Weighted round robin (WRR)**
+**Best for:** Distributed caches, sharded state, CDN origin selection
 
-```text
-Weights: A=3, B=1, C=1  →  pattern A,A,A,B,C repeating
-```
+**Avoid when:** Hot keys dominate one node (celebrity user id) — use salting or sub-shards
 
-Use when nodes differ (large vs small instances, canary with weight=1 vs prod weight=9).
-
-**Least connections**
-
-```text
-On each new connection:
-    pick backend with minimum active_connection_count
-    increment count on assign; decrement on close
-```
-
-Best when requests hold connections for **variable or long** durations (TLS, DB through LB, WebSocket, gRPC streams).
-
-```mermaid
-flowchart TB
-    Req[New TCP connection] --> LC{Least connections}
-    LC --> B1["Server A: 120 conn"]
-    LC --> B2["Server B: 45 conn  <- chosen"]
-    LC --> B3["Server C: 89 conn"]
-```
-
-**IP hash (session affinity without cookies)**
-
-```text
-backend_index = hash(client_src_ip) % number_of_backends
-```
-
-Same client IP → same backend until pool size changes (then **most** mappings reshuffle—unlike consistent hash).
-
-**Consistent hashing**
-
-Place backends and keys on a **hash ring** (0 to 2³²-1). Key (URL, user id, cookie) walks clockwise to first backend.
-
-```mermaid
-flowchart LR
-    subgraph ring [Hash ring]
-        N1[Node A]
-        N2[Node B]
-        N3[Node C]
-    end
-    K1["hash user:42"] --> N2
-    K2["hash user:99"] --> N3
-```
-
-When a node is **added/removed**, only keys **adjacent** to that node on the ring move—not all keys (unlike `hash % N`).
-
-**Worked example — RR vs least conn:**
-
-```text
-5 backends, 5 new connections/sec, each lives 60 seconds
-
-Round robin: each backend gets 1 conn/sec → 60 active each (balanced)
-
-If 1 connection is a 24h WebSocket and others are 1s HTTP:
-  RR: unlucky backend holds WebSocket + fair share of short — skewed load
-  Least conn: new shorts avoid the WebSocket-heavy backend
-```
-
-**Consistent hash + virtual nodes (vnodes):**
-
-Each physical server gets **many** points on the ring (e.g., 100) to spread load evenly when server count is small.
-
-```text
-add_server("B"):
-  only keys between A's vnode and B's vnodes move from A to B
-  (~1/N of keys move for N servers)
-```
-
-### Key details
-
-| Algorithm | Best for | Avoid when |
-|-----------|----------|------------|
-| **Round robin** | Homogeneous stateless APIs, short requests | Long connections, skewed work |
-| **Weighted RR** | Mixed instance sizes, canary traffic split | Need dynamic load awareness |
-| **Least connections** | WebSocket, gRPC streams, LDAP, DB pool LB | Connection counting expensive at huge scale |
-| **IP hash** | Simple stickiness without app cookies | Mobile/carrier NAT (many users → one IP) |
-| **Consistent hash** | Distributed caches, sharded state | Hot keys dominate one node |
-| **Random** | Surprisingly even at scale; zero state | Need stickiness |
-| **Least response time** | Heterogeneous latency (LB adds RTT probe) | Noisy measurements |
-
-**Health checks interact with algorithms:** unhealthy backends removed from pool → connections redistributed → possible **thundering herd** on remaining nodes.
-
-**Maglev hashing (Google):** Deterministic permutation table—fast lookup, used in some L4/L7 proxies.
-
-**Interview point:** Consistent hash solves **cache locality** when adding/removing nodes; IP hash is simpler but remaps almost everything when N changes.
-
-### Production rules
-
-#### NAT, mobile, and affinity pitfalls
-
-| Client type | IP stability | Safe affinity key | Risk |
-|-------------|--------------|-------------------|------|
-| **Desktop broadband** | Stable hours–days | Source IP hash OK | CGNAT still collides |
-| **Mobile 4G/5G** | Changes on tower handoff | **Cookie / user-id hash** | IP hash → mid-session backend switch |
-| **Corporate NAT** | Thousands share one IP | Never IP hash for load spread | One backend gets NAT avalanche |
-| **IPv6 privacy addresses** | Rotates (RFC 4941) | Cookie or auth token | IP hash useless |
-| **WebSocket long-lived** | IP may change on reconnect | Sticky cookie + pub/sub backplane | See [1.22](#122-sse-polling--websockets) |
-
-```text
-Decision tree:
-  Stateless REST API        → round robin or least conn (no stickiness)
-  In-memory session         → externalize session OR cookie stickiness
-  Public mobile API         → NEVER IP hash for distribution
-  Sharded cache             → consistent hash on tenant_id / cache key
-  Carrier NAT office egress → WRR or least conn; not IP hash
-```
-
-#### Sizing and tuning
-
-| Workload | Algorithm | Weight / conn limit hint |
-|----------|-----------|---------------------------|
-| Homogeneous K8s pods (8 vCPU each) | Round robin | Equal weights |
-| Mixed ASG (4 vCPU + 16 vCPU) | Weighted RR | Weight ∝ CPU or measured RPS |
-| WebSocket fanout | Least connections | 1 conn = 1 user; cap ~10k–50k conn/instance |
-| Memcached via LB | Consistent hash + vnodes | 100–200 vnodes per physical node |
-| Canary 5% | Weighted RR | new=1, stable=19 |
-
-**HTTP/2 note:** One TCP connection multiplexes many requests → **least connections** at L4 understates load; prefer L7 per-request RR or enable connection coalescing awareness.
-
-### When to use
-
-- **Round robin:** Default for stateless REST behind homogeneous pods (Kubernetes Service default).
-- **Weighted RR:** Canary deploys (90/10), mixed instance types in ASG.
-- **Least connections:** API gateway to WebSocket servers, TCP proxy to legacy app servers.
-- **IP hash / consistent hash:** Memcached/Redis client-less clustering through LB, sticky sessions without `Set-Cookie`.
-- **Consistent hash on URL:** CDN origin selection, API sharding gateway (`user_id` in path).
-
-### Trade-offs / Pitfalls
-
-| Pitfall | Why it hurts | Mitigation |
-|---------|--------------|------------|
-| RR ignores live load | Slow server gets equal share | Least conn or adaptive LB |
-| IP hash + mobile users | IP changes mid-session → new backend | App session cookie or user-id hash |
-| IP hash + carrier NAT | Thousands of users share one IP → one backend hot | Don't use IP hash for public mobile APIs |
-| Consistent hash hot keys | Celebrity user id overloads one shard | Salting, sub-shards, application-level split |
-| Least conn bookkeeping | CPU/memory per connection table | Sampling approximations at extreme scale |
-| Wrong weights in WRR | Small node starved or large node overloaded | Measure CPU/RPS; tune weights |
-| HTTP/2 multiplexing + RR | One TCP carries many requests to one pod | L7 per-request balancing or more pods |
-| Removing backend without drain | In-flight requests killed | Connection draining, graceful shutdown |
-
-**Comparison — hash % N vs consistent hash (3 → 4 backends):**
-
-```text
-hash % N:     ~75% of keys remap (almost full reshuffle)
-consistent:   ~25% of keys remap (only new node's arc)
-```
-
-### References
-
-- [Load Balancer Algorithms — comparison video](https://www.youtube.com/watch?v=1fN2UDbtGDQ)
+**vs IP hash:** IP hash is simpler but remaps almost everything when pool size changes; consistent hash minimizes disruption on scale-out.
 
 ---
 
 
 ## 1.22 SSE, Polling & WebSockets
 
+Load balancer + sticky sessions: [1.20 Load Balancer](#120-load-balancer) · HTTP basics: [1.10 HTTP/HTTPS](#110-httphttps)
 
-### What is it?
+---
 
-Three families of techniques for **real-time or near-real-time** communication between client and server:
+### The problem
 
-| Pattern | Direction | Connection |
-|---------|-----------|------------|
-| **Short polling** | Client pulls | Repeated HTTP requests every N seconds |
-| **Long polling** | Client pulls (held) | HTTP request stays open until event or timeout |
-| **SSE (Server-Sent Events)** | Server pushes | One persistent HTTP stream (`text/event-stream`) |
-| **WebSocket** | Bidirectional | Single TCP connection upgraded from HTTP; full-duplex framed messages |
+Suppose we have WhatsApp, live cricket scores, order tracking, stock market dashboards, and live monitoring dashboards. Data changes continuously.
 
-**WebSocket** is a protocol (`ws://` or `wss://`) enabling **bidirectional, full-duplex** communication over a **persistent** connection with minimal per-message overhead after the initial handshake.
+**Question:** How does the client know that new data is available?
 
-### Why it matters
+**Possible solutions:**
 
-Choosing the wrong pattern wastes bandwidth (polling empty responses), ties up threads (sync long polling), or over-engineers (WebSocket when SSE suffices). Live chat, notifications, collaborative editing, stock tickers, and multiplayer games all depend on picking the right mechanism.
+1. Short polling
+2. Long polling
+3. Server-Sent Events (SSE)
+4. WebSockets
 
-**WebSocket use cases:**
-- **Live chat** - customer support, livestream chat, team messaging
-- **Broadcast** - sports scores, traffic, stock quotes, news alerts (often combined with pub/sub)
-- **Data sync** - DB change pushed to all connected clients (polls, live dashboards)
-- **Multiplayer collaboration** - cursors, presence, shared documents (Figma-style)
-- **In-app notifications** - event-driven alerts
-- **Live location** - rideshare, fleet tracking, delivery ETA
+---
 
-### How it works
+### 1. Short polling
 
-**a) Short polling**
+#### What is it?
 
-1. Client calls API every 1-2 seconds (e.g. `GET /messages?since=...`)
-2. Server returns current state; often **empty** when nothing changed
-3. High HTTP overhead; poor for true real-time
+Short polling means the client repeatedly sends requests to the server at fixed intervals asking: *"Do you have any new data?"*
 
-**b) Long polling**
-
-1. Client sends HTTP request; server **holds** it until data arrives or timeout
-2. Client immediately opens new long poll after response
-3. Challenges: message ordering with multiple parallel connections; still reconnects after each timeout
-
-**c) Server-Sent Events (SSE)**
-
-1. Client: `GET /events` with `Accept: text/event-stream`
-2. Server keeps connection open; pushes `data: {...}\n\n` lines
-3. Browser `EventSource` API auto-reconnects on disconnect
-4. **One-way only** (server -> client); client still uses normal HTTP for commands
-
-**d) WebSocket**
-
-1. **TCP connection** established (same as HTTP)
-2. **HTTP upgrade handshake:**
-   - Client: `Upgrade: websocket`, `Connection: Upgrade`, `Sec-WebSocket-Key`
-   - Server: `101 Switching Protocols`, `Sec-WebSocket-Accept`
-3. Subprotocol negotiated (e.g. `json`, `mqtt`)
-4. Connection switches to **WebSocket framing** - async bidirectional messages
-5. Uses `ws://` (plain) or **`wss://`** (TLS) - always use `wss://` in production
-
-```mermaid
-sequenceDiagram
-    participant Client
-    participant Server
-    Client->>Server: HTTP GET + Upgrade: websocket
-    Server-->>Client: 101 Switching Protocols
-    Note over Client,Server: Persistent WebSocket connection
-    Client->>Server: { type: "subscribe", channel: "chat" }
-    Server->>Client: { type: "message", text: "hello" }
-    Client->>Server: { type: "message", text: "hi" }
-```
-
-**Comparison at a glance:**
-
-| | Short poll | Long poll | SSE | WebSocket |
-|---|------------|-----------|-----|-----------|
-| Direction | Pull | Pull | Server push | Bidirectional |
-| Overhead | Very high | Medium | Low | Lowest after handshake |
-| Real-time | Poor | Better | Good | Best |
-| Browser API | fetch | fetch | EventSource | WebSocket |
-| Proxy friendly | Yes | Mostly | Yes | Needs L7 proxy support |
-
-**Scaling WebSockets across servers:**
-
-- Connections are **stateful** - server holds socket per client
-- **Sticky sessions** (session affinity) route same client to same instance, OR
-- **Pub/sub backplane** (Redis, Kafka) so any server can push to clients on other nodes
-- Load balancer must support **HTTP upgrade** (L7 ALB/nginx, not naive L4 TCP drain)
-
-**Popular libraries:** Socket.IO (reconnect + fallbacks), SignalR (.NET), SockJS (fallback transports), `ws` (Node.js minimal)
-
-### Key details
-
-- **When NOT to use WebSocket:** CRUD-heavy apps with no realtime need -> HTTP is simpler; audio/video streaming -> WebRTC; server-only push of text -> **SSE is simpler and scales easier**
-- **Drawbacks of WebSocket:** stateful connections consume memory; harder to scale than stateless HTTP; some corporate proxies/firewalls block WS; no built-in reconnect spec (app must implement); presence/detection of disconnects is imperfect
-- **Security:** use `wss://`; validate `Origin` header; authenticate during handshake (JWT in query or cookie); guard against XSS injecting into WS messages
-- **SSE advantages:** automatic reconnect; works over standard HTTP/2; simpler ops than WS cluster
-- **HTTP/1.1 connection limit** (~6 per domain) matters less once upgraded to single WS
-
-### Production rules
-
-#### Sticky sessions vs shared state
-
-| Approach | How | Pros | Cons |
-|----------|-----|------|------|
-| **LB cookie stickiness** | `AWSALB` / `SERVERID` cookie | Simple; no app change | Uneven load; lost on cookie clear; deploy must drain |
-| **IP hash** | L4/L7 hash of source IP | No cookie | NAT/mobile breaks; hot spots |
-| **External session store** | Redis/DB for session | Even LB distribution; survives deploy | Extra infra; latency |
-| **Pub/sub backplane** | Redis Pub/Sub, Kafka, NATS | Any node can push to any client | Complexity; backplane SPOF without cluster |
+#### Flow
 
 ```text
-Prefer: external session store + round robin (stateless nodes)
-Use sticky only when: legacy app with in-memory state you cannot refactor yet
-Always pair sticky with: connection drain on deploy (1.20)
+Client → GET /updates → Server → "No updates"
+(wait 5 seconds)
+Client → GET /updates → Server → "No updates"
+(wait 5 seconds)
+Client → GET /updates → Server → "New data"
 ```
 
-#### Pub/sub backplane runbook
+#### Timeline example
+
+Polling interval = 5 seconds:
 
 ```text
-Architecture:
-  Client WS → Server A (subscribes user:123 on Redis channel)
-  Event on Server B → PUBLISH user:123 → Server A → push to client socket
-
-Runbook — "messages not delivered cross-server":
-1. Verify all app instances connected to same Redis cluster (not localhost)
-2. Check channel naming matches (tenant prefix, user id)
-3. Monitor Redis: connected_clients, pubsub_channels, memory
-4. On Redis failover: clients must reconnect; expect brief message gap
-5. Scale: Redis Pub/Sub does not persist — missed messages if subscriber offline
-   → for guaranteed delivery use Kafka + per-user consumer or SSE with offset
+0s  → Request
+5s  → Request
+10s → Request
+15s → Request
+20s → Request
 ```
 
-#### Sizing
+Even if nothing changes.
 
-| Resource | Rule of thumb | Notes |
-|----------|---------------|-------|
-| WS connections per instance | 10k–65k (depends on RAM, msg size) | ~10–50 KB per idle connection |
-| Heartbeat interval | 30 s ping/pong | Detect dead peers; keep NAT binding alive |
-| Redis Pub/Sub fanout | O(subscribers) per message | Hot channel (1M subs) → shard channels or edge broadcast |
-| Reconnect storm | Plan 2× normal connect rate after outage | Jittered exponential backoff on client |
-| LB idle timeout | > app heartbeat interval | NAT UDP/TCP timeout 30–120 s — align WS ping |
+#### Problem
 
-### When to use
+Suppose new data arrives at **7 seconds**. Client receives it at **10 seconds** — **delay = 3 seconds**.
 
-| Need | Choose |
-|------|--------|
-| Updates every 30+ seconds, simple app | Short polling |
-| Near-real-time, server push only (scores, logs, notifications) | **SSE** |
-| Chat, gaming, collaboration, bidirectional sync | **WebSocket** |
-| Firewall/proxy uncertainty | SSE or long polling first; SockIO fallbacks |
+| Advantages | Disadvantages |
+|------------|---------------|
+| Very simple | Huge number of unnecessary requests |
+| Easy implementation | Wastes CPU and bandwidth |
+| Works with normal HTTP | Increased server load; not truly real-time |
 
-### Trade-offs / Pitfalls
+**When to use:** Admin dashboards, rarely changing data, small applications
 
-| Pitfall | Consequence | Mitigation |
-|---------|-------------|------------|
-| Short polling | Empty responses waste bandwidth | SSE or WebSocket when updates are frequent |
-| Long polling | Ties up worker threads if sync | Async server (Node, Netty) |
-| SSE one-way | Client commands need separate channel | HTTP POST or companion API |
-| WebSocket multi-server | Messages lost without shared state | Sticky sessions or pub/sub backplane |
-| Connection storms on reconnect | LB/origin overload after outage | Jittered backoff; rate limit handshakes |
-| Default to WebSocket everywhere | Unnecessary ops complexity | SSE for server-push-only feeds |
-| Sticky without drain | Deploy kills active WS; mass disconnect | Drain + client reconnect with backoff |
-| Pub/sub without persistence | Gap during subscriber reconnect | Kafka or client-side catch-up API |
-| Redis backplane SPOF | All cross-node push fails | Redis Cluster / Sentinel |
-| LB L4 only for WS | Upgrade headers stripped | L7 ALB/nginx with `proxy_http_version 1.1` |
+---
 
-### References
+### 2. Long polling
 
-- [WebSockets - Hareram Singh (use cases, handshake, polling vs SSE comparison)](https://medium.com/@hareramcse/websockets-74244f33bff4)
-- [SSE, Polling, and WebSockets - video](https://www.youtube.com/watch?v=WS352jTTkPU)
+#### What is it?
+
+Long polling tries to solve the wastefulness of short polling.
+
+Instead of responding immediately, the server keeps the request open until **new data becomes available** OR a **timeout** occurs.
+
+#### Flow
+
+```text
+Client → GET /updates → Server (no response yet — connection remains open)
+
+New event arrives → Server → Response → Client
+
+Client immediately creates another request.
+```
+
+#### Timeline example
+
+```text
+0s  → Client sends request; server waits
+20s → New message arrives; server responds immediately
+21s → Client creates new long-poll request
+```
+
+**Benefits over short polling:** No repeated requests every few seconds — only responds when data exists.
+
+| Advantages | Disadvantages |
+|------------|---------------|
+| Fewer requests | Still creates new request after every response |
+| Better than polling | Many open connections |
+| Near real-time updates | More server resources |
+| Works over standard HTTP | Complex timeout handling |
+
+**When to use:** Legacy systems, browsers without SSE/WebSocket support, moderate real-time requirements
+
+---
+
+### 3. Server-Sent Events (SSE)
+
+#### What is it?
+
+SSE allows a server to continuously push updates to the client through a **single long-lived HTTP connection**.
+
+Client sends one request. Server keeps connection open forever.
+
+#### Flow
+
+```text
+Client → GET /events → Server (connection stays open)
+
+Server pushes: Event 1 → Event 2 → Event 3 → Event 4
+
+No additional requests needed.
+```
+
+#### Important
+
+**Communication direction:** Server → Client **only**
+
+Client can receive updates. Client **cannot** push messages through SSE. For sending data, client must still use normal HTTP APIs.
+
+#### Real example
+
+**Live log viewer** — server generates Log 1, Log 2, Log 3, Log 4; browser instantly receives updates.
+
+#### Spring Boot example
+
+Spring Boot commonly uses **`SseEmitter`** to stream events to the UI.
+
+| Advantages | Disadvantages |
+|------------|---------------|
+| Real-time updates | One-way communication |
+| Simple implementation | Not suitable for chat systems |
+| Uses HTTP | Each client keeps one open connection |
+| Automatic reconnection | |
+| Lightweight | |
+
+**When to use:** Notifications, live dashboards, monitoring systems, order tracking, stock prices, distributed tracing dashboards
+
+---
+
+### 4. WebSockets
+
+#### What is it?
+
+WebSocket creates a **persistent bidirectional** connection between client and server. Both sides can send data at any time.
+
+#### Flow
+
+```text
+Client ↔ WebSocket ↔ Server
+```
+
+#### How connection is created
+
+**Step 1** — Client sends HTTP request:
+
+```http
+GET /chat
+Upgrade: websocket
+```
+
+**Step 2** — Server responds:
+
+```http
+101 Switching Protocols
+```
+
+**Step 3** — Connection upgrades from HTTP to WebSocket. Connection remains open.
+
+#### Real example
+
+**WhatsApp:**
+
+```text
+User A ↔ WebSocket ↔ Server ↔ WebSocket ↔ User B
+```
+
+Messages delivered instantly.
+
+| Advantages | Disadvantages |
+|------------|---------------|
+| True real-time communication | More complex |
+| Bidirectional | Stateful connections |
+| Very low latency | Harder to scale |
+| Minimal protocol overhead | Higher memory usage |
+| Efficient for frequent updates | |
+
+**When to use:** Chat applications, multiplayer games, collaborative editors, trading platforms, video call signaling
+
+---
+
+### Evolution of real-time communication
+
+| Pattern | Behavior |
+|---------|----------|
+| **Short polling** | Client repeatedly asks: *"Any updates?"* |
+| **Long polling** | Client asks once; server waits until data exists |
+| **SSE** | Client asks once; server continuously pushes updates |
+| **WebSocket** | Both sides continuously communicate |
+
+---
+
+### Connection comparison
+
+**Short polling:**
+
+```text
+Request → Response → Close
+Request → Response → Close
+Request → Response → Close
+```
+
+**Long polling:**
+
+```text
+Request → Wait → Response → Close
+Request → Wait → Response → Close
+```
+
+**SSE:**
+
+```text
+Request → Open connection → Event → Event → Event → Event
+```
+
+**WebSocket:**
+
+```text
+Open connection
+Client ↔ Server
+Client ↔ Server
+Client ↔ Server
+```
+
+---
+
+### System design examples
+
+| Use case | Best choice | Reason |
+|----------|-------------|--------|
+| Live order tracking | **SSE** | Server pushes status changes |
+| Distributed tracing dashboard | **SSE** | Server pushes new trace events |
+| WhatsApp | **WebSocket** | Both users send and receive messages |
+| Stock market dashboard | **SSE** | Mostly server-to-client updates |
+| Admin dashboard refresh every minute | **Short polling** | Simple and sufficient |
 
 ---
 
