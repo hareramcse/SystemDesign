@@ -158,6 +158,7 @@ flowchart LR
 - IPv4 exhaustion mitigated by NAT but complicates P2P and logging
 - IPv6 adoption still incomplete in some corporate networks
 - "TCP/IP" colloquially means entire internet stack including app protocols
+- TLS/HTTPS detail lives in [1.11 SSL/TLS](#111-ssltls) — TCP/IP section covers layers; TLS is application-adjacent security on top of TCP
 
 ### References
 
@@ -955,13 +956,13 @@ If-None-Match: "abc123"
 → 304 Not Modified (no body — browser uses cache)
 ```
 
-**HTTPS / TLS overview (what happens in the handshake):**
+**HTTPS / TLS overview** — full walkthrough (CA certificate issuance, handshake steps, session key derivation, who uses which key): see **[1.11 SSL/TLS](#111-ssltls)**.
 
 | Phase | Purpose |
 |-------|---------|
 | ClientHello | Client proposes TLS version, cipher suites, SNI (hostname) |
 | ServerHello + Certificate | Server picks params; sends cert chain for `api.example.com` |
-| Key exchange | ECDHE → shared secret (forward secrecy) |
+| Key exchange | ECDHE → shared secret (forward secrecy); session key never sent on wire |
 | Finished | Both sides derive symmetric keys; HTTP now encrypted |
 
 TLS 1.3 completes in **1 RTT** (vs 2 for TLS 1.2). **Session resumption** (tickets/PSK) can reduce repeat connection cost to **0 RTT** (with replay trade-offs).
@@ -1033,36 +1034,212 @@ DNS + TCP + TLS + HTTP request/response
 
 ### What is it?
 
-**TLS (Transport Layer Security)**, successor to SSL, provides **encryption**, **integrity**, and **server authentication** (optional client auth) for TCP connections. HTTPS = HTTP + TLS.
+**TLS (Transport Layer Security)**, successor to SSL, provides **encryption**, **integrity**, and **server authentication** (optional client auth) for TCP connections. **HTTPS = HTTP + TLS**.
+
+TLS sits **above TCP** in the stack — TCP must be established first (see [1.3 TCP Handshake](#13-tcp-handshake)), then TLS runs its own handshake before any HTTP bytes flow.
+
+```mermaid
+flowchart TB
+    HTTP[HTTP request/response] --> TLS[TLS encrypt/decrypt]
+    TLS --> TCP[TCP reliable transport]
+    TCP --> IP[IP routing]
+```
 
 ### Why it matters
 
-TLS protects credentials, PII, and session tokens from interception and tampering. Certificate validation prevents man-in-the-middle attacks. TLS handshake cost affects connection latency.
+TLS protects credentials, PII, and session tokens from interception and tampering. Certificate validation prevents man-in-the-middle attacks. TLS handshake cost affects connection latency (often +1–2 RTTs on top of TCP).
 
-### How it works
+**Interview framing:** "HTTPS is not just encryption — the client must **trust** the server's identity via a CA-signed certificate, then both sides derive a **session key** that never crosses the wire."
 
-1. **ClientHello:** supported cipher suites, TLS versions, SNI (server name).
-2. **ServerHello:** chosen cipher, certificate chain, key exchange params.
-3. Key exchange establishes shared **session keys** (ECDHE forward secrecy).
-4. **Finished** messages verify handshake integrity.
-5. Application data encrypted with symmetric cipher (AES-GCM, ChaCha20).
+---
+
+### Part 1: Certificate creation (one-time setup)
+
+Before any client connects, the server obtains a **digital certificate** from a **Certificate Authority (CA)**.
+
+**Actors:** Browser/client · Server (e.g. `google.com`) · Certificate Authority (Let's Encrypt, DigiCert, etc.)
+
+**Step 1 — Server generates a key pair**
+
+| Key | Where it lives | Purpose |
+|-----|----------------|---------|
+| **Server public key** | Embedded in certificate; shared with world | Encrypt/verify; identity binding |
+| **Server private key** | **Only on server** — never sent | Prove ownership of certificate |
+
+**Step 2 — Server requests certificate**
+
+Server sends to CA:
+
+- Domain name (e.g. `api.example.com`)
+- Server public key (in a CSR — Certificate Signing Request)
+
+**Step 3 — CA issues certificate**
+
+CA verifies domain ownership (HTTP challenge, DNS TXT, etc.) and issues a certificate containing:
+
+```text
+Certificate contents:
+  - Domain name
+  - Server public key
+  - CA signature (proves CA vouches for this binding)
+  - Validity dates, serial number
+```
+
+**Important:** The certificate is **not encrypted** — it is **signed**. Think of it as:
+
+```text
+Identity card  +  trusted authority stamp
+```
+
+The CA signature means: *"This public key belongs to this domain."* Anyone can read the certificate; only the CA could have produced a valid signature (using the **CA private key**).
+
+```mermaid
+sequenceDiagram
+    participant Server
+    participant CA
+    Server->>Server: Generate key pair
+    Server->>CA: CSR (domain + public key)
+    CA->>CA: Verify domain ownership
+    CA->>Server: Signed certificate
+```
+
+---
+
+### Part 2: TLS handshake
+
+**Step 4 — Client connects: ClientHello**
+
+Client sends:
+
+- Supported TLS versions and cipher suites
+- **Client random** (nonce)
+- **SNI** (Server Name Indication) — hostname it wants (`google.com`)
+
+**Step 5 — Server responds: ServerHello**
+
+Server sends:
+
+- Chosen TLS version and cipher suite
+- **Server random** (nonce)
+- **Certificate** (chain: leaf → intermediate → root)
+
+**Step 6 — Client verifies certificate**
+
+The client OS/browser ships a **trust store** of root CA public keys.
+
+Client checks:
+
+| Check | Failure result |
+|-------|----------------|
+| Certificate not expired | Reject connection |
+| Domain name matches (CN/SAN vs SNI) | Certificate name mismatch warning |
+| Signature valid (verify with CA public key) | Untrusted certificate |
+| Chain builds to trusted root | Unknown issuer |
+
+If verification succeeds → client **trusts the server's public key** from the certificate.
+
+---
+
+### Part 3: Server authentication
+
+The client now has the server's **public key** from a trusted certificate — but still must confirm it is talking to the **holder of the matching private key**, not someone replaying a stolen cert.
+
+The server proves ownership by using its **private key** — typically signing the handshake transcript in a **CertificateVerify** message (TLS 1.3). Only the real server could produce that signature.
+
+```text
+Client knows:  server public key (from cert)
+Server proves: "I own the private key" (cryptographic proof)
+```
+
+This blocks passive eavesdropping and many MITM attacks (attacker cannot forge the private-key proof).
+
+---
+
+### Part 4: Session key creation
+
+**Goal:** Both sides derive the same **symmetric session key** for bulk encryption — without ever sending that key over the network.
+
+**Inputs (simplified):**
+
+| Input | Source |
+|-------|--------|
+| Client random | ClientHello |
+| Server random | ServerHello |
+| Shared secret | **Key exchange** (e.g. ECDHE — Elliptic Curve Diffie-Hellman) |
+
+Both client and server run the same **key derivation function (KDF)** locally and arrive at identical **session keys** (separate keys for encrypt/decrypt in practice).
+
+```text
+Session key is NEVER transmitted over the network.
+Both sides compute it independently → same result.
+```
+
+**Why random values matter:**
+
+```text
+Connection 1 → Session Key A
+Connection 2 → Session Key B
+Connection 3 → Session Key C
+```
+
+Each connection gets unique keys — compromising one session does not decrypt past sessions (**forward secrecy** when ECDHE is used).
+
+---
+
+### Part 5: Encrypted communication
+
+Both sides now share the **session key**.
+
+1. Client encrypts `GET /users` → sends ciphertext over TCP.
+2. Server decrypts with session key → processes request.
+3. Server encrypts response → client decrypts with same key.
+
+All HTTPS traffic after the handshake uses **symmetric encryption** (AES-GCM, ChaCha20-Poly1305) — fast for bulk data. Asymmetric crypto (public/private keys) is used only during the handshake.
 
 ```mermaid
 sequenceDiagram
     participant Client
     participant Server
-    Client->>Server: ClientHello
-    Server->>Client: ServerHello + Certificate
-    Client->>Server: Key exchange
-    Note over Client,Server: Encrypted application data
+    Client->>Server: ClientHello (+ client random)
+    Server->>Client: ServerHello + Certificate (+ server random)
+    Client->>Client: Verify certificate chain
+    Client->>Server: Key exchange + CertificateVerify proof
+    Note over Client,Server: Both derive session key (never on wire)
+    Client->>Server: Encrypted HTTP request
+    Server->>Client: Encrypted HTTP response
 ```
+
+---
+
+### Who uses which key?
+
+| Key | Used by | Purpose |
+|-----|---------|---------|
+| **CA private key** | CA only | Sign certificates |
+| **CA public key** | Client (trust store) | Verify certificate signature |
+| **Server public key** | Client | Know server's identity; key exchange |
+| **Server private key** | Server only | Prove cert ownership; decrypt handshake material |
+| **Session key** | Client **and** server | Encrypt/decrypt all HTTPS application data |
+
+---
+
+### How it works (quick reference)
+
+1. **ClientHello** — TLS versions, ciphers, client random, SNI.
+2. **ServerHello** — chosen params, server random, certificate chain.
+3. **Certificate verify** — client validates chain; server proves private key.
+4. **Key exchange** — ECDHE shared secret + randoms → session keys via KDF.
+5. **Finished** — both sides confirm handshake integrity.
+6. **Application data** — HTTP encrypted with session key.
 
 ### Key details
 
-- **TLS 1.3:** 1-RTT handshake (0-RTT resumption with replay risk)
-- **Certificate chain:** leaf -> intermediate -> root CA in trust store
-- **mTLS:** mutual TLS for service-to-service auth
-- **Termination:** LB decrypts TLS, forwards plain HTTP to backend (or re-encrypts)
+- **TLS 1.3:** 1-RTT full handshake; **0-RTT resumption** with replay risk
+- **TLS 1.2:** often 2-RTT full handshake; still common on legacy systems
+- **Certificate chain:** leaf → intermediate → root CA in trust store
+- **mTLS:** client also presents a certificate — mutual authentication for service mesh / internal APIs
+- **Termination:** LB decrypts TLS at edge, forwards HTTP to backend (or re-encrypts with backend TLS)
+- **Session resumption:** TLS tickets / PSK skip full handshake on repeat connections
 
 ### When to use
 
@@ -1072,10 +1249,21 @@ sequenceDiagram
 
 ### Trade-offs / Pitfalls
 
-- Certificate expiry outages (automate with Let's Encrypt)
+- Certificate expiry outages (automate with Let's Encrypt / ACME)
+- TLS termination at LB — traffic LB→app may be plaintext unless re-encrypted
 - TLS inspection proxies break end-to-end trust
 - 0-RTT data vulnerable to replay attacks
-- CPU cost of encryption - hardware AES-NI mitigates
+- CPU cost of encryption — hardware AES-NI mitigates
+- Confusing **certificate** (public, signed identity) with **encrypted channel** (session key does bulk encryption)
+
+### Final summary
+
+1. Server obtains a **CA-signed certificate** binding domain → public key.
+2. Client **verifies** the certificate using trusted CA public keys.
+3. Client **trusts** the server's public key from the certificate.
+4. Server **proves** it owns the matching private key.
+5. Client and server **independently derive** the same session key (never sent on the network).
+6. All HTTPS traffic is **encrypted** with the session key.
 
 ### References
 
