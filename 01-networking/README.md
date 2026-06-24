@@ -620,236 +620,894 @@ See also: [1.1 OSI Model](#11-osi-model)
 
 ## 1.3 TCP Handshake
 
+Before a client and server can exchange any data, they must establish a TCP connection.
 
-### What is it?
+The **TCP three-way handshake** is the process used to:
 
-The **TCP three-way handshake** is the connection-establishment ritual that must complete before any application bytes flow. It exchanges three segments in order: **SYN → SYN-ACK → ACK**. Each side announces an **initial sequence number (ISN)**—a 32-bit counter used to order bytes, detect duplicates, and acknowledge receipt.
+1. Verify both sides are reachable
+2. Exchange Initial Sequence Numbers (ISN)
+3. Negotiate TCP options and capabilities
+4. Allocate resources for the connection
 
-Beyond sequence numbers, the handshake negotiates **TCP options** embedded in the SYN segments: maximum segment size (MSS), window scaling, selective ACK (SACK), timestamps, and (optionally) TCP Fast Open cookies. Until both sides agree the connection is open, the socket state machine remains in `SYN_SENT` / `SYN_RECEIVED`; only after the final ACK does it reach **ESTABLISHED**.
+Only after the handshake completes can application data flow.
 
-**Worked example (sequence numbers):**
+---
 
-| Step | Segment | Client ISN | Server ISN | Meaning |
-|------|---------|------------|------------|---------|
-| 1 | Client → Server: SYN, seq=1000 | 1000 | — | "I want to connect; my first byte will be seq 1000." |
-| 2 | Server → Client: SYN-ACK, seq=5000, ack=1001 | 1000 | 5000 | "Accepted; my ISN is 5000; I expect your next byte at 1001." |
-| 3 | Client → Server: ACK, ack=5001 | 1000 | 5000 | "I expect your next byte at 5001." Connection open. |
+### Why do we need a handshake?
 
-Teardown is a separate **four-way FIN/ACK** dance (or an abrupt **RST**). Handshake cost is paid once per new TCP connection unless connections are reused.
-
-### Why it matters
-
-Every **new** TCP connection pays at least **one full round-trip time (RTT)** before the server can accept application data—and often more:
-
-| Stack layer | Typical extra RTTs (cold connection) |
-|-------------|--------------------------------------|
-| TCP 3-way handshake | 1 RTT |
-| TLS 1.2 (full handshake) | +2 RTTs |
-| TLS 1.3 (1-RTT mode) | +1 RTT |
-| **Total before first HTTP byte** | **2–4 RTTs** |
-
-On a 100 ms cross-region link, 3 RTTs = **300 ms** of pure wait before your API handler runs. That is why **HTTP keep-alive**, **connection pooling**, and **HTTP/2 multiplexing** exist: they amortize handshake + TLS cost across many requests.
-
-**Interview point:** "Why is my API slow on the first request but fast after?" → cold TCP + TLS setup. "Why do microservices behind LBs see connection storms?" → each pod may open thousands of short-lived TCP connections per second.
-
-### How it works
-
-**Connection establishment (3-way):**
-
-1. **Client → SYN:** `SYN=1`, `seq=client_ISN`, optional TCP options (MSS, window scale, SACK, timestamps).
-2. **Server → SYN-ACK:** `SYN=1`, `ACK=1`, `seq=server_ISN`, `ack=client_ISN+1`. Server moves to `SYN_RECEIVED`; may queue socket in **accept backlog** if `listen()` backlog is configured.
-3. **Client → ACK:** `ACK=1`, `ack=server_ISN+1`. Both sides enter **ESTABLISHED**. Application `send()`/`write()` may now place data in the send buffer.
-
-**Connection teardown (4-way, graceful):**
-
-1. Side A sends **FIN** (no more data from A).
-2. Side B **ACK**s the FIN (B may still send data—half-close).
-3. Side B sends **FIN** when done.
-4. Side A **ACK**s; A enters **TIME_WAIT** (typically 2× MSL ≈ 60–120 s on Linux).
-
-```mermaid
-sequenceDiagram
-    participant C as Client
-    participant S as Server
-    Note over C: CLOSED -> SYN_SENT
-    C->>S: SYN seq=1000
-    Note over S: LISTEN -> SYN_RECEIVED
-    S->>C: SYN-ACK seq=5000 ack=1001
-    Note over C: SYN_SENT -> ESTABLISHED
-    C->>S: ACK ack=5001
-    Note over S: SYN_RECEIVED -> ESTABLISHED
-    Note over C,S: Application data flows both ways
-    C->>S: FIN
-    S->>C: ACK
-    S->>C: FIN
-    C->>S: ACK
-    Note over C: TIME_WAIT (2×MSL)
-```
-
-**TCP state machine (simplified):**
+Imagine making a phone call.
 
 ```text
-CLOSED --[active open, send SYN]--> SYN_SENT --[recv SYN-ACK, send ACK]--> ESTABLISHED
-LISTEN --[recv SYN, send SYN-ACK]--> SYN_RECEIVED --[recv ACK]--> ESTABLISHED
-ESTABLISHED --[send FIN]--> FIN_WAIT_1 --> ... --> TIME_WAIT --> CLOSED
+You:     "Hello, can you hear me?"
+Friend:  "Yes, I can hear you."
+You:     "Great, let's talk."
 ```
 
-**Half-open connections:** If the client sends SYN but never completes the handshake (network drop, attacker), the server holds `SYN_RECEIVED` state until **SYN backlog timeout** (often 60–180 s). `netstat` shows many `SYN_RECV` entries under SYN flood.
+Similarly, TCP first verifies that both client and server can communicate before sending actual data.
 
-### Key details
+---
 
-**SYN flood attack**
+### Step 1 — SYN
 
-Attacker floods SYN packets with **spoofed source IPs**. Server allocates connection table entries and sends SYN-ACKs to victims that never reply. The **accept queue** and **half-open connection table** fill; legitimate clients get dropped or time out.
-
-**Mitigations:**
-
-| Technique | How it works |
-|-----------|--------------|
-| **SYN cookies** | Server encodes connection state in the SYN-ACK sequence number; no state stored until valid ACK returns |
-| **SYN proxy** (LB/firewall) | Edge completes handshake with client; separate backend handshake |
-| **Rate limiting** | Drop excess SYNs per source / globally |
-| **Increase `tcp_max_syn_backlog`** | More half-open slots (does not stop attack, buys time) |
+**Client sends:**
 
 ```text
-# Linux tuning (illustrative)
-net.ipv4.tcp_syncookies = 1          # enable SYN cookies under pressure
-net.core.somaxconn = 4096            # upper bound for listen() backlog
-net.ipv4.tcp_max_syn_backlog = 8192  # half-open queue size
+SYN
+Seq = 1000
 ```
 
-**TIME_WAIT**
-
-After the side that **actively closes** sends the final ACK, it enters **TIME_WAIT** for **2 × MSL** (Maximum Segment Lifetime, often 60 s → TIME_WAIT ≈ 60–120 s). Purpose: (1) ensure the final ACK reaches the peer if lost; (2) let delayed duplicate segments from the old connection expire so they cannot corrupt a **new** connection with the same 4-tuple (src IP, src port, dst IP, dst port).
-
-**Symptoms:** High-traffic clients (load generators, proxies) exhaust **ephemeral ports** because thousands of sockets sit in TIME_WAIT.
-
-**Mitigations:** `SO_REUSEADDR`, connection pooling (fewer unique 4-tuples), tune `ip_local_port_range`, let the **server** initiate close where possible, or (controversial) `tcp_tw_reuse` on Linux for outgoing connections.
-
-**Worked example — port exhaustion:**
+**Meaning:**
 
 ```text
-Ephemeral port range: 32768–60999 → ~28,000 ports
-Each short-lived client connection: 1 socket in TIME_WAIT for ~60 s
-Sustained rate: 28,000 / 60 ≈ 467 new connections/sec before "Cannot assign requested address"
+Hello Server,
+I want to establish a TCP connection.
+My starting sequence number is 1000.
 ```
 
-**Listen backlog**
+**State:**
 
-`listen(backlog)` creates two conceptual queues on Linux:
+| Side | State |
+|------|-------|
+| Client | `SYN_SENT` |
+| Server | `LISTEN` |
 
-| Queue | Holds | Overflow behavior |
-|-------|-------|-------------------|
-| **SYN queue** (half-open) | Handshakes in progress | SYN cookies or drop |
-| **Accept queue** (full-open) | ESTABLISHED sockets waiting for `accept()` | Client may think connected; server app slow to `accept()` → timeouts |
+---
 
-**TCP Fast Open (TFO):** Server issues a cookie; on repeat visits client may send **data in the SYN**, saving ~1 RTT. Limited adoption (middleboxes sometimes drop SYNs with payload).
+### Step 2 — SYN-ACK
 
-**Interview point:** Distinguish **SYN queue** vs **accept queue**. "Backlog full" often means the application is not calling `accept()` fast enough, not that SYN flood is occurring.
-
-### When to use
-
-- **Performance analysis:** Attribute first-byte latency to TCP + TLS RTTs; justify keep-alive and regional edge placement.
-- **Capacity planning:** Estimate max new connections/sec given TIME_WAIT duration and ephemeral port range.
-- **Incident response:** `ss -s`, `netstat -an | grep SYN_RECV`, `TIME_WAIT` counts during connection storms or DDoS.
-- **Load balancer design:** Decide SYN proxy vs pass-through; tune health checks that open new TCP per probe.
-- **Kernel tuning:** Adjust `somaxconn`, `tcp_max_syn_backlog`, syncookies before high-traffic launches.
-
-### Trade-offs / Pitfalls
-
-| Pitfall | What goes wrong | Mitigation |
-|---------|-----------------|------------|
-| New TCP per HTTP request | 1+ RTT + TLS per request | Keep-alive, HTTP/2, connection pools |
-| TLS 1.2 on high-latency links | +2 RTTs on top of TCP | TLS 1.3, session resumption (PSK/tickets) |
-| LB SYN pass-through under attack | Backend half-open table saturated | SYN proxy at edge |
-| NAT gateway connection limits | Each TCP through NAT consumes mapping entry | Reuse connections; raise limits |
-| Missing ACK after SYN-ACK | Half-open socket until timeout | Shorter timeouts; syncookies |
-| Aggressive `TIME_WAIT` reuse | Rare duplicate segment corruption | Prefer pooling over disabling TIME_WAIT |
-| Health check opens new TCP every 5 s | Thousands of wasted handshakes | Less frequent checks or reuse where supported |
-
-**Latency budget example (SF client → Virginia server, ~70 ms RTT):**
+**Server responds:**
 
 ```text
-TCP handshake:     1 × 70 ms =  70 ms
-TLS 1.2 handshake: 2 × 70 ms = 140 ms
-HTTP request/response: 1 × 70 ms =  70 ms (minimum)
-─────────────────────────────────────────
-Cold first request: ~280 ms before JSON arrives
-Warm keep-alive:    ~70 ms (one RTT for HTTP only)
+SYN + ACK
+Seq = 5000
+Ack = 1001
 ```
 
-### References
+**Meaning:**
 
-- [TCP Handshake — TCP/IP video](https://www.youtube.com/watch?v=2QGgEk20RXM)
+```text
+I received your SYN.
+My starting sequence number is 5000.
+I expect your next byte starting from 1001.
+```
+
+**State:**
+
+| Side | State |
+|------|-------|
+| Client | `SYN_SENT` |
+| Server | `SYN_RECEIVED` |
+
+---
+
+### Step 3 — ACK
+
+**Client sends:**
+
+```text
+ACK
+Ack = 5001
+```
+
+**Meaning:**
+
+```text
+I received your sequence number.
+I expect your next byte starting from 5001.
+```
+
+**State:**
+
+| Side | State |
+|------|-------|
+| Client | `ESTABLISHED` |
+| Server | `ESTABLISHED` |
+
+Connection is now fully open.
+
+---
+
+### Visual flow
+
+```text
+Client                              Server
+
+SYN (Seq=1000)
+---------------------------------->
+
+                 SYN-ACK
+       (Seq=5000 Ack=1001)
+<----------------------------------
+
+ACK (Ack=5001)
+---------------------------------->
+
+Connection Established
+```
+
+---
+
+### What is Initial Sequence Number (ISN)?
+
+Every TCP connection starts with a random sequence number.
+
+**Example:**
+
+```text
+Client ISN = 1000
+Server ISN = 5000
+```
+
+TCP uses sequence numbers to:
+
+- Track transmitted bytes
+- Detect missing packets
+- Detect duplicate packets
+- Reorder packets
+- Acknowledge received data
+
+Without sequence numbers, TCP reliability would not be possible.
+
+---
+
+### Why sequence numbers are important
+
+Suppose packets arrive like this:
+
+```text
+Packet 1
+Packet 3
+Packet 2
+```
+
+**Without sequence numbers:** Receiver cannot determine correct order.
+
+**With sequence numbers:**
+
+```text
+Seq = 1000
+Seq = 1001
+Seq = 1002
+```
+
+Receiver can correctly reorder the packets.
+
+---
+
+### What is Acknowledgement (ACK)?
+
+ACK means: *"I successfully received the data."*
+
+**Example:**
+
+Client sends:
+
+```text
+Seq = 1000
+Length = 100 bytes
+```
+
+Server replies:
+
+```text
+Ack = 1100
+```
+
+**Meaning:** *"I received everything up to byte 1099. Please send byte 1100 next."*
+
+ACKs are the foundation of TCP reliability.
+
+---
+
+### What happens if a packet is lost?
+
+**Example:**
+
+```text
+Packet 1000 → Received
+Packet 1001 → Lost
+Packet 1002 → Received
+```
+
+Receiver sends:
+
+```text
+Ack = 1001
+```
+
+**Meaning:** *"I am still waiting for packet 1001."*
+
+Sender retransmits packet 1001. This mechanism guarantees reliable delivery.
+
+---
+
+### TCP options negotiated during handshake
+
+The handshake is not only for connection establishment. Client and server also exchange supported capabilities.
+
+#### MSS (Maximum Segment Size)
+
+Defines maximum payload size per TCP packet.
+
+**Example:** `MSS = 1460 bytes`
+
+**Purpose:** Avoid fragmentation and improve efficiency.
+
+#### Window scaling
+
+Allows larger TCP receive windows.
+
+**Important for:** High bandwidth networks, long-distance communication, cloud environments
+
+Without window scaling, TCP throughput becomes limited.
+
+#### SACK (Selective Acknowledgement)
+
+**Example:**
+
+```text
+Received: 1, 2, 4, 5
+Missing:  3
+```
+
+**Without SACK:** Sender may retransmit 3, 4, 5
+
+**With SACK:** Receiver says *"I already have 4 and 5. Only resend 3."*
+
+**Result:** Less network traffic and faster recovery.
+
+#### Timestamps
+
+Used for:
+
+- RTT measurement
+- Better retransmission decisions
+- Detecting old packets
+
+#### TCP Fast Open
+
+**Normal TCP:** Handshake first → data second
+
+**TCP Fast Open:** Client may send data with SYN
+
+**Benefit:** Saves approximately one RTT
+
+---
+
+### TCP state transitions
+
+**Client side:**
+
+```text
+CLOSED
+  |
+  V
+SYN_SENT
+  |
+  V
+ESTABLISHED
+  |
+  V
+FIN_WAIT
+  |
+  V
+TIME_WAIT
+  |
+  V
+CLOSED
+```
+
+**Server side:**
+
+```text
+LISTEN
+  |
+  V
+SYN_RECEIVED
+  |
+  V
+ESTABLISHED
+  |
+  V
+CLOSE_WAIT
+  |
+  V
+CLOSED
+```
+
+#### Important states
+
+| State | Meaning |
+|-------|---------|
+| **LISTEN** | Server waiting for incoming connections (e.g. web server on port 443) |
+| **SYN_SENT** | Client sent SYN and is waiting for response |
+| **SYN_RECEIVED** | Server received SYN and sent SYN-ACK; waiting for final ACK |
+| **ESTABLISHED** | Connection fully open; application data can flow |
+| **TIME_WAIT** | Connection closed but temporarily retained — prevents delayed packets from affecting future connections |
+
+---
+
+### Connection termination (four-way handshake)
+
+| Opening a connection | Closing a connection |
+|----------------------|------------------------|
+| SYN | FIN |
+| SYN-ACK | ACK |
+| ACK | FIN |
+| | ACK |
+
+#### Closing process
+
+| Step | Message | Meaning |
+|------|---------|---------|
+| 1 | Client → **FIN** | "I am done sending data." |
+| 2 | Server → **ACK** | "I received your FIN." (Server may still send remaining data.) |
+| 3 | Server → **FIN** | "I am done sending data too." |
+| 4 | Client → **ACK** | "I received your FIN." Connection closed. |
+
+---
+
+### What is TIME_WAIT?
+
+After the final ACK is sent, the active closer enters **TIME_WAIT**.
+
+**Typical duration:** 60–120 seconds
+
+**Purpose:**
+
+1. Ensure final ACK reaches peer
+2. Prevent delayed packets from entering future connections
+
+#### Why TIME_WAIT exists
+
+Imagine:
+
+1. Connection A closes
+2. A delayed packet from Connection A is still traveling through the network
+3. Immediately after closing, Connection B starts using the same ports
+
+**Without TIME_WAIT:** Old packet may enter the new connection → data corruption
+
+**TIME_WAIT prevents this.**
+
+---
+
+### What are ephemeral ports?
+
+Temporary client-side ports assigned by the operating system.
+
+**Examples:** `49152`, `52344`, `60001`
+
+```text
+Client:  10.0.0.1:52344
+Server:  10.0.0.2:443
+
+52344 is the ephemeral port.
+```
+
+#### Ephemeral port exhaustion
+
+Suppose:
+
+```text
+Available ephemeral ports = 28,000
+TIME_WAIT duration        = 60 seconds
+
+Maximum sustainable new connections:
+28,000 / 60 ≈ 466 connections/sec
+```
+
+Beyond this, the system may fail to create new connections.
+
+**Typical error:** `Cannot assign requested address`
+
+---
+
+### What is a SYN flood attack?
+
+Attacker repeatedly sends:
+
+```text
+SYN
+SYN
+SYN
+SYN
+```
+
+But never sends the final ACK.
+
+Server keeps waiting in `SYN_RECEIVED`. Thousands of half-open connections consume memory and resources. Eventually legitimate users cannot connect.
+
+#### What are SYN cookies?
+
+Defense against SYN flood attacks.
+
+**Normal behavior:** Server allocates memory after receiving SYN.
+
+**With SYN cookies:** Server stores no state initially. Connection information is encoded inside the SYN-ACK sequence number. Memory is allocated only after receiving the final ACK.
+
+**Benefit:** Protects server resources during SYN flood attacks.
+
+---
+
+### SYN queue vs accept queue
+
+Common system design interview question.
+
+#### SYN queue
+
+**Contains:** Half-open connections
+
+**State:** `SYN_RECEIVED` — handshake not completed yet
+
+#### Accept queue
+
+**Contains:** Fully established connections
+
+**State:** `ESTABLISHED` — waiting for application to call `accept()`
+
+#### Example
+
+Handshake completed → connection established → application thread is busy → connection waits in **accept queue** until application accepts it.
+
+---
+
+### Why keep-alive exists
+
+**Without keep-alive:**
+
+```text
+Request 1 → New TCP connection
+Request 2 → New TCP connection
+Request 3 → New TCP connection
+```
+
+Every request pays handshake cost.
+
+**With keep-alive:**
+
+```text
+One TCP connection
+
+Request 1
+Request 2
+Request 3
+
+Connection reused.
+```
+
+**Benefits:** Lower latency, lower CPU usage, fewer handshakes
+
+See also: [1.14 Keep-Alive Connections](#114-keep-alive-connections)
+
+---
+
+### Why connection pooling exists
+
+**Used by:** Databases, microservices, HTTP clients
+
+**Bad:**
+
+```text
+Open TCP → Execute Query → Close TCP
+(repeated thousands of times)
+```
+
+**Good:**
+
+```text
+Create 10–50 TCP connections
+Reuse them repeatedly
+```
+
+**Benefits:** Reduced latency, reduced CPU overhead, better throughput, fewer connection storms
+
+---
+
+### Common interview questions
+
+| Question | Answer |
+|----------|--------|
+| Why is the first API request slower? | DNS lookup, TCP handshake, and TLS handshake all happen before application processing starts |
+| Why use connection pooling? | Avoid repeated TCP handshakes and reduce latency |
+| Why use keep-alive? | Reuse existing TCP connections |
+| What is SYN flood? | Attack that creates massive half-open TCP connections |
+| Difference between SYN queue and accept queue? | **SYN queue:** handshake not completed. **Accept queue:** handshake completed but application not yet accepted |
+| Why does TIME_WAIT exist? | Prevent delayed packets from corrupting future connections and ensure reliable connection closure |
+
+---
+
+### Memory trick
+
+```text
+TCP OPEN
+  SYN
+  SYN-ACK
+  ACK
+(3 packets)
+
+TCP CLOSE
+  FIN
+  ACK
+  FIN
+  ACK
+(4 packets)
+
+SYN Queue    = Half-open connections
+Accept Queue = Fully open connections waiting for application
+TIME_WAIT    = Safety waiting period before final cleanup
+```
 
 ---
 
 ## 1.4 UDP
 
+**UDP (User Datagram Protocol)** is a lightweight transport layer protocol that focuses on **speed** rather than reliability.
 
-### What is it?
+Unlike TCP, UDP does not establish a connection before sending data.
 
-**User Datagram Protocol (UDP)** is a connectionless transport protocol sending independent datagrams without guaranteed delivery, ordering, or congestion control. Minimal 8-byte header: ports + length + checksum.
+| | TCP | UDP |
+|---|-----|-----|
+| Focus | Reliable but slower | Fast but unreliable |
 
-### Why it matters
+---
 
-UDP's simplicity enables low-latency use cases where application handles loss: DNS, VoIP, gaming, QUIC/HTTP3, video streaming. No handshake means faster first packet.
+### TCP vs UDP
 
-### How it works
+#### TCP
 
-1. Application sends datagram with source/dest ports.
-2. IP routes packet; no connection state in network.
-3. Receiver may get duplicates, out-of-order, or nothing.
-4. Application implements retry, ordering, or tolerates loss.
-5. Optional checksum validates integrity (often offloaded to hardware).
+- Connection-oriented
+- Uses 3-way handshake
+- Guarantees delivery
+- Guarantees packet ordering
+- Retransmits lost packets
+- Higher overhead
+- More latency
 
-```mermaid
-flowchart LR
-    App1[App] -->|datagram| UDP
-    UDP --> IP
-    IP --> App2[App]
+**Examples:** HTTP, HTTPS, database connections, file transfers
+
+See also: [1.3 TCP Handshake](#13-tcp-handshake)
+
+#### UDP
+
+- Connectionless
+- No handshake
+- No delivery guarantee
+- No ordering guarantee
+- No retransmission
+- Very low overhead
+- Lower latency
+
+**Examples:** Video streaming, voice calls, online gaming, DNS
+
+---
+
+### How UDP works
+
+Client sends:
+
+```text
+Packet A
+Packet B
+Packet C
 ```
 
-### Key details
+UDP simply sends the packets. It does **not** check:
 
-| Property | TCP | UDP |
-|----------|-----|-----|
-| Connection | Connection-oriented (handshake) | Connectionless |
-| Reliability | Guaranteed delivery, ordering | Best-effort |
-| Congestion control | Built-in | None (app must implement) |
-| Header size | 20+ bytes | 8 bytes |
-| First packet latency | 1+ RTT (handshake) | Immediate |
-| Typical uses | HTTP, gRPC, databases | DNS, QUIC, VoIP, gaming |
+- Whether packets arrived
+- Whether packets arrived in order
+- Whether packets were lost
 
-- Max practical payload ~65 KB; often limited to avoid fragmentation (~1200–1400 bytes safe)
-- **QUIC** builds reliable streams on UDP in userspace — see [1.13 QUIC](#113-quic)
-- Firewalls often block UDP except DNS — HTTP/3 needs UDP 443 open
-- Broadcast/multicast built on UDP at IP layer
+**UDP's philosophy:** *"I sent the packet. My job is done."*
 
-**Interview point:** "Use TCP unless you need UDP's simplicity or can build reliability on top (QUIC)."
+---
 
-### When to use
+### Why is UDP faster?
 
-- Real-time media where late data is useless
-- DNS queries (single request-response)
-- Custom protocols with application-level reliability (QUIC)
-- High-frequency metrics where sampling OK
+TCP performs many extra operations:
 
-### Trade-offs / Pitfalls
+- Connection establishment
+- ACK processing
+- Packet ordering
+- Retransmissions
+- Flow control
+- Congestion control
 
-- No congestion control can starve TCP traffic (fairness concern)
-- Application must implement reliability if needed
-- NAT binding timeouts differ from TCP (often shorter for UDP)
-- Fragmentation causes loss amplification - stay under path MTU
+UDP skips all of these.
 
-### References
+**Result:** Less CPU usage, less memory usage, lower latency, higher throughput
 
-- [UDP — TCP/IP and UDP video](https://www.youtube.com/watch?v=2QGgEk20RXM)
+---
+
+### No handshake
+
+**TCP:**
+
+```text
+SYN → SYN-ACK → ACK
+(then data transfer starts)
+```
+
+**UDP:**
+
+```text
+Send packet
+```
+
+That's it. No connection setup cost.
+
+---
+
+### No acknowledgements
+
+**TCP:**
+
+```text
+Sender:   Packet 1000
+Receiver: ACK 1001
+```
+
+Sender knows packet arrived.
+
+**UDP:**
+
+```text
+Sender: Packet 1000
+(no ACK — sender never knows whether packet arrived)
+```
+
+---
+
+### No retransmission
+
+**TCP:** Lost packet → sender retransmits
+
+**UDP:** Lost packet → packet is gone forever. No retransmission occurs.
+
+---
+
+### No ordering guarantee
+
+Suppose sender transmits: Packet 1, Packet 2, Packet 3
+
+Receiver may receive: Packet 2, Packet 3, Packet 1
+
+UDP does not fix the order. Application must handle ordering if needed.
+
+---
+
+### Why would anyone use UDP?
+
+Because in some situations **speed is more important than perfect reliability**.
+
+**Example — video call:**
+
+If one video frame is lost:
+
+- **Bad:** Wait for retransmission
+- **Good:** Skip the frame and continue
+
+Humans usually won't notice a single missing frame. But they **will** notice a 2-second delay.
+
+---
+
+### Use case: Online gaming
+
+Player position updates:
+
+```text
+Player A: X = 100
+Next:     X = 101
+Next:     X = 102
+```
+
+If update 101 is lost, latest update (102) is enough. Retransmitting old position data is often useless. Therefore UDP is preferred.
+
+---
+
+### Use case: Video streaming
+
+Imagine watching a live cricket match.
+
+If one frame is lost:
+
+- **Better:** Skip frame and continue
+- **Worse:** Pause video waiting for retransmission
+
+This is why many streaming technologies use UDP internally.
+
+---
+
+### Use case: Voice calls
+
+During a call: Packet 1, Packet 2, Packet 3
+
+If Packet 2 is lost, most users prefer:
+
+```text
+Packet 1 → (small audio gap) → Packet 3
+```
+
+Rather than: pause conversation and wait for retransmission.
+
+Therefore UDP is preferred.
+
+---
+
+### Use case: DNS
+
+When browser requests `google.com`, DNS request is typically sent using UDP.
+
+**Reason:** Request is very small. Response is very small. Using TCP handshake would add unnecessary overhead.
+
+See also: [1.8 DNS](#18-dns)
+
+---
+
+### UDP header
+
+UDP header is very small. Only contains:
+
+- Source port
+- Destination port
+- Length
+- Checksum
+
+**Size:** 8 bytes
+
+**TCP header:** Minimum 20 bytes (often larger because of options)
+
+**Result:** UDP packets have lower protocol overhead.
+
+---
+
+### UDP ports
+
+Like TCP, UDP also uses ports.
+
+| Port | Service |
+|------|---------|
+| 53 | DNS |
+| 67 | DHCP |
+| 68 | DHCP client |
+| 123 | NTP |
+| 161 | SNMP |
+
+**Example:**
+
+```text
+192.168.1.10:54321
+              |
+           UDP port
+```
+
+---
+
+### Does UDP have flow control?
+
+**No.**
+
+TCP automatically slows down when receiver or network is overloaded. UDP does not.
+
+If sender sends too fast, receiver may drop packets. Application must handle this.
+
+---
+
+### Does UDP have congestion control?
+
+**No.**
+
+TCP adjusts transmission rate based on network conditions. UDP sends packets regardless of congestion.
+
+Applications using UDP often implement their own congestion handling.
+
+---
+
+### Can UDP be made reliable?
+
+**Yes.** Applications can implement reliability themselves.
+
+Add:
+
+- Sequence numbers
+- ACKs
+- Retransmissions
+- Ordering logic
+
+Many modern protocols do exactly this.
+
+**Examples:** QUIC, RTP, custom gaming protocols
+
+---
+
+### QUIC (important interview topic)
+
+**HTTP/3 uses QUIC.** QUIC runs on top of UDP.
+
+**Why?** UDP allows protocol innovation without changing operating systems.
+
+QUIC adds:
+
+- Reliability
+- Encryption
+- Multiplexing
+- Faster connection setup
+
+**Result:** HTTP/3 is built on UDP rather than TCP.
+
+See also: [1.13 QUIC](#113-quic), [1.12 HTTP/2 & HTTP/3](#112-http2-http3)
+
+---
+
+### When to use TCP
+
+Use TCP when **data loss is unacceptable**.
+
+**Examples:** Banking, payments, databases, file transfers, REST APIs, microservices
+
+**Rule:** Reliability > speed
+
+---
+
+### When to use UDP
+
+Use UDP when **low latency is more important than perfect reliability**.
+
+**Examples:** Video streaming, voice calls, online gaming, DNS, live broadcasting
+
+**Rule:** Speed > reliability
+
+---
+
+### Interview takeaways
+
+| TCP | UDP |
+|-----|-----|
+| Reliable | Fast |
+| Ordered | Lightweight |
+| Connection-oriented | Connectionless |
+| Uses handshake | No handshake |
+| Retransmits lost packets | No delivery guarantee, no retransmission |
+
+**Use TCP when** correctness is critical.
+
+**Use UDP when** latency is critical.
+
+---
+
+### Memory trick
+
+```text
+TCP: "Did you receive it?"
+UDP: "I sent it."
+
+TCP: Reliability first
+UDP: Speed first
+```
 
 ---
 
 
-## 1.5 MTU
 ## 1.5 MTU
 
 
