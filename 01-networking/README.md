@@ -1122,41 +1122,7 @@ Reuse them repeatedly
 
 ---
 
-### Common interview questions
 
-| Question | Answer |
-|----------|--------|
-| Why is the first API request slower? | DNS lookup, TCP handshake, and TLS handshake all happen before application processing starts |
-| Why use connection pooling? | Avoid repeated TCP handshakes and reduce latency |
-| Why use keep-alive? | Reuse existing TCP connections |
-| What is SYN flood? | Attack that creates massive half-open TCP connections |
-| Difference between SYN queue and accept queue? | **SYN queue:** handshake not completed. **Accept queue:** handshake completed but application not yet accepted |
-| Why does TIME_WAIT exist? | Prevent delayed packets from corrupting future connections and ensure reliable connection closure |
-
----
-
-### Memory trick
-
-```text
-TCP OPEN
-  SYN
-  SYN-ACK
-  ACK
-(3 packets)
-
-TCP CLOSE
-  FIN
-  ACK
-  FIN
-  ACK
-(4 packets)
-
-SYN Queue    = Half-open connections
-Accept Queue = Fully open connections waiting for application
-TIME_WAIT    = Safety waiting period before final cleanup
-```
-
----
 
 ## 1.4 UDP
 
@@ -1471,33 +1437,7 @@ Use UDP when **low latency is more important than perfect reliability**.
 
 ---
 
-### Interview takeaways
 
-| TCP | UDP |
-|-----|-----|
-| Reliable | Fast |
-| Ordered | Lightweight |
-| Connection-oriented | Connectionless |
-| Uses handshake | No handshake |
-| Retransmits lost packets | No delivery guarantee, no retransmission |
-
-**Use TCP when** correctness is critical.
-
-**Use UDP when** latency is critical.
-
----
-
-### Memory trick
-
-```text
-TCP: "Did you receive it?"
-UDP: "I sent it."
-
-TCP: Reliability first
-UDP: Speed first
-```
-
----
 
 ## 1.5 MTU
 
@@ -1758,36 +1698,7 @@ Suppose application needs to send **1 MB** of data.
 
 ---
 
-### Common interview questions
 
-| Question | Answer |
-|----------|--------|
-| What is MTU? | Maximum packet size that can be transmitted without fragmentation |
-| What is MSS? | Maximum TCP payload size. `MSS = MTU - IP Header - TCP Header` |
-| Difference between MTU and MSS? | **MTU:** entire IP packet size. **MSS:** actual TCP payload size |
-| Why is fragmentation bad? | More packets, more overhead, higher latency, higher packet loss risk |
-| What is path MTU? | Smallest MTU supported across the entire network path |
-| What is PMTUD? | Mechanism to discover the largest packet size that can travel without fragmentation |
-
----
-
-### Memory trick
-
-```text
-MTU = Maximum packet size
-MSS = Maximum TCP payload size
-
-MTU = 1500
-MSS = 1460
-
-MTU includes headers
-MSS excludes headers
-
-Large MTU  = better throughput
-Small MTU  = better compatibility
-```
-
----
 
 ## 1.6 IP Addressing/Subnetting
 
@@ -2137,40 +2048,7 @@ This is subnetting in real-world cloud environments.
 
 ---
 
-### Common interview questions
 
-| Question | Answer |
-|----------|--------|
-| What is an IP address? | Logical address used to identify devices on a network |
-| What is a subnet? | A smaller network created from a larger network |
-| What is CIDR? | Notation representing network bits (e.g. `/24` = first 24 bits are network bits) |
-| Difference between public and private IP? | **Public:** Internet routable. **Private:** internal network only |
-| How many hosts in /24? | 2^(32-24) - 2 = **254 hosts** |
-| How many hosts in /26? | 2^(32-26) - 2 = **62 hosts** |
-| What is network address? | First address of subnet |
-| What is broadcast address? | Last address of subnet |
-| What is default gateway? | Router used to reach other networks |
-
----
-
-### Memory trick
-
-```text
-IP Address      = House address
-Subnet          = Neighborhood
-Network Address = Neighborhood name
-Host Address    = House number
-Router          = Road connecting neighborhoods
-CIDR            = How much of IP belongs to network
-
-Host formula: 2^(Host Bits) - 2
-
-/24 = 254 hosts
-/25 = 126 hosts
-/26 = 62 hosts
-```
-
----
 
 ## 1.7 CIDR
 
@@ -2344,44 +2222,7 @@ CIDR determines how many IPs are available in each subnet.
 
 ---
 
-### Interview questions
 
-| Question | Answer |
-|----------|--------|
-| What is CIDR? | Notation to define network and host portions (e.g. `192.168.1.0/24`) |
-| What does `/24` mean? | 24 bits = network, 8 bits = hosts |
-| Why was CIDR introduced? | To replace inefficient Class A/B/C allocation |
-| Difference between CIDR and subnet mask? | Same concept, different representation (`/24` = `255.255.255.0`) |
-| How many hosts in `/24`? | **254** |
-| How many hosts in `/26`? | **62** |
-| What is CIDR aggregation? | Combining multiple networks into one summarized route |
-| Why is CIDR important in cloud networking? | Controls VPC and subnet sizes |
-
----
-
-### Memory trick
-
-```text
-CIDR = How many bits belong to the network
-
-/8  = Large network
-/16 = Medium network
-/24 = Small network
-
-More network bits = smaller number of hosts
-Less network bits = larger number of hosts
-
-Formula: Hosts = 2^(32 - CIDR) - 2
-
-/24 = 254 hosts
-/25 = 126 hosts
-/26 = 62 hosts
-/27 = 30 hosts
-
-CIDR = Flexible IP allocation + route aggregation
-```
-
----
 
 ## 1.8 DNS
 
@@ -2749,7 +2590,6 @@ T+10s:  Same host again → ~0 ms (OS cache hit)
 T+400s: TTL expired     → lookup again
 ```
 
-**Interview point:** Resolution is separate from connection. DNS can succeed and TCP can still fail.
 
 ---
 
@@ -2769,7 +2609,6 @@ dig +trace api.example.com       # show full delegation path (iterative)
 dig @8.8.8.8 api.example.com   # query a specific recursive resolver
 ```
 
-**Interview point:** `dig +trace` shows iterative resolution; plain `dig` shows what **your resolver** returns (may be cached).
 
 ---
 
@@ -3365,18 +3204,6 @@ Most beneficial on:
 
 ---
 
-### Interview questions
-
-| Question | Answer |
-|----------|--------|
-| Why was HTTP/2 introduced? | Solve HTTP/1.1 inefficiencies using multiplexing and header compression |
-| Why was HTTP/3 introduced? | Eliminate TCP head-of-line blocking |
-| What protocol does HTTP/2 use? | **TCP** |
-| What protocol does HTTP/3 use? | **QUIC over UDP** |
-| Biggest advantage of HTTP/3? | Packet loss in one stream does not block other streams |
-| Does HTTP/3 use TLS? | Yes — TLS 1.3 is built into QUIC |
-
----
 
 ### Quick comparison
 
@@ -3576,18 +3403,6 @@ This improves page load time, video streaming, and mobile performance.
 
 ---
 
-### Interview questions
-
-| Question | Answer |
-|----------|--------|
-| What is QUIC? | A transport protocol built on UDP that powers HTTP/3 |
-| Why was QUIC introduced? | Eliminate TCP head-of-line blocking and reduce latency |
-| Does QUIC use UDP? | Yes — QUIC runs on top of UDP |
-| If UDP is unreliable, how does QUIC work? | QUIC implements reliability, retransmission, flow control, and congestion control itself |
-| Biggest advantage of QUIC? | Independent streams — packet loss in one stream does not block others |
-| Does QUIC use TLS? | Yes — TLS 1.3 is built into QUIC |
-
----
 
 ### Quick comparison
 
@@ -3604,19 +3419,6 @@ This improves page load time, video streaming, and mobile performance.
 
 ---
 
-### Memory trick
-
-```text
-TCP  = Reliable but can block all streams
-QUIC = Reliable UDP with built-in TLS and independent streams
-
-HTTP/2 = Multiplexing over TCP
-HTTP/3 = Multiplexing over QUIC
-```
-
-**Interview one-liner:** QUIC is a modern transport protocol built on UDP that provides TCP-like reliability, built-in TLS, faster connection setup, and eliminates TCP head-of-line blocking.
-
----
 
 ## 1.14 Keep-Alive Connections
 
@@ -3859,18 +3661,6 @@ Huge performance improvement.
 
 ---
 
-### Interview questions
-
-| Question | Answer |
-|----------|--------|
-| What is HTTP Keep-Alive? | Reusing the same TCP connection for multiple HTTP requests |
-| Why is Keep-Alive useful? | Reduces connection setup overhead and latency |
-| What problem does it solve? | Repeated TCP and TLS handshakes |
-| Is Keep-Alive enabled by default in HTTP/1.1? | **Yes** |
-| Why is Keep-Alive important for HTTPS? | Avoids repeated TCP and TLS handshakes |
-| How does Keep-Alive improve microservices? | Reduces network overhead and improves throughput |
-
----
 
 ### Keep-Alive vs HTTP/2
 
@@ -3883,19 +3673,6 @@ HTTP/2 still uses Keep-Alive but is much more efficient.
 
 ---
 
-### Memory trick
-
-```text
-Without Keep-Alive:
-  Request → New TCP Connection → Response → Close → (repeat)
-
-With Keep-Alive:
-  One TCP Connection → Request 1 → Request 2 → Request 3 → Request 4 → Close later
-```
-
-**Interview one-liner:** HTTP Keep-Alive allows multiple HTTP requests to reuse the same TCP connection, avoiding repeated TCP/TLS handshakes and significantly reducing latency.
-
----
 
 ## 1.15 Forward & Reverse Proxy
 
@@ -4558,17 +4335,6 @@ This is one of the most common enterprise VPN use cases.
 
 ---
 
-### Interview questions
-
-| Question | Answer |
-|----------|--------|
-| What is a VPN? | An encrypted tunnel between a device and a VPN server over the internet |
-| Why use a VPN? | Security, privacy, and remote access |
-| What is a VPN tunnel? | An encrypted communication channel between client and VPN server |
-| Difference between VPN and HTTPS? | HTTPS secures browser-to-website traffic; VPN secures all traffic between device and VPN server |
-| Difference between VPN and Proxy? | VPN encrypts and routes all device traffic; proxy mainly forwards application traffic |
-
----
 
 ## 1.18 Unicast, Broadcast, Multicast & Anycast
 
@@ -4794,18 +4560,6 @@ Anycast:    Sender → Nearest server
 
 ---
 
-### Interview questions
-
-| Question | Answer |
-|----------|--------|
-| What is unicast? | One sender communicates with one receiver |
-| What is broadcast? | One sender communicates with all devices on a network |
-| What is multicast? | One sender communicates with a selected group of receivers |
-| What is anycast? | One sender communicates with the nearest available receiver |
-| Why do CDNs use anycast? | Route users automatically to the nearest edge server |
-| Why doesn't broadcast scale? | Every device receives and processes the packet |
-
----
 
 ## 1.19 CDN
 
