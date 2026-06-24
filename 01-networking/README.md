@@ -28,12 +28,17 @@
 | 1.18 | [Unicast, Broadcast, Multicast & Anycast](#118-unicast-broadcast-multicast--anycast) | Done |
 | 1.19 | [CDN](#119-cdn) | Done |
 | 1.20 | [Load Balancer](#120-load-balancer) | Done |
-| 1.21 | [Load Balancer Algorithm](#121-load-balancer-algorithm) | Done |
 | 1.22 | [SSE, Polling & WebSockets](#122-sse-polling--websockets) | Done |
 
 ---
 
+This chapter is a **networking reference for system design**: protocol layers, transport (TCP/UDP/QUIC), IP addressing, DNS, HTTP/TLS, and edge infrastructure (CDN, load balancers, proxies). When topics overlap, sections **cross-link** to the canonical deep dive rather than repeat the same walkthrough.
+
+---
+
 ## 1.1 OSI Model
+
+TCP/IP model (4 layers): [1.2 TCP/IP](#12-tcpip) · Transport deep dives: [1.3 TCP Handshake](#13-tcp-handshake), [1.4 UDP](#14-udp)
 
 The **OSI (Open Systems Interconnection) Model** is a conceptual framework that explains how data travels from one computer to another over a network.
 
@@ -584,6 +589,14 @@ Each layer adds its own information.
 
 This process is called **encapsulation**.
 
+```mermaid
+flowchart BT
+    D[HTTP Data] --> T[TCP Header + Data]
+    T --> I[IP Header + TCP + Data]
+    I --> M[MAC Header + IP + TCP + Data]
+    M --> W[Bits on wire]
+```
+
 ---
 
 ### De-encapsulation
@@ -728,6 +741,18 @@ Connection is now fully open.
 ---
 
 ### Visual flow
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant S as Server
+    Note over C: SYN_SENT
+    C->>S: SYN (Seq=1000)
+    Note over S: SYN_RECEIVED
+    S->>C: SYN-ACK (Seq=5000, Ack=1001)
+    Note over C,S: ESTABLISHED
+    C->>S: ACK (Ack=5001)
+```
 
 ```text
 Client                              Server
@@ -964,6 +989,18 @@ CLOSED
 | 2 | Server → **ACK** | "I received your FIN." (Server may still send remaining data.) |
 | 3 | Server → **FIN** | "I am done sending data too." |
 | 4 | Client → **ACK** | "I received your FIN." Connection closed. |
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant S as Server
+    C->>S: FIN
+    S->>C: ACK
+    Note over S: May still send data
+    S->>C: FIN
+    C->>S: ACK
+    Note over C: TIME_WAIT (60–120s)
+```
 
 ---
 
@@ -1945,6 +1982,10 @@ Last 8 bits   = Host
 
 ### CIDR notation
 
+CIDR history, aggregation (supernetting), and why `/23` beats `/16` for 500 hosts: [1.7 CIDR](#17-cidr)
+
+**Example:** `192.168.1.0/24` means 24 bits for network, 8 bits for hosts.
+
 **CIDR** = Classless Inter-Domain Routing
 
 Instead of writing `255.255.255.0`, we write `/24`.
@@ -2294,62 +2335,7 @@ CIDR and subnet mask represent the **same thing**.
 
 ### How to calculate hosts
 
-**Formula:**
-
-```text
-2^(Host Bits) - 2
-```
-
-**Why -2?**
-
-- One address reserved for **network address**
-- One address reserved for **broadcast address**
-
-#### Example 1 — `192.168.1.0/24`
-
-```text
-Host bits = 32 - 24 = 8
-Hosts     = 2^8 - 2 = 256 - 2 = 254 hosts
-```
-
-#### Example 2 — `192.168.1.0/26`
-
-```text
-Host bits = 32 - 26 = 6
-Hosts     = 2^6 - 2 = 64 - 2 = 62 hosts
-```
-
----
-
-### Network address
-
-The first address in a CIDR block.
-
-**Example:** `192.168.1.0/24` → network address is `192.168.1.0`
-
-Represents the entire subnet. Cannot be assigned to a device.
-
----
-
-### Broadcast address
-
-The last address in a CIDR block.
-
-**Example:** `192.168.1.0/24` → broadcast address is `192.168.1.255`
-
-Used to send traffic to all devices in the subnet. Cannot be assigned to a device.
-
----
-
-### Usable host range
-
-**Example:** `192.168.1.0/24`
-
-| | Address |
-|---|---------|
-| Network address | `192.168.1.0` |
-| Broadcast address | `192.168.1.255` |
-| **Usable hosts** | `192.168.1.1` to `192.168.1.254` |
+Host math, network address, broadcast address, and usable ranges: [1.6 IP Addressing/Subnetting](#16-ip-addressingsubnetting) (`2^(host bits) - 2`, `/24` = 254 hosts, etc.).
 
 ---
 
@@ -2403,36 +2389,7 @@ Imagine the Internet.
 
 ### Subnetting using CIDR
 
-**Network:** `192.168.1.0/24`  
-**Need:** 4 subnets → borrow 2 host bits → new CIDR: **/26**
-
-#### Subnet 1 — `192.168.1.0/26`
-
-```text
-Hosts:     192.168.1.1  –  192.168.1.62
-Broadcast: 192.168.1.63
-```
-
-#### Subnet 2 — `192.168.1.64/26`
-
-```text
-Hosts:     192.168.1.65  –  192.168.1.126
-Broadcast: 192.168.1.127
-```
-
-#### Subnet 3 — `192.168.1.128/26`
-
-```text
-Hosts:     192.168.1.129  –  192.168.1.190
-Broadcast: 192.168.1.191
-```
-
-#### Subnet 4 — `192.168.1.192/26`
-
-```text
-Hosts:     192.168.1.193  –  192.168.1.254
-Broadcast: 192.168.1.255
-```
+Worked example (splitting `192.168.1.0/24` into four `/26` subnets): [1.6 IP Addressing/Subnetting](#16-ip-addressingsubnetting#subnetting-example).
 
 ---
 
@@ -2785,6 +2742,25 @@ google.com = 142.250.xxx.xxx
 
 Resolver caches the result → returns IP to browser → browser connects to `142.250.xxx.xxx` using TCP/UDP.
 
+```mermaid
+sequenceDiagram
+    participant B as Browser
+    participant R as Recursive Resolver
+    participant Root as Root DNS
+    participant TLD as .com TLD
+    participant Auth as Authoritative DNS
+    B->>B: 1. Browser cache (miss)
+    B->>B: 2. OS cache (miss)
+    B->>R: 3. Query google.com
+    R->>Root: 4. Who handles .com?
+    Root-->>R: TLD nameservers
+    R->>TLD: 5. Who handles google.com?
+    TLD-->>R: Authoritative nameservers
+    R->>Auth: 6. A record for google.com?
+    Auth-->>R: 142.250.xxx.xxx
+    R-->>B: 7. IP (cached at resolver)
+```
+
 ---
 
 ### Visual flow
@@ -2900,6 +2876,8 @@ dig @8.8.8.8 api.example.com   # query a specific recursive resolver
 
 ## 1.10 HTTP/HTTPS
 
+TLS deep dive: [1.11 SSL/TLS](#111-ssltls) · HTTP/2 & HTTP/3: [1.12](#112-http2-http3)
+
 ### HTTP
 
 **HTTP (Hypertext Transfer Protocol)** is an application-layer, request/response protocol. A client sends a **request** (method, path, headers, optional body); a server returns a **response** (status code, headers, body).
@@ -3002,6 +2980,22 @@ https://google.com
 
 Full certificate + handshake walkthrough: [1.11 SSL/TLS](#111-ssltls)
 
+```mermaid
+sequenceDiagram
+    participant B as Browser
+    participant DNS as DNS
+    participant S as Server
+    B->>DNS: 1. Resolve google.com
+    DNS-->>B: IP address
+    B->>S: 2. TCP SYN
+    S-->>B: SYN-ACK / ACK
+    B->>S: 3. TLS ClientHello
+    S-->>B: ServerHello + Certificate
+    B->>B: Verify cert + derive session key
+    B->>S: 4. Encrypted HTTP GET
+    S-->>B: Encrypted HTTP response
+```
+
 ---
 
 #### What HTTPS protects
@@ -3085,6 +3079,16 @@ Think of it as: **identity card + trusted authority stamp**
 
 The CA signature proves: *"This public key belongs to this domain."*
 
+```mermaid
+sequenceDiagram
+    participant S as Server
+    participant CA as Certificate Authority
+    S->>S: Generate key pair
+    S->>CA: CSR (domain + public key)
+    CA->>CA: Verify domain ownership
+    CA->>S: Signed certificate
+```
+
 ---
 
 ### Part 2: TLS handshake
@@ -3117,6 +3121,19 @@ Client verifies:
 - CA signature is valid
 
 If verification succeeds, client trusts the server's public key.
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant S as Server
+    C->>S: ClientHello (+ client random)
+    S->>C: ServerHello + Certificate (+ server random)
+    C->>C: Verify certificate chain
+    C->>S: Key exchange + prove private key
+    Note over C,S: Both derive session key (never on wire)
+    C->>S: Encrypted HTTP request
+    S->>C: Encrypted HTTP response
+```
 
 ---
 
@@ -3265,6 +3282,19 @@ HTTP/2 → TCP → TLS → IP
 HTTP/3 → QUIC → UDP → IP
 ```
 
+```mermaid
+flowchart LR
+    subgraph H1["HTTP/1.1"]
+        A1[HTTP] --> T1[TCP] --> I1[IP]
+    end
+    subgraph H2["HTTP/2"]
+        A2[HTTP/2] --> T2[TCP] --> TLS2[TLS] --> I2[IP]
+    end
+    subgraph H3["HTTP/3"]
+        A3[HTTP/3] --> Q[QUIC] --> U[UDP] --> I3[IP]
+    end
+```
+
 ---
 
 ### Transport protocol
@@ -3279,7 +3309,7 @@ This is the biggest difference.
 
 ### Multiplexing
 
-#### HTTP/2
+**HTTP/2**
 
 Supports multiplexing. Multiple requests can use a **single TCP connection**.
 
@@ -3293,7 +3323,7 @@ All travel simultaneously over one connection.
 
 This removes the need for multiple TCP connections.
 
-#### HTTP/3
+**HTTP/3**
 
 Also supports multiplexing — but each stream is **independent**. A problem in one stream does not block other streams.
 
@@ -3301,25 +3331,35 @@ Also supports multiplexing — but each stream is **independent**. A problem in 
 
 ### Head-of-line blocking
 
-#### HTTP/2
-
-Application-level HOL blocking is solved. **TCP-level HOL blocking still exists.**
+**HTTP/2:** Application-level HOL blocking is solved. **TCP-level HOL blocking still exists.**
 
 **Example:** Stream A loses a packet → TCP waits for retransmission → Stream B and Stream C must also wait. **All streams are blocked.**
 
-#### HTTP/3
-
-Uses QUIC. Each stream is independent.
+**HTTP/3:** Uses QUIC. Each stream is independent.
 
 If Stream A loses a packet → **only Stream A waits** → Stream B and Stream C continue normally.
 
 **Result:** Better performance on unreliable networks.
 
+```mermaid
+flowchart TB
+    subgraph H2["HTTP/2 — packet loss in Stream A"]
+        S1[Stream A — lost packet] --> TCP[TCP blocks ALL streams]
+        S2[Stream B — waiting]
+        S3[Stream C — waiting]
+    end
+    subgraph H3["HTTP/3 — packet loss in Stream A"]
+        S4[Stream A — lost packet] --> W[Only Stream A waits]
+        S5[Stream B — continues]
+        S6[Stream C — continues]
+    end
+```
+
 ---
 
 ### Connection establishment
 
-#### HTTP/2
+**HTTP/2**
 
 ```text
 TCP handshake (SYN → SYN-ACK → ACK)
@@ -3327,7 +3367,7 @@ TCP handshake (SYN → SYN-ACK → ACK)
 TLS handshake (Client Hello → Server Hello → ...)
 ```
 
-#### HTTP/3
+**HTTP/3**
 
 QUIC combines transport and security setup. **Fewer round trips.** Faster connection establishment.
 
@@ -3344,11 +3384,11 @@ QUIC combines transport and security setup. **Fewer round trips.** Faster connec
 
 ### Packet loss handling
 
-#### HTTP/2
+**HTTP/2**
 
 Packet loss impacts the **entire TCP connection**. Performance drops significantly on mobile networks, Wi-Fi, and long-distance links.
 
-#### HTTP/3
+**HTTP/3**
 
 Packet loss affects **only the impacted stream**. Other streams continue processing. Better user experience.
 
@@ -3384,11 +3424,11 @@ See [1.13 QUIC](#113-quic) for connection migration (connection ID).
 
 Browser requests: `index.html`, `style.css`, `app.js`, `logo.png`
 
-#### HTTP/2
+**HTTP/2**
 
 Single TCP connection. If the packet carrying `app.js` is lost, TCP pauses delivery — **other resources may also wait**.
 
-#### HTTP/3
+**HTTP/3**
 
 Single QUIC connection. If `app.js` packet is lost, **only the `app.js` stream waits** — other resources continue downloading. Page loads faster.
 
@@ -3555,7 +3595,7 @@ Each stream operates independently. Packet loss in one stream does not affect ot
 
 ### Faster connection setup
 
-#### HTTP/2
+**HTTP/2**
 
 ```text
 TCP handshake (SYN → SYN-ACK → ACK)
@@ -3685,7 +3725,7 @@ HTTP/3 = Multiplexing over QUIC
 ---
 
 
-## 1.14 Keep Alive Connections
+## 1.14 Keep-Alive Connections
 
 TCP handshake details: [1.3 TCP Handshake](#13-tcp-handshake) · HTTP/2 multiplexing: [1.12 HTTP/2 & HTTP/3](#112-http2-http3) · HTTPS: [1.10](#110-httphttps)
 
@@ -4073,6 +4113,19 @@ Home User → VPN / Corporate Proxy → google.com
 
 Think: **proxy representing the client**
 
+```mermaid
+flowchart LR
+    subgraph FP["Forward proxy"]
+        C1[Client] --> FPX[Forward Proxy]
+        FPX --> WWW[Internet / google.com]
+    end
+    subgraph RP["Reverse proxy"]
+        C2[Internet client] --> RPX[Reverse Proxy]
+        RPX --> B1[Backend 1]
+        RPX --> B2[Backend 2]
+    end
+```
+
 ---
 
 ### Reverse proxy
@@ -4166,7 +4219,7 @@ Request 2 → App2
 Request 3 → App3
 ```
 
-Traffic distributed evenly. Algorithms and pitfalls: [1.20](#120-load-balancer)
+Traffic distributed evenly. See algorithms above (including **consistent hashing** for cache shards).
 
 ---
 
@@ -4197,7 +4250,7 @@ Traffic distributed evenly. Algorithms and pitfalls: [1.20](#120-load-balancer)
 
 ## 1.16 NAT
 
-Private IP addressing: [1.6 IP Addressing & Subnetting](#16-ip-addressing-subnetting) · Proxy (L7): [1.15 Forward & Reverse Proxy](#115-forward-reverse-proxy)
+Private IP addressing: [1.6 IP Addressing/Subnetting](#16-ip-addressingsubnetting) · Proxy (L7): [1.15 Forward & Reverse Proxy](#115-forward-reverse-proxy) · VPN: [1.17 VPN](#117-vpn)
 
 **NAT (Network Address Translation)** is a technique used by routers, firewalls, and cloud gateways to translate one IP address into another.
 
@@ -4262,6 +4315,18 @@ Source IP = 49.205.100.50
 Google has no idea the original device was `192.168.1.10`.
 
 **Step 4** — Response comes back to `49.205.100.50`. Router checks NAT table and forwards response to `192.168.1.10`.
+
+```mermaid
+sequenceDiagram
+    participant L as Laptop 192.168.1.10
+    participant R as Router NAT 49.205.100.50
+    participant G as google.com
+    L->>R: Src 192.168.1.10:5000 → google.com
+    Note over R: NAT table: 192.168.1.10:5000 ↔ 49.205.100.50:30001
+    R->>G: Src 49.205.100.50:30001 → google.com
+    G-->>R: Response to 49.205.100.50:30001
+    R-->>L: Forward to 192.168.1.10:5000
+```
 
 ---
 
@@ -4421,7 +4486,7 @@ See [1.15](#115-forward-reverse-proxy) for proxy details.
 
 ## 1.17 VPN
 
-HTTPS: [1.10 HTTP/HTTPS](#110-httphttps) · Proxy: [1.15 Forward & Reverse Proxy](#115-forward-reverse-proxy)
+HTTPS (browser-to-site): [1.10 HTTP/HTTPS](#110-httphttps) · Proxy: [1.15 Forward & Reverse Proxy](#115-forward-reverse-proxy) · NAT: [1.16 NAT](#116-nat)
 
 **VPN (Virtual Private Network)** creates a secure, encrypted connection between your device and a VPN server over the public internet.
 
@@ -4469,6 +4534,13 @@ Laptop → Encrypted VPN Tunnel → VPN Server → google.com
 ```
 
 Google sees **VPN server IP address** instead of your real IP.
+
+```mermaid
+flowchart LR
+    L[Laptop] -->|encrypted tunnel| V[VPN Server]
+    V --> I[Internet / google.com]
+    L -.->|hidden| R[Real IP not seen by site]
+```
 
 ---
 
@@ -4623,7 +4695,7 @@ This is one of the most common enterprise VPN use cases.
 
 ## 1.18 Unicast, Broadcast, Multicast & Anycast
 
-DNS anycast: [1.8 DNS](#18-dns) · CDN edges: [1.19 CDN](#119-cdn)
+DNS anycast: [1.8 DNS](#18-dns) · CDN edges: [1.19 CDN](#119-cdn) · VPN: [1.17 VPN](#117-vpn)
 
 ---
 
@@ -4709,7 +4781,7 @@ All devices receive the request. Router responds.
 
 **Important:** Broadcast generally works only inside a local network. Routers typically do **not** forward broadcast traffic.
 
-*(Subnet broadcast addresses — e.g. `192.168.1.255` — are covered in [1.6 IP Addressing](#16-ip-addressing-subnetting).)*
+*(Subnet broadcast addresses — e.g. `192.168.1.255` — are covered in [1.6 IP Addressing/Subnetting](#16-ip-addressingsubnetting).)*
 
 ---
 
@@ -4916,6 +4988,15 @@ File exists in CDN. CDN returns file immediately. **Origin server is not contact
 #### Case 2: Cache miss
 
 File not found. CDN fetches from origin, stores locally, returns response. Future requests become cache hits.
+
+```mermaid
+flowchart TB
+  U[User] --> E[CDN Edge]
+  E -->|Cache hit| U2[Fast response — origin not contacted]
+  E -->|Cache miss| O[Origin Server]
+  O --> E
+  E --> U3[Response + cache updated]
+```
 
 ---
 
@@ -5143,7 +5224,7 @@ Later: User → CDN (content already available)
 
 ## 1.20 Load Balancer
 
-CDN: [1.19 CDN](#119-cdn) · Reverse proxy: [1.15 Forward & Reverse Proxy](#115-forward-reverse-proxy) · Consistent hashing deep dive: [1.21](#121-load-balancer-algorithm)
+CDN: [1.19 CDN](#119-cdn) · Reverse proxy: [1.15 Forward & Reverse Proxy](#115-forward-reverse-proxy)
 
 A **load balancer** distributes incoming requests across multiple backend servers.
 
@@ -5202,6 +5283,17 @@ Client → Load Balancer → App1 / App2 / App3
 ```
 
 Request arrives → load balancer selects a server → request forwarded → response returns through load balancer.
+
+```mermaid
+flowchart TB
+    C[Client] --> LB[Load Balancer]
+    LB --> A1[App1]
+    LB --> A2[App2]
+    LB --> A3[App3]
+    A1 -.->|health check| LB
+    A2 -.->|health check| LB
+    A3 -.->|health check| LB
+```
 
 ---
 
@@ -5301,6 +5393,41 @@ Hash based on client IP — User A always goes to App1, User B always goes to Ap
 
 Useful for sticky sessions.
 
+#### 9. Consistent hashing
+
+Place backends and keys on a **hash ring** (0 to 2³²−1). A key walks clockwise to the first backend on the ring.
+
+```text
+hash(user:42) → Node B
+hash(user:99) → Node C
+```
+
+When a node is **added or removed**, only keys **adjacent** to that node move — not all keys (unlike `hash % N`).
+
+```text
+hash % N with 3 → 4 backends:  ~75% of keys remap
+consistent hash:                ~25% of keys remap
+```
+
+**Virtual nodes (vnodes):** Each physical server gets many points on the ring (e.g. 100) to spread load evenly when server count is small.
+
+| | Consistent hash | IP hash |
+|---|-----------------|---------|
+| Best for | Distributed caches, sharded state, CDN origin selection | Simple stickiness without cookies |
+| Pool change | ~1/N keys remap | Almost full reshuffle |
+| Hot key risk | Celebrity user id overloads one shard — use salting | Carrier NAT can hot-spot one backend |
+
+```mermaid
+flowchart LR
+    subgraph ring["Hash ring"]
+        N1[Node A]
+        N2[Node B]
+        N3[Node C]
+    end
+    K1["hash(user:42)"] --> N2
+    K2["hash(user:99)"] --> N3
+```
+
 ---
 
 ### Health checks
@@ -5387,44 +5514,9 @@ Users → CDN → Load Balancer → App1 / App2 / App3 → Database
 ---
 
 
-## 1.21 Load Balancer Algorithm
-
-Algorithm overview (round robin, weighted RR, least connections, IP hash, etc.): [1.20 Load Balancer](#120-load-balancer)
-
-This section covers **consistent hashing** — used when adding or removing backends should not remap most existing keys (caches, sharded state).
-
----
-
-### Consistent hashing
-
-Place backends and keys on a **hash ring** (0 to 2³²−1). A key walks clockwise to the first backend on the ring.
-
-```text
-hash(user:42) → Node B
-hash(user:99) → Node C
-```
-
-When a node is **added or removed**, only keys **adjacent** to that node on the ring move — not all keys (unlike `hash % N`).
-
-```text
-hash % N with 3 → 4 backends:  ~75% of keys remap
-consistent hash:                ~25% of keys remap
-```
-
-**Virtual nodes (vnodes):** Each physical server gets many points on the ring (e.g. 100) to spread load evenly when server count is small.
-
-**Best for:** Distributed caches, sharded state, CDN origin selection
-
-**Avoid when:** Hot keys dominate one node (celebrity user id) — use salting or sub-shards
-
-**vs IP hash:** IP hash is simpler but remaps almost everything when pool size changes; consistent hash minimizes disruption on scale-out.
-
----
-
-
 ## 1.22 SSE, Polling & WebSockets
 
-Load balancer + sticky sessions: [1.20 Load Balancer](#120-load-balancer) · HTTP basics: [1.10 HTTP/HTTPS](#110-httphttps)
+Load balancer + sticky sessions: [1.20 Load Balancer](#120-load-balancer) · HTTP/2 multiplexing: [1.12 HTTP/2 & HTTP/3](#112-http2-http3) · Keep-Alive: [1.14](#114-keep-alive-connections) · HTTP basics: [1.10](#110-httphttps)
 
 ---
 
@@ -5633,6 +5725,30 @@ Messages delivered instantly.
 ---
 
 ### Connection comparison
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant S as Server
+    Note over C,S: Short polling
+    C->>S: GET /updates
+    S-->>C: Response (close)
+    C->>S: GET /updates
+    S-->>C: Response (close)
+    Note over C,S: Long polling
+    C->>S: GET /updates (held open)
+    S-->>C: Response when data ready
+    Note over C,S: SSE
+    C->>S: GET /events
+    loop Server push
+        S-->>C: event stream
+    end
+    Note over C,S: WebSocket
+    C->>S: HTTP Upgrade
+    S-->>C: 101 Switching Protocols
+    C->>S: bidirectional messages
+    S->>C: bidirectional messages
+```
 
 **Short polling:**
 
