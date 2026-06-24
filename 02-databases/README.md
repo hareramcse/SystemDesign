@@ -182,11 +182,37 @@ flowchart LR
 
 ### Trade-offs / Pitfalls
 
-- Too many indexes slow writes and increase storage (SSD still costs money)
-- Wrong column order in composite index -> index unused
-- Optimizer may choose seq scan if it estimates most rows match anyway
-- Index maintenance during bulk load - drop index, load, recreate is faster
-- Unique index enforces constraint but adds write cost on every insert
+| Pitfall | Symptom | Mitigation |
+|---------|---------|------------|
+| Too many indexes | Write p99 spikes; autovacuum lag | Index only hot `WHERE`/`JOIN` columns; drop unused via `pg_stat_user_indexes` |
+| Wrong composite column order | Index scan never chosen | Match left-prefix rule to query predicates |
+| Low-selectivity index | Planner prefers seq scan anyway | Partial index (`WHERE status = 'active'`) or drop |
+| Expression without index | Full scan on `LOWER(email)` | Expression index: `CREATE INDEX ON users (LOWER(email))` |
+| Index bloat | Seek latency grows; disk usage >> row count | `REINDEX CONCURRENTLY`; fix long transactions blocking vacuum |
+| Bulk load with indexes live | Load takes hours | Drop non-PK indexes → load → recreate |
+| Unindexed foreign key | Slow `JOIN`/`ON DELETE CASCADE` | Index every FK column referenced in joins or cascades |
+
+#### Production rules
+
+| Rule | Why |
+|------|-----|
+| **EXPLAIN (ANALYZE, BUFFERS) before shipping** | Catches seq scans and buffer reads in staging with realistic row counts |
+| **One index per dominant access path** | Composite index `(a, b)` beats separate indexes on `a` and `b` for `WHERE a=? AND b=?` |
+| **Monitor `idx_scan` vs `seq_scan`** | `pg_stat_user_indexes.idx_scan = 0` for 30d → candidate to drop |
+| **Cap indexes per table** | OLTP tables with 8+ indexes often have write-bound p99; audit quarterly |
+| **Reindex after major bulk delete** | Bloat from dead tuples fragments index pages |
+| **Match index order to `ORDER BY`** | Avoid sort step: `WHERE user_id=? ORDER BY created_at` → `(user_id, created_at)` |
+| **Never index low-cardinality alone** | `gender`, `is_active` alone rarely help; use partial or composite leading column |
+
+#### Production monitoring
+
+| Signal | Source | Alert threshold (starting point) |
+|--------|--------|----------------------------------|
+| Unused indexes | `pg_stat_user_indexes` (`idx_scan = 0`) | Any index > 1 GB with zero scans 30d |
+| Index bloat ratio | `pgstattuple` / `pg_stat_all_indexes` | Bloat > 30% on hot indexes |
+| Seq scan on large tables | `pg_stat_user_tables.seq_scan` vs `seq_tup_read` | Seq reads > 1M/hour on tables > 100k rows |
+| Index-only scan rate | `EXPLAIN` `Index Only Scan` vs heap fetch | Visibility map stale → run `VACUUM` |
+| Write amplification | `n_tup_ins + n_tup_upd` vs index count | Write latency correlates with index count |
 
 ### References
 
@@ -659,6 +685,29 @@ COMMIT;  -- or retry on conflict
 | RC + read-modify-write race | Lost update | `UPDATE ... WHERE version = ?` or `FOR UPDATE` |
 | Phantom under RC | Double booking in gap | `FOR UPDATE`, unique constraints, SERIALIZABLE |
 
+#### Production rules
+
+| Rule | Why |
+|------|-----|
+| **Set isolation explicitly in pool config** | ORM and driver defaults differ; PostgreSQL RC ≠ InnoDB RR |
+| **Default OLTP to READ COMMITTED** | Best throughput; escalate only where invariant proven |
+| **Keep SERIALIZABLE transactions short** | SSI aborts (`40001`) and long snapshots block vacuum |
+| **Implement retry on `40001` / deadlock** | Exponential backoff with jitter; cap retries (3–5) |
+| **Use `SELECT FOR UPDATE` for inventory/seats** | Cheaper than global SERIALIZABLE when hot row is known |
+| **Never hold txn open across HTTP/RPC** | Minutes-long snapshot → bloat, lock waits, serialization failures |
+| **Monitor `xact_age` and lock waits** | `pg_stat_activity` where `state = 'idle in transaction'` > 60s → kill or alert |
+| **Document per-endpoint isolation** | Checkout SERIALIZABLE; feed READ COMMITTED — in runbook, not tribal knowledge |
+
+#### Production monitoring
+
+| Signal | Source | Action |
+|--------|--------|--------|
+| Serialization failures | `pg_stat_database.conflicts` / app `40001` rate | Tune isolation down or shorten txns |
+| Deadlocks | `pg_stat_database.deadlocks` / `SHOW ENGINE INNODB STATUS` | Fix lock ordering; add index to avoid gap locks |
+| Long idle transactions | `pg_stat_activity.xact_start` | Statement timeout + `idle_in_transaction_session_timeout` |
+| Lock wait p99 | `pg_locks` + `wait_event` | Hot row contention → `FOR UPDATE NOWAIT` or queue |
+| Replica lag under RR reports | `pg_stat_replication.replay_lag` | Long snapshot on primary pins WAL |
+
 **Lost update fix pattern (optimistic locking):**
 
 ```sql
@@ -1064,10 +1113,47 @@ flowchart TB
 
 ### Trade-offs / Pitfalls
 
-- VACUUM FULL downtime on large tables
-- Aggressive autovacuum increases I/O
-- Not all dead space returned to OS (only marked reusable)
-- Replication slots can block WAL removal similarly
+| Pitfall | Symptom | Mitigation |
+|---------|---------|------------|
+| Long open transaction | `n_dead_tup` grows; autovacuum cannot truncate | `idle_in_transaction_session_timeout`; kill runaway sessions |
+| Autovacuum too lazy | Table bloat; seq scans slow | Lower `autovacuum_vacuum_scale_factor` on hot tables |
+| `VACUUM FULL` in production | Exclusive lock; hours of downtime | `pg_repack` or off-peak; prefer regular `VACUUM` |
+| Replication slot without consumer | WAL disk fills; cluster stops writes | Monitor `pg_replication_slots`; drop stale slots |
+| Xid wraparound emergency | Forced shutdown risk | Alert on `age(datfrozenxid)`; aggressive freeze |
+| Index not vacuumed | Index bloat separate from heap | `REINDEX CONCURRENTLY` after sustained bloat |
+| Anti-wraparound vacuum starved | `autovacuum_wraparound` lag | Prioritize tables nearest wraparound threshold |
+
+#### Production rules
+
+| Rule | Why |
+|------|-----|
+| **Never disable autovacuum globally** | Bloat and xid wraparound are production incidents, not tuning knobs |
+| **Tune per-table autovacuum for churn** | High-update tables (`orders`, `sessions`) need lower scale factor than reference data |
+| **Run `VACUUM ANALYZE` after bulk delete** | Planner stats stale; dead tuples spike |
+| **Schedule `VACUUM`/`REINDEX` off-peak** | Both compete for I/O with OLTP |
+| **Freeze aggressively on long-lived tables** | `autovacuum_freeze_max_age` tuning prevents emergency wraparound vacuum |
+| **Monitor slots and logical replication** | Slot lag blocks WAL recycle same as long transactions |
+| **Use `pg_repack` instead of `VACUUM FULL`** | Rewrites without long exclusive locks (still has cost) |
+
+#### Production monitoring
+
+| Signal | Source | Alert threshold (starting point) |
+|--------|--------|----------------------------------|
+| Dead tuple ratio | `pg_stat_user_tables` (`n_dead_tup / n_live_tup`) | > 20% on hot tables |
+| Autovacuum lag | `last_autovacuum`, `last_autoanalyze` vs churn rate | No autovacuum 24h on high-update table |
+| Xid age | `age(datfrozenxid)` per database | > 200M (investigate); > 1B (urgent) |
+| Table bloat | `pgstattuple` / pg_bloat views | Bloat > 30% on tables > 10 GB |
+| Autovacuum I/O pressure | `pg_stat_progress_vacuum` | Vacuum running > 4h on single table |
+| WAL retention | `pg_replication_slots` + disk usage | Slot `retained_wal` growing unbounded |
+| Index bloat | `pgstatindex` | Index size >> heap on append-heavy tables |
+
+```text
+-- Quick dead-tuple check (PostgreSQL)
+SELECT relname, n_live_tup, n_dead_tup,
+       round(100.0 * n_dead_tup / NULLIF(n_live_tup + n_dead_tup, 0), 1) AS dead_pct
+FROM pg_stat_user_tables
+ORDER BY n_dead_tup DESC LIMIT 10;
+```
 
 ### References
 
@@ -1679,10 +1765,48 @@ flowchart TB
 
 ### Trade-offs / Pitfalls
 
-- Index every column — write amplification and storage bloat
-- Hint forcing bad plan after data distribution changes
-- Tuning reports on production primary during peak
-- Ignoring lock contention — fast plan but serializes all writers
+| Pitfall | Symptom | Mitigation |
+|---------|---------|------------|
+| Index every column | Write p99 degrades linearly with index count | Drop unused; composite over redundant singles |
+| Stale statistics | 100× row estimate error; nested loop disaster | `ANALYZE` after bulk load; enable auto-analyze |
+| `OFFSET` deep pagination | Scans and discards millions of rows | Keyset: `WHERE id > ? ORDER BY id LIMIT N` |
+| N+1 in ORM | 1 + N queries per request | Eager load, `JOIN`, or batch `IN (...)` |
+| Hint forcing | Plan optimal at 1M rows, catastrophic at 100M | Remove hints; fix stats and indexes |
+| Heavy reports on primary | OLTP p99 spikes during BI queries | Read replica or materialized view |
+| Lock contention on hot row | Fast index plan but serial wait queue | Shorter txns; `SKIP LOCKED`; queue writes |
+| Connection pool oversubscription | DB CPU thrashing on context switch | `pool_size ≈ cores × 2`; queue at app layer |
+
+#### Production rules
+
+| Rule | Why |
+|------|-----|
+| **Measure p99, not average** | Mean hides lock tails and cache-miss storms |
+| **EXPLAIN on staging with production stats** | Empty dev DB lies about plan choice |
+| **`ANALYZE` after any >10% row change** | Bulk import without analyze → wrong plans for weeks |
+| **Tune one query at a time with before/after** | Avoid shotgun index creation |
+| **Cap `statement_timeout` per role** | Runaway reports cannot hold locks indefinitely |
+| **Log queries > 1s with plan** | `pg_stat_statements` / slow query log → top 10 weekly review |
+| **Fix schema before cache** | Missing index at 1M RPS cannot be cached away |
+| **Pagination: keyset over OFFSET** | `OFFSET 100000` always scans 100k rows |
+
+#### Production monitoring
+
+| Signal | Source | Action |
+|--------|--------|--------|
+| Top queries by total time | `pg_stat_statements` (`total_exec_time`) | EXPLAIN top 5; index or rewrite |
+| Seq scan ratio | `pg_stat_user_tables` | Unexpected seq scan on large table → index audit |
+| Lock wait time | `pg_stat_activity.wait_event_type = 'Lock'` | Identify hot tables and txn length |
+| Buffer hit ratio | `EXPLAIN (BUFFERS)` shared hit vs read | Low hit → memory pressure or full scan |
+| Connection count vs pool | `pg_stat_activity` count by app | Pool too large → reduce or use PgBouncer |
+| Replica lag during reports | `replay_lag` | Move analytics off primary |
+
+```text
+-- PostgreSQL: top 10 by total time (requires pg_stat_statements)
+SELECT calls, round(total_exec_time::numeric, 2) AS total_ms,
+       round(mean_exec_time::numeric, 2) AS mean_ms, query
+FROM pg_stat_statements
+ORDER BY total_exec_time DESC LIMIT 10;
+```
 
 ---
 

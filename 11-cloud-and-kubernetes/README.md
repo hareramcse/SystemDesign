@@ -431,46 +431,142 @@ flowchart TB
 
 ### What is it
 
-Running application stacks in two or more cloud regions for DR, global performance, or regulatory requirements.
+**Multi-region deployment** runs independent (or coordinated) application stacks in **two or more cloud regions** — each region a full failure domain with its own VPC, compute, databases, and often control plane. Traffic is routed globally; data is replicated or partitioned according to consistency and compliance requirements.
+
+Patterns span **active-passive DR** (standby until failover) to **active-active** (all regions serve live traffic simultaneously).
 
 ### Why it matters
 
-Single-region architectures fail when entire region goes offline. Multi-region is the ultimate availability and latency strategy.
+Single-region architectures fail when an entire region goes offline (power, network, control plane). Multi-region delivers:
+
+- **Region-level survivability** — AZ redundancy is not enough for tier-0 systems
+- **Global latency** — users routed to nearest healthy region
+- **Data residency** — EU data in `eu-west-1`, US in `us-east-1`
+- **Interview framing:** "Multi-AZ = datacenter failure; multi-region = regional catastrophe"
 
 ### How it works
 
-Patterns: active-passive DR, active-active global serving, or data-local with global control plane. Global load balancer (Route53, Cloud CDN) routes users. Async/sync replication between regional databases. Independent deployments per region or GitOps fan-out.
+**Deployment patterns:**
 
-### Diagram
+| Pattern | Traffic | Data | RPO / RTO | Complexity |
+|---------|---------|------|-----------|------------|
+| **Active-passive DR** | Primary only; failover to secondary | Async replication to standby | RPO: minutes–hours; RTO: minutes | Medium |
+| **Active-active (read)** | All regions serve reads | Writes to primary; async replicas in other regions | RPO: replication lag | High |
+| **Active-active (read/write)** | All regions serve writes | Multi-master or conflict resolution (CRDT, last-write-wins) | RPO: near-zero; RTO: automatic | Very high |
+| **Cell-based / data-local** | User pinned to home region | Data never leaves region; global control plane | Per-cell isolation | High |
+| **Global + edge** | CDN/edge for static; API in 2–3 hubs | Central DB with regional caches | Varies | Medium |
 
 ```mermaid
 flowchart TB
-    GLB[Global DNS / GLB]
-    GLB --> US[Region US]
-    GLB --> EU[Region EU]
-    US <-->|repl| EU
+    GLB[Global DNS / GLB / Anycast]
+    GLB -->|latency + health| US[Region US-East]
+    GLB --> EU[Region EU-West]
+    GLB --> AP[Region AP-South]
+    US <-->|async repl| EU
+    US <-->|async repl| AP
+```
+
+**1. Global traffic routing**
+
+| Mechanism | Behavior | Failover speed |
+|-----------|----------|----------------|
+| **Route53 / Cloud DNS** | Latency-based or geolocation routing + health checks | DNS TTL delay (30s–5m) |
+| **Global load balancer** | Anycast IP; health-probe driven | Seconds to minutes |
+| **CDN edge** | Static/cacheable at edge; API origin regional | Automatic origin failover |
+| **Service mesh (multi-cluster)** | Federation or multi-cluster ingress | Depends on mesh config |
+
+**2. Data layer strategies**
+
+| Store type | Multi-region approach | Consistency trade-off |
+|------------|----------------------|----------------------|
+| **Object (S3)** | Cross-region replication (CRR) | Eventually consistent |
+| **SQL (RDS/Aurora)** | Aurora Global Database, cross-region read replicas | Async lag; promoted replica on failover |
+| **NoSQL (DynamoDB)** | Global tables (multi-master) | Conflict resolution built-in |
+| **Cache (Redis)** | Regional clusters; no cross-region sync | Cache miss on failover |
+| **Kafka** | MirrorMaker 2 / cluster linking | Async; offset mapping complexity |
+
+**3. Active-passive failover runbook (production minimum)**
+
+```text
+1. Health check detects primary region unhealthy (synthetics + internal)
+2. Update DNS/GLB weights → 0% primary, 100% secondary
+3. Promote read replica to primary (or activate warm standby)
+4. Verify secondary can handle full traffic (capacity pre-provisioned)
+5. Communicate status; begin primary region recovery in parallel
+6. Post-failover: reconcile data lag, replay events if needed
+```
+
+**4. Active-active pitfalls**
+
+- **Split brain:** two regions accept writes without coordination → data divergence
+- **Cross-region latency:** synchronous replication adds 50–150ms per write
+- **Egress cost:** replication and cross-region API calls add up at scale
+- **Deployment fan-out:** GitOps must deploy to all regions; version skew causes subtle bugs
+
+```mermaid
+sequenceDiagram
+    participant U as User EU
+    participant EU as EU Region
+    participant US as US Region
+    participant DB as Global DB
+
+    U->>EU: POST /order
+    EU->>DB: write (local leader)
+    DB-->>US: async replicate
+    Note over US: Replication lag 200ms
 ```
 
 ### Key details
 
-- Resolve data consistency model first
-- Automate regional failover runbooks
-- Consider egress and cross-region API costs
-- Compliance: data may not leave jurisdiction
+- **Decide consistency model first** — drives every other decision
+- **Automate regional failover runbooks** — manual DNS changes at 3 AM fail
+- **Pre-provision secondary capacity** — cold standby = hours to scale
+- **Compliance:** data may not leave jurisdiction — partition by region
+- **Test failover quarterly** — untested DR is wishful thinking
+- **Independent regional control planes** — one K8s cluster per region is standard
+- **Observability per region** — aggregate global SLI from regional SLIs
+
+### Production rules
+
+| Rule | Rationale |
+|------|-----------|
+| **One K8s cluster per region** | Control plane failure isolated; no stretched cluster across regions |
+| **Stateless apps in all regions** | Session/state in regional DB or global store with clear consistency model |
+| **Health checks from outside region** | Internal-only checks miss regional network partition |
+| **Idempotent cross-region operations** | Failover replay and async delivery cause duplicates |
+| **Version parity across regions** | Skewed deploy → EU on v2, US on v1 → incompatible API behavior |
+| **Document RPO/RTO per tier** | Tier-0: RPO < 1 min; tier-2: RPO 24h acceptable |
+| **Chaos-test regional failure** | Game day: disable region in GLB, verify failover |
+| **Separate secrets per region** | KMS keys region-scoped; replicate secrets via vault federation |
+| **Monitor replication lag** | Lag > RPO target → alert before failover data loss |
+| **Runbooks include rollback to primary** | Fail back after recovery — not only fail forward |
 
 ### When to use
 
-- Global user base
-- Tier-0 DR requirements
+- Global user base requiring < 100ms latency worldwide
+- Tier-0 DR requirements (finance, healthcare, critical infra)
 - Regulatory multi-jurisdiction presence
+- SLA promising region-level survivability
 
 ### Trade-offs
 
 | Pros | Cons |
 |------|------|
 | Region-level survivability | Highest complexity and cost |
-| Local latency worldwide | Data sync challenges |
-| Regulatory flexibility | Operational duplication |
+| Local latency worldwide | Data sync and conflict resolution |
+| Regulatory flexibility | Operational duplication (N regions × ops) |
+| Blast radius containment | Cross-region egress and replication cost |
+
+| Pitfall | Symptom | Mitigation |
+|---------|---------|------------|
+| **Untested failover** | Real outage → manual panic, hours RTO | Quarterly game days; automated runbooks |
+| **Replication lag ignored** | Failover loses last 10 min of data | Monitor lag; RPO alerts; sync critical paths |
+| **Active-active without conflict handling** | Duplicate orders across regions | CRDT, idempotency keys, or single write leader |
+| **DNS TTL too high** | Users hit dead region for 5 min | Low TTL on failover records; use anycast GLB |
+| **Cold secondary** | Failover OK but secondary OOMs under load | Warm standby at 30–50% capacity or pre-scaled |
+| **Global DB bottleneck** | All writes to one region | Partition data; regional leaders |
+| **Version skew** | Post-failover subtle bugs | GitOps fan-out; same image digest all regions |
+| **Cross-region chatty services** | Latency kills UX | Data locality; async events over sync RPC |
 
 ### References
 
@@ -699,15 +795,62 @@ flowchart LR
 
 ### What is it
 
-Automatically adjusting compute capacity based on demand signals - CPU, queue depth, custom metrics - to match load without manual intervention.
+**Autoscaling** automatically adjusts compute capacity based on demand signals — CPU, memory, request rate, queue depth, or custom business metrics — without manual capacity planning. It operates at multiple layers: **VM/instance** (ASG/MIG), **pod** (HPA/KEDA), and **node** (Cluster Autoscaler).
+
+**Horizontal scaling** adds/removes instances (preferred). **Vertical scaling** resizes instance CPU/memory (less common, disruptive).
 
 ### Why it matters
 
-Right-sizes cost and maintains performance during traffic spikes. Core to cloud economics and SLO adherence.
+Autoscaling is core to cloud economics and SLO adherence:
+
+- **Cost efficiency** — pay for capacity used, not peak-provisioned 24/7
+- **Spike absorption** — Black Friday, viral launch without pre-provisioning max capacity
+- **SLO protection** — scale out before latency breaches latency SLO
+- **Ops toil reduction** — no 3 AM manual `kubectl scale`
 
 ### How it works
 
-**Horizontal:** add/remove instances (HPA, ASG). **Vertical:** resize instance (less common). Policies define min/max, scale-out/in thresholds, cooldown periods. Predictive scaling uses ML on historical patterns.
+**Multi-layer autoscaling stack:**
+
+```mermaid
+flowchart TB
+    Traffic[Demand signal] --> HPA[HPA / KEDA / scales pods]
+    HPA --> Pending{Pods schedulable?}
+    Pending -->|yes| Pods[More pods on existing nodes]
+    Pending -->|no| CA[Cluster Autoscaler / adds nodes]
+    CA --> ASG[Cloud ASG / MIG / +N nodes]
+    ASG --> Pods
+    subgraph Cloud
+        ASG2[ASG standalone / VM tier]
+    end
+    Traffic --> ASG2
+```
+
+| Layer | Scales | Trigger | Latency |
+|-------|--------|---------|---------|
+| **HPA** | Pod replicas | CPU, memory, custom metrics | 15s–2 min |
+| **KEDA** | Pod replicas (incl. zero) | Queue lag, cron, external | Event-driven |
+| **Cluster Autoscaler** | Worker nodes | Pending unschedulable pods | 2–5 min |
+| **ASG / MIG** | VMs | CPU, ALB request count, schedule | 1–5 min |
+| **Predictive / scheduled** | Pre-scale before event | ML forecast, known calendar | Proactive |
+
+**Scaling policies (ASG example):**
+
+```text
+Scale-out: avg CPU > 70% for 2 consecutive minutes → +2 instances
+Scale-in:  avg CPU < 30% for 10 consecutive minutes → -1 instance
+Cooldown:  300s after scale-out before next scale-out
+Min: 3     Max: 50    Desired: auto
+```
+
+**Custom metric scaling (production preferred for APIs):**
+
+| Signal | Better than CPU when |
+|--------|---------------------|
+| ALB/ingress request count per target | I/O-bound APIs with low CPU |
+| SQS/Kafka consumer lag | Queue workers |
+| p99 latency via Prometheus adapter | Latency SLO-driven scaling |
+| Active connections | WebSocket/gRPC long-lived |
 
 ### Diagram
 
@@ -721,24 +864,53 @@ flowchart LR
 
 ### Key details
 
-- Scale on custom metrics (request rate, lag)
-- Cooldown prevents flapping
-- Combine HPA (pods) + Cluster Autoscaler (nodes)
-- Pre-warm for known events (sales, launches)
+- Scale on **custom metrics** when CPU is misleading (I/O-bound, event-driven)
+- **Cooldown / stabilization** prevents flapping — asymmetric: fast out, slow in
+- **HPA + Cluster Autoscaler** — full K8s stack; HPA alone leaves pods Pending
+- **Pre-warm** for known events — autoscaling lags behind sudden spikes
+- **Min capacity** covers baseline; **max** caps cost and blast radius
+- **Scale-in protection** for long-running jobs and StatefulSets
+
+### Production rules
+
+| Rule | Rationale |
+|------|-----------|
+| **Define requests/limits before HPA** | HPA CPU % = usage/requests — missing requests = broken scaling |
+| **Set min replicas ≥ 2 in prod** | Scale-to-one risks outage during scale-up lag |
+| **Asymmetric scale policies** | Fast scale-out; slow scale-in with stabilization window |
+| **Custom metric for real signal** | Queue lag, RPS, latency — not CPU alone for APIs |
+| **Pre-warm before known spikes** | Scheduled scaling + cache warm; HPA reacts too late |
+| **Max cap prevents runaway cost** | Misconfigured metric → 1000 pods → bankruptcy |
+| **Test scale-out under load** | Load test verifies HPA + CA chain end-to-end |
+| ** PDB protects scale-in** | Cluster Autoscaler respects PodDisruptionBudget |
+| **Don't autoscale stateful DBs horizontally** | RDS vertical scale or read replicas — not HPA on Postgres pod |
+| **Monitor scaling events** | Alert on: max replicas hit, pending pods > 5 min, flapping |
 
 ### When to use
 
-- Variable traffic web services
-- Queue consumer workers
+- Variable traffic web services and APIs
+- Queue consumer workers (KEDA)
 - Batch processing with backlog signals
+- Any workload with predictable diurnal or event-driven patterns
 
 ### Trade-offs
 
 | Pros | Cons |
 |------|------|
-| Cost efficiency | Scale-out lag during spikes |
+| Cost efficiency | Scale-out lag during sudden spikes |
 | Handles unknown load | Misconfigured policies oscillate |
-| Automated | Stateful apps harder to scale |
+| Automated | Stateful apps harder to scale horizontally |
+
+| Pitfall | Symptom | Mitigation |
+|---------|---------|------------|
+| **CPU-only HPA on I/O workload** | Queue backs up, CPU idle | Scale on lag, RPS, or latency |
+| **No Cluster Autoscaler** | HPA creates Pending pods | Pair HPA with CA or fixed node pool headroom |
+| **Aggressive scale-in** | Flapping; cold pods during rebound | Stabilization window; slow scale-down policy |
+| **Missing resource requests** | HPA shows unknown metrics | Set CPU/memory requests on all pods |
+| **Scale lag on spike** | SLO breach before pods ready | Pre-warm; over-provision min; faster readiness probes |
+| **Max too low** | Throttling at ceiling during peak | Load test to set realistic max; alert at 80% max |
+| **Autoscaling the database** | Replication lag, connection storms | Managed DB vertical scale + read replicas |
+| **Scheduled + reactive conflict** | Over-provisioned after event | Scheduled scale-down after event window |
 
 ### References
 
@@ -1615,6 +1787,31 @@ flowchart TB
 | Stateful workload? | Use StatefulSet — stable identity + ordered rollout |
 | Pause rollout? | `kubectl rollout pause deployment/api` — useful for canary analysis |
 
+### Production rules
+
+| Rule | Rationale |
+|------|-----------|
+| **`maxUnavailable: 0` for tier-0** | Never drop below desired count during rollout — safest prod default |
+| **Readiness before liveness** | Readiness gates traffic; premature liveness restart kills slow-starting pods |
+| **`progressDeadlineSeconds` set** | Stuck rollout surfaces as alert, not silent partial deploy |
+| **PDB during rollouts and drains** | `minAvailable: 80%` prevents node drain from taking all pods |
+| **Image digest in prod** | `:latest` tag drift — pin `@sha256:...` for reproducible rollouts |
+| **PreStop hook + grace period** | Drain connections before SIGTERM — prevents 502 during rollout |
+| **`revisionHistoryLimit` ≥ 3** | Rollback needs history; 0 = no undo |
+| **Annotate deploys on dashboards** | Correlate error spike with release version |
+| **Load test new version before full rollout** | Canary analysis or manual `rollout pause` + metric check |
+| **GitOps single source of truth** | `kubectl set image` ad-hoc drifts from declared state |
+
+**PreStop example:**
+
+```yaml
+lifecycle:
+  preStop:
+    exec:
+      command: ["/bin/sh", "-c", "sleep 15"]
+terminationGracePeriodSeconds: 30
+```
+
 ### When to use
 
 - **Stateless HTTP APIs, gRPC services, queue workers**
@@ -1630,6 +1827,17 @@ flowchart TB
 | HPA integration | Rolling update is all-or-nothing per pod — no traffic weighting without extra tooling |
 | Self-healing replica management | Large replica counts + slow probes = long rollouts |
 | GitOps-friendly declarative spec | `maxSurge`/`maxUnavailable` misconfig can cause brief overload or capacity dip |
+
+| Pitfall | Symptom | Mitigation |
+|---------|---------|------------|
+| **No readiness probe** | Traffic to starting pod → 502 | HTTP readiness on `/health` |
+| **`maxUnavailable: 25%` on small replica count** | 3 replicas → 1 down = 33% loss | Set `maxUnavailable: 0` or use `maxSurge: 1` |
+| **Liveness too aggressive** | Restart loop on slow dependency | Liveness checks process only, not downstream |
+| **Missing PDB** | Node drain kills all pods | `PodDisruptionBudget minAvailable` |
+| **No progress deadline** | Partial rollout stuck for hours | `progressDeadlineSeconds: 600` + alert |
+| **`:latest` image tag** | Unknown version in prod | Pin digest or semver tag |
+| **Instant SIGTERM** | In-flight requests dropped | `preStop` sleep + adequate `terminationGracePeriodSeconds` |
+| **Editing ReplicaSet directly** | Deployment controller reverts changes | Edit Deployment template only |
 
 ### References
 
@@ -1751,15 +1959,96 @@ flowchart LR
 
 ### What is it
 
-Controller for **stateful** workloads requiring stable network identity, ordered deployment, and persistent storage per replica.
+A **StatefulSet** is a Kubernetes controller for **stateful** workloads requiring:
+
+- **Stable network identity** — predictable DNS: `pod-0`, `pod-1`, `pod-2`
+- **Stable persistent storage** — each pod bound to its own PVC across restarts
+- **Ordered deployment and scaling** — pods created/deleted in sequence (0 → 1 → 2)
+
+Unlike Deployments, pod names are **sticky** (`kafka-0` not `kafka-7d4f9-xk2m`), and storage follows the pod.
 
 ### Why it matters
 
-Databases, Kafka brokers, and ZooKeeper need predictable pod names (`pod-0`, `pod-1`) and stable volumes - not random Deployment pod names.
+Distributed systems with identity and local state need predictable peers:
+
+- **Kafka, etcd, ZooKeeper** — broker ID maps to pod ordinal
+- **Elasticsearch** — node name stability for cluster formation
+- **Databases (self-hosted)** — primary/replica roles tied to instance identity
+
+**Interview distinction:** Deployment = stateless, interchangeable pods. StatefulSet = stateful, named pods with persistent volumes.
 
 ### How it works
 
-Ordered create/scale/delete (0, 1, 2 - ). Each pod gets persistent **volume claim template**. Headless Service provides stable DNS (`pod-0.svc`). Rolling update with partition for controlled rollout.
+**Object relationships:**
+
+```mermaid
+flowchart TB
+    STS[StatefulSet / replicas: 3] --> HS[Headless Service / clusterIP: None]
+    STS --> P0["pod-0 / PVC data-kafka-0"]
+    STS --> P1["pod-1 / PVC data-kafka-1"]
+    STS --> P2["pod-2 / PVC data-kafka-2"]
+    HS -->|"DNS: kafka-0.kafka-headless"| P0
+    HS -->|"DNS: kafka-1.kafka-headless"| P1
+    HS -->|"DNS: kafka-2.kafka-headless"| P2
+```
+
+**1. Ordered operations**
+
+| Operation | `OrderedReady` (default) | `Parallel` |
+|-----------|--------------------------|------------|
+| Scale up | 0 → 1 → 2 sequentially | All pods simultaneously |
+| Scale down | 2 → 1 → 0 sequentially | All pods simultaneously |
+| Rolling update | Reverse ordinal by default | Partition controls batch |
+
+**2. Volume claim templates**
+
+```yaml
+volumeClaimTemplates:
+- metadata:
+    name: data
+  spec:
+    accessModes: ["ReadWriteOnce"]
+    storageClassName: gp3
+    resources:
+      requests:
+        storage: 100Gi
+```
+
+Each pod `N` gets PVC `data-<statefulset>-N` — **bound to AZ** where first scheduled. Reschedule to different AZ may fail if volume is zone-locked.
+
+**3. Headless Service required**
+
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka-headless
+spec:
+  clusterIP: None          # headless — returns pod A records
+  selector:
+    app: kafka
+```
+
+DNS: `kafka-1.kafka-headless.default.svc.cluster.local` → pod-1 IP directly.
+
+**4. Rolling update with partition**
+
+```yaml
+updateStrategy:
+  type: RollingUpdate
+  rollingUpdate:
+    partition: 2    # only pods with ordinal >= 2 update
+```
+
+Canary StatefulSet update: set `partition: N-1`, verify `pod-(N-1)`, then lower partition to roll all.
+
+**5. Pod lifecycle on node loss**
+
+| Event | Behavior |
+|-------|----------|
+| Pod deleted | Recreated with **same name + same PVC** |
+| Node lost | Pod Pending until volume reattaches in same AZ |
+| PVC deleted | **Data loss** — PVC is the state |
 
 ### Diagram
 
@@ -1773,23 +2062,56 @@ flowchart LR
 
 ### Key details
 
-- `volumeClaimTemplates` per pod
-- `podManagementPolicy`: OrderedReady vs Parallel
-- Not a substitute for managed DB - often use RDS instead
-- Backup PVCs with Velero
+| Topic | Detail |
+|-------|--------|
+| `podManagementPolicy` | `OrderedReady` vs `Parallel` — Kafka often Ordered; Elasticsearch may Parallel |
+| `volumeClaimTemplates` | One PVC per pod; storage class defines IOPS (gp3, io2) |
+| **Not a managed DB replacement** | RDS/Cloud SQL/Aurora preferred for most relational workloads |
+| **Backup** | Velero for PVC snapshots; operator-managed backup for Kafka/etcd |
+| **Anti-affinity** | Spread ordinals across AZs — but PVC AZ binding complicates reschedule |
+| **OnDelete strategy** | Manual pod delete to update — used for strict rollout control |
+
+### Production rules
+
+| Rule | Rationale |
+|------|-----------|
+| **Prefer managed DB over StatefulSet Postgres** | Ops burden: backup, failover, upgrades, patching |
+| **Storage class with snapshots** | PVC backup via CSI snapshots; test restore quarterly |
+| **Pod anti-affinity across AZs** | Survive AZ failure — but plan for PVC zone binding |
+| **Never scale down without data safety** | Removing `pod-2` deletes highest ordinal — understand data distribution |
+| **Use Operators for day-2 ops** | Strimzi (Kafka), CloudNativePG — StatefulSet alone isn't enough |
+| **Resource requests on all pods** | Scheduler needs signals; OOM on `pod-0` can break quorum |
+| **Headless service + correct port naming** | Peer discovery depends on stable DNS |
+| **Test node failure** | PVC reattach time; pod stuck Pending is common surprise |
+| **Partition for controlled rollout** | Update one broker at a time in Kafka |
+| **Monitor per-pod disk** | PVC full on `pod-1` doesn't show in aggregate metrics |
 
 ### When to use
 
-- Self-managed clustered stateful apps
-- Applications requiring stable hostname
+- Self-managed clustered stateful apps (Kafka, etcd, Cassandra)
+- Applications requiring stable hostname for peer discovery
+- Workloads where each replica has distinct persistent data
+
+**Prefer managed service when:** Postgres, MySQL, Redis — RDS/ElastiCache/Cloud SQL reduce ops risk.
 
 ### Trade-offs
 
 | Pros | Cons |
 |------|------|
 | Stable identity + storage | Slower scale operations |
-| Ordered rollout | Ops complexity vs managed DB |
-| Correct for Kafka/etcd | PVC binding limits rescheduling |
+| Ordered rollout control | Ops complexity vs managed DB |
+| Correct for Kafka/etcd/ZK | PVC AZ binding limits reschedule |
+| Predictable peer DNS | Scale-in removes highest ordinal first — data risk |
+
+| Pitfall | Symptom | Mitigation |
+|---------|---------|------------|
+| **StatefulSet for Postgres** | Backup/HA pain; DBA on-call | Use RDS/Cloud SQL/Aurora |
+| **PVC zone lock** | Pod Pending after node drain | Topology-aware scheduling; same-AZ nodes |
+| **Parallel scale on Kafka** | Cluster ID conflicts | `OrderedReady`; one broker at a time |
+| **No backup** | PVC delete = data gone | CSI snapshots; Velero; operator backup |
+| **Headless service missing** | Peers can't discover each other | `clusterIP: None` service required |
+| **Rolling all at once** | Quorum loss during update | `partition` for canary ordinal |
+| **Treating like Deployment** | `kubectl delete pod` without understanding ordinal | Learn ordered semantics first |
 
 ### References
 
@@ -2380,6 +2702,21 @@ flowchart TB
 | Flapping? | Tune `behavior.scaleDown.stabilizationWindowSeconds` |
 | Pod pending after HPA scale? | Need Cluster Autoscaler or more nodes |
 
+### Production rules
+
+| Rule | Rationale |
+|------|-----------|
+| **CPU requests on every pod** | HPA utilization = actual/requests — zero requests = broken or misleading |
+| **Install metrics-server** | Required for resource metrics; verify `kubectl top pods` works |
+| **minReplicas ≥ 2 for HA services** | Single pod + scale-up lag = outage window |
+| **maxReplicas load-tested** | Know pod count at peak; set max at 120% of tested peak |
+| **Custom metric for I/O workloads** | RPS, queue lag, latency — CPU-only misses backlog |
+| **Conservative scale-down** | `stabilizationWindowSeconds: 300` prevents flapping |
+| **Alert at maxReplicas** | Sustained max = under-provisioned or attack |
+| **Pair with Cluster Autoscaler** | HPA without CA → Pending pods |
+| **behavior.scaleUp not too slow** | Traffic spike needs fast response; 0s stabilization on scale-up |
+| **Test HPA in staging with load** | Verify metric pipeline before prod Black Friday |
+
 ### When to use
 
 - **Variable-load HTTP APIs, gRPC, workers** with measurable demand signal
@@ -2398,6 +2735,16 @@ flowchart TB
 | Cost savings on scale-in | Misconfigured requests → wrong scaling decisions |
 | Works with GitOps-declared min/max bounds | Doesn't add nodes — needs Cluster Autoscaler |
 
+| Pitfall | Symptom | Mitigation |
+|---------|---------|------------|
+| **Missing CPU requests** | HPA shows `<unknown>` or wrong % | Set requests on all containers |
+| **CPU-only on I/O app** | Lag grows, CPU flat | Prometheus adapter + queue/RPS metric |
+| **No metrics-server** | HPA never scales | Install and verify in cluster bootstrap |
+| **Aggressive scale-down** | Oscillation; cold start on rebound | 5 min stabilization window |
+| **maxReplicas too low** | SLO breach at ceiling | Load test; alert at 80% of max |
+| **HPA without CA** | Pods Pending for minutes | Cluster Autoscaler or headroom nodes |
+| **VPA + HPA conflict** | Both adjust resources/replicas | Use VPA for recommendations only, or separate workloads |
+
 ### References
 
 - [Kubernetes HPA](https://kubernetes.io/docs/tasks/run-application/horizontal-pod-autoscale/)
@@ -2412,15 +2759,72 @@ flowchart TB
 
 ### What is it
 
-Adds or removes **worker nodes** in the cluster node pool when pods cannot schedule (scale up) or nodes are underutilized (scale down).
+The **Cluster Autoscaler (CA)** automatically adjusts the **worker node count** in a Kubernetes cluster by interfacing with cloud auto scaling groups (AWS ASG, GKE MIG, AKS VMSS). It adds nodes when pods are **unschedulable** due to insufficient resources, and removes nodes when they are **underutilized** and workloads can relocate.
+
+CA closes the loop: **HPA scales pods → CA scales nodes** to run those pods.
 
 ### Why it matters
 
-HPA scales pods; Cluster Autoscaler ensures nodes exist to run them - closing the loop on infrastructure autoscaling.
+HPA increasing replicas without available node capacity produces **Pending pods** — autoscaling appears broken. CA ensures infrastructure matches pod demand:
+
+- **Cost optimization** — remove idle nodes overnight
+- **Capacity on demand** — no manual node pool resizing
+- **Full-stack autoscaling** — traffic → HPA → pods → CA → nodes
 
 ### How it works
 
-Watches pending pods (unschedulable) -> triggers cloud ASG/MIG to add node. When nodes underutilized and pods can move elsewhere, cordons and drains node for removal. Respects min/max node pool size and pod disruption budgets.
+**Scale-up trigger:**
+
+```mermaid
+flowchart TB
+    HPA[HPA increases replicas] --> Pending[Pods Pending / Unschedulable]
+    Pending --> CA[Cluster Autoscaler]
+    CA --> Sim[Simulate: which node template fits pods?]
+    Sim --> ASG[Cloud ASG / MIG scale up +1..N]
+    ASG --> Node[New node joins cluster]
+    Node --> Sched[Scheduler places Pending pods]
+```
+
+CA only scales up when pods are **unschedulable** — not merely when CPU is high on existing nodes (unless pods can't fit).
+
+**Scale-down trigger:**
+
+```text
+1. Node underutilized (CPU/memory below threshold) for ~10 min
+2. CA checks: can all pods on node move to other nodes?
+3. Respects PDB, DaemonSets, local storage, annotations
+4. Cordon node → drain pods → delete node from ASG
+```
+
+**Pods that block scale-down:**
+
+| Blocker | Why |
+|---------|-----|
+| **PodDisruptionBudget** | Draining would violate `minAvailable` |
+| **kube-system pods** | System pods without enough spare capacity elsewhere |
+| **`safe-to-evict: false`** | Annotated pods (optional opt-out) |
+| **Local storage pods** | EmptyDir-only usually OK; PVC may block |
+| **DaemonSets** | CA accounts for DS resource reservation |
+
+**Annotation for long-running jobs:**
+
+```yaml
+metadata:
+  annotations:
+    cluster-autoscaler.kubernetes.io/safe-to-evict: "false"
+```
+
+Use sparingly — blocks node removal for that pod.
+
+**Node group configuration:**
+
+```text
+min nodes: 3     # baseline HA across AZs
+max nodes: 50    # cost cap
+node template:   # CA picks template matching pod requirements
+  - instance: m5.xlarge (general)
+  - instance: g4dn.xlarge (GPU — pods with nvidia.com/gpu request)
+```
 
 ### Diagram
 
@@ -2435,24 +2839,57 @@ flowchart TB
 
 ### Key details
 
-- Cloud-specific: CA on EKS, GKE, AKS
-- Pods need requests defined for scheduling signal
-- `cluster-autoscaler.kubernetes.io/safe-to-evict` annotation
-- Balance with HPA min replicas and node pool min
+| Topic | Detail |
+|-------|--------|
+| **Cloud-specific** | CA on EKS, GKE, AKS — one CA deployment per node group |
+| **Resource requests required** | Scheduler and CA use requests to simulate fit |
+| **`safe-to-evict` annotation** | `false` prevents eviction during scale-down |
+| **Balance with HPA min** | `minReplicas` pods need `min nodes` that can fit them |
+| **Scale-up latency** | 2–5 min typical (ASG launch + kubelet register) |
+| **Over-provisioner (optional)** | Placeholder pods reserve capacity for faster scale-up |
+| **Multiple node groups** | CA selects group matching pod nodeSelector/instance type |
+
+### Production rules
+
+| Rule | Rationale |
+|------|-----------|
+| **Set pod resource requests** | CA simulates scheduling — no requests = unpredictable fit |
+| **min nodes cover baseline + DaemonSets** | DS pods consume allocatable on every node |
+| **max nodes caps cost** | Runaway HPA + CA = huge bill |
+| **Multi-AZ node groups** | Single-AZ node pool = AZ failure takes capacity |
+| **PDB on critical workloads** | Prevents drain from breaking availability during scale-down |
+| **Don't set HPA minReplicas > fittable on min nodes** | Permanent Pending pods |
+| **Monitor Pending pod duration** | >5 min Pending → CA misconfig or max nodes hit |
+| **GPU/taint node groups separate** | CA scales correct template per pod requirements |
+| **Cluster Autoscaler version matches K8s** | Version skew causes silent failures |
+| **Load test full chain** | HPA → Pending → CA → node join → pod Running |
 
 ### When to use
 
 - Managed node groups with variable workload
-- Cost optimization (remove idle nodes)
-- Pair with HPA for full stack autoscaling
+- Cost optimization (remove idle overnight nodes)
+- Any cluster using HPA or burst workloads
+- Multi-tenant clusters with unpredictable scheduling demand
 
 ### Trade-offs
 
 | Pros | Cons |
 |------|------|
-| No manual node provisioning | Node add takes 2 - 5 minutes |
+| No manual node provisioning | Node add takes 2–5 minutes |
 | Pay only for needed capacity | Scale-down can disrupt long jobs |
 | Integrates with cloud ASG | Misconfig causes thrashing |
+| Completes HPA autoscaling loop | Doesn't help if max nodes too low |
+
+| Pitfall | Symptom | Mitigation |
+|---------|---------|------------|
+| **No resource requests** | CA can't simulate; odd scaling | Requests on all pods |
+| **max nodes too low** | Permanent Pending pods | Raise max; alert on Pending > 5m |
+| **HPA min > min node capacity** | Always Pending at baseline | Right-size min nodes or lower HPA min |
+| **safe-to-evict: false everywhere** | Nodes never scale down | Use only for long batch jobs |
+| **Single node group for GPU + CPU** | Wrong instance type provisioned | Separate ASGs per instance profile |
+| **CA version mismatch** | CA runs but doesn't scale | Pin CA version to K8s minor version |
+| **Scale-up slower than spike** | SLO breach during node launch | Over-provision min; placeholder pods; pre-warm |
+| **Ignoring DaemonSet overhead** | New node still not enough allocatable | Account for DS resource in planning |
 
 ### References
 

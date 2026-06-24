@@ -900,6 +900,34 @@ readinessProbe: /health/ready  # remove from LB if not ready
 - **Client stickiness:** clients cache old primary IP - connection pools need refresh
 - **Failback:** reverse sync (new primary → old primary) before role swap
 
+#### Production rules
+
+| Rule | Rationale |
+|------|-----------|
+| **Measure RTO/RPO in drills, not docs** | Run quarterly failover game days; paper targets lie |
+| **Fence before promote** | STONITH / isolate network on suspected primary — split-brain corrupts data |
+| **Prefer managed HA over DIY VIP** | Cloud LB + RDS Multi-AZ beats Keepalived on VMs for most teams |
+| **Separate liveness from readiness** | Liveness restarts; readiness removes from LB — don't conflate |
+| **`unhealthy_threshold` ≥ 2** | Single flaky probe causes flapping failover |
+| **Clients must handle redirect** | Refresh DNS, drain connection pools, retry with backoff on write errors |
+| **Document failback policy** | Many teams stay on promoted node — reverse sync is harder than it looks |
+| **Alert on failover events** | Automated promotion without paging hides recurring infra bugs |
+
+**PostgreSQL / RDS example:**
+
+```text
+sync rep + automatic failover → RPO ≈ 0, RTO 30–120s (managed)
+async rep + manual promote    → RPO = replication lag at crash (seconds–minutes)
+```
+
+**Kubernetes stateful leader election:**
+
+```text
+etcd lease TTL 15s, renew every 5s
+→ leader dies → new leader in ~15–20s
+→ use readiness to block traffic until new leader catches up
+```
+
 ### When to use
 
 - Database primary-replica setups (PostgreSQL, MySQL, MongoDB replica set)
@@ -909,12 +937,18 @@ readinessProbe: /health/ready  # remove from LB if not ready
 
 ### Trade-offs / Pitfalls
 
-- **False positive failover** causes unnecessary disruption (flapping health checks)
-- Async replication → **lost writes** on failover (measure RPO honestly)
-- Clients cache old primary address (DNS TTL, connection pool)
-- Failback requires reverse sync complexity - often stay on new primary
-- VIP failover needs L2 adjacency or BGP - not trivial cross-subnet
-- Automated failover without human verification can promote corrupted node
+| Pitfall | Symptom | Mitigation |
+|---------|---------|------------|
+| **False positive failover** | Brief outage every few minutes | Raise unhealthy threshold; deep health checks only on LB |
+| **Flapping health checks** | Primary/standby swap loop | Separate liveness vs readiness; longer `interval` under load |
+| **Async replication lag** | Promoted standby missing last writes | Monitor lag; block promote if lag > RPO; sync rep for zero RPO |
+| **Split-brain** | Duplicate writes, divergent data | Fencing (STONITH); quorum-based leader election |
+| **Stale client routing** | 50% writes fail after failover | Low DNS TTL; connection pool validation; service mesh outlier ejection |
+| **Failback complexity** | Data loss on reverse sync | Stay on new primary; rebuild old as replica |
+| **VIP cross-subnet** | Failover succeeds but traffic doesn't follow | Use cloud LB or BGP; don't assume gratuitous ARP works everywhere |
+| **Promoting corrupted node** | Bad data becomes new truth | Deep checks + human gate for manual promote; validate WAL integrity |
+| **Thundering herd on promote** | New primary OOMs under reconnect storm | Connection rate limits; gradual LB weight increase |
+| **Untested runbooks** | 2-hour outage during real incident | Quarterly game days with measured RTO |
 
 ---
 
@@ -1661,23 +1695,88 @@ sequenceDiagram
 
 ### Key details
 
-- **Drop vs. block:** block preserves data but increases latency; drop sheds load
-- **Bounded queues** are prerequisite for effective backpressure
-- gRPC flow control built on HTTP/2 windows
-- Kafka consumer `max.poll.records` limits batch size
+#### Backpressure mechanisms by layer
+
+| Layer | Mechanism | Signal | Producer behavior |
+|-------|-----------|--------|-------------------|
+| **TCP** | Receive window | Buffer full | Kernel blocks `send()` |
+| **HTTP/2** | Stream + connection flow control | `WINDOW_UPDATE` | Block or reset stream |
+| **gRPC** | HTTP/2 windows + `MAX_CONCURRENT_STREAMS` | Flow-control stall | Client blocks or times out |
+| **Reactive Streams** | `request(n)` demand | Subscriber credits | Publisher emits ≤ n items |
+| **Kafka** | `max.poll.records`, consumer lag | Broker + consumer pace | Producer may throttle via `buffer.memory` |
+| **Thread pool** | `RejectedExecutionException` | Queue full | Caller runs, drops, or blocks |
+| **Semaphore** | `tryAcquire()` fails | In-flight cap | Fail fast or queue at edge |
+| **API gateway** | Rate limit (429) | Token bucket empty | Client backs off |
+| **Load shedder** | 503 + `Retry-After` | CPU/latency SLO burn | Client retries with jitter |
+
+```mermaid
+flowchart TB
+    subgraph Propagation["Backpressure propagation"]
+        P[Producer] -->|push| Q[Bounded queue]
+        Q -->|full| BP[Backpressure signal]
+        BP --> P
+        Q --> C[Consumer]
+    end
+    C -->|slow| BP
+```
+
+**Drop vs block vs shed:**
+
+| Strategy | Data loss? | Latency impact | Use when |
+|----------|------------|----------------|----------|
+| **Block** | No | Producer stalls; risk of deadlock | Sync RPC, must-not-drop |
+| **Drop (newest/oldest)** | Yes | Fast fail for dropped | Metrics, logs, sampling |
+| **Shed at edge** | Rejects new work | Protects in-flight | Overload protection (4.21) |
+| **Pause/resume** | No | Bursty catch-up | Kafka/Flink checkpointing |
+
+#### Production rules
+
+| Rule | Rationale |
+|------|-----------|
+| **Every queue must be bounded** | Unbounded `LinkedBlockingQueue` = OOM under spike |
+| **Propagate pressure to the edge** | Shedding only at DB is too late — gateway should 429 first |
+| **Monitor queue depth, not just CPU** | Depth rising = backpressure failing or consumer too slow |
+| **Set `max.inflight` per downstream** | gRPC/HTTP client limits prevent one slow peer blocking all |
+| **Never block on circular deps** | A→B→A all blocking = distributed deadlock |
+| **Pair shed with client retry budget** | 429 without jitter → retry storm (see 8.17) |
+| **Alert on sustained saturation** | Chronic backpressure = under-provisioned consumer, not transient spike |
+
+**Kafka consumer pacing example:**
+
+```text
+max.poll.records = 500        # cap batch size
+fetch.max.wait.ms = 500       # don't wait forever for full batch
+max.poll.interval.ms = 300000 # must process batch before rebalance
+→ slow handler triggers backpressure via longer poll cycles + lag growth
+```
+
+**Thread pool rejection policies:**
+
+| Policy | Behavior | Risk |
+|--------|----------|------|
+| `AbortPolicy` | Throw exception | Caller must handle — good for fail-fast |
+| `CallerRunsPolicy` | Run on caller thread | Propagates slowdown upstream |
+| `DiscardPolicy` | Silent drop | Data loss without metrics |
 
 ### When to use
 
 - Stream processing pipelines (Flink, Kafka)
 - Service-to-service RPC under variable load
 - Any producer faster than consumer scenario
+- Protecting databases from connection stampedes (pool + semaphore at app)
 
 ### Trade-offs / Pitfalls
 
-- Blocking producers can deadlock if circular dependencies
-- Dropping requires business acceptance (lost messages)
-- Backpressure without metrics hides chronic under-provisioning
-- Thread pool rejection is crude backpressure - needs caller handling
+| Pitfall | Consequence | Mitigation |
+|---------|-------------|------------|
+| **Unbounded queues** | OOM, GC death spiral | Always cap queue depth; monitor depth |
+| **Blocking without timeout** | Indefinite stall | `block` + deadline; async with timeout |
+| **Circular blocking** | Distributed deadlock | Break cycles with async events or timeouts |
+| **Silent drop** | Lost orders/events | Metrics on drop count; dead-letter for critical paths |
+| **Backpressure only at DB** | App memory exhausts first | Shed at gateway; limit in-flight per dependency |
+| **No visibility** | Chronic overload looks "fine" on CPU | Alert queue depth, consumer lag, pool reject rate |
+| **Crude thread rejection** | `AbortPolicy` without handler → 500 storm | Caller-runs or dedicated shed path with 503 |
+| **Ignoring downstream recovery** | Resume full blast after brief pause | Gradual ramp (token bucket refill) |
 
 ---
 
@@ -1760,23 +1859,85 @@ flowchart LR
 
 ### Key details
 
-- **Headroom:** operate at 60 - 70% of max under normal peak
-- Include **seasonality** and **marketing events**
-- Plan for **worst-case dependency** (DB often limits first)
-- Revisit quarterly; cloud elasticity reduces but doesn't eliminate planning
+#### Capacity model (worked example)
+
+```text
+Target: 10,000 RPS at p99 < 200 ms
+
+Step 1 — measure single-instance capacity
+  Load test: 1 pod sustains 500 RPS at p99 180 ms before errors
+
+Step 2 — compute instances
+  Instances = (target RPS / per-instance RPS) × headroom factor
+            = (10,000 / 500) × 1.5
+            = 30 pods
+
+Step 3 — check downstream limits
+  DB connections: 30 pods × 20 conns = 600 → pooler required (PgBouncer)
+  Kafka: 10K msgs/s ÷ 3 partitions = 3.3K/partition → add partitions
+
+Step 4 — cost envelope
+  30 pods × $0.05/hr × 730 hr = ~$1,095/mo compute (excluding DB)
+```
+
+**Little's Law for planning:**
+
+```text
+Concurrency needed = arrival_rate × response_time
+10,000 RPS × 0.2s = 2,000 in-flight requests
+→ thread pool / connection pool must accommodate ~2K (or queue with bounded depth)
+```
+
+| Resource | Saturation signal | Planning knob |
+|----------|-------------------|---------------|
+| **CPU** | > 70% sustained | Scale out; profile hot paths |
+| **Memory** | OOMKilled, GC pause spikes | Heap tuning; scale up/out |
+| **DB connections** | `too many connections` | Pooler; reduce per-pod pool |
+| **Disk IOPS** | `iowait` high | Provisioned IOPS; read replicas |
+| **Network** | Bandwidth cap | CDN; compress; regionalize |
+| **Kafka partitions** | Consumer lag per partition | Add partitions (plan rebalance) |
+| **API rate limits** | 429 from dependency | Cache; batch; negotiate quota |
+
+#### Production rules
+
+| Rule | Rationale |
+|------|-----------|
+| **Plan at p99, not average** | Mean hides tail; capacity for worst-case path |
+| **30–50% headroom above peak** | Absorbs flash crowds without immediate scale lag |
+| **Load test to failure annually** | Find real ceiling; autoscale lag is 2–5 min |
+| **Model data growth separately** | Storage, index size, backup window grow even if RPS flat |
+| **Include dependency quotas** | Stripe, SendGrid, cloud API limits are hard ceilings |
+| **Seasonality × 2–3× for events** | Black Friday, launches — don't plan on average day |
+| **Autoscale is not infinite** | Cold start, quota limits, DB can't scale horizontally freely |
+| **Revisit quarterly** | 6 months of 20% MoM growth changes everything |
+
+**Cloud cost trade-off:**
+
+| Model | Best for | Risk |
+|-------|----------|------|
+| **Reserved / Savings Plans** | Steady baseline (60–70% of min load) | Over-commit if traffic drops |
+| **On-demand / spot** | Burst above baseline | Spot interruption; higher $/hr |
+| **Serverless** | Spiky, unpredictable | Cold start; per-invocation limits |
 
 ### When to use
 
 - Annual budget cycles
 - Before major product launches or geographic expansion
 - When approaching known platform limits (Kafka partition count, DB size)
+- Error budget burn from capacity-related incidents
 
 ### Trade-offs / Pitfalls
 
-- Growth forecasts wrong -> sudden crunch or waste
-- Ignoring data growth (storage, index size) focuses only on RPS
-- Reserved capacity vs. on-demand trade-offs in cloud
-- Organizational silos hide cross-team bottlenecks
+| Pitfall | Consequence | Mitigation |
+|---------|-------------|------------|
+| **Wrong growth forecast** | Sudden crunch or 40% wasted spend | Scenario planning (base/bull/bear) |
+| **RPS-only planning** | DB/index/storage exhausts silently | Track storage, backup time, index bloat |
+| **Ignoring cold start** | Autoscale adds pods but they're slow | Pre-warm; min replicas; scheduled scale-up before events |
+| **Single-tier headroom** | App scaled; DB unchanged | End-to-end model including dependencies |
+| **Load test ≠ production mix** | Synthetic CRUD misses heavy reports | Replay production traffic shape |
+| **Reserved capacity over-commit** | Paying for idle during downturn | Blend reserved baseline + on-demand burst |
+| **Siloed team planning** | Each team has headroom; shared DB doesn't | Platform-wide capacity review |
+| **No runbook for limit hit** | Discover Kafka partition max at 2am | Document platform ceilings; alert at 80% |
 
 ---
 
@@ -1810,23 +1971,94 @@ flowchart LR
 
 ### Key details
 
-- **Utilization law:** ρ = λ/μ; near 100% utilization -> queueing delays explode
-- Common bottlenecks: DB connections, lock contention, GC, single hot shard
-- **Profiling** vs. **load testing:** need both micro and macro views
-- External dependencies (payment API) become bottleneck outside your control
+#### USE method (production standard)
+
+For every resource, check **Utilization**, **Saturation**, **Errors**:
+
+| Resource | Utilization | Saturation | Errors |
+|----------|-------------|------------|--------|
+| **CPU** | % busy | run queue length | — |
+| **Memory** | % used | swap, OOM | OOMKilled count |
+| **Disk** | % busy time | I/O wait queue | I/O errors |
+| **Network** | bandwidth % | dropped packets | retransmits |
+| **DB connections** | active/max pool | wait time for conn | `too many connections` |
+| **Thread pool** | active/max | queue depth | rejected tasks |
+
+```text
+Bottleneck = first resource where:
+  utilization → 100%  OR  saturation queue grows unbounded  OR  errors spike
+```
+
+#### Latency breakdown (distributed tracing)
+
+```text
+Total 247 ms =
+  gateway:     2 ms
+  app CPU:    18 ms
+  app wait:  210 ms  ← bottleneck (DB pool wait + query)
+  DB query:   15 ms
+  serialization: 2 ms
+
+Fix pool wait before optimizing query — 210 ms is queueing, not slow SQL
+```
+
+**Common bottleneck patterns:**
+
+| Pattern | Signature | Fix |
+|---------|-----------|-----|
+| **Hot key / shard** | One partition at 100%, others idle | Reshard; cache hot key; salting |
+| **N+1 queries** | DB time ∝ result count | Batch fetch; DataLoader |
+| **Connection pool wait** | High "wait" span, low DB CPU | Pooler; more replicas; reduce pool per pod |
+| **Lock contention** | DB `pg_locks`, Java thread dumps | Shorter transactions; row-level → advisory |
+| **GC pause** | p99 spikes correlate with GC log | Tune heap; ZGC; reduce allocation |
+| **Sync fan-out** | Latency = sum of slowest child | Parallelize; cache; denormalize |
+| **External API** | Outbound span dominates | Circuit breaker; cache; async |
+| **Disk I/O** | `iowait` high, CPU low | SSD; index; reduce fsync frequency (trade durability) |
+
+#### Production workflow
+
+1. **Reproduce** — load test or trace production traffic at incident time
+2. **Measure end-to-end** — distributed trace with span breakdown (don't guess)
+3. **Find saturating resource** — USE method per tier
+4. **Fix the constraint** — only the bottleneck moves the needle (Theory of Constraints)
+5. **Re-measure** — bottleneck migrates; repeat until SLO met
+6. **Document ceiling** — "system breaks at X RPS because Y"
+
+```mermaid
+flowchart TB
+    Load[Increase load] --> Mon[Monitor all tiers]
+    Mon --> Sat{First saturation?}
+    Sat -->|CPU| ScaleCPU[Scale / optimize hot path]
+    Sat -->|DB conn| Pool[Pooler / replicas]
+    Sat -->|Disk IOPS| Storage[Provision IOPS / cache]
+    Sat -->|External API| Isolate[Circuit breaker / cache]
+    ScaleCPU & Pool & Storage & Isolate --> ReTest[Re-test — new bottleneck]
+```
+
+- **Utilization law:** ρ = λ/μ; near 100% utilization → queueing delays explode (Kingman)
+- **Profiling** (flame graphs) finds *why* CPU is hot; **load testing** finds *where* saturation occurs
+- **Amdahl's Law:** optimizing a 5% path yields ≤ 5% total improvement
 
 ### When to use
 
 - Performance incidents and post-mortems
 - Before and after optimization projects
 - Architecture reviews ("what breaks first at 10×?")
+- SLO burn rate alerts (latency error budget)
 
 ### Trade-offs / Pitfalls
 
-- Local optima: faster app exposes DB bottleneck
-- Bottleneck shifts under different workload mixes
-- Averages hide hot keys and tail-driven bottlenecks
-- Premature micro-optimization before identifying system bottleneck
+| Pitfall | Consequence | Mitigation |
+|---------|-------------|------------|
+| **Optimizing non-bottleneck** | Weeks of work, zero p99 improvement | Trace first; USE method |
+| **Mean latency focus** | p99 still bad after "optimization" | Optimize tail; check fan-out |
+| **Single workload test** | Read-heavy test misses write bottleneck | Replay production traffic mix |
+| **Local micro-benchmark** | Fast function; system still slow | End-to-end load test |
+| **Ignoring queue wait** | Tune SQL while pool wait is 200 ms | Separate service time from queue time |
+| **Hot key blind spot** | Average CPU 40%; one shard at 100% | Per-shard / per-partition metrics |
+| **External dependency** | Your code perfect; p99 still 5s | Treat vendor as tier; cache + breaker |
+| **Premature caching** | Masks bottleneck; stale data risk | Fix constraint first; cache after |
+| **No baseline** | Can't prove improvement | Capture before metrics in every project |
 
 ---
 

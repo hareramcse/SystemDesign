@@ -281,6 +281,39 @@ flowchart LR
 
 **Interview answer template:** "I'd start modular monolith. Split when team size, scaling, or fault isolation forces it. Boundaries follow DDD bounded contexts with database-per-service. Cross-cutting workflows use sagas, not 2PC."
 
+#### Production operating rules
+
+| Rule | Rationale |
+|------|-----------|
+| **One team owns one service (max 2–3)** | Shared ownership → nobody on-call; deploy coupling returns |
+| **Database per service — no exceptions** | Shared DB = distributed monolith; schema changes block all consumers |
+| **Every sync call has timeout + breaker** | Default HTTP client timeouts are often infinite |
+| **Correlation ID on every hop** | `trace_id` / `X-Request-ID` — non-negotiable for debugging |
+| **Contract tests in CI** | Consumer-driven contracts catch breaking API changes before deploy |
+| **Version APIs; avoid breaking changes** | `/v2` or expand-contract; never silent field removal |
+| **Define SLO per service** | Availability and latency owned by service team, not platform alone |
+| **No shared libraries with domain logic** | Shared DTO jar couples deploys — share schemas (Protobuf/OpenAPI), not business rules |
+| **Prefer events over sync chains > 2 hops** | Deep call graphs compound tail latency and failure probability |
+| **Platform team owns mesh/gateway/discovery** | Product teams own business services, not Envoy config per app |
+
+**Service ownership matrix (example):**
+
+| Service | Team | SLO | On-call | Data store |
+|---------|------|-----|---------|------------|
+| Orders | Checkout | 99.95% / p99 300ms | `@checkout-oncall` | PostgreSQL |
+| Search | Discovery | 99.9% / p99 500ms | `@search-oncall` | Elasticsearch |
+| Notifications | Platform | 99.5% / async 5min | `@platform-oncall` | DynamoDB |
+
+**Anti-patterns in production:**
+
+```text
+❌ "User service" called synchronously by 14 other services
+❌ Shared `users` table read via JDBC from 3 codebases
+❌ 200-line BFF with business rules that belong in domain services
+❌ Deploying all 40 services because one shared library changed
+✅ Events for cross-context updates; sync only for read paths needing freshness
+```
+
 ### When to use
 
 - Multiple teams (typically 3+) needing independent release cycles
@@ -290,12 +323,20 @@ flowchart LR
 
 ### Trade-offs / Pitfalls
 
-- **Distributed debugging:** one user request crosses 10 services — tracing mandatory
-- **Eventual consistency:** users see intermediate states; UX and support must handle it
-- **Integration testing:** combinatorial explosion — contract tests + staging env critical
-- **Latency tax:** every hop adds 1–20 ms + failure probability
-- **Nano-services:** 200 services with 200 databases — ops nightmare, avoid
-- **Shared database anti-pattern:** two services one DB = distributed monolith with network overhead
+| Pitfall | Symptom | Mitigation |
+|---------|---------|------------|
+| **Distributed monolith** | Must deploy 5 services together | Events + async; loosen sync coupling |
+| **Shared database** | Schema migration blocks 3 teams | Database-per-service; CDC for reads |
+| **Nano-services** | 200 deployables, 3 engineers | Merge services; bounded context too small |
+| **Chatty sync chains** | p99 2s; one slow hop kills UX | BFF aggregation; cache; denormalize |
+| **No distributed tracing** | "Which service failed?" takes hours | OpenTelemetry from day one |
+| **Missing contract tests** | Staging green, prod broken | Pact / schema registry in CI |
+| **Platform immaturity** | Teams build own discovery/retry | Invest in platform before split #5 |
+| **Wrong boundary (layer split)** | "Validation service" + "DAO service" | Split by business capability (DDD) |
+| **Saga without compensation** | Stuck orders in `PENDING` forever | Compensating actions + timeout alerts |
+| **Org/service mismatch** | Two teams, one repo, one deploy | Conway alignment or merge services |
+| **Latency tax ignored** | "We'll just add another hop" | Budget latency per user journey |
+| **Shared domain library** | Library change = 30-service deploy | OpenAPI/Protobuf contracts only |
 
 ### References
 

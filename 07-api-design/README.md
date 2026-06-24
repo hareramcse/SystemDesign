@@ -604,6 +604,23 @@ flowchart TB
 
 Products: Kong, Apigee, AWS API Gateway, Azure APIM, Envoy Gateway, NGINX.
 
+### Production rules
+
+| Rule | Rationale |
+|------|-----------|
+| **HA gateway tier** | Run ≥2 gateway instances per AZ behind regional LB; gateway outage = total API outage |
+| **Declarative config in Git** | Kong deck, Envoy xDS, APIM ARM/Bicep — no click-ops route changes in prod |
+| **Auth termination + mTLS to backends** | Gateway validates JWT; backend traffic on private network with mTLS or signed internal headers |
+| **Never trust `X-User-Id` from internet** | Strip inbound identity headers at edge; inject only after auth succeeds |
+| **Rate limit before route** | Reject abusive traffic before fan-out to N backends — saves DB and downstream cost |
+| **Request size + timeout limits** | Cap body size (e.g., 1–10 MB) and upstream timeout at gateway — prevents slowloris and hung backends |
+| **Propagate trace context** | Inject or forward W3C `traceparent`; gateway root span anchors distributed traces |
+| **Separate internal vs external gateways** | Public gateway (strict WAF, quotas) vs internal mesh ingress (mTLS, no public exposure) |
+| **Health-check gateway itself** | Synthetic probes through gateway path, not only backend `/health` |
+| **Version routes explicitly** | `/v1/*` and `/v2/*` as distinct upstream clusters — enables independent canary and sunset |
+
+**Capacity planning:** gateway CPU scales with TLS termination and JWT crypto. Rule of thumb: benchmark at expected RPS + 2× headroom; JWT validation at 10K RPS can dominate CPU on smaller instances.
+
 ### When to use
 
 - Multiple microservices exposed to external clients
@@ -613,11 +630,16 @@ Products: Kong, Apigee, AWS API Gateway, Azure APIM, Envoy Gateway, NGINX.
 
 ### Trade-offs / Pitfalls
 
-- **SPOF / bottleneck:** gateway must be HA (multi-AZ, autoscaling, health checks)
-- **Smart gateway anti-pattern:** business rules in Lua/plugins — belongs in services or BFF
-- **Latency hop:** ~1–5 ms per gateway layer; co-locate in same region/AZ as backends
-- **Header trust:** if backend trusts `X-User-Id` from gateway, mTLS or private network required
-- **Config sprawl:** hundreds of routes need GitOps / declarative config (Kong deck, Envoy xDS)
+| Pitfall | Symptom | Mitigation |
+|---------|---------|------------|
+| **SPOF / bottleneck** | Total API outage when gateway tier fails | Multi-AZ, autoscaling, active-active LB, chaos-test gateway failure |
+| **Smart gateway** | Business logic in Lua/plugins; undeployable without gateway release | Policy only at edge; aggregation in BFF; domain rules in services |
+| **Latency stacking** | p99 +10–20 ms per extra hop | Co-locate gateway with backends; avoid gateway → gateway chains |
+| **Header trust boundary** | Spoofed `X-User-Id` if client reaches backend directly | Private subnets, mTLS, strip external identity headers at ingress |
+| **Config sprawl** | Drift between envs; accidental prod route change | GitOps, PR review for routes, automated diff in CI |
+| **Cold JWT validation** | JWKS fetch latency on first request after key rotation | Cache JWKS with TTL; pre-warm on deploy; monitor validation p99 |
+| **WebSocket/gRPC gaps** | Long-lived connections dropped on gateway upgrade | Connection draining, sticky upgrades, or dedicated L4 path for streaming |
+| **Over-caching at edge** | Stale authz after role revocation | Short TTL on cacheable GETs; never cache authenticated mutations |
 
 ### References
 
@@ -1392,6 +1414,23 @@ allowed = redis.transaction {
 - **Fail-open vs fail-closed:** if Redis down, allow traffic (availability) or deny (safety) - product decision
 - **429 body:** return structured JSON with `retryAfter` so clients back off correctly
 
+### Production rules
+
+| Rule | Rationale |
+|------|-----------|
+| **Shared store for distributed limits** | Per-pod counters multiply effective quota by replica count in K8s/ASG |
+| **Identity hierarchy** | Authenticated user/API key > tenant > IP; IP-only limits punish corporate NAT |
+| **Tiered quotas in product** | Free/pro/enterprise limits encoded in API key metadata — not hardcoded per route |
+| **Endpoint-specific limits** | Global cap + strict cap on expensive paths (`/search`, `/export`, login) |
+| **Return standard headers** | `X-RateLimit-*` + `Retry-After` on 429 — clients and SDKs depend on them |
+| **Document limits in OpenAPI** | Partners plan integrations; surprise 429s break batch jobs |
+| **Fail-open vs fail-closed** | Document policy: Redis down → allow (availability) or deny (abuse protection) |
+| **Monitor limit hits** | Metric `rate_limit_exceeded_total{client_tier, endpoint}` — detects abuse and mis-tuned tiers |
+| **Separate burst from sustained** | Token bucket for UX (allow short bursts); sliding window for hard monthly quotas |
+| **Coordinate with idempotency** | 429 retries must reuse same `Idempotency-Key` on mutating POSTs |
+
+**Gateway vs service limits:** enforce coarse quotas at gateway (per API key); fine-grained business limits in service (per resource, per operation cost). Both layers should return consistent 429 shape.
+
 ### When to use
 
 - All **public and partner APIs**
@@ -1401,12 +1440,16 @@ allowed = redis.transaction {
 
 ### Trade-offs / Pitfalls
 
-- **Per-instance counters** in a cluster multiply effective limit by instance count - always use shared store (Redis, DynamoDB) for distributed limits
-- **Shared NAT / corporate IP** blocks innocent users - combine IP + API key or use authenticated identity
-- **Fixed window** allows 2x burst at boundaries - use sliding window counter or token bucket instead
-- **429 without `Retry-After`** causes clients to hammer harder
-- **Leaky bucket** can starve recent requests if queue fills with old ones during a spike
-- Rate limit != throttling: rate limit **rejects**; throttling **slows/queues** (see 7.19)
+| Pitfall | Symptom | Mitigation |
+|---------|---------|------------|
+| **Per-instance counters** | Effective limit = N × configured limit across N pods | Redis/DynamoDB atomic counters; gateway-level enforcement |
+| **Shared NAT / corporate IP** | Entire office blocked by per-IP limit | Prefer API key or user ID; soften IP limits for authenticated traffic |
+| **Fixed window boundary burst** | 2× traffic spike at window rollover | Sliding window counter or token bucket |
+| **429 without `Retry-After`** | Clients retry immediately, amplifying load | Always set `Retry-After`; document backoff in API guide |
+| **Leaky bucket starvation** | New requests dropped while old ones drain slowly | Cap queue depth; combine with hard reject at gateway |
+| **Rate limit vs throttle confusion** | Queued requests timeout anyway | Rate limit = reject; throttle = delay — pick per SLA tier |
+| **Limiting after expensive work** | DB queried before limit check | Enforce at gateway/middleware before handler |
+| **Uneven shard hot keys** | One Redis key for global limit becomes bottleneck | Shard counter keys; local token bucket + global sync for extreme scale |
 
 ### References
 
@@ -1570,6 +1613,21 @@ stateDiagram-v2
 - **Failed operations:** decide if failed attempt allows retry with same key (Stripe: yes, returns same error)
 - **Time window:** 24h–72h typical; after expiry, same key may create new resource
 
+### Production rules
+
+| Rule | Rationale |
+|------|-----------|
+| **Idempotency record before side effect** | Write `processing` to durable store atomically, then execute — prevents double-charge on crash between payment and record |
+| **Scope keys per tenant** | `(account_id, idempotency_key)` unique — global keys allow cross-tenant collision |
+| **Store full response for replay** | Same HTTP status + body on retry — clients parse `201` vs `200` inconsistently otherwise |
+| **Hash request body on POST** | Same key + different body → `409 Conflict` — catches client bugs early |
+| **TTL + archival** | 24–72h hot storage; purge or archive to cold store — unbounded growth is costly |
+| **Outbox for async side effects** | Email/webhook/events deduped by `event_id` — DB idempotency alone doesn't cover async |
+| **At-least-once consumers** | Kafka/SQS handlers check processed-message table before side effects |
+| **Document retry policy** | API spec: retry on `5xx`/`429` with same key; do not retry `4xx` except `409` backoff |
+| **Monitor duplicate detection rate** | Spike in cache hits = client retry storm or network instability |
+| **Saga steps individually idempotent** | Partial failure in multi-step flow — each compensating action must be safe to retry |
+
 ### When to use
 
 - Payment, order creation, inventory reservation, subscription signup
@@ -1579,11 +1637,16 @@ stateDiagram-v2
 
 ### Trade-offs / Pitfalls
 
-- **Storage growth:** every mutating request stores a record — TTL and archival required
-- **Race on concurrent duplicates:** two requests same key simultaneously — need atomic claim (`INSERT ... ON CONFLICT` or distributed lock)
-- **Different status on replay:** first call returns `201`, replay must also return `201` (not `200`) — store full response
-- **Partial failure:** payment succeeded, order update failed — saga + idempotent steps required
-- **Assuming GET is always safe:** `GET` with side effects (trigger export) breaks idempotency semantics
+| Pitfall | Symptom | Mitigation |
+|---------|---------|------------|
+| **Storage growth** | Idempotency table TB-scale | TTL, partition by date, archive completed keys |
+| **Concurrent duplicate race** | Double charge on simultaneous retries | `INSERT ... ON CONFLICT`, Redis `SETNX`, or row-level lock |
+| **Status code mismatch on replay** | Client treats replay as new resource | Store and replay exact status + headers + body |
+| **Partial failure** | Payment OK, order DB fails — inconsistent state | Saga with idempotent steps + outbox |
+| **Side-effecting GET** | Retry creates duplicate export/email | Never mutate on GET; use POST with idempotency key |
+| **Key scoped too narrowly** | Same user action, different keys → duplicates | SDK generates one key per user gesture, not per HTTP attempt |
+| **Expired key reuse** | Customer charged twice days later | Document TTL; return clear error if key expired |
+| **In-flight forever** | Key stuck `processing` after worker crash | Timeout + cleanup job; allow retry after TTL |
 
 ### References
 
@@ -1694,6 +1757,23 @@ same key + different hash → 409 Conflict
 
 **Interview one-liner:** "Idempotency keys turn unsafe `POST` retries into safe at-least-once delivery, same as message dedup in event systems."
 
+### Production rules
+
+| Rule | Rationale |
+|------|-----------|
+| **Require header on mutating endpoints** | Return `400` if missing on `POST` payment/order — forces client correctness |
+| **UUID v4 only** | Unguessable; reject malformed or sequential keys |
+| **One key per user action** | Button click → one key; HTTP retry reuses it — document in SDK |
+| **24h minimum retention** | Stripe default; shorter risks duplicate on delayed client retry |
+| **409 for key + body mismatch** | Never silently process different payload under same key |
+| **Block or poll in-flight** | Second request while `processing` → wait or `409` — never parallel duplicate work |
+| **Include key in audit logs** | Support correlates duplicate-charge tickets to retry attempts |
+| **OpenAPI documents header** | `Idempotency-Key` in spec with retry semantics — partner integrations depend on it |
+| **Load test with retries** | Chaos: kill connection after server processes — verify no duplicate side effects |
+| **Gateway passes header through** | Strip nothing; some gateways drop unknown headers by default |
+
+**SDK pattern:** accept optional `idempotencyKey` parameter; if omitted, generate once per `createCharge()` call object, not per `execute()` retry loop.
+
 ### When to use
 
 - Payment and money movement APIs (mandatory)
@@ -1703,11 +1783,16 @@ same key + different hash → 409 Conflict
 
 ### Trade-offs / Pitfalls
 
-- **Client bug:** new key per retry → duplicates — SDKs should accept key from caller or auto-generate once per operation object
-- **Distributed store consistency:** idempotency record must be written **before** side effect or in same transaction as outbox
-- **Long-running operations:** `processing` state needs timeout and cleanup job
-- **409 on in-flight:** clients need backoff, not parallel duplicate posts with same key
-- **Leaking keys in logs:** treat like credentials in debug output
+| Pitfall | Symptom | Mitigation |
+|---------|---------|------------|
+| **New key per retry** | Duplicate charges despite "retry logic" | SDK binds key to operation object; lint client integrations |
+| **Record after side effect** | Crash between payment and store → retry doubles | Atomic claim before work; outbox in same transaction |
+| **Stuck `processing`** | Key blocked forever after worker OOM | TTL on processing state; sweeper job |
+| **Parallel same-key requests** | Race creates duplicate resources | Serialize on key; `409` or queue second request |
+| **Keys in logs/traces** | Security audit finding | Redact in log pipeline; treat as sensitive |
+| **Different response shape on replay** | Client JSON parser breaks | Byte-identical stored response body |
+| **Header stripped by proxy** | Idempotency silently disabled | Allowlist header in gateway; integration test end-to-end |
+| **Cross-region key store lag** | Duplicate in active-active | Strong consistency store or route sticky to primary region |
 
 ### References
 

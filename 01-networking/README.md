@@ -739,6 +739,57 @@ You **configure** authoritative DNS when you own a domain. You **consume** recur
 
 **Interview point:** CNAME vs A—CNAME adds an extra lookup hop and cannot be used at apex; A is direct but you must update IP manually on migration.
 
+### Production rules
+
+#### TTL migration runbook
+
+DNS is **eventually consistent** — you cannot flip traffic instantly unless TTL was lowered **before** the change.
+
+| Phase | When | Action | TTL target |
+|-------|------|--------|------------|
+| **T−7d** | Planned migration | Lower TTL on records that will change | 60–300 s (not 86400) |
+| **T−48h** | Verify propagation | `dig @8.8.8.8`, `dig @1.1.1.1`, corp resolver — confirm low TTL live | — |
+| **T0** | Cutover | Update A/AAAA/CNAME to new target | Keep low TTL |
+| **T+2×old TTL** | Soak | Monitor error rate, origin traffic split | — |
+| **T+7d** | Steady state | Raise TTL on stable records | 3600+ for static CDN CNAME |
+
+```text
+Old TTL = 3600 s → worst-case stale cache = 1 hour after change
+New TTL = 60 s  → wait 2×3600 = 2 h for old caches to expire BEFORE cutover
+                 then 2×60 = 2 min after cutover for global convergence
+```
+
+**Never** lower TTL during an active incident and expect instant failover — resolvers already holding the old answer will not re-query until their cached TTL expires.
+
+#### Failover records
+
+Managed DNS (Route 53, Cloudflare, Azure Traffic Manager) can return different answers based on health:
+
+| Pattern | Mechanism | Failover speed | Caveat |
+|---------|-----------|----------------|--------|
+| **Active/passive** | Primary A + standby A; health check fails → swap | TTL-bound (60–300 s typical) | Both records must have **low TTL** on primary |
+| **Weighted routing** | 90% new / 10% old during canary | Gradual | Clients cache one answer for full TTL |
+| **Latency-based** | Nearest healthy region | Good for multi-region | Not a substitute for app health |
+| **DNS-only failover** | LB VIP unchanged; DNS points to standby region | Minutes | Slower than LB health-check drain |
+
+```text
+Runbook — primary region hard-down:
+1. Confirm origin/LB health check shows primary unhealthy (not just one resolver)
+2. If using Route 53 failover: secondary should auto-promote — verify dig from 3+ resolvers
+3. If manual: update A record to standby VIP; do NOT raise TTL yet
+4. Page comms: "DNS propagation up to {current TTL} seconds"
+5. After stable 24h: consider restoring primary with weighted 0% → ramp up
+```
+
+#### Sizing and query load
+
+| Signal | Rule of thumb | Action |
+|--------|---------------|--------|
+| TTL too low globally | >10× baseline QPS on authoritative NS | Raise TTL on stable records; use separate low-TTL failover record |
+| Resolver rate limit | SERVFAIL or timeout under deploy | Stagger record changes; avoid mass TTL=0 |
+| Health-checked records | 1 probe/region/30s per record set | Budget probe traffic; align with LB health path |
+| CNAME at edge | +1 lookup per cache miss | Prefer ALIAS/ANAME at apex; flatten chains |
+
 ### When to use
 
 - **Public services:** A/AAAA for app servers; CNAME for CDN/vendor aliases; MX/TXT for email and verification.
@@ -758,6 +809,9 @@ You **configure** authoritative DNS when you own a domain. You **consume** recur
 | Split DNS mismatch | "Works in office, fails on VPN" | Document which resolver each environment uses |
 | UDP truncation → TCP | Extra RTT on large responses (DNSSEC, many records) | EDNS0 buffer size; keep responses lean |
 | Cache poisoning (historical) | Wrong IP served | DNSSEC, random source ports, QNAME minimization |
+| TTL lowered mid-incident | Expect instant failover; traffic still hits dead IP for cached TTL | Pre-lower TTL days ahead; combine with LB drain |
+| Failover record same TTL as stable | Standby promotion slow | Separate failover A with TTL=60; primary can stay high |
+| Health check too aggressive | Flapping between primary/secondary at DNS layer | Match app readiness; use calculated health (2/3 regions) |
 
 ### References
 
@@ -896,6 +950,65 @@ nslookup -type=A api.example.com 8.8.8.8
 
 **Interview point:** `dig +trace` shows iterative resolution; `dig` alone shows what **your stub resolver** returns (may be cached).
 
+### Production rules
+
+#### Cache layers (stacked TTL)
+
+Resolution latency depends on **which layer** answers first. Each layer has its own TTL clock — they do not synchronize.
+
+| Layer | Scope | Typical TTL | Bypass |
+|-------|-------|-------------|--------|
+| **Browser** | Per-tab; Chrome ~60 s min | min(browser policy, record TTL) | Hard refresh; new profile |
+| **OS stub** | Whole machine (`systemd-resolved`, Windows DNS Client) | Record TTL | `systemd-resolve --flush-caches`; `ipconfig /flushdns` |
+| **`/etc/hosts`** | Static | ∞ until edited | Edit file (immediate) |
+| **Recursive resolver** | All clients of 8.8.8.8 / corp DNS | Record TTL from authoritative | Cannot flush remotely; wait or use different resolver |
+| **Authoritative** | Source of truth | What you configured | Change record + wait downstream |
+
+```text
+Effective staleness after record change = max(layer caches still holding old answer)
+Worst case: OS cache (300s) + recursive (300s) are independent — client may hit
+recursive hit (fast) while another client on same LAN still has OS cache (old IP)
+```
+
+**Runbook — "DNS updated but clients still see old IP":**
+
+```text
+1. dig @authoritative-ns api.example.com     → confirm authoritative is correct
+2. dig @8.8.8.8 api.example.com            → recursive layer
+3. dig api.example.com                       → stub + OS (your machine)
+4. If (1) wrong → fix zone; if (2) stale → wait TTL or lower TTL retroactively for next time
+5. If (3) stale → flush OS cache; check /etc/hosts and VPN split-DNS overrides
+```
+
+#### Happy eyeballs — incidents and mitigation
+
+RFC 8305: clients race **AAAA** (IPv6) and **A** (IPv4) with a short connection timeout (often 250 ms, then 50 ms stagger).
+
+| Symptom | Likely cause | Fix |
+|---------|--------------|-----|
+| +300–2000 ms on **first** connect only | AAAA published but IPv6 path black-holed | Fix IPv6 routing/firewall or **remove AAAA** until ready |
+| Intermittent slow loads | Some resolvers return AAAA, path flaky | `curl -6` vs `curl -4` from affected networks |
+| Works on Wi-Fi, slow on mobile | Carrier IPv6 broken; eyeballs delay before IPv4 wins | Remove AAAA or fix PMTUD on IPv6 path |
+| After dual-stack cutover | App listens IPv4 only; AAAA points to same host | Bind `[::]` or don't publish AAAA |
+
+```text
+Diagnose:
+  dig AAAA api.example.com
+  curl -6 -w "connect:%{time_connect}\n" -o /dev/null -s https://api.example.com
+  curl -4 -w "connect:%{time_connect}\n" -o /dev/null -s https://api.example.com
+
+If -6 hangs or >> -4: fix or remove AAAA before blaming app latency.
+```
+
+#### Sizing
+
+| Concern | Rule | Notes |
+|---------|------|-------|
+| Sync DNS in hot path | **Never** block event loop on `getaddrinfo` | Use async resolver (c-ares, `dns.lookup` promisified, Go resolver with context) |
+| Resolver QPS per service | ~1 query per `(hostname, TTL expiry)` per client pool | Connection pooling slashes repeat lookups |
+| Corporate resolver SPOF | Plan secondary resolver in DHCP | Laptop "internet works, corp API dead" = split-DNS issue |
+| Negative cache | NXDOMAIN cached per SOA MINIMUM (often 300–3600 s) | Typos in deploy config stick longer than you expect |
+
 ### When to use
 
 - **Incident debugging:** Is it DNS or TCP/TLS/app? (`dig` vs `curl -v` vs `traceroute`)
@@ -916,8 +1029,11 @@ nslookup -type=A api.example.com 8.8.8.8
 | Stale OS cache after change | "I updated DNS but laptop still old" | Flush cache; wait TTL |
 | IPv6 AAAA published but broken | Happy eyeballs delay | Fix AAAA or remove |
 | Assuming DNS load balances | DNS round-robin is crude | Use LB IP or short TTL + health checks |
+| Ignoring stacked caches | "TTL is 60s" but users stale for minutes | Flush OS cache; check browser; verify recursive separately |
+| nscd / systemd-resolved stuck | Local cache ignores authoritative change | Restart resolver or flush caches |
+| DoH bypasses corp split-DNS | Internal names fail on laptop | Policy DoH off on corp devices or internal DoH forwarder |
 
-**Happy eyeballs (brief):** Modern stacks try IPv6 and IPv4 in parallel with short timeout; broken AAAA can add **300 ms+** delay before falling back to IPv4.
+**Happy eyeballs (brief):** Modern stacks try IPv6 and IPv4 in parallel with short timeout; broken AAAA can add **300 ms+** delay before falling back to IPv4. See **Production rules** above for incident runbook.
 
 ### References
 
@@ -1760,6 +1876,47 @@ flowchart LR
 
 Most modern CDNs (CloudFront, Cloudflare, Fastly) support **both** — static sites often use pull with origin (S3/nginx); release artifacts and versioned bundles are often pushed via deploy hooks.
 
+### Production rules
+
+#### Purge and invalidation
+
+| Operation | Scope | Propagation | Use when |
+|-----------|-------|-------------|----------|
+| **URL purge** | Single path | Seconds–minutes per PoP | One bad object, emergency fix |
+| **Wildcard / prefix purge** | `/*` or `/assets/*` | Minutes; may rate-limit | Bad deploy of static bundle |
+| **Surrogate-key purge** | Tag-based (Fastly, Cloudflare) | Fast, batched | Purge all objects for `product-123` |
+| **Versioned URLs** | No purge needed | Instant (new URL) | **Preferred** — `app.a1b2c3.js` immutable |
+
+```text
+Runbook — "users still see old JS after deploy":
+1. Confirm deploy uploaded NEW object (check origin ETag/hash)
+2. If cache-busted URL (hash in filename): purge NOT needed — check HTML still references old URL
+3. If purge API called: check API response 200 + purge ID; verify not rate-limited (429)
+4. dig edge IP → curl -H "Cache-Control: no-cache" https://cdn.../app.js — compare PoPs
+5. If partial PoP stale: open provider ticket; temporary fix = lower TTL on that path
+6. Nuclear: purge /* (expect origin spike on next global miss wave)
+```
+
+#### Purge failure modes
+
+| Failure | Symptom | Mitigation |
+|---------|---------|------------|
+| **Rate limit** | 429; partial purge | Batch surrogate keys; use versioning instead |
+| **Wrong cache key** | Purge "succeeds" but object stale | Include query string / `Vary` headers in key; purge exact URL |
+| **PoP propagation lag** | Fixed in US, stale in EU for 5 min | Wait SLA (provider-specific); don't chain deploys |
+| **Stale-while-revalidate** | Old content served while refresh async | Set `stale-while-revalidate=0` for HTML; immutable for assets |
+| **Purge API down** | Deploy blocked | Fallback: new versioned filename; bypass CDN to origin temporarily |
+| **Origin still old** | Purge irrelevant | Fix origin first — CDN re-fetches stale on miss |
+
+#### Sizing
+
+| Signal | Rule | Notes |
+|--------|------|-------|
+| Origin spike after purge | Every PoP may refetch same object | Purge off-peak; warm critical paths |
+| Bandwidth | Cache hit ratio < 85% on static | Review TTL; versioned assets |
+| Purge API quota | ~100–1000 paths/min (provider-dependent) | Surrogate keys beat 10k URL purges |
+| HTML TTL | 60–300 s max if not versioned | Long TTL only with fingerprinted assets |
+
 ### When to use
 
 - Static assets (JS, CSS, images, video)
@@ -1768,10 +1925,15 @@ Most modern CDNs (CloudFront, Cloudflare, Fastly) support **both** — static si
 
 ### Trade-offs / Pitfalls
 
-- Cache invalidation delay after deploy
-- Personalized content hard to cache (need edge logic or short TTL)
-- Dynamic HTML caching requires careful cache key design
-- Cost scales with bandwidth egress
+| Pitfall | Consequence | Mitigation |
+|---------|-------------|------------|
+| Cache invalidation delay after deploy | Users see stale assets | Versioned URLs; surrogate-key purge |
+| Personalized content hard to cache | Low hit ratio | Edge logic; short TTL; cache key design |
+| Dynamic HTML caching | Wrong user sees wrong page | `private`, `Vary`, don't cache authenticated HTML |
+| Cost scales with bandwidth egress | Bill shock | Compress; hit ratio; tiered pricing |
+| Purge without versioned URLs | Every deploy needs global invalidation | Fingerprint assets; purge HTML only |
+| Full-site purge at peak | Origin miss storm; latency spike | Purge off-peak; warm cache; versioned bundles |
+| Ignoring `Vary: Accept-Encoding` | Purged gzip; brotli variant still stale | Purge all variants or normalize encoding at edge |
 
 ### References
 
@@ -1844,6 +2006,59 @@ flowchart TB
 - **gRPC:** L7 LB with HTTP/2 aware routing (path, metadata)
 - **SSL/TLS:** terminate at LB (centralized cert management) vs pass-through (end-to-end encryption)
 
+### Production rules
+
+#### Health checks — avoid flapping
+
+Flapping: backend alternates healthy ↔ unhealthy → connections churn, alerts noise, uneven load.
+
+| Parameter | Too aggressive | Too lazy | Production starting point |
+|-----------|----------------|----------|---------------------------|
+| **Interval** | CPU spike from probes; false fail on slow GC | Traffic to dying node 30+ s | 10–30 s |
+| **Timeout** | Fails during normal latency spike | Hung backends stay in pool | 2–5 s (match p99 app latency) |
+| **Healthy threshold** | Slow to mark up after deploy | — | 2–3 consecutive successes |
+| **Unhealthy threshold** | **Flapping** on single timeout | — | 2–5 consecutive failures |
+| **Path** | 200 on `/` that hits DB | — | Dedicated `/health` or `/ready` (liveness vs readiness) |
+
+```text
+Split probes:
+  Liveness  (/health)  → process up; LB keeps sending traffic
+  Readiness (/ready)   → can serve traffic; K8s removes from Service, LB should mirror
+
+Runbook — "LB flapping during deploy":
+1. Check if health path shares fate with DB (mark unhealthy when DB slow → cascade)
+2. Increase unhealthy threshold temporarily OR use preStop hook + drain
+3. Verify probe not hitting auth-gated path (401 → unhealthy)
+4. Align LB idle timeout > app graceful shutdown window
+```
+
+#### Connection draining (deploy runbook)
+
+| Step | AWS ALB | nginx / generic |
+|------|---------|-----------------|
+| 1. Stop new traffic | Target deregistration delay | `weight=0` or remove from upstream |
+| 2. Wait in-flight | `deregistration_delay` (default 300 s) | `proxy_read_timeout` + worker drain |
+| 3. App shutdown | `preStop` sleep ≥ drain period | `SIGTERM` handler stops accept, finishes requests |
+| 4. Force kill | After `terminationGracePeriodSeconds` | `worker_shutdown_timeout` |
+
+```text
+Sizing drain window:
+  drain_seconds ≥ p99_request_duration + p99_websocket_idle_between_messages
+  Typical API: 30–60 s
+  WebSocket/chat: 300–3600 s OR force disconnect with client reconnect
+```
+
+**Rule:** `LB deregistration delay` ≥ `app graceful shutdown` ≥ longest in-flight request. If app exits first, LB RSTs active connections.
+
+#### Sizing
+
+| Resource | Rule of thumb | Notes |
+|----------|---------------|-------|
+| Connections per L7 LB | 10k–100k+ (managed ELB scales) | Watch `SurgeQueueLength`, `TargetConnectionErrorCount` |
+| Health check QPS | `N_targets × (1/interval)` | 100 targets @ 10s = 10 RPS probe load — use `/ready` lightweight |
+| New connections/sec | SYN rate limit at LB under viral spike | Pre-warm; use CDN; connection pooling from clients |
+| Cross-zone LB | +1–2 ms latency | Worth it for AZ survival; enable on ALB |
+
 ### When to use
 
 - More than one app server instance (almost always in production)
@@ -1853,11 +2068,17 @@ flowchart TB
 
 ### Trade-offs / Pitfalls
 
-- **Sticky sessions** break even load distribution; required for in-memory session state (prefer external session store)
-- **SSL termination at LB** means traffic LB->backend may be plain HTTP (secure VPC or re-encrypt)
-- **Misconfigured health checks** mark healthy nodes bad (wrong path, auth required on `/health`)
-- **Single LB** is SPOF unless HA pair or managed service
-- **Source IP hash** for stickiness fails behind carrier NAT (many users, one IP)
+| Pitfall | Consequence | Mitigation |
+|---------|-------------|------------|
+| Sticky sessions | Uneven load; required for in-memory state | External session store (Redis) |
+| SSL termination at LB | Plaintext LB→backend | TLS to backend or private VPC |
+| Misconfigured health checks | Healthy nodes marked bad | Dedicated `/health`; no auth on probe |
+| Single LB SPOF | Full outage if LB fails | HA pair or managed multi-AZ LB |
+| Source IP hash + carrier NAT | Hot backend; unfair distribution | Cookie or user-id affinity |
+| Health check flapping | Traffic yo-yo; alert fatigue; session drops | Raise unhealthy threshold; liveness vs readiness |
+| Drain shorter than in-flight | RST mid-request; 502 burst on deploy | `deregistration_delay` ≥ p99 request time |
+| No preStop / graceful shutdown | Pod killed while LB still sends traffic | `preStop` sleep; SIGTERM handler |
+| Readiness tied to dependency | One DB blip drains entire fleet | Readiness = local only; degrade gracefully |
 
 ### References
 
@@ -2008,6 +2229,39 @@ add_server("B"):
 
 **Interview point:** Consistent hash solves **cache locality** when adding/removing nodes; IP hash is simpler but remaps almost everything when N changes.
 
+### Production rules
+
+#### NAT, mobile, and affinity pitfalls
+
+| Client type | IP stability | Safe affinity key | Risk |
+|-------------|--------------|-------------------|------|
+| **Desktop broadband** | Stable hours–days | Source IP hash OK | CGNAT still collides |
+| **Mobile 4G/5G** | Changes on tower handoff | **Cookie / user-id hash** | IP hash → mid-session backend switch |
+| **Corporate NAT** | Thousands share one IP | Never IP hash for load spread | One backend gets NAT avalanche |
+| **IPv6 privacy addresses** | Rotates (RFC 4941) | Cookie or auth token | IP hash useless |
+| **WebSocket long-lived** | IP may change on reconnect | Sticky cookie + pub/sub backplane | See [1.22](#122-sse-polling--websockets) |
+
+```text
+Decision tree:
+  Stateless REST API        → round robin or least conn (no stickiness)
+  In-memory session         → externalize session OR cookie stickiness
+  Public mobile API         → NEVER IP hash for distribution
+  Sharded cache             → consistent hash on tenant_id / cache key
+  Carrier NAT office egress → WRR or least conn; not IP hash
+```
+
+#### Sizing and tuning
+
+| Workload | Algorithm | Weight / conn limit hint |
+|----------|-----------|---------------------------|
+| Homogeneous K8s pods (8 vCPU each) | Round robin | Equal weights |
+| Mixed ASG (4 vCPU + 16 vCPU) | Weighted RR | Weight ∝ CPU or measured RPS |
+| WebSocket fanout | Least connections | 1 conn = 1 user; cap ~10k–50k conn/instance |
+| Memcached via LB | Consistent hash + vnodes | 100–200 vnodes per physical node |
+| Canary 5% | Weighted RR | new=1, stable=19 |
+
+**HTTP/2 note:** One TCP connection multiplexes many requests → **least connections** at L4 understates load; prefer L7 per-request RR or enable connection coalescing awareness.
+
 ### When to use
 
 - **Round robin:** Default for stateless REST behind homogeneous pods (Kubernetes Service default).
@@ -2141,6 +2395,49 @@ sequenceDiagram
 - **SSE advantages:** automatic reconnect; works over standard HTTP/2; simpler ops than WS cluster
 - **HTTP/1.1 connection limit** (~6 per domain) matters less once upgraded to single WS
 
+### Production rules
+
+#### Sticky sessions vs shared state
+
+| Approach | How | Pros | Cons |
+|----------|-----|------|------|
+| **LB cookie stickiness** | `AWSALB` / `SERVERID` cookie | Simple; no app change | Uneven load; lost on cookie clear; deploy must drain |
+| **IP hash** | L4/L7 hash of source IP | No cookie | NAT/mobile breaks; hot spots |
+| **External session store** | Redis/DB for session | Even LB distribution; survives deploy | Extra infra; latency |
+| **Pub/sub backplane** | Redis Pub/Sub, Kafka, NATS | Any node can push to any client | Complexity; backplane SPOF without cluster |
+
+```text
+Prefer: external session store + round robin (stateless nodes)
+Use sticky only when: legacy app with in-memory state you cannot refactor yet
+Always pair sticky with: connection drain on deploy (1.20)
+```
+
+#### Pub/sub backplane runbook
+
+```text
+Architecture:
+  Client WS → Server A (subscribes user:123 on Redis channel)
+  Event on Server B → PUBLISH user:123 → Server A → push to client socket
+
+Runbook — "messages not delivered cross-server":
+1. Verify all app instances connected to same Redis cluster (not localhost)
+2. Check channel naming matches (tenant prefix, user id)
+3. Monitor Redis: connected_clients, pubsub_channels, memory
+4. On Redis failover: clients must reconnect; expect brief message gap
+5. Scale: Redis Pub/Sub does not persist — missed messages if subscriber offline
+   → for guaranteed delivery use Kafka + per-user consumer or SSE with offset
+```
+
+#### Sizing
+
+| Resource | Rule of thumb | Notes |
+|----------|---------------|-------|
+| WS connections per instance | 10k–65k (depends on RAM, msg size) | ~10–50 KB per idle connection |
+| Heartbeat interval | 30 s ping/pong | Detect dead peers; keep NAT binding alive |
+| Redis Pub/Sub fanout | O(subscribers) per message | Hot channel (1M subs) → shard channels or edge broadcast |
+| Reconnect storm | Plan 2× normal connect rate after outage | Jittered exponential backoff on client |
+| LB idle timeout | > app heartbeat interval | NAT UDP/TCP timeout 30–120 s — align WS ping |
+
 ### When to use
 
 | Need | Choose |
@@ -2152,11 +2449,18 @@ sequenceDiagram
 
 ### Trade-offs / Pitfalls
 
-- **Polling** - empty responses waste bandwidth; does not scale to millions of clients
-- **Long polling** - ties up worker threads if server is not async (Node, Netty, async servlet)
-- **SSE** - one-way; client commands need separate HTTP/WS channel
-- **WebSocket** - sticky sessions or pub/sub required for multi-server; connection storms on reconnect after outage; heartbeats/ping-pong needed to detect dead peers
-- **Do not default to WebSocket** for every "realtime" feature - SSE covers many notification feeds with less complexity
+| Pitfall | Consequence | Mitigation |
+|---------|-------------|------------|
+| Short polling | Empty responses waste bandwidth | SSE or WebSocket when updates are frequent |
+| Long polling | Ties up worker threads if sync | Async server (Node, Netty) |
+| SSE one-way | Client commands need separate channel | HTTP POST or companion API |
+| WebSocket multi-server | Messages lost without shared state | Sticky sessions or pub/sub backplane |
+| Connection storms on reconnect | LB/origin overload after outage | Jittered backoff; rate limit handshakes |
+| Default to WebSocket everywhere | Unnecessary ops complexity | SSE for server-push-only feeds |
+| Sticky without drain | Deploy kills active WS; mass disconnect | Drain + client reconnect with backoff |
+| Pub/sub without persistence | Gap during subscriber reconnect | Kafka or client-side catch-up API |
+| Redis backplane SPOF | All cross-node push fails | Redis Cluster / Sentinel |
+| LB L4 only for WS | Upgrade headers stripped | L7 ALB/nginx with `proxy_http_version 1.1` |
 
 ### References
 

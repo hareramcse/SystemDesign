@@ -188,6 +188,49 @@ Design each layer with explicit **invalidation** — a deploy that updates HTML 
 
 **Rule of thumb:** prefer **object-level** (or key-per-entity) caching in greenfield services; use query-level only for expensive read-only reports with clear TTL.
 
+#### Production monitoring and alerts
+
+Caches fail silently — hit ratio drops while latency looks fine until the DB saturates. Monitor **per tier** and **per key prefix**, not cluster-wide averages alone.
+
+| Metric | Formula / source | Healthy target | Alert when |
+|--------|------------------|----------------|------------|
+| Hit ratio | `hits / (hits + misses)` | ≥ 90% hot paths | < 80% for 5 min on critical prefix |
+| Miss rate spike | `rate(misses)` | Stable baseline | 3× baseline in 5 min window |
+| Eviction rate | `evicted_keys / sec` (Redis `INFO`) | Low vs insert rate | Evictions > hits → working set exceeds memory |
+| Memory usage | `used_memory / maxmemory` | < 85% | > 90% sustained → OOM or eviction storm |
+| Latency p99 | Client-side cache RTT | < 2 ms same-AZ | p99 > 10 ms or 2× baseline |
+| DB load correlation | DB QPS vs cache miss rate | Decoupled | Miss rate ↑ AND DB QPS ↑ together |
+| Connection errors | Redis `rejected_connections` | 0 | Any sustained rejections |
+| Replication lag | Replica `master_link_down` / offset | < 1 s | Failover risk; stale reads if used |
+
+**Per-prefix dashboards** (examples):
+
+```text
+product:*     hit_ratio, miss_rate, p99_latency
+session:*     hit_ratio, memory_bytes, eviction_rate
+config:*      hit_ratio, age_of_oldest_key
+```
+
+**Alert correlation rule:** fire **cache + DB** composite alert when `miss_rate` increases AND `db.query_rate` increases on the same endpoint — distinguishes cache failure from traffic spike.
+
+```mermaid
+flowchart LR
+    Miss[Miss rate spike] --> Corr{DB QPS also up?}
+    Corr -->|Yes| Incident[Cache failure / expiry / flush]
+    Corr -->|No| Traffic[Traffic mix changed]
+```
+
+#### Production rules (monitoring)
+
+| Rule | Why |
+|------|-----|
+| **Alert on miss rate, not only hit ratio** | 95% → 85% sounds fine but doubles DB load |
+| **Track memory headroom before peak** | Eviction storms start at ~90% `maxmemory` |
+| **Client-side latency histograms** | Server `INFO` misses cross-AZ and connection pool waits |
+| **Synthetic canary keys** | Probe `cache_ping` every 30s; detect total outage before user traffic |
+| **Dashboard per environment** | Staging 50% hit ratio is normal; prod 50% is incident |
+| **Post-deploy hit ratio watch** | Cold cache after deploy → 15 min elevated miss window expected |
+
 ### When to use
 
 - Read-heavy workloads with repeated access to the same keys (read:write ≥ 10:1)
@@ -1268,10 +1311,35 @@ sequenceDiagram
 
 ### Trade-offs / Pitfalls
 
-- First read after write is always a **cache miss** (higher latency until warmed)
-- Forgetting invalidation → **stale reads** after updates
-- Wrong pattern for read-after-write hot paths — use write-through or cache-aside with update
-- Not a substitute for "don't cache" — if data is never read, skip caching entirely
+| Pitfall | Symptom | Mitigation |
+|---------|---------|------------|
+| Skipped invalidation | Stale data after update until TTL | Always `DEL` after DB commit on write-around path |
+| Read-after-write on hot path | User sees old value post-update | Write-through or sync invalidate + short TTL safety net |
+| Bulk import via write-around | Cache empty; first reader floods DB | Warm cache post-import or disable reads until warm job completes |
+| Assuming write-around = no cache ops | Old key lingers with pre-update value | Invalidate on every write, not only on read |
+| Mixed patterns in one service | Some paths update cache, others bypass | Document per-entity write policy in code review checklist |
+| First-read miss after every write | p99 latency spike on profile update → read | Accept for cold data; wrong for checkout/session |
+
+#### Production rules
+
+| Rule | Why |
+|------|-----|
+| **Invalidate on write, even when bypassing cache** | Write-around still leaves stale entries if key was previously cached |
+| **Use for write:read > 10:1 entities** | Audit logs, telemetry landing — not user profiles |
+| **Pair with cache-aside on read path** | Write-around defines write; lazy load defines read — both must be implemented |
+| **Bulk writes: disable cache populate** | Import job + concurrent reads → stampede on same keys |
+| **Do not use for session/auth tokens** | Read-after-write is mandatory; use write-through or cache-aside |
+| **Monitor miss rate after write bursts** | Batch imports cause read miss storms when data suddenly queried |
+| **TTL safety net even with invalidation** | Missed invalidation path → stale forever without TTL |
+
+#### Write pattern decision (production)
+
+| Workload | Pattern |
+|----------|---------|
+| Profile read 100× per write | Cache-aside + invalidate |
+| Audit event write 1000× per read | Write-around + no warm |
+| Order status after checkout | Write-through or invalidate + read |
+| Bulk CSV import | Write-around; warm top-N keys after job |
 
 ---
 

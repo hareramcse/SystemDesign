@@ -288,11 +288,40 @@ sequenceDiagram
 
 ### Trade-offs / Pitfalls
 
-- **Celebrity user problem** — one hot `user_id` saturates a shard; mitigate with sub-sharding, caching, or async write path (5.6).
-- **Cross-shard ACID** — 2PC across shards kills latency; CockroachDB/Spanner shard *internally* with consensus instead.
-- **Global secondary indexes** — write amplification to all shards (MongoDB, DynamoDB GSI).
-- **Operational multiplication** — 32 shards = 32x backup jobs, 32x failover drills, 32x schema migration risk.
-- **Joins across shards** — application-side join or denormalize; SQL sharding proxies have limits.
+| Pitfall | Symptom | Mitigation |
+|---------|---------|------------|
+| Celebrity / hot shard key | One shard at 100% CPU; others idle | Salt key (5.6); dedicated shard; cache hot reads |
+| Wrong shard key (`status`, `country`) | Scatter-gather on every query | Re-key at design time; `tenant_id` / `user_id` |
+| Cross-shard ACID | 2PC p99 > 500 ms; partial commit risk | Saga, outbox, or single-shard invariant |
+| Global secondary index | Write amp × shard count | Denormalize; local index; async search index |
+| Schema drift across shards | Migration 31/32 applied | Orchestrated migration with version gate per shard |
+| Monotonic shard key (`AUTO_INCREMENT`) | All inserts hit last shard | Hash or snowflake IDs |
+| Resharding under load | Dual-write bugs; lost rows | Feature-flagged cutover; checksum per shard |
+| Join across shards in OLTP | Multi-second queries | Denormalize; CQRS read model; scatter-gather async |
+
+#### Production rules
+
+| Rule | Why |
+|------|-----|
+| **Shard key must be in every hot-path query** | Missing key → broadcast to all shards |
+| **Design for single-shard transactions** | Cross-shard 2PC is last resort, not default |
+| **Automate schema migration across all shards** | Manual per-shard DDL → version drift incidents |
+| **Per-shard monitoring, not cluster average** | Hot shard hidden in aggregate CPU metrics |
+| **Plan resharding at 60% shard capacity** | Resharding at 95% runs under production load |
+| **Global uniqueness via app-generated ID** | `AUTO_INCREMENT` and cross-shard `UNIQUE` break |
+| **Backup and restore drill per shard** | 32 shards = 32 independent failure domains |
+| **Document shard map in control plane** | Hard-coded `% 4` in app code blocks elastic growth |
+
+#### Production monitoring
+
+| Signal | Source | Alert when |
+|--------|--------|------------|
+| Per-shard QPS / CPU skew | Vitess `vttablet`, MongoDB `shardingStatus` | One shard > 2× cluster average |
+| Cross-shard query rate | Proxy/router metrics | OLTP scatter-gather increasing → schema smell |
+| Chunk / balance lag | MongoDB balancer, Citus rebalance | Migrations stalled > 24h |
+| Replication lag per shard | Per-shard `replay_lag` | Lag > SLO before promoting replica |
+| Connection pool per shard | App metrics by `shard_id` | One pool exhausted while others idle |
+| Row count drift after resharding | Checksum job per shard | Mismatch → halt cutover |
 
 ### References
 
@@ -433,10 +462,40 @@ Create partitions via **background scheduler**, not synchronously in the API hot
 
 ### Trade-offs / Pitfalls
 
-- Append-mostly workloads pile onto the "latest" partition - mitigate with pre-splitting or hash sub-partitioning.
-- Uneven range sizes require active rebalancing.
-- Creating partitions in the request path blocks APIs under load — use schedulers.
-- Dropping partitions without moving in-flight data causes silent data loss.
+| Pitfall | Symptom | Mitigation |
+|---------|---------|------------|
+| Hot latest partition | All writes hit one shard/range | Pre-split; hash sub-key + range composite |
+| Partition creation in API path | p99 spikes; lock contention on catalog | Background scheduler only |
+| No reserve partitions | `INSERT` fails during traffic spike | Keep 2+ empty partitions ahead |
+| `DROP` without row migration | Silent data loss | Move unprocessed rows to active partition first |
+| Uneven range sizes | One partition 10× larger than peers | Split range; rebalance boundaries |
+| Retention via `DELETE` | Vacuum bloat; hours-long locks | `DROP TABLE` child partition |
+| Reindex without 2× headroom | Disk full mid-migration | Size for double active data during replay |
+| Range queries without partition key | Full scan all partitions | Include partition key in `WHERE` |
+
+#### Production rules
+
+| Rule | Why |
+|------|-----|
+| **Create partitions in scheduler, never synchronously in API** | DDL locks catalog; blocks inserts under load |
+| **Maintain 2+ empty reserve partitions** | Burst traffic cannot wait for partition creation |
+| **Use `DROP PARTITION` for retention, not `DELETE`** | O(metadata) reclaim vs O(rows) vacuum storm |
+| **Move in-flight rows before drop** | Pipelines still processing old partition → data loss |
+| **Plan for 2× data during reindex/replay** | Old + new copy coexist temporarily |
+| **Align range boundaries with query patterns** | Monthly ranges for monthly reports → partition pruning |
+| **Monitor fill rate of active partition** | Create next partition at 70% capacity, not 100% |
+| **Composite key for time-series** | `(hash(device_id), event_date)` spreads hot "today" writes |
+
+#### Production monitoring
+
+| Signal | Source | Alert when |
+|--------|--------|------------|
+| Active partition fill rate | Row count / max rows per partition | > 70% of planned capacity |
+| Partition count vs reserve | Catalog query / scheduler logs | < 2 empty future partitions |
+| Insert failures | App errors `no partition for row` | Any occurrence → emergency partition create |
+| Per-partition scan size | `EXPLAIN` partition pruning | Query scanning all children → missing predicate |
+| Drop job duration | Scheduler metrics | Drop blocked → rows still referenced |
+| Disk per partition | Per-child table size | One child >> peers → split range |
 
 ### References
 

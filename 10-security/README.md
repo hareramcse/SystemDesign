@@ -330,6 +330,42 @@ Resource server must **enforce scopes** — validating token signature alone is 
 - **OAuth 2.1** consolidates best practices: PKCE mandatory, implicit removed
 - Pair with **OIDC** when you need `id_token` with user claims (`sub`, `email`)
 
+#### Production rules
+
+| Rule | Rationale |
+|------|-----------|
+| **Authorization Code + PKCE for all user flows** | OAuth 2.1 removes implicit; PKCE mandatory for public clients |
+| **Exact `redirect_uri` allowlist** | Open redirect = stolen authorization codes |
+| **`state` on every authorize request** | CSRF on OAuth callback |
+| **Short access token TTL (5–15 min)** | Limits theft window |
+| **Refresh token rotation + reuse detection** | Stolen refresh token revokes entire family |
+| **Validate scopes at resource server** | Signature valid ≠ permission granted |
+| **Never log tokens** | Access/refresh tokens in logs = credential leak |
+| **Separate auth server from resource API** | Centralize token issuance; APIs only validate |
+| **Client Credentials secrets in vault only** | Never in env files committed to Git |
+| **Use RFC 9700 Security BCP** | Current best practices supersede 6749 alone |
+
+**Token validation decision tree:**
+
+```text
+JWT access token?
+  → verify signature (JWKS), iss, aud, exp, scope
+Opaque token?
+  → POST /introspect (RFC 7662) or tokeninfo endpoint
+M2M?
+  → Client Credentials; audit by client_id, not user sub
+```
+
+**Common production misconfigurations:**
+
+| Misconfiguration | Attack / failure |
+|------------------|------------------|
+| Wildcard `redirect_uri` | Code interception to attacker domain |
+| Skip PKCE on SPA "because HTTPS" | Public client code interception |
+| Long-lived access JWT (24h+) | Bearer theft valid all day |
+| No scope check on API | Any valid token accesses admin endpoints |
+| ROPC (password grant) enabled | Phishing; bypasses MFA at IdP |
+
 ### When to use
 
 | Scenario | Flow |
@@ -347,6 +383,15 @@ Resource server must **enforce scopes** — validating token signature alone is 
 | Scoped, revocable access | Token theft valid until expiry |
 | Massive ecosystem support | OAuth ≠ authentication without OIDC |
 | Standard for API gateways | Complex for developers first time |
+
+| Pitfall | Consequence | Mitigation |
+|---------|-------------|------------|
+| Implicit / ROPC flows | Token exposure, MFA bypass | Disable; Code + PKCE only |
+| Open redirect URIs | Account takeover via code theft | Exact-match allowlist |
+| Missing `state` | CSRF login as victim | Require `state`; validate server-side |
+| No refresh rotation | Undetected refresh theft | Rotate + revoke family on reuse |
+| Scope not enforced | Over-privileged access | Check scope per endpoint |
+| Token in URL fragment/query | Leak via logs, Referer | Bearer header only; PKCE for code |
 
 ### References
 
@@ -593,6 +638,38 @@ sequenceDiagram
 - **ID token vs access token:** ID token proves authentication to client; access token authorizes API — don't confuse (see OIDC 10.4)
 - Gateways can validate JWT once and pass trusted headers to backends on private network
 
+#### Production rules
+
+| Rule | Rationale |
+|------|-----------|
+| **RS256/ES256 only in distributed systems** | HS256 shared secret on every service = large blast radius |
+| **Reject `alg: none` and unexpected algs** | Algorithm confusion attacks (RFC 8725) |
+| **Validate `iss`, `aud`, `exp`, `nbf` every request** | Skipping any check accepts forged/wrong tokens |
+| **JWKS cache with `kid` refresh** | Key rotation must not require deploy |
+| **Access token TTL ≤ 15 min** | Stolen bearer window stays small |
+| **Refresh token opaque + server-side store** | Enables revocation; rotation detects theft |
+| **Never store access token in localStorage** | XSS reads it — memory or HttpOnly cookie for refresh |
+| **Minimal claims in JWT** | Large headers hit gateway limits; no PII in payload |
+| **Don't put authorization only in JWT** | Re-check permissions server-side; token can be stale |
+| **Gateway validates once; don't re-trust `X-User-Id` from internet** | Spoofed headers if edge doesn't strip |
+
+**Clock skew handling:**
+
+```text
+Accept if: now - leeway ≤ exp  AND  nbf ≤ now + leeway
+Typical leeway: 60 seconds across services
+→ sync NTP on all validators
+```
+
+**Revocation strategies:**
+
+| Approach | Trade-off |
+|----------|-----------|
+| Short TTL only | Simple; stolen token valid until `exp` |
+| `jti` denylist (Redis) | Immediate revoke; lookup per request |
+| Token introspection | Centralized; adds latency + IdP dependency |
+| Refresh token revoke | Kills future access; current JWT lives until expiry |
+
 ### When to use
 
 - Stateless API auth in microservices (OAuth2 bearer tokens)
@@ -608,6 +685,16 @@ sequenceDiagram
 | Horizontally scalable verification | Token size vs cookies |
 | Standard JWKS rotation | `alg:none` and key confusion if poorly implemented |
 | Works across polyglot services | Leaked bearer token = credential until expiry |
+
+| Pitfall | Consequence | Mitigation |
+|---------|-------------|------------|
+| `alg: none` accepted | Forge any token | Allowlist algorithms; use hardened library |
+| HS256 at scale | Secret on 50 services | RS256 + JWKS |
+| Skip `aud` validation | Token for API-A used on API-B | Per-service audience check |
+| Long-lived JWT (no refresh) | Theft valid for days | Short access + refresh rotation |
+| PII in claims | GDPR exposure in logs/proxies | Minimal claims; opaque `sub` |
+| Trust client-sent `X-User-Id` | Header spoofing bypasses auth | Validate JWT at edge; internal mTLS |
+| localStorage storage | XSS steals session | Memory + HttpOnly refresh cookie |
 
 ### References
 
@@ -986,16 +1073,84 @@ flowchart LR
 
 ### Key details
 
-- Never commit secrets; scan repos (gitleaks, trufflehog)
-- Short-lived credentials over long-lived API keys
-- K8s Secrets are base64, not encrypted by default - use Sealed Secrets or ESO
-- Audit every secret access
+#### Secret lifecycle
+
+```mermaid
+flowchart LR
+    Create[Create in Vault] --> Inject[Inject at runtime]
+    Inject --> Use[App uses secret]
+    Use --> Rotate[Scheduled rotation]
+    Rotate --> Inject
+    Use --> Audit[Audit log]
+    Rotate --> Revoke[Revoke old version]
+```
+
+| Phase | Practice |
+|-------|----------|
+| **Creation** | Generated in vault — never typed by human into UI |
+| **Distribution** | IAM/workload identity auth to vault; no static vault password in app |
+| **Runtime** | Env var or file mount; reload on rotation signal (SIGHUP, K8s reload) |
+| **Rotation** | Dual-active window: new secret valid, old deprecated, then revoked |
+| **Revocation** | Immediate on leak; assume compromise if secret ever in Git |
+| **Audit** | Log every read: who, when, which secret version |
+
+**Tool comparison:**
+
+| Tool | Strength | Production note |
+|------|----------|-----------------|
+| **HashiCorp Vault** | Dynamic secrets, leasing, PKI | Run HA cluster; unseal strategy documented |
+| **AWS Secrets Manager** | Native AWS rotation Lambdas | Per-secret cost; use for high-value creds |
+| **GCP Secret Manager** | Simple, IAM-integrated | Versioning built-in |
+| **Azure Key Vault** | HSM-backed keys + secrets | Cert auto-renew |
+| **K8s Secrets + ESO** | GitOps-friendly | ESO/CSI driver fetches from external vault |
+| **Sealed Secrets** | Encrypt secrets in Git | Key loss = re-seal everything |
+
+**Kubernetes production pattern:**
+
+```text
+❌ kubectl create secret generic db-pass --from-literal=password=...  # etcd base64 only
+✅ External Secrets Operator → AWS SM → K8s Secret → pod env (with RBAC)
+✅ Better: Vault Agent sidecar → file mount → app reads /vault/secrets/db
+```
+
+#### Production rules
+
+| Rule | Rationale |
+|------|-----------|
+| **Never commit secrets — scan CI** | gitleaks, trufflehog, GitHub secret scanning |
+| **Prefer dynamic secrets** | Vault DB creds TTL 1h — leak expires automatically |
+| **Short-lived over long-lived** | IAM roles > API keys; workload identity > static creds |
+| **Separate secrets per environment** | Prod key in staging = blast radius expansion |
+| **Rotate on schedule AND on departure** | Employee offboarding, contractor end, incident response |
+| **Break-glass procedure documented** | Vault sealed during outage needs runbook, not improvisation |
+| **Don't log secret values** | Mask in debug; structured logging filters |
+| **Encrypt etcd at rest** | K8s Secrets are only base64 by default |
+| **Least privilege on vault policies** | App reads only its path — not `secret/*` |
+| **Assume Git history is compromised** | Rotate if secret ever committed, even if "removed" |
+
+**Rotation example (database password):**
+
+```text
+T=0   Vault creates password_v2 in DB + stores in SM
+T=1   ESO syncs v2 to K8s; rolling restart pods (50% at a time)
+T=2   All pods on v2; revoke password_v1 in DB
+T=3   Alert if any connection still uses v1 (audit log)
+```
+
+**CI/CD secrets:**
+
+| Do | Don't |
+|----|-------|
+| OIDC federation to cloud (no stored key) | `AWS_ACCESS_KEY` in GitHub Actions vars |
+| Per-environment deploy keys with scope | One prod key for all pipelines |
+| Rotate tokens when employee leaves | Shared `deploy@company` service account |
 
 ### When to use
 
 - Every production environment
 - CI/CD pipeline credentials
 - Database and third-party API keys
+- TLS private keys and signing keys
 
 ### Trade-offs
 
@@ -1004,6 +1159,16 @@ flowchart LR
 | Central rotation and audit | Vault becomes critical dependency |
 | Removes secrets from code | Operational complexity |
 | Dynamic secrets possible | Misconfigured IAM leaks access |
+
+| Pitfall | Consequence | Mitigation |
+|---------|-------------|------------|
+| Secrets in Git history | Permanent exposure until rotated | Scan + rotate; BFG purge ≠ enough alone |
+| K8s Secret as security boundary | Anyone with `get secrets` reads all | RBAC; external vault; encryption at rest |
+| Shared vault path | One breach → all services | Path per service: `secret/orders/db` |
+| No rotation after leak | Attacker retains access | Incident runbook: rotate immediately |
+| Vault SPOF | All apps fail to start | HA cluster; cached creds with TTL buffer |
+| Env vars in crash dumps | Secret in Sentry/logs | File mount; memory-only where possible |
+| Long-lived API keys | Years of exposure | 90-day max; prefer IAM/OAuth M2M |
 
 ### References
 
@@ -1283,28 +1448,81 @@ DDoS causes outage and revenue loss without traditional "hacking." Attack surfac
 
 ### How it works
 
-Multi-layer: **network** (BGP scrubbing, anycast absorption), **CDN/edge** (rate limit, challenge, cache static), **application** (connection limits, autoscaling), **WAF** (block attack patterns). Cloud providers: AWS Shield, Cloudflare, Azure DDoS Protection.
-
-### Diagram
+Multi-layer defense — attacks differ by layer; no single control stops everything:
 
 ```mermaid
-flowchart LR
-    Bots[Attack Traffic] --> Scrub[Scrubbing Center / CDN]
-    Scrub -->|clean traffic| Origin[Origin Servers]
-    Scrub -->|drop| Block[Blocked]
+flowchart TB
+    Attack[DDoS Traffic] --> L3[L3/L4: BGP scrubbing / anycast]
+    L3 --> L7[L7: CDN WAF rate limit]
+    L7 --> Edge[Edge: challenge / geo block]
+    Edge --> Origin[Origin: autoscale + connection limits]
+    Origin --> App[App: queue shed / circuit breaker]
+```
+
+#### Attack types and responses
+
+| Type | Layer | Signature | Primary defense |
+|------|-------|-----------|-----------------|
+| **Volumetric (UDP/ICMP flood)** | L3/L4 | Gbps/Tbps bandwidth saturation | ISP scrubbing, AWS Shield Advanced, anycast CDN |
+| **SYN flood** | L4 | Half-open connections exhaust table | SYN cookies, NLB, rate limit at edge |
+| **HTTP flood** | L7 | Millions of valid-looking GET/POST | CDN cache, WAF, rate limit, challenge (JS/CAPTCHA) |
+| **Slowloris** | L7 | Slow partial requests hold connections | Connection timeout, reverse proxy limits |
+| **Amplification (DNS/NTP)** | L3 | Spoofed source → your IP flooded | Egress filtering; not origin-fixable — scrub center |
+| **Application exploit flood** | L7 | Expensive endpoints (`/search?q=*`) | Per-route rate limit, cache, WAF custom rules |
+
+**CDN / edge architecture (production standard):**
+
+```text
+Internet → Cloudflare / CloudFront / Fastly → Origin (hidden IP)
+           ↑ absorb volumetric; cache static; rate limit per IP
+Origin IP must NOT be discoverable (firewall allowlist CDN ranges only)
+```
+
+#### Production rules
+
+| Rule | Rationale |
+|------|-----------|
+| **Hide origin IP** | Direct-to-IP bypasses CDN — firewall CDN IPs only |
+| **Rate limit at edge, not app** | App-level limit too late under Gbps flood |
+| **Per-route limits for expensive APIs** | `/export`, `/search` need stricter caps than `/health` |
+| **Autoscale ≠ DDoS defense** | Attacker scales you into bankruptcy — need scrubbing |
+| **Runbooks for L3 vs L7** | Different teams, tools, and SLAs |
+| **Challenge sparingly** | CAPTCHA on every request kills UX — trigger on anomaly |
+| **Monitor origin bypass** | DNS leak, historical IP in Shodan |
+| **Game-day DDoS simulation** | Validate scrubbing provider activation (Shield Advanced) |
+| **Retry-After on 503** | Well-behaved clients back off; combine with edge shed |
+
+**Rate limiting tiers:**
+
+| Tier | Limit | Scope |
+|------|-------|-------|
+| Global | 100K RPS | CDN edge — total site |
+| Per IP | 100 RPS | Anonymous traffic |
+| Per API key | 1K RPS | Authenticated partners |
+| Per route | 10 RPS | `/login`, `/password-reset` |
+| Per user | 50 RPS | Authenticated user ID |
+
+**AWS / cloud reference stack:**
+
+```text
+Route 53 → CloudFront + AWS WAF → ALB → Auto Scaling Group
+Shield Standard: automatic L3/L4 (all customers)
+Shield Advanced: 24/7 DRT, cost protection, advanced metrics ($3K/mo)
 ```
 
 ### Key details
 
-- Anycast + global edge absorbs volumetric attacks
-- Rate limiting per IP/API key
-- Autoscale handles flash crowds; DDoS exceeds scale - need scrubbing
-- Runbooks for L3/L4 vs L7 attacks
+- Anycast + global edge absorbs volumetric attacks (traffic spread across PoPs)
+- Autoscale handles flash crowds; sustained DDoS exceeds economic scale — scrubbing required
+- **Cost protection:** attacker forcing 1000× scale can spike cloud bill — Shield Advanced / committed scrubbing contracts
+- Geo-blocking and ASN blocking for known botnet sources (last resort — false positives)
+- WebSocket and gRPC need L7-aware CDN (not all CDNs support equally)
 
 ### When to use
 
 - All internet-facing services
-- Critical during product launches and elections
+- Critical during product launches, elections, and competitor-driven attacks
+- APIs with expensive compute paths
 
 ### Trade-offs
 
@@ -1313,6 +1531,17 @@ flowchart LR
 | Maintains availability | Cost scales with attack size |
 | Managed services reduce ops | False positives block legit users |
 | Layered defense | Origin IP exposure bypasses CDN |
+
+| Pitfall | Consequence | Mitigation |
+|---------|-------------|------------|
+| **Origin IP exposed** | Direct attack bypasses CDN | Firewall; change IP; CDN-only ingress |
+| **Autoscale as only defense** | $50K cloud bill; still down | Edge scrubbing; max instance caps + shed |
+| **Uniform rate limit** | Blocks legit burst; misses slow attacks | Per-route, per-user, per-IP tiers |
+| **No L7 on API** | TCP-only LB lets HTTP flood through | WAF + CDN in front |
+| **CAPTCHA everywhere** | Mobile/unauthenticated clients fail | Anomaly-triggered challenge only |
+| **Missing runbook** | 45 min to find scrubbing provider contact | Document L3/L7 escalation paths |
+| **Geo block as first move** | Blocks entire markets | Last resort; monitor false positive rate |
+| **Ignoring slow POST** | Connection exhaustion | `client_body_timeout`, `proxy_read_timeout` |
 
 ### References
 

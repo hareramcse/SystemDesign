@@ -436,6 +436,23 @@ Rule of thumb: sample 1–5% in prod; **always** capture errors if tail sampling
 
 Click trace ID in Jaeger → see exact log lines in Loki/Elasticsearch.
 
+### Production rules
+
+| Rule | Rationale |
+|------|-----------|
+| **W3C Trace Context everywhere** | `traceparent` on HTTP, gRPC metadata, Kafka headers — broken hop = orphan spans |
+| **Auto-instrument + manual business spans** | Framework spans show HTTP; add spans for `authorize_payment`, `reserve_inventory` |
+| **Sample in prod, full in staging** | 1–5% head-based default; tail sampling for errors and slow traces |
+| **Inject traceId into structured logs** | `traceId` + `spanId` fields — pivot from metric spike to exact trace |
+| **Set span status on errors** | Non-2xx and exceptions → `ERROR` status; green spans hide failures in UI |
+| **Control span attribute cardinality** | Never `user_id` as span attribute at 1M RPS — use logs or low-cardinality buckets |
+| **Collector between apps and backends** | OTel Collector: batch, tail-sample, scrub PII before export |
+| **Alert on propagation gaps** | Metric: orphan span rate — rising = new service missing instrumentation |
+| **Retention policy by tier** | Hot 7d for debug; longer for sampled errors only — cost control |
+| **Test propagation in CI** | Contract test: service A → B must share `trace_id` in integration env |
+
+**Sampling math:** 50K RPS × 100 spans/trace × 100% sample = 5M spans/sec — unsustainable. Tail sampling keeping 100% of errors + 1% success is typical production compromise.
+
 ### Key details
 
 - **Critical path:** longest chain of dependent spans determines latency floor
@@ -459,6 +476,16 @@ Click trace ID in Jaeger → see exact log lines in Loki/Elasticsearch.
 | Visual call graph for onboarding | Broken context = incomplete traces |
 | Links logs ↔ traces via trace ID | Manual instrumentation for business spans |
 | Mesh can add tracing without code | Cardinality of span attributes must be controlled |
+
+| Pitfall | Symptom | Mitigation |
+|---------|---------|------------|
+| **Broken propagation** | Fragmented traces; can't find payment span | Middleware injects/extracts on every egress; lint in CI |
+| **100% sampling in prod** | APM bill explosion; collector OOM | Head 1–5% + tail sample errors/slow |
+| **High-cardinality attributes** | Backend index blow-up | Allowlist attributes; user IDs in logs only |
+| **Missing error status** | Failed requests show green spans | Set `ERROR` on exceptions and 5xx |
+| **Async context loss** | Worker spans detached from HTTP request | Pass context in message headers / `context.attach` |
+| **Baggage with PII** | GDPR violation in trace export | Avoid baggage; use traceId to join logs |
+| **No business spans** | "payment took 400ms" but not which step | Manual spans around domain operations |
 
 ### References
 
@@ -668,6 +695,20 @@ sum(rate(http_request_duration_seconds_count[5m]))
 
 **Multi-window SLIs:** measure over rolling 1h, 24h, 30d for SLO compliance reporting.
 
+### Production rules
+
+| Rule | Rationale |
+|------|-----------|
+| **Measure at the user boundary** | Edge LB or synthetic probe — internal green + user-facing red is common |
+| **Document good/valid/bad explicitly** | Written SLI spec prevents "was 404 an outage?" debates in postmortems |
+| **Exclude health checks and scrapes** | `/health`, `/metrics` inflate availability numerator |
+| **2–3 SLIs per service max** | Availability + latency + one domain metric — more creates conflicting goals |
+| **Same SLI definition in code and docs** | PromQL in runbook matches dashboard — no drift between teams |
+| **Segment SLIs by tier** | Free vs paid, region, mobile vs web — aggregate hides segment pain |
+| **Pair availability with latency** | 100% availability at 30s latency is not "good" for users |
+| **Version SLI changes** | Changing "good event" definition resets historical comparison |
+| **Synthetic + real traffic** | Synthetics catch DNS/CDN issues; real traffic catches long-tail paths |
+
 ### Key details
 
 - **User-centric:** measure what users experience — synthetic + real traffic combined
@@ -691,6 +732,15 @@ sum(rate(http_request_duration_seconds_count[5m]))
 | Foundation for SLO/error budget | Edge vs server measurement can differ |
 | Aligns teams on "good" | Lagging indicator — misses UX nuance (slow but "success") |
 | Drives correct instrumentation | Too many SLIs → conflicting goals |
+
+| Pitfall | Symptom | Mitigation |
+|---------|---------|------------|
+| **Internal-only measurement** | Dashboard green, users complaining | SLI at edge LB + synthetics |
+| **4xx definition ambiguity** | Postmortem arguments | Document: client 404 in or out of availability |
+| **Too many SLIs** | Team optimizes wrong metric | Cap at 2–3 per service |
+| **Health check in numerator** | Fake 100% availability | Exclude `/health`, kube probes |
+| **Latency SLI on all requests** | Includes failed fast 500s as "fast" | Measure latency on successful requests only |
+| **Unsegmented global SLI** | EU users suffering, global SLI fine | Slice by region/client tier |
 
 ### References
 
@@ -986,6 +1036,20 @@ flowchart LR
 - Product accepts: higher SLO = slower feature velocity (more careful deploys)
 - Postmortem when budget burned unexpectedly — was deploy process at fault?
 
+### Production rules
+
+| Rule | Rationale |
+|------|-----------|
+| **Publish budget policy in writing** | Product agrees: budget < 25% → feature freeze — avoids subjective debates |
+| **Dashboard budget remaining %** | Visible to eng + product; projection "exhausted in N days at current burn" |
+| **Tie deploy policy to budget** | Friday deploys OK when budget > 50%; require extra canary when < 25% |
+| **Postmortem on significant burn** | >5% budget in one incident → action items on prevention |
+| **Per-SLO budgets, not one global** | Latency budget exhausted while availability fine — different response |
+| **Don't exclude everything** | Over-broad maintenance exclusions make budget meaningless |
+| **Review SLO quarterly** | Too loose = fake budget; too tight = no shipping |
+| **Burn-rate alerts, not static thresholds** | 1% errors for 5 min may be fine; same rate for 6h exhausts budget |
+| **Track budget by deploy** | Attribute burn to release version — identifies bad deploy patterns |
+
 ### Key details
 
 - Track budget **per SLO**, per service, rolling window (30d common)
@@ -1011,6 +1075,15 @@ flowchart LR
 | Focuses alerts on user impact | Multi-service budgets are complex |
 | Encourages calculated risk | Budget freeze can frustrate product if overused |
 
+| Pitfall | Symptom | Mitigation |
+|---------|---------|------------|
+| **Loose SLO (99%)** | Budget never consumed; false confidence | Tighten SLO to user expectations |
+| **No written policy** | Subjective "can we ship?" every Friday | Published error budget policy |
+| **Single global budget** | One service burns everyone's budget | Per-service or per-journey budgets |
+| **Ignoring latency budget** | Availability fine, users leave due to slowness | Separate latency SLO + budget |
+| **Gaming exclusions** | All outages "excluded" | Limit exclusion categories; document each |
+| **Budget freeze without recovery plan** | Features blocked indefinitely | Define exit criteria (budget > X% for 7d) |
+
 ### References
 
 - [Google SRE Book — Embracing Risk](https://sre.google/sre-book/embracing-risk/)
@@ -1024,15 +1097,105 @@ flowchart LR
 
 ### What is it
 
-Automated notifications when monitored signals breach thresholds or exhibit anomalous behavior, routing humans or automation to respond.
+**Alerting** is automated notification when monitored signals indicate **user-impacting** degradation — routing on-call engineers or automation to respond with runbooks. Good alerting optimizes for **signal-to-noise**: page humans only when immediate action prevents SLO breach or ongoing outage.
+
+Alerting is distinct from **monitoring** (observation) and **dashboards** (exploration). An alert must answer: *who acts, how fast, and what do they do first?*
 
 ### Why it matters
 
-Users should not be the first detectors of outages. Well-designed alerts shorten mean time to detect (MTTD) and direct on-call engineers to actionable problems.
+Users should not be the first detectors of outages. Well-designed alerts shorten **mean time to detect (MTTD)** and direct engineers to **actionable** problems — not to graphs that merely look interesting.
+
+Poor alerting causes **alert fatigue**: on-call ignores pages, real outages get missed, burnout rises. Google SRE guidance: **every page should be urgent, actionable, and user-symptom-based.**
 
 ### How it works
 
-Alert rules evaluate metrics over windows (e.g., `error_rate > 1% for 5m`). Alertmanager groups, deduplicates, and routes by severity to PagerDuty, Slack, or email. Each alert links to a runbook. Post-incident, noisy alerts are tuned or removed.
+**Alert pipeline:**
+
+```mermaid
+flowchart TB
+    subgraph Sources
+        M[Metrics / PromQL]
+        L[Log-based rules]
+        S[Synthetics]
+        T[Trace anomaly]
+    end
+    Sources --> R[Alert Rule Evaluator]
+    R -->|firing| AM[Alertmanager]
+    AM --> Group[Group + Dedupe + Inhibit]
+    Group --> Route{Severity Router}
+    Route -->|P1| PD[PagerDuty / Phone]
+    Route -->|P2| Slack[Slack + Ticket]
+    Route -->|P3| Dash[Dashboard only]
+    PD --> RB[Runbook link]
+```
+
+**1. Symptom vs cause alerting**
+
+| Alert on | Example | Problem |
+|----------|---------|---------|
+| **Symptom (good)** | Checkout error rate > 1% for 5m | User-impacting; page |
+| **Cause (bad alone)** | Single pod CPU > 90% | May self-heal; noisy |
+| **Cause (OK with symptom)** | DB connection pool exhausted **and** API 5xx up | Actionable root hint |
+
+Rule: **page on symptoms**; attach cause metrics as context in notification, not separate pages.
+
+**2. SLO multi-burn-rate alerts (production standard)**
+
+Page when error budget burns too fast — not on every error blip:
+
+| Severity | Burn rate | Window | Budget exhausted if sustained |
+|----------|-----------|--------|-------------------------------|
+| **Page (critical)** | 14.4× | 1h | ~2 days |
+| **Page (critical)** | 6× | 6h | ~5 days |
+| **Ticket** | 3× | 3d | ~10 days |
+| **Ticket** | 1× | 3d | Full window |
+
+```text
+burn_rate = (current_error_rate) / (1 − SLO_target)
+
+For 99.9% SLO: budget rate = 0.001
+If 1% failing now: burn_rate = 0.01 / 0.001 = 10×
+```
+
+```promql
+# Simplified availability burn — adjust SLI to match your definition
+(
+  sum(rate(http_requests_total{status=~"5.."}[1h]))
+  /
+  sum(rate(http_requests_total[1h]))
+)
+/
+(1 - 0.999)  # 99.9% SLO → 0.001 budget
+> 14.4
+```
+
+**3. Severity tiers**
+
+| Tier | Response | Channel | Examples |
+|------|----------|---------|----------|
+| **P1** | Immediate, 24/7 page | PagerDuty + phone | Checkout down, data loss, security breach |
+| **P2** | Business hours or 30m SLA | Slack + Jira ticket | Elevated latency, single-AZ degradation |
+| **P3** | Next business day | Dashboard annotation | Disk 70%, cert expires in 30d |
+| **P4** | Informational | Weekly review | Capacity trend, non-urgent tech debt |
+
+**4. Alertmanager behaviors**
+
+- **Grouping:** collapse 50 `PodCrashLooping` into one notification
+- **Inhibition:** suppress `NodeNotReady` alerts when `RegionDown` already firing
+- **Silences:** maintenance windows with ticket reference — not permanent mute
+- **Repeat interval:** re-page every N hours if still firing — not every 30s
+
+**5. Runbook requirements**
+
+Every P1/P2 alert links to runbook with:
+
+```text
+1. Impact statement (what users see)
+2. First 5-minute checks (dashboards, logs, recent deploys)
+3. Mitigation steps (rollback, scale, failover)
+4. Escalation path (who to call if step 3 fails)
+5. Communication template (status page update)
+```
 
 ### Diagram
 
@@ -1050,14 +1213,33 @@ flowchart TB
 
 - Alert on **symptoms** (error rate, SLO burn), not causes (single CPU spike)
 - Severity tiers: P1 pages, P2 business hours, P3 dashboard-only
-- Every alert must be actionable - if no action, delete the alert
+- Every alert must be **actionable** — if no action, delete the alert
 - Use multi-window burn-rate alerts for SLO-based paging
+- **Alert budget:** team tracks pages/week; high volume → tuning sprint
+- Test alerts in staging; verify routing and runbook links quarterly
+- `for: 5m` duration prevents flapping on brief spikes
+
+### Production rules
+
+| Rule | Rationale |
+|------|-----------|
+| **If it pages, it must be actionable** | Non-actionable pages train on-call to ignore |
+| **One alert per user-visible symptom** | Multiple causes → one page with diagnostic context |
+| **Runbook link in every page** | 3 AM responder needs steps, not just a graph |
+| **Inhibit dependent alerts** | Node down shouldn't page 50 pod alerts |
+| **Review fired alerts weekly** | Tune or delete alerts with no human response |
+| **No alert without owner** | Orphan rules drift; `owner: team-checkout` label |
+| **Deploy annotations on dashboards** | Correlate alert time with release — fastest rollback decision |
+| **Synthetic alerts for edge failures** | Internal metrics green but DNS/CDN broken |
+| **Escalation policy tested quarterly** | PagerDuty rotation gaps cause silent failures |
+| **Post-incident alert review** | "Did we page too late / too early / not at all?" |
 
 ### When to use
 
-- Production SLO violations
+- Production SLO violations and burn-rate thresholds
 - Dependency failures affecting users
-- Security and capacity threshold breaches
+- Security and capacity threshold breaches (P2/P3 tier)
+- Synthetic probe failures on critical user journeys
 
 ### Trade-offs
 
@@ -1065,7 +1247,18 @@ flowchart TB
 |------|------|
 | Fast incident detection | Alert fatigue destroys trust |
 | Automates vigilance | Flapping alerts waste time |
-| Ties to on-call rotation | Poor thresholds -> false positives |
+| Ties to on-call rotation | Poor thresholds → false positives |
+
+| Pitfall | Symptom | Mitigation |
+|---------|---------|------------|
+| **Alert fatigue** | On-call ignores pages | Weekly tuning; delete non-actionable alerts |
+| **Cause-based paging** | Pages on CPU spike with no user impact | Page on symptoms; causes as context |
+| **Missing `for` duration** | Flap on every blip | `for: 5m` or burn-rate windows |
+| **No runbook** | Responder guesses at 3 AM | Mandatory runbook link in alert template |
+| **Alert sprawl** | 500 rules nobody owns | Alert budget; owner labels; quarterly audit |
+| **Static thresholds** | Seasonal traffic triggers false positive | SLO burn-rate or anomaly detection |
+| **Duplicate notifications** | 50 pages for one root cause | Alertmanager grouping + inhibition |
+| **Untested escalation** | Page goes to ex-employee | Quarterly drill; rotation verification |
 
 ### References
 

@@ -22,9 +22,3 @@
 **Total:** 16 topics · 293 sub-topics · all **Documented**
 
 ---
-
-## Production depth
-
-Not every sub-topic needs runbook-level detail. We deepen **incrementally** using a three-tier model (P1 = production-deep, P2 = standard, P3 = reference).
-
-→ **[Production Depth Roadmap](./PRODUCTION-DEPTH-ROADMAP.md)** — Tier 1 list, phase plan, and checklist (52 P1 topics; 4 done so far)
