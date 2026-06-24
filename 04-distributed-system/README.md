@@ -137,6 +137,35 @@ flowchart LR
 - Peak vs. sustained throughput differ (burst buffers hide peaks briefly)
 - Horizontal scale increases aggregate throughput if bottleneck is parallelizable
 
+#### Worked example — single Tomcat instance RPS
+
+```xml
+<Connector port="8080"
+    maxThreads="400"
+    acceptCount="1000"
+    maxConnections="10000"
+    connectionTimeout="20000"
+    keepAliveTimeout="5000" />
+```
+
+| Setting | Meaning |
+|---------|---------|
+| `maxThreads=400` | At most 400 requests processed concurrently |
+| `acceptCount=1000` | Queue when all 400 threads busy |
+| `maxConnections=10000` | Open TCP connections (includes Keep-Alive) |
+
+**RPS formula (I/O-bound web app):**
+
+```text
+max_RPS ≈ maxThreads / avg_response_time_seconds
+
+Example: 400 threads × (1 / 0.1s) = 4,000 requests per second (RPS) per instance
+```
+
+At extreme scale, multiply instances — but CDN, cache, and async queues usually absorb most traffic first ([4.22](#422-capacity-planning)).
+
+**Thread limits:** ~1 MB stack per Java thread; 10K+ threads cause CPU thrashing; OS connection limits (`ulimit`) cap open sockets.
+
 ### When to use
 
 - Load testing before launches
@@ -400,7 +429,7 @@ flowchart TB
 
 ### What is it?
 
-**Availability** is the fraction of time a system is operational and serving **correct** responses, expressed as **nines** (percentage of uptime per year). It measures whether the service is reachable - distinct from **reliability** (correct behavior) and **latency** (how fast).
+**Availability** is the fraction of time a system is operational and serving **correct** responses, expressed as **nines** (percentage of uptime per year). It answers **"is the service reachable?"** — distinct from **reliability** ([4.6](#46-reliability), correctness over time), **durability** ([4.7](#47-durability), data survives restart after ack), and **latency** ([4.3](#43-latency), how fast).
 
 ```text
 Availability = uptime / (uptime + downtime)
@@ -511,38 +540,23 @@ Two AZs each 99.9% (fail independently):
 
 ### What is it?
 
-**Reliability** is the probability that a system performs its intended function correctly over a specified period under stated conditions. Unlike availability (binary up/down), reliability emphasizes **correct behavior** and **mean time between failures (MTBF)**.
+**Reliability** is whether the system **behaves correctly over time** — not just whether it responds. Availability ([4.5](#45-availability)) asks "is it up?"; reliability asks "are answers right, and how long between failures?"
 
-### Why it matters
+### Interview angle
 
-A service that is "available" but returns wrong answers or loses data is unreliable. Reliability engineering focuses on defect prevention, testing, and learning from incidents.
+| Metric | Meaning |
+|--------|---------|
+| **MTBF** (mean time between failures) | Average time between correctness failures |
+| **MTTR** (mean time to repair) | Recovery speed; links to availability via `MTBF / (MTBF + MTTR)` |
+| **Error rate** | Wrong result or failed side-effect, even when HTTP returns 200 |
 
-### How it works
-
-1. Define expected behavior (SLOs, invariants).
-2. Build with error handling, retries with backoff, idempotency.
-3. Test failure scenarios (chaos engineering, fault injection).
-4. Monitor error rates, not just uptime.
-5. Post-incident reviews drive systemic fixes.
-
-### Key details
-
-- **MTBF:** average time between failures; higher is better
-- **MTTR:** mean time to repair; lower improves effective availability
-- Effective uptime ≈ MTBF / (MTBF + MTTR)
-- Reliability includes data integrity, not just request success
-
-### When to use
-
-- Safety-critical or financial systems
-- Setting error budget policies alongside SLOs
-- Comparing build quality vs. operational redundancy
+**How to improve:** SLOs on error rate (not uptime alone); idempotent retries with backoff; chaos/fault injection; blameless postmortems.
 
 ### Trade-offs / Pitfalls
 
-- Redundancy improves availability but can hide bugs (failover masks corruption)
-- Over-retrying reduces reliability of downstream services
-- Reliability metrics need business-defined "correct"
+- Redundancy masks corruption — failover does not fix bad writes
+- Over-retrying harms downstream reliability
+- "Correct" must be defined by business invariants, not status codes alone
 
 ---
 
@@ -552,18 +566,13 @@ A service that is "available" but returns wrong answers or loses data is unrelia
 
 ### What is it?
 
-**Durability** guarantees that once data is acknowledged as written, it survives crashes, power loss, and disk failures. It is the **D** in ACID and a distinct concern from availability.
+**Durability** means **acknowledged data survives process crash, power loss, and disk failure** — the **D** in ACID. Distinct from availability ([4.5](#45-availability)): a node can be "up" but lose unflushed writes.
 
-### Why it matters
+### Interview angle
 
-Users expect saved data to persist. Losing orders, messages, or payments after "success" destroys trust and violates regulations.
-
-### How it works
-
-1. Writes go to **write-ahead log (WAL)** on disk before acknowledging client.
-2. Data replicated to multiple nodes (sync or quorum) before ack.
-3. Backups and snapshots provide recovery from catastrophic failure.
-4. fsync and replication policies trade latency for durability strength.
+1. Client ack only after **WAL (write-ahead log) fsync** and/or **replica quorum**.
+2. **Sync replication** — stronger durability, higher write latency; **async** — faster, **RPO** (recovery point objective) > 0 on leader crash ([4.11](#411-failover)).
+3. Backups/snapshots cover catastrophe; untested restore = no durability in practice.
 
 ```mermaid
 sequenceDiagram
@@ -577,25 +586,11 @@ sequenceDiagram
     Leader-->>Client: success
 ```
 
-### Key details
-
-- **Sync replication:** ack after replica confirms (stronger durability, higher latency)
-- **Async replication:** ack after local write (faster, risk of loss on crash)
-- Object storage (S3) achieves 11 nines durability via erasure coding across AZs
-- Durability ≠ consistency: data can be durable but stale on reads
-
-### When to use
-
-- Any persistent store: databases, queues, file systems
-- Choosing replication mode (PostgreSQL synchronous vs. asynchronous)
-- Compliance requirements for record retention
-
 ### Trade-offs / Pitfalls
 
-- Strong durability increases write latency
-- Disk full or replication lag can block writes
-- Backups untested = no durability guarantee in practice
-- Client-side ack before server fsync creates false sense of safety
+- Client ack before server fsync creates false safety
+- Durability ≠ consistency — data can persist but reads return stale replicas
+- Strong durability increases write latency; disk full or replication lag can block writes
 
 ---
 
@@ -605,96 +600,33 @@ sequenceDiagram
 
 ### What is it?
 
-**Fault tolerance** is the ability of a system to continue operating - possibly at reduced capacity - when one or more components fail. Failures may be hardware, software, network, or human error.
+**Fault tolerance** is continuing to operate — possibly at reduced capacity — when components fail. At scale, failure is continuous; design assumes it is normal, not exceptional.
 
-### Why it matters
+### Interview angle
 
-At scale, failure is continuous: disks die, packets drop, deploys break. Fault-tolerant design assumes failure is normal, not exceptional.
-
-### How it works
-
-1. **Detect:** health checks, heartbeats, timeouts.
-2. **Isolate:** circuit breakers stop failure propagation.
-3. **Recover:** failover, automatic restart, self-healing (Kubernetes).
-4. **Degrade:** serve partial functionality rather than total outage.
-5. **Redundancy:** N+1 or 2N capacity for critical paths.
+**Detect → isolate → recover → degrade** (redundancy details in [4.10](#410-redundancy)):
 
 ```mermaid
 flowchart TB
     Fail[Component fails] --> Detect[Health check fails]
-    Detect --> Isolate[Remove from pool]
+    Detect --> Isolate[Remove from pool / circuit breaker]
     Isolate --> Recover[Failover / restart]
     Recover --> Serve[Continue serving]
 ```
 
-### Key details
+| Failure domain | Shared fate | Design response |
+|----------------|-------------|-----------------|
+| **Host / AZ** | Power, flood, misconfig | Replicas across hosts/AZs; quorum writes |
+| **Region** | Provider outage | Multi-region DR; async replication |
+| **Dependency** | Third-party API down | Circuit breaker, cache, degrade ([4.21](#421-graceful-degradation)) |
 
-#### Failure domains
-
-A **failure domain** is the blast-radius boundary for a single fault — everything inside can fail together.
-
-| Domain | Typical shared fate | Design response |
-|--------|---------------------|-----------------|
-| **Process** | Crash, OOM, bug | Restart; multiple processes per host |
-| **Host / VM** | Kernel panic, disk | Replicas on different hosts |
-| **Rack** | Top-of-rack switch | Spread replicas across racks |
-| **Availability Zone (AZ)** | Power, flood, misconfig | Multi-AZ deployment; quorum across AZs |
-| **Region** | Earthquake, provider outage | Multi-region DR; async replication |
-| **Dependency** | Payment API down | Circuit breaker, degrade, cache |
-
-```text
-Bad:  primary DB + replica on same host → host death = total loss
-Good: primary AZ-a, replicas AZ-b, AZ-c → survives single AZ
-```
-
-**Correlated failures defeat redundancy:** same software version on all nodes → one bug kills all replicas. Mitigate with **canary deploys**, **shuffle sharding** (AWS), diverse instance types.
-
-#### Bulkheads
-
-**Bulkhead pattern** (from ship compartments) **isolates resources** so overload in one area cannot exhaust shared pools.
-
-| Bulkhead type | Example | Prevents |
-|---------------|---------|----------|
-| **Thread pool per dependency** | 20 threads for payments, 50 for catalog | Slow payment API starving catalog |
-| **Connection pool limits** | Max 10 DB conns per service | Connection stampede to DB |
-| **Semaphore / rate limit** | 100 concurrent exports | Batch job blocking interactive traffic |
-| **Cell-based architecture** | Users A–M on cell 1, N–Z on cell 2 | Celebrity outage contained to one cell |
-| **Queue partitioning** | Priority queue vs bulk queue | Backfill starving real-time |
-
-```mermaid
-flowchart TB
-    subgraph Bulkhead['Thread pools (bulkheads)']
-        API["API threads: 100"]
-        API --> PoolA["Payment pool: 20"]
-        API --> PoolB["Catalog pool: 50"]
-        API --> PoolC["Search pool: 30"]
-    end
-    PoolA --> Pay[Payment Svc]
-    PoolB --> Cat[Catalog Svc]
-    PoolC --> Search[Search Svc]
-```
-
-**Hystrix / resilience4j / Envoy** implement bulkheads with circuit breakers. **Kubernetes** resource limits (`limits.cpu`, `limits.memory`) are coarse bulkheads at pod level.
-
-**Without bulkheads:** one slow dependency blocks all worker threads → entire service returns 503 even for unrelated endpoints.
-
-- **Byzantine faults:** malicious or arbitrary behavior (blockchain, military systems)
-- **Crash-stop faults:** node stops responding (most cloud assumptions)
-- **Fail-fast:** detect errors early and abort rather than corrupt state
-- Graceful vs. ungraceful shutdown affects recovery time
-
-### When to use
-
-- Multi-tier architectures with external dependencies
-- Designing retry, timeout, and bulkhead policies
-- Mission-critical systems requiring no single point of failure
+**Bulkheads** isolate resource pools (per-dependency thread limits, connection caps) so one slow dependency cannot exhaust all workers. **Correlated failures** (same bug on every replica) defeat redundancy — mitigate with canary deploys and version diversity.
 
 ### Trade-offs / Pitfalls
 
-- Fault tolerance adds complexity and cost (extra replicas, cross-AZ traffic)
-- Split-brain if failover detection is wrong
-- Masking faults can delay root-cause discovery
-- "Strangler" partial failure harder to test than total outage
+- Adds complexity and cost (extra replicas, cross-AZ traffic)
+- Split-brain if failover detection is wrong ([4.11](#411-failover))
+- Masking faults delays root-cause discovery; partial failure harder to test than total outage
 
 ---
 
@@ -704,39 +636,25 @@ flowchart TB
 
 ### What is it?
 
-**Resilience** is the capacity to absorb disturbances, adapt to stress, and recover quickly while maintaining core function. It extends fault tolerance with **learning**, **adaptation**, and **operational practices** (chaos engineering, runbooks).
+**Resilience** extends fault tolerance ([4.8](#48-fault-tolerance)) with **operational practice**: teams and systems that absorb stress, learn from incidents, and recover quickly without total outage.
 
-### Why it matters
+### Interview angle
 
-Modern systems face unpredictable load spikes, dependency outages, and cascading failures. Resilience engineering builds systems and teams that bend without breaking.
+| Practice | Purpose |
+|----------|---------|
+| **Chaos engineering** | Prove failure paths before production incidents |
+| **Error budgets** ([4.5](#45-availability)) | Balance release velocity vs. stability |
+| **Feature flags + auto-rollback** | Mitigate bad deploys in minutes |
+| **Idempotency keys** | Safe retries after ambiguous failures |
+| **Blameless postmortems** | Convert incidents into systemic fixes |
 
-### How it works
-
-1. Design for **failure as default** (timeouts everywhere, no infinite waits).
-2. Implement **bulkheads** isolating thread pools per dependency.
-3. Use **circuit breakers** and **rate limiters** on outbound calls.
-4. Practice **chaos experiments** in production-like environments.
-5. Automate rollback and feature flags for fast mitigation.
-
-### Key details
-
-- Resilience âŠƒ fault tolerance (includes process and culture)
-- **Adaptive concurrency** adjusts limits based on downstream health
-- **Idempotency keys** enable safe retries after ambiguous failures
-- Blameless postmortems convert incidents into systemic improvements
-
-### When to use
-
-- Microservices with many cross-service dependencies
-- Building SRE practices and error budgets
-- Systems with variable or adversarial traffic
+Resilience ⊃ fault tolerance — includes culture and runbooks, not only architecture. **Adaptive concurrency** adjusts outbound limits based on downstream health.
 
 ### Trade-offs / Pitfalls
 
-- Over-isolation wastes resources (too many small pools)
-- Circuit breakers open too aggressively cause false outages
-- Chaos without guardrails can cause real incidents
-- Resilience patterns add latency (retries, hedging)
+- Chaos without guardrails causes real incidents
+- Circuit breakers opened too aggressively create false outages
+- Retries and hedging add latency and load ([4.4](#44-tail-latency))
 
 ---
 
@@ -746,19 +664,9 @@ Modern systems face unpredictable load spikes, dependency outages, and cascading
 
 ### What is it?
 
-**Redundancy** duplicates critical components so failure of one does not stop the system. Forms include **N+1** (one spare), **2N** (full duplicate), geographic redundancy, and erasure-coded storage.
+**Redundancy** duplicates critical components so one failure becomes **capacity reduction**, not outage. Forms: **N+1** (one spare), **2N** (full duplicate), geographic replicas, erasure-coded storage.
 
-### Why it matters
-
-Mean time between failures applies to every component. Redundancy converts single-component failure from outage into capacity reduction.
-
-### How it works
-
-1. Identify SPOFs (single power supply, single DB, single region).
-2. Add redundant instances with independent failure domains.
-3. Load balance across redundant paths.
-4. Ensure redundant copies are **diverse** (different AZ, rack, provider).
-5. Test failure of each redundant layer regularly.
+### Interview angle
 
 ```mermaid
 flowchart TB
@@ -768,25 +676,19 @@ flowchart TB
     App2 --> DB_R[(Replica)]
 ```
 
-### Key details
+| Pattern | Trade-off |
+|---------|-----------|
+| **Active-passive** | Simpler writes; standby idle until failover ([4.11](#411-failover)) |
+| **Active-active** | Higher utilization; needs conflict resolution on writes |
+| **Erasure coding** | Storage redundancy with less overhead than 3× replication |
 
-- **Active-passive:** standby idle until failover
-- **Active-active:** all nodes serve traffic; need conflict handling
-- **Erasure coding:** storage redundancy with less overhead than 3× replication
-- Correlated failures (same bug on all nodes) defeat redundancy
-
-### When to use
-
-- Any availability target above single-server uptime
-- Data durability (3 replicas minimum for cloud disks)
-- Network paths (multi-homed, dual ISP)
+Place replicas in **independent failure domains** (different AZ/rack). Test failover regularly — redundancy untested is wishful thinking.
 
 ### Trade-offs / Pitfalls
 
-- Cost scales with redundancy level
-- Active-active write conflicts need resolution
-- Shared codebase = shared bug (redundant but simultaneously wrong)
-- Operational complexity of keeping replicas in sync
+- Cost scales with redundancy level; keeping replicas in sync adds ops burden
+- Shared codebase = shared bug (all replicas wrong simultaneously)
+- Active-active write conflicts need explicit resolution strategy
 
 ---
 
@@ -1028,6 +930,44 @@ Single-threaded servers cannot use modern multi-core hardware. Concurrent design
 - **Livelock:** threads active but no progress
 - **Optimistic concurrency:** compare-and-swap, version columns (MVCC)
 - Distributed concurrency needs clocks or consensus for global ordering
+
+#### Thread pool sizing — CPU-bound vs I/O-bound
+
+The rule **"threads = CPU cores or cores + 1"** applies only to **CPU-bound** work (encryption, image processing, ML inference).
+
+| Workload type | CPU time | I/O wait | Recommended threads |
+|---------------|----------|----------|---------------------|
+| CPU-bound (ML, crypto) | High | Low | `cores` or `cores + 1` |
+| I/O-bound (REST + DB) | Low | High | `cores × 2` to `cores × 10` |
+| Web API (typical) | ~10 ms | ~150 ms DB/API | 100–400 (Tomcat default) |
+| Kafka consumer | Low | Moderate | ≤ partition count |
+
+**Formula for I/O-bound apps:**
+
+```text
+optimal_threads = cores × (1 + IO_wait_time / CPU_time)
+
+Example: 8 cores, IO=200ms, CPU=20ms
+  → 8 × (1 + 200/20) = 8 × 11 = 88 threads
+```
+
+**Why thousands of threads fail:**
+
+```text
+Each thread ≈ 1 MB stack (JVM)
+Context switch overhead grows with thread count
+CPU spends time switching instead of executing
+```
+
+```java
+// OK for I/O-heavy web APIs
+ExecutorService pool = Executors.newFixedThreadPool(200);
+
+// BAD for CPU-heavy computation on 8-core machine
+ExecutorService pool = Executors.newFixedThreadPool(200); // thrashing
+```
+
+Always **profile** (JProfiler, async profiler) — rules are starting points, not laws.
 
 ### When to use
 
@@ -1862,7 +1802,7 @@ flowchart LR
 #### Capacity model (worked example)
 
 ```text
-Target: 10,000 RPS at p99 < 200 ms
+Target: 10,000 RPS (requests per second) at p99 < 200 ms
 
 Step 1 — measure single-instance capacity
   Load test: 1 pod sustains 500 RPS at p99 180 ms before errors
@@ -1898,19 +1838,6 @@ Concurrency needed = arrival_rate × response_time
 | **Kafka partitions** | Consumer lag per partition | Add partitions (plan rebalance) |
 | **API rate limits** | 429 from dependency | Cache; batch; negotiate quota |
 
-#### Production rules
-
-| Rule | Rationale |
-|------|-----------|
-| **Plan at p99, not average** | Mean hides tail; capacity for worst-case path |
-| **30–50% headroom above peak** | Absorbs flash crowds without immediate scale lag |
-| **Load test to failure annually** | Find real ceiling; autoscale lag is 2–5 min |
-| **Model data growth separately** | Storage, index size, backup window grow even if RPS flat |
-| **Include dependency quotas** | Stripe, SendGrid, cloud API limits are hard ceilings |
-| **Seasonality × 2–3× for events** | Black Friday, launches — don't plan on average day |
-| **Autoscale is not infinite** | Cold start, quota limits, DB can't scale horizontally freely |
-| **Revisit quarterly** | 6 months of 20% MoM growth changes everything |
-
 **Cloud cost trade-off:**
 
 | Model | Best for | Risk |
@@ -1918,6 +1845,20 @@ Concurrency needed = arrival_rate × response_time
 | **Reserved / Savings Plans** | Steady baseline (60–70% of min load) | Over-commit if traffic drops |
 | **On-demand / spot** | Burst above baseline | Spot interruption; higher $/hr |
 | **Serverless** | Spiky, unpredictable | Cold start; per-invocation limits |
+
+#### Extreme scale (10M RPS) — interview framing
+
+Most traffic should **not** reach app servers. Layer defenses first:
+
+| Layer | Role |
+|-------|------|
+| **CDN (content delivery network)** | Static + cacheable API at edge |
+| **Cache (Redis)** | Hot reads |
+| **Load balancer (LB)** | Spread origin load |
+| **Database** | Read replicas + connection pooling |
+| **Message queue (Kafka)** | Async writes |
+
+**Origin RPS (requests per second)** ≈ edge RPS × (1 − CDN/cache hit rate). Size app pods from [4.2](#42-throughput); size Kafka partitions in [6.5](../06-messaging-and-events/README.md#65-kafka); size shards in [5.29](../05-distributed-databases/README.md#529-sharding-bucketing--partitioning).
 
 ### When to use
 
@@ -1928,13 +1869,15 @@ Concurrency needed = arrival_rate × response_time
 
 ### Trade-offs / Pitfalls
 
-| Pitfall | Consequence | Mitigation |
-|---------|-------------|------------|
-| **Wrong growth forecast** | Sudden crunch or 40% wasted spend | Scenario planning (base/bull/bear) |
-| **RPS-only planning** | DB/index/storage exhausts silently | Track storage, backup time, index bloat |
-| **Ignoring cold start** | Autoscale adds pods but they're slow | Pre-warm; min replicas; scheduled scale-up before events |
-| **Single-tier headroom** | App scaled; DB unchanged | End-to-end model including dependencies |
-| **Load test ≠ production mix** | Synthetic CRUD misses heavy reports | Replay production traffic shape |
+| Pitfall / practice | Consequence | Mitigation |
+|--------------------|-------------|------------|
+| **Plan at p99, not average** | Mean hides tail; under-provision worst path | Capacity model at p99 latency and error rate |
+| **No headroom above peak** | Flash crowd triggers immediate outage | 30–50% buffer; seasonality × 2–3× for launches |
+| **Wrong growth forecast** | Sudden crunch or 40% wasted spend | Scenario planning (base/bull/bear); revisit quarterly |
+| **RPS-only planning** | DB/index/storage exhausts silently | Model data growth separately; track backup window |
+| **Ignoring cold start / autoscale lag** | New pods slow; scale arrives 2–5 min late | Pre-warm; min replicas; scheduled scale-up before events |
+| **Single-tier headroom** | App scaled; DB unchanged | End-to-end model including dependency quotas |
+| **Load test ≠ production mix** | Synthetic CRUD misses heavy reports | Load test to failure annually; replay prod traffic shape |
 | **Reserved capacity over-commit** | Paying for idle during downturn | Blend reserved baseline + on-demand burst |
 | **Siloed team planning** | Each team has headroom; shared DB doesn't | Platform-wide capacity review |
 | **No runbook for limit hit** | Discover Kafka partition max at 2am | Document platform ceilings; alert at 80% |

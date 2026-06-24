@@ -43,14 +43,22 @@
 | 11.31 | [Scheduler](#1131-scheduler) | Done |
 | 11.32 | [etcd](#1132-etcd) | Done |
 | 11.33 | [Operators](#1133-operators) | Done |
-| 11.34 | [HPA](#1134-hpa) | Done |
+| 11.34 | [HPA (Horizontal Pod Autoscaler)](#1134-hpa) | Done |
 | 11.35 | [Cluster Autoscaler](#1135-cluster-autoscaler) | Done |
 
 
 
 ## Overview
 
-Cloud computing delivers on-demand compute, storage, and networking over the internet across service models (IaaS, PaaS, SaaS). Kubernetes orchestrates containers at scale - scheduling workloads, networking services, and automating rollouts across clusters spanning regions and availability zones.
+Cloud computing delivers on-demand compute, storage, and networking over the internet across service models (IaaS, PaaS, SaaS). Kubernetes orchestrates containers at scale — scheduling workloads, networking services, and automating rollouts across clusters spanning regions and **AZs (Availability Zones)**.
+
+### Cloud service models
+
+| Model | Full form | You manage | Provider manages | Examples |
+|-------|-----------|------------|------------------|----------|
+| **IaaS** | Infrastructure as a Service | OS, runtime, middleware, app, data | Virtualization, servers, storage, network | AWS EC2, GCP Compute Engine |
+| **PaaS** | Platform as a Service | Applications and configuration | Runtime, OS, infrastructure | AWS EKS (Elastic Kubernetes Service), ECS (Elastic Container Service), Cloud Run |
+| **SaaS** | Software as a Service | Usage and tenant config | Application through physical infrastructure | Slack, Salesforce, Datadog |
 
 ```mermaid
 flowchart TB
@@ -111,154 +119,37 @@ flowchart TB
 
 ## 11.1 IaaS
 
+**Infrastructure as a Service** — rent VMs, networks, block storage, and load balancers; you manage OS through applications. Maximum control and portability; highest ops burden on you.
 
-### What is it
+See [Overview — Cloud service models](#cloud-service-models) for the full IaaS/PaaS/SaaS comparison.
 
-**Infrastructure as a Service** - rent virtual machines, networks, block storage, and load balancers; you manage OS, runtime, and applications.
+Examples: AWS EC2, GCP Compute Engine, Azure VMs. Combine with managed databases (RDS) for hybrid control.
 
-### Why it matters
-
-Maximum control and portability for legacy or custom stacks without owning datacenters. Foundation for lift-and-shift migrations.
-
-### How it works
-
-Provider virtualizes hardware (hypervisor). You provision EC2/GCE/Azure VM, attach disks, configure VPC, install software. Pay per hour/second of resource use. You patch OS and scale instances manually or via autoscaling groups.
-
-### Diagram
-
-```mermaid
-flowchart LR
-    You["You: OS + App"] --> VM[Virtual Machine]
-    VM --> Hypervisor[Hypervisor]
-    Hypervisor --> HW[Physical Hardware]
-```
-
-### Key details
-
-- Examples: AWS EC2, GCP Compute Engine, Azure VMs
-- Responsibilities: patching, scaling logic, HA design
-- Combine with managed services (RDS) for hybrid control
-
-### When to use
-
-- Legacy apps needing full OS control
-- Custom kernel or specialized hardware (GPU)
-- Regulatory requirements for VM-level isolation
-
-### Trade-offs
-
-| Pros | Cons |
-|------|------|
-| Full control | Most ops burden on you |
-| Portable patterns | Slower provisioning vs serverless |
-| Predictable for steady workloads | Pay for idle capacity |
-
-### References
-
-- [NIST Cloud Definition](https://csrc.nist.gov/publications/detail/sp/800-145/final)
+Use for: legacy lift-and-shift, GPU/specialized hardware, VM-level regulatory isolation.
 
 ---
 
+## 11.2 PaaS
 
-1.2 PaaS
+**Platform as a Service** — provider manages runtime, OS, and orchestration; you deploy code or container images. Faster delivery; less low-level control.
 
+See [Overview — Cloud service models](#cloud-service-models) for the full IaaS/PaaS/SaaS comparison.
 
-### What is it
+Examples: AWS EKS (Elastic Kubernetes Service), ECS (Elastic Container Service), GKE, Heroku, Cloud Run.
 
-**Platform as a Service** - provider manages runtime, OS, and orchestration; you deploy application code and configuration.
-
-### Why it matters
-
-Faster delivery by eliminating server management. Kubernetes, Heroku, Cloud Run, and Elastic Beanstalk are PaaS patterns.
-
-### How it works
-
-Push code or container image; platform builds, deploys, scales, and routes traffic. Built-in logging, metrics, and rolling updates. Abstracts VMs and cluster operations.
-
-### Diagram
-
-```mermaid
-flowchart LR
-    Dev[Developer Code] --> PaaS[PaaS Platform]
-    PaaS --> Runtime[Managed Runtime]
-    PaaS --> Scale[Autoscaling]
-    PaaS --> Route[Routing / TLS]
-```
-
-### Key details
-
-- Examples: GKE, EKS, Heroku, Azure App Service, Cloud Run
-- Trade control for velocity
-- Lock-in varies by platform
-
-### When to use
-
-- Microservices and web APIs
-- Teams without dedicated platform ops
-- Standardized deployment pipelines
-
-### Trade-offs
-
-| Pros | Cons |
-|------|------|
-| Fast time to production | Less low-level control |
-| Built-in scaling | Platform constraints |
-| Reduced ops headcount | Vendor-specific features |
-
-### References
-
-- [AWS Elastic Beanstalk](https://aws.amazon.com/elasticbeanstalk/)
+Use for: microservices, web APIs, teams without dedicated platform ops.
 
 ---
 
+## 11.3 SaaS
 
-1.3 SaaS
+**Software as a Service** — complete applications over the internet; provider manages the entire stack including the app. Zero infrastructure ops; limited customization.
 
+See [Overview — Cloud service models](#cloud-service-models) for the full IaaS/PaaS/SaaS comparison.
 
-### What is it
+Examples: Salesforce, Slack, Datadog, GitHub. Evaluate data residency, SSO, and API limits.
 
-**Software as a Service** - complete applications delivered over the internet; provider manages everything including the application itself.
-
-### Why it matters
-
-Zero infrastructure management for commodity functions (email, CRM, monitoring). Multi-tenant efficiency drives cost down.
-
-### How it works
-
-Users access via browser or API. Provider runs shared or dedicated tenancy, handles upgrades, security, and SLAs. Subscription pricing per seat or usage.
-
-### Diagram
-
-```mermaid
-flowchart LR
-    User[Users] -->|HTTPS| SaaS[SaaS Application]
-    SaaS --> TenantA[Tenant A Data]
-    SaaS --> TenantB[Tenant B Data]
-```
-
-### Key details
-
-- Examples: Salesforce, Slack, Datadog, GitHub
-- Evaluate: data residency, SSO, API limits, SLA
-- Integrate via webhooks and OAuth APIs
-
-### When to use
-
-- Non-differentiating capabilities
-- Rapid adoption without build cost
-- When expertise is in vendor's core product
-
-### Trade-offs
-
-| Pros | Cons |
-|------|------|
-| No ops at all | Limited customization |
-| Fast onboarding | Data sovereignty concerns |
-| Vendor handles security patches | Subscription cost at scale |
-
-### References
-
-- [SaaS vs PaaS vs IaaS](https://azure.microsoft.com/en-us/resources/cloud-computing-dictionary/what-is-iaas)
+Use for: non-differentiating capabilities (CRM, email, monitoring).
 
 ---
 
@@ -376,7 +267,7 @@ flowchart LR
 
 ### What is it
 
-Isolated datacenters within a region, connected by low-latency private fiber - typically 2 - 6 AZs per region.
+Isolated datacenters within a region, connected by low-latency private fiber — typically 2–6 **AZs (Availability Zones)** per region.
 
 ### Why it matters
 
@@ -795,7 +686,7 @@ flowchart LR
 
 ### What is it
 
-**Autoscaling** automatically adjusts compute capacity based on demand signals — CPU, memory, request rate, queue depth, or custom business metrics — without manual capacity planning. It operates at multiple layers: **VM/instance** (ASG/MIG), **pod** (HPA/KEDA), and **node** (Cluster Autoscaler).
+**Autoscaling** automatically adjusts compute capacity based on demand signals — CPU, memory, request rate, queue depth, or custom business metrics — without manual capacity planning. It operates at multiple layers: **VM/instance** (ASG/MIG), **pod** (**HPA** — Horizontal Pod Autoscaler / KEDA), and **node** (Cluster Autoscaler).
 
 **Horizontal scaling** adds/removes instances (preferred). **Vertical scaling** resizes instance CPU/memory (less common, disruptive).
 
@@ -1360,7 +1251,7 @@ Kubernetes is the de facto standard for cloud-native microservices:
 
 - **Self-healing** — restart crashed containers, reschedule failed pods, replace unhealthy nodes
 - **Declarative ops** — GitOps-friendly; versioned manifests replace imperative SSH
-- **Portable** — same APIs on EKS, GKE, AKS, on-prem
+- **Portable** — same APIs on EKS (Elastic Kubernetes Service), GKE, AKS, on-prem
 - **Ecosystem** — Ingress, HPA, Operators, service mesh integrations
 
 Interview focus: explain **control plane components individually**, how a pod gets scheduled, and what happens when a node dies.
@@ -1414,7 +1305,7 @@ sequenceDiagram
 ```mermaid
 flowchart TB
     P[Pending Pod] --> SCH[Scheduler]
-    SCH --> F[Filter Phase / CPU/mem fit, taints, affinity, PVC]
+    SCH --> F[Filter Phase / CPU/mem fit, taints, affinity, PVC (Persistent Volume Claim)]
     F --> S[Score Phase / spread, least allocated, topology]
     S --> B[Bind to top node]
     B --> K[kubelet on node starts pod]
@@ -1469,7 +1360,7 @@ flowchart TB
 | **Declarative model** | Desired state in etcd; controllers close the gap — never "SSH and start app" |
 | **Namespace** | API-level isolation (teams, envs) — different from Linux namespaces |
 | **CNI** | Calico, Cilium, Flannel — assigns pod IPs and network policies |
-| **Managed K8s** | EKS/GKE/AKS run control plane; you manage worker nodes (or serverless) |
+| **Managed K8s** | EKS (Elastic Kubernetes Service) / GKE / AKS run control plane; you manage worker nodes (or serverless) |
 | **High availability** | Control plane: multi-master API + etcd quorum; workers: spread pods across AZs |
 | **API server load** | Watch-based; controllers react to events — not polling |
 
@@ -1480,7 +1371,7 @@ flowchart TB
 | Node dies | Node controller marks `NotReady` after timeout; pods evicted/rescheduled elsewhere |
 | API server down | No new changes; running pods continue; existing controllers may stall |
 | etcd quorum lost | Cluster read-only or unavailable — catastrophic |
-| Pod stuck Pending | Usually scheduler can't place: insufficient resources, taints, PVC unbound |
+| Pod stuck Pending | Usually scheduler can't place: insufficient resources, taints, PVC (Persistent Volume Claim) unbound |
 | `kubectl get pods` vs kubelet | API shows desired+status; kubelet is source of truth for local container state |
 
 ### When to use
@@ -1744,7 +1635,7 @@ flowchart LR
 | Method | Command / Mechanism |
 |--------|---------------------|
 | Manual | `kubectl scale deployment/api --replicas=10` |
-| HPA | Scales Deployment based on CPU/custom metrics |
+| HPA (Horizontal Pod Autoscaler) | Scales Deployment based on CPU/custom metrics |
 | GitOps | Change `replicas` in manifest; ArgoCD syncs |
 
 ### Diagram
@@ -1848,38 +1739,83 @@ terminationGracePeriodSeconds: 30
 ---
 
 
-1.23 Services
+## 11.23 Services
 
 
 ### What is it
 
-Stable network endpoint (ClusterIP, NodePort, LoadBalancer) exposing a set of pods via label selector - providing DNS name and load balancing.
+A Kubernetes **Service** is a stable network endpoint (virtual IP + DNS) that load-balances traffic to a set of pods matched by **labels**. Pod IPs change on every restart; Services provide constant `my-svc.namespace.svc.cluster.local`.
+
+**Namespace vs node:** a namespace is **logical grouping** (dev/staging/prod, team boundaries). Pods in one namespace can run on **many nodes** — namespace does not pin workloads to hardware.
+
+```text
+Physical          Logical
+────────          ───────
+Cluster    →      Namespace
+Node       →      Pod
+Pod        →      Container
+```
 
 ### Why it matters
 
-Pod IPs change on restart. Services provide constant `my-svc.namespace.svc.cluster.local` DNS and distribute traffic across healthy pods.
+Without Services, clients would cache ephemeral pod IPs. Service discovery, load balancing, and health routing are built into the platform.
 
 ### How it works
 
-Selector matches pod labels. kube-proxy or dataplane (eBPF/Cilium) routes to pod endpoints. Types: **ClusterIP** (internal), **NodePort** (host port), **LoadBalancer** (cloud LB), **Headless** (direct pod DNS for StatefulSet).
+Selector matches pod labels → Endpoints object lists ready pod IPs → kube-proxy / Cilium / eBPF dataplane forwards traffic.
 
-### Diagram  -  Service -> Pods
+#### Service types — when to use what
+
+| Type | Access | Use case |
+|------|--------|----------|
+| **ClusterIP** (default) | Internal only | Inter-service RPC inside cluster |
+| **NodePort** | `<NodeIP>:30000-32767` | Debugging, quick external access — not large-scale prod |
+| **LoadBalancer** | Cloud LB → external IP | Public APIs on AWS/GCP/Azure |
+| **ExternalName** | DNS CNAME to external host | `db.example.com` as in-cluster name |
+| **Headless** (`clusterIP: None`) | Returns pod A records directly | StatefulSets: Kafka, Cassandra, Postgres |
+| **Ingress** (separate resource) | HTTP host/path routing + TLS | Multiple services on one edge IP |
+
+**ClusterIP (internal):**
+
+```yaml
+apiVersion: v1
+kind: Service
+spec:
+  type: ClusterIP
+  selector:
+    app: payment
+  ports:
+  - port: 80
+    targetPort: 8080
+```
+
+**Headless (StatefulSet peers):**
+
+```yaml
+spec:
+  clusterIP: None
+  selector:
+    app: kafka
+# DNS: kafka-0.kafka.default.svc.cluster.local
+```
 
 ```mermaid
 flowchart LR
-    Client[Client Pod] --> SVC[Service ClusterIP]
-    SVC --> P1[Pod A]
-    SVC --> P2[Pod B]
-    SVC --> P3[Pod C]
-    Dep[Deployment] -.->|labels| P1 & P2 & P3
+    Internet --> Ingress
+    Ingress --> SVC_LB[Service LoadBalancer]
+    SVC_LB --> Pod1[Pod]
+    Internal[Pod A] --> SVC_CI[Service ClusterIP]
+    SVC_CI --> Pod2[Pod B]
+    STS[kafka-0] --> HS[Headless Service]
+    HS --> STS2[kafka-1]
 ```
 
 ### Key details
 
 - Session affinity optional (`sessionAffinity: ClientIP`)
 - `targetPort` vs `port` mapping
-- ExternalName for DNS CNAME alias
-- Service mesh may bypass kube-proxy
+- Service mesh may bypass kube-proxy at scale — use eBPF/Cilium for large clusters
+- **Ingress** is L7; use NLB/LoadBalancer Service for raw TCP (Kafka, gRPC without gateway)
 
 ### When to use
 
@@ -1962,7 +1898,7 @@ flowchart LR
 A **StatefulSet** is a Kubernetes controller for **stateful** workloads requiring:
 
 - **Stable network identity** — predictable DNS: `pod-0`, `pod-1`, `pod-2`
-- **Stable persistent storage** — each pod bound to its own PVC across restarts
+- **Stable persistent storage** — each pod bound to its own **PVC (Persistent Volume Claim)** across restarts
 - **Ordered deployment and scaling** — pods created/deleted in sequence (0 → 1 → 2)
 
 Unlike Deployments, pod names are **sticky** (`kafka-0` not `kafka-7d4f9-xk2m`), and storage follows the pod.
@@ -2014,7 +1950,7 @@ volumeClaimTemplates:
         storage: 100Gi
 ```
 
-Each pod `N` gets PVC `data-<statefulset>-N` — **bound to AZ** where first scheduled. Reschedule to different AZ may fail if volume is zone-locked.
+Each pod `N` gets PVC `data-<statefulset>-N` — **bound to AZ (Availability Zone)** where first scheduled. Reschedule to different AZ may fail if volume is zone-locked.
 
 **3. Headless Service required**
 
@@ -2424,114 +2360,32 @@ flowchart LR
 ---
 
 
-1.32 etcd
+## 11.32 etcd
 
+Distributed consistent key-value store holding all Kubernetes cluster state — desired and observed configuration. The API server is the sole writer; controllers watch for changes.
 
-### What is it
+Consensus via **Raft** (typically 3 or 5 members for quorum). Lose quorum → cluster frozen. See [5.23 Raft](../05-distributed-databases/README.md#523-raft) for leader election and log replication.
 
-Distributed consistent key-value store holding all Kubernetes cluster state - the source of truth for desired and actual configuration.
+Managed Kubernetes (EKS, GKE) hides etcd; self-managed clusters need dedicated nodes, backups, and defragmentation.
 
-### Why it matters
+Interview one-liner: "etcd is the brain's memory; Raft keeps replicas consistent."
 
-etcd failure means control plane cannot serve API. Backup and HA etcd is critical for cluster survival.
+---
 
-### How it works
+## 11.33 Operators
 
-Raft consensus among etcd members (typically 3 or 5 for HA). API server is sole etcd client for cluster data. Watch API enables controllers to react to changes. Periodic snapshots + WAL for durability.
+Custom controller + **CRD** that encodes domain expertise for day-2 ops — install, scale, backup, upgrade — beyond native Deployments and StatefulSets.
 
-### Diagram
+Watches custom resources (e.g., `PostgresCluster`); reconciles into StatefulSets, Services, Jobs. Examples: Strimzi (Kafka), Prometheus Operator, CloudNativePG.
 
-```mermaid
-flowchart TB
-    API[API Server] --> ETCD1[etcd member 1]
-    API --> ETCD2[etcd member 2]
-    API --> ETCD3[etcd member 3]
-    ETCD1 <-->|Raft| ETCD2 & ETCD3
-```
+Prefer managed cloud databases when ops burden exceeds value. Operator bugs can be catastrophic — test upgrades in staging.
 
-### Key details
-
-- Odd member count (3, 5) for quorum
-- Managed K8s hides etcd (EKS, GKE)
-- Self-managed: etcd on dedicated nodes, regular backups
-- Defragment and monitor db size
-
-### When to use
-
-- Understanding control plane failures
-- Self-managed cluster operations
-- Disaster recovery of cluster state
-
-### Trade-offs
-
-| Pros | Cons |
-|------|------|
-| Strong consistency | Latency sensitive to disk I/O |
-| Proven (Raft) | Quorum loss halts cluster |
-| Watch-based reactivity | Requires careful backup/restore |
-
-### References
-
-- [etcd documentation](https://etcd.io/docs/)
+Interview one-liner: "Operator = human SRE runbook compiled into a control loop."
 
 ---
 
 
-1.33 Operators
-
-
-### What is it
-
-Custom controller extending Kubernetes API via **CRDs** to automate complex application operations using domain knowledge (install, scale, backup, upgrade).
-
-### Why it matters
-
-Stateful and complex apps (Postgres, Kafka, Prometheus) need day-2 ops beyond native resources. Operators encode expert runbooks in software.
-
-### How it works
-
-Define CRD (e.g., `PostgresCluster`). Operator watches CR instances; reconciles desired state: create StatefulSets, Services, backups. Uses Helm charts or direct API calls. Operator SDK (Kubebuilder) accelerates development.
-
-### Diagram
-
-```mermaid
-flowchart LR
-    User[kubectl apply CR] --> API[API Server]
-    Op[Operator Controller] -->|watch| API
-    Op -->|reconcile| STS[StatefulSet]
-    Op --> SVC[Service]
-    Op --> BK[Backup Job]
-```
-
-### Key details
-
-- Examples: Prometheus Operator, Strimzi (Kafka), CloudNativePG
-- Prefer managed services when ops burden exceeds value
-- Test operator upgrades in staging
-- RBAC: operators often need broad permissions
-
-### When to use
-
-- Self-hosted complex stateful systems on K8s
-- Repeated manual ops you can codify
-- Platform teams offering DB-as-a-service internally
-
-### Trade-offs
-
-| Pros | Cons |
-|------|------|
-| Automates expert ops | Operator bugs are catastrophic |
-| Native K8s UX | Another component to maintain |
-| Repeatable DR/upgrade | Learning curve for CRD APIs |
-
-### References
-
-- [Operator pattern](https://kubernetes.io/docs/concepts/extend-kubernetes/operator/)
-
----
-
-
-1.34 HPA
+## 11.34 HPA (Horizontal Pod Autoscaler)
 
 
 ### What is it
@@ -2841,7 +2695,7 @@ flowchart TB
 
 | Topic | Detail |
 |-------|--------|
-| **Cloud-specific** | CA on EKS, GKE, AKS — one CA deployment per node group |
+| **Cloud-specific** | CA on EKS (Elastic Kubernetes Service), GKE, AKS — one CA deployment per node group |
 | **Resource requests required** | Scheduler and CA use requests to simulate fit |
 | **`safe-to-evict` annotation** | `false` prevents eviction during scale-down |
 | **Balance with HPA min** | `minReplicas` pods need `min nodes` that can fit them |

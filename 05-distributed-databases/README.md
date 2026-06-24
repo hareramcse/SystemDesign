@@ -896,51 +896,7 @@ Add node D between B and K -> only keys that were on C and fall between D and K 
 
 ## 5.9 Virtual Nodes
 
-
-### What is it?
-
-**Virtual nodes** (vnodes) map each physical machine to many points on a consistent hash ring - e.g., 100 - 256 virtual tokens per host.
-
-### Why it matters
-
-Smooths load distribution when physical node counts are small and prevents one physical server from owning half the ring.
-
-### How it works
-
-1. Physical node `A` registers vnodes `A-0  -  A-N` on the ring.
-2. Key routing uses vnode ownership as usual.
-3. When node fails, its vnodes redistribute across survivors evenly.
-4. More vnodes -> better balance, more metadata.
-
-### Diagram
-
-```mermaid
-flowchart LR
-    PhysA[Physical A] --> V1[vnode A1]
-    PhysA --> V2[vnode A2]
-    PhysA --> V3[vnode A3]
-    PhysB[Physical B] --> V4[vnode B1]
-```
-
-### Key details
-
-- Cassandra default: 256 tokens per node (legacy) or vnode-based.
-- Rebalance granularity = one vnode at a time.
-- Trade vnode count vs metadata size and lookup cost.
-
-### When to use
-
-- Any consistent-hash cluster with < ~100 physical nodes.
-- When observed partition size variance is high without vnodes.
-
-### Trade-offs / Pitfalls
-
-- Too few vnodes -> imbalance; too many -> gossip/metadata overhead.
-- vnode reassignment during failure must be atomic in routing tables.
-
-### References
-
-*(No curated references for this sub-topic in `_topics.json`.)*
+> Covered under [5.8 Consistent Hashing](#58-consistent-hashing) — **virtual nodes (vnodes)** map each physical server to many points on the ring (e.g. 100–256 tokens per host) for even load when the cluster is small. Interview answer: "more vnodes = smoother balance, more metadata."
 
 ---
 
@@ -1991,61 +1947,7 @@ flowchart LR
 
 ## 5.22 Paxos
 
-
-### What is it?
-
-**Paxos** is a family of consensus protocols (single-decree, Multi-Paxos) where proposers, acceptors, and learners agree on values through numbered ballots and majority quorums.
-
-### Why it matters
-
-The theoretical foundation of distributed consensus - Chubby, early ZooKeeper, and Spanner build on Paxos variants. Understanding Paxos clarifies why Raft was designed.
-
-### How it works
-
-**Single Paxos round:**
-
-1. Proposer picks ballot number N, sends `prepare(N)` to acceptors.
-2. Acceptors promise not to accept lower ballots; return highest accepted value.
-3. Proposer sends `accept(N, value)` with chosen value.
-4. Majority accept -> value chosen; learners notified.
-5. Multi-Paxos elects stable leader to run many rounds efficiently.
-
-### Diagram
-
-```mermaid
-sequenceDiagram
-    participant P as Proposer
-    participant A1 as Acceptor
-    participant A2 as Acceptor
-    P->>A1: prepare N
-    P->>A2: prepare N
-    A1-->>P: promise
-    A2-->>P: promise
-    P->>A1: accept v
-    P->>A2: accept v
-```
-
-### Key details
-
-- Correct but famously hard to implement and reason about.
-- Multi-Paxos needs stable leader for liveness in practice.
-- Superseded for new projects by Raft in many ecosystems - same guarantees, clearer structure.
-
-### When to use
-
-- Maintaining legacy Paxos systems (Chubby, some storage engines).
-- Research and interviews requiring formal consensus background.
-- When existing stack already provides battle-tested Paxos (don't roll your own).
-
-### Trade-offs / Pitfalls
-
-- Implementation complexity leads to subtle bugs.
-- Without dedicated leader, liveness suffers from proposer contention.
-- Operational tooling less approachable than Raft ecosystems.
-
-### References
-
-*(No curated references for this sub-topic in `_topics.json`.)*
+> **Interview:** Paxos is the classic **consensus** protocol (proposers, acceptors, learners, majority quorums). Correct but hard to implement. New systems usually use **[5.23 Raft](#523-raft)** — same idea, clearer leader-based structure. Mention Paxos when discussing Google Chubby, Spanner, or early ZooKeeper.
 
 ---
 
@@ -2802,6 +2704,55 @@ Partitioning  → PERFORMANCE (manageable tables, fast retention)
 ```
 
 Together: data is **distributed**, customers are **isolated**, and tables stay **operationally small**.
+
+#### Shard vs partition (one-line mental model)
+
+| Term | Where it lives | Purpose |
+|------|----------------|---------|
+| **Shard** | Different DB instance / machine | Horizontal scale across servers |
+| **Partition** | Inside one DB instance | Query speed + easy retention (DROP) |
+
+```text
+Machine 1 → Shard 1 → orders_2024_01_0 .. orders_2024_01_7
+Machine 2 → Shard 2 → orders_2024_01_0 .. orders_2024_01_7
+```
+
+They are **combined** at petabyte scale: shard for machine limits, partition for table size.
+
+#### Worked sizing — 1,000 TB at ~1 KB/row
+
+```text
+Total data     = 1,000 TB
+Target shard   = 2 TB per primary  → 500 primary shards
+RF = 3         → 3,000 TB physical storage (1 PB logical × 3)
+
+Node usable disk (10 TB disk - 2 OS - 1 reserve) = 7 TB
+Nodes needed   = 3,000 / 7 ≈ 429 nodes (round up for headroom)
+```
+
+**Partition strategy per shard (avoid hotspots):**
+
+```text
+Level 1: monthly range partition (12/year)
+Level 2: hash(user_id) % 8 sub-buckets
+→ 12 × 8 = 96 partitions per year per shard
+```
+
+#### Worked sizing — 100 billion rows, 100 shards
+
+```text
+Rows per shard = 100B / 100 = 1B rows/shard
+
+Monthly only:     1B / 12 ≈ 83M rows/month  (risk: hot month)
+Monthly + hash×8: 1B / 96 ≈ 10.4M rows/partition  (safer)
+```
+
+**Disk per server sanity check:**
+
+```text
+Total disk 10 TB - OS 2 TB - logs/backup 1 TB = 7 TB usable
+Plan shards so primary data + indexes + 2× headroom fits usable disk
+```
 
 ### References
 

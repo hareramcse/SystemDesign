@@ -656,120 +656,38 @@ flowchart LR
 
 ### What is it?
 
-**Disaster Recovery (DR)** is the planned capability to restore IT systems after **catastrophic** failures — entire region loss, ransomware, datacenter fire, operator error at scale — meeting defined **RPO** (how much data you can lose) and **RTO** (how fast you're back).
+**Disaster Recovery (DR)** restores systems after **catastrophic** failure (region loss, ransomware) within **RPO (recovery point objective)** and **RTO (recovery time objective)** targets.
 
-DR is not HA: HA survives a pod or AZ; DR survives losing a **region** or needing to **rebuild from backups**.
+DR ≠ **high availability (HA)**: HA survives pod/**availability zone (AZ)** failure; DR survives **region** loss or rebuild from backup.
 
 ### Why it matters
 
-```text
-us-east-1 regional outage (real events: 2017, 2021)
-→ every service in one region down simultaneously
-→ HA within region does not help
-
-Ransomware encrypts production DB
-→ replicas are encrypted too
-→ only immutable offsite backup saves you
-```
-
-Without tested DR, RPO/RTO numbers on slide decks are fiction.
+Regional outages and ransomware bypass in-region HA. Untested DR means slide-deck RPO/RTO only.
 
 ### How it works
 
-**Step 1 — Tier your workloads:**
+| Tier | RTO | RPO | Pattern |
+|------|-----|-----|---------|
+| 0 | ~0 | ~0 | Active-active multi-region |
+| 1 | < 15 min | < 1 min | Hot standby |
+| 2 | < 4 hr | < 1 hr | Warm / pilot light |
+| 3 | < 24 hr | < 24 hr | Backup-restore |
 
-| Tier | RTO | RPO | Example | Pattern |
-|------|-----|-----|---------|---------|
-| **Tier 0** | ~0 | ~0 | Payments auth | Active-active multi-region |
-| **Tier 1** | < 15 min | < 1 min | Core API | Hot standby + sync/async repl |
-| **Tier 2** | < 4 hr | < 1 hr | Internal admin | Warm standby / pilot light |
-| **Tier 3** | < 24 hr | < 24 hr | Analytics | Backup-restore |
+| Pattern | RTO | Cost |
+|---------|-----|------|
+| Backup-restore | Hours–days | $ |
+| Pilot light | 1–4 hr | $$ |
+| Warm standby | 15–60 min | $$$ |
+| Hot standby | 1–5 min | $$$$ |
+| Active-active | ~0 | $$$$$ |
 
-**Step 2 — Choose DR pattern (AWS terminology):**
-
-```mermaid
-flowchart TB
-    subgraph Patterns['DR patterns — cost vs RTO']
-        AA[Active-Active / RTO ~0]
-        Hot[Hot Standby / RTO 1-5 min]
-        Warm[Warm Standby / RTO 15-60 min]
-        Pilot[Pilot Light / RTO 1-4 hr]
-        Backup[Backup-Restore / RTO 4-24+ hr]
-    end
-    AA -->|highest cost| Hot --> Warm --> Pilot --> Backup
-```
-
-| Pattern | What's running in DR | RTO | Cost |
-|---------|---------------------|-----|------|
-| **Backup-restore** | Nothing; restore from S3 | Hours–days | $ |
-| **Pilot light** | DB replica only; apps on demand | 1–4 hr | $$ |
-| **Warm standby** | Scaled-down apps + DB | 15–60 min | $$$ |
-| **Hot standby** | Full stack at reduced traffic | 1–5 min | $$$$ |
-| **Active-active** | Full traffic both regions | ~0 | $$$$$ |
-
-**Step 3 — Regional failover runbook:**
-
-```text
-1. DECLARE disaster (SEV1) — who can authorize failover?
-2. ASSESS scope (region? AZ? data corruption?)
-3. STOP writes to primary (prevent split-brain)
-4. PROMOTE DR database replica (or restore from backup)
-5. SCALE DR application tier
-6. UPDATE DNS / Global LB (Route53 health check, Cloudflare)
-7. VALIDATE smoke tests (login, checkout, payment)
-8. COMMUNICATE status page + internal channels
-9. POSTMORTEM + decide when to fail back
-```
-
-```mermaid
-flowchart TB
-    subgraph Primary['Primary Region us-east-1']
-        PApp[Applications]
-        PDB[(Database Primary)]
-    end
-    subgraph DR['DR Region us-west-2']
-        DApp[Standby Apps]
-        DDB[(Replica / Standby)]
-    end
-    PDB -->|async replication| DDB
-    GLB[Global Load Balancer] --> PApp
-    GLB -.->|failover on health fail| DApp
-```
+Failover basics: stop writes to primary → promote replica or restore backup → shift **DNS** / global load balancer → smoke test.
 
 ### Key details
 
-#### Game day checklist (quarterly)
-
-```text
-□ Failover to DR region in isolated exercise (not prod traffic first time)
-□ Measure actual RTO vs target
-□ Measure actual RPO (data gap after promote)
-□ Verify secrets, IAM roles, DNS exist in DR region
-□ Verify third-party webhooks point to DR endpoints
-□ Run smoke test suite against DR
-□ Document gaps; assign owners
-```
-
-#### Common DR gaps
-
-| Gap | Incident outcome |
-|-----|------------------|
-| Backups exist but never restored | Restore fails — wrong version, missing permissions |
-| DR region missing secrets | Apps boot-loop after failover |
-| Hardcoded region in SDK | DR apps still call us-east-1 |
-| Async repl lag not monitored | Promote → lose last 30 min of orders |
-| No write-stop procedure | Split-brain — two primaries |
-| Runbook is someone's head | 2 hr debate during outage |
-
-#### Ransomware-specific DR
-
-```text
-1. Isolate infected systems (disconnect network)
-2. Do NOT pay without legal/compliance review
-3. Restore from IMMUTABLE backup (S3 Object Lock, air-gapped)
-4. Rebuild infra from IaC (don't restore compromised VMs)
-5. Rotate ALL credentials before cutover
-```
+- **Game days** quarterly — measure real RTO/RPO, not estimates
+- DR region needs secrets, DNS, and webhooks pre-staged
+- Ransomware: restore from **immutable** offsite backup; rebuild infra from infrastructure-as-code (IaC)
 
 ### When to use
 
@@ -783,8 +701,8 @@ flowchart TB
 | Pitfall | Consequence | Fix |
 |---------|-------------|-----|
 | DR never tested | RTO 4× worse than planned | Quarterly game days |
-| Active-active without conflict handling | Duplicate writes, data merge hell | CRDT, idempotency, or single-writer region |
-| Async repl only, RPO=0 claimed | Data loss on failover | Honest RPO or sync repl |
+| Active-active without conflict handling | Duplicate writes | Idempotency or single-writer region |
+| Async repl only, RPO=0 claimed | Data loss on failover | Honest RPO or sync replication |
 | DR drift | DR apps 3 versions behind | Automated sync deploys |
 | Failback untested | Stuck in DR for weeks | Document failback runbook |
 

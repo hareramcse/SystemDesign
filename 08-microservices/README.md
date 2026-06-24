@@ -314,6 +314,18 @@ flowchart LR
 ✅ Events for cross-context updates; sync only for read paths needing freshness
 ```
 
+#### Runtime choice — Quarkus vs Spring Boot
+
+For **Kubernetes (K8s)** microservices at high **requests per second (RPS)**, **Quarkus** often wins on **startup time** and **memory** vs Spring Boot — useful when **Horizontal Pod Autoscaler (HPA)** must scale quickly.
+
+| | Spring Boot | Quarkus (native) |
+|---|-------------|------------------|
+| Startup | ~2–3 s | ~50–300 ms |
+| Memory | 300–500 MB | 40–80 MB |
+| Fit | Existing Spring estate | New K8s services, edge APIs |
+
+**Ahead-of-time (AOT) compilation** and smaller heap reduce garbage collection (GC) pressure. Stay on Spring when migration cost outweighs autoscaling gains.
+
 ### When to use
 
 - Multiple teams (typically 3+) needing independent release cycles

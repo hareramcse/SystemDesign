@@ -62,30 +62,30 @@ flowchart TB
     ST --> D & A & I
 ```
 
-### Three Pillars of Observability
+### Reference observability stack (how tools fit together)
+
+Production observability is usually built from **one instrumentation layer** and **specialized backends** per signal type:
 
 ```mermaid
-flowchart LR
-    subgraph Logs
-        L1[What happened?]
-        L2[Error stack traces]
-        L3[Audit events]
-    end
-
-    subgraph Metrics
-        M1[How much?]
-        M2[How fast?]
-        M3[Saturation?]
-    end
-
-    subgraph Traces
-        T1[Where did time go?]
-        T2[Which service failed?]
-        T3[Dependency map]
-    end
-
-    Q[Production Question] --> Logs & Metrics & Traces
+flowchart TB
+    App[Application] --> OTel[OpenTelemetry SDK]
+    OTel -->|OTLP| Col[OpenTelemetry Collector]
+    Col --> J[Jaeger / Traces]
+    Col --> P[Prometheus / Metrics]
+    Col --> G[Graylog / Loki / Logs]
+    P --> Graf[Grafana Dashboards]
 ```
+
+| Tool | Role | Data type | Interview question it answers |
+|------|------|-----------|------------------------------|
+| **OpenTelemetry (OTel)** | Collect & export | Traces, metrics, logs | How to instrument without vendor lock-in |
+| **Jaeger** | Distributed tracing | Traces | Which service is slow? |
+| **Prometheus** | Metrics store | Time series | What is error rate / p99 / RPS? |
+| **Graylog** / Loki | Log search | Logs | What is the exact error message? |
+
+**Three pillars:** **logs** = what happened; **metrics** = how much/how fast; **traces** = where time went in a distributed call.
+
+Instrument once with OTel; route via **OpenTelemetry Protocol (OTLP)** to backends. Details: [9.6](#96-opentelemetry), [9.5](#95-distributed-tracing), [9.3](#93-metrics).
 
 ---
 
@@ -231,6 +231,16 @@ flowchart LR
 - **Gauge:** point-in-time value (`queue_depth`, `memory_bytes`)
 - **Histogram/Summary:** distributions for latency percentiles
 - Label cardinality: avoid high-cardinality labels (user IDs) on metrics
+
+**Prometheus metric example:**
+
+```text
+http_request_duration_seconds{service="order-service", method="GET"} 0.245
+```
+
+Query with **Prometheus Query Language (PromQL):** `histogram_quantile(0.99, rate(http_request_duration_seconds_bucket[5m]))`
+
+For which tool answers which question, see [Overview — observability stack](#reference-observability-stack-how-tools-fit-together).
 
 ### When to use
 
@@ -501,37 +511,33 @@ Click trace ID in Jaeger → see exact log lines in Loki/Elasticsearch.
 
 ### What is it
 
-A vendor-neutral, CNCF-standard API, SDK, and collector for generating and exporting traces, metrics, and logs - one instrumentation layer for many backends.
+**OpenTelemetry (OTel)** is a vendor-neutral, Cloud Native Computing Foundation (CNCF) standard — API, SDK, and collector — for generating and exporting **traces, metrics, and logs** with one instrumentation layer.
 
 ### Why it matters
 
-Avoids vendor lock-in and duplicate instrumentation. Teams instrument once with OTel and export to Jaeger, Prometheus, Datadog, or cloud-native backends via configuration.
+Instrument once; export to Jaeger, Prometheus, Datadog, or cloud backends via config — no vendor lock-in.
 
 ### How it works
 
-The OTel SDK auto-instruments frameworks (HTTP, gRPC, DB) and supports manual spans. The **Collector** receives OTLP, processes (filter, batch, enrich), and exports to backends. Semantic conventions standardize attribute names across languages.
+1. **SDK** in each service: auto-instrument HTTP/gRPC/DB; manual spans for business logic.
+2. **Collector** receives **OpenTelemetry Protocol (OTLP)**; batches, filters personally identifiable information (PII), routes to backends.
+3. **W3C Trace Context** (`traceparent` header) propagates across services.
 
-### Diagram
-
-```mermaid
-flowchart LR
-    subgraph Apps
-        A1[Java + OTel]
-        A2[Go + OTel]
-        A3[Node + OTel]
-    end
-    Apps -->|OTLP| Col[OTel Collector]
-    Col --> J[Jaeger]
-    Col --> P[Prometheus]
-    Col --> CW[CloudWatch]
+```javascript
+const span = tracer.startSpan('getProductDetails');
+try { /* business logic */ } finally { span.end(); }
 ```
 
 ### Key details
 
-- Signals: traces, metrics, logs (unified pipeline)
-- Auto-instrumentation vs manual spans for business logic
-- Collector processors: tail sampling, attribute scrubbing
-- W3C Trace Context is the default propagation format
+| Setting | Interview tip |
+|---------|---------------|
+| Head sampling | 1–5% of traces in prod — control cost |
+| Tail sampling | Keep errors and slow traces always |
+| Collector | Central place to scrub PII before export |
+| Semantic conventions | Standard attribute names across languages |
+
+Stack diagram and tool roles: [Overview](#reference-observability-stack-how-tools-fit-together).
 
 ### When to use
 

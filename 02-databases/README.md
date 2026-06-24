@@ -1729,10 +1729,33 @@ Look for: `Seq Scan` (bad on large tables), high `rows`, `Buffers: shared read` 
 **4. Connection pool sizing**
 
 ```text
-pool_size ≈ (core_count × 2) + effective_spindle_count   # rough starting point
+pool_size ≈ (core_count × 2) + effective_spindle_count   # HikariCP starting point
+```
+
+**HikariCP example:**
+
+```yaml
+spring.datasource.hikari.maximum-pool-size: 50
+spring.datasource.hikari.minimum-idle: 10
+```
+
+| Scenario | What happens |
+|----------|--------------|
+| 5 users online | ~10 idle connections kept warm |
+| 40 concurrent requests | 40 active connections |
+| 60 concurrent requests | Only 50 allowed → 10 **wait** or timeout |
+| All 50 busy | Excess requests queue at pool; tune or add replicas |
+
+**Worked example (8-core DB server, SSD):**
+
+```text
+pool_size = (8 × 2) + 1 = 17 connections per app instance
+50 pods × 17 = 850 total → needs PgBouncer or fewer pods per pool
 ```
 
 Too many connections → DB context switching; too few → app threads block.
+
+See [4.22 Capacity Planning](../04-distributed-system/README.md#422-capacity-planning) for multi-pod math.
 
 **5. Schema and planner hints**
 

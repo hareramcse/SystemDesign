@@ -21,4 +21,15 @@
 
 **Total:** 16 topics · 293 sub-topics · all **Documented**
 
+### Suggested reading order (interviews)
+
+1. **[16 Interview Guide](./16-interview-guide/README.md)** — framework, estimation, sample walkthrough  
+2. **[04 Distributed System](./04-distributed-system/README.md)** — scalability, CAP, consistency, capacity  
+3. **[05 Distributed Databases](./05-distributed-databases/README.md)** — sharding, replication, quorums  
+4. **[03 Caching](./03-caching/README.md)** · **[06 Messaging](./06-messaging-and-events/README.md)** · **[07 API Design](./07-api-design/README.md)**  
+5. **[08 Microservices](./08-microservices/README.md)** · **[09 Observability](./09-observability/README.md)** · **[12 Reliability](./12-reliability-engineering/README.md)**  
+6. Other chapters as needed for the prompt (networking, security, cloud, search, big data)
+
+Each sub-topic follows: **What → Why → How → Key details → Pitfalls**. Deep dives (e.g. Kafka §6.5, sharding §5.29) are canonical; other sections link there instead of repeating.
+
 ---

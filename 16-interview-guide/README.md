@@ -63,13 +63,6 @@ Interviewers evaluate **communication** and **judgment**, not memorized diagrams
 4. **Name trade-offs** whenever you choose — "Redis here for speed, but we accept eventual consistency."
 5. **Invite feedback** — "Should I go deeper on storage or the read path?"
 
-### Key details
-
-- **Drive the interview** — don't wait silently; propose a path.
-- **Think aloud** — interviewers can't score invisible reasoning.
-- **Start simple** — monolith + single DB, then scale when requirements force it.
-- **Use numbers** — "10M DAU → ~120 write QPS average, 1.2K peak" sounds credible.
-
 ### When to use
 
 - Any open-ended design prompt: Twitter feed, Uber, rate limiter, chat, payment system.
@@ -108,7 +101,7 @@ Ask about core user journeys:
 
 | Category | Questions to ask |
 |----------|------------------|
-| **Scale** | DAU/MAU? Reads vs writes ratio? |
+| **Scale** | DAU (daily active users) / MAU (monthly active users)? Reads vs writes ratio? |
 | **Latency** | p99 target? Real-time vs batch OK? |
 | **Availability** | 99.9%? Acceptable downtime window? |
 | **Consistency** | Strong or eventual? Stale reads OK? |
@@ -177,6 +170,10 @@ Bandwidth (redirect response ~500 B):
 3. Estimate **storage** = records × size × retention.
 4. Estimate **bandwidth** = QPS × payload size.
 5. Sanity-check: "3 TB fits on one modern DB node; sharding not needed yet at this scale."
+
+**Scale-out math:** per-instance **requests per second (RPS)** ≈ `maxThreads / avg_response_time` (see [4.2 Throughput](../04-distributed-system/README.md#42-throughput)). For extreme scale (e.g. 10M RPS), clarify edge vs origin load and layer CDN/cache/async — full walkthrough in [4.22](../04-distributed-system/README.md#422-capacity-planning).
+
+**10M RPS interview checklist:** edge vs origin RPS? read/write ratio? payload → bandwidth? CDN/cache absorption? DB replicas/sharding? Kafka partitions? (formula in [6.5](../06-messaging-and-events/README.md#65-kafka)).
 
 ### When to use
 

@@ -45,9 +45,9 @@
 
 ## Topic Overview
 
-Networking is the substrate on which every distributed system runs. Requests traverse DNS, load balancers, proxies, TLS terminators, and TCP connections before application code executes. Understanding the stack — from IP addressing and routing to HTTP/2 multiplexing and QUIC — lets you diagnose latency, design resilient architectures, and make informed trade-offs in interviews and production.
+Networking is the substrate on which every distributed system runs. Requests traverse **DNS (Domain Name System)**, load balancers, proxies, **TLS (Transport Layer Security)** terminators, and TCP connections before application code executes. Understanding the stack — from IP addressing and routing to HTTP/2 multiplexing and QUIC — lets you diagnose latency, design resilient architectures, and make informed trade-offs in interviews and production.
 
-Modern web performance is largely a networking problem: connection setup cost, head-of-line blocking, geographic distance, and buffer bloat dominate user-perceived speed as much as server CPU. CDN placement, keep-alive tuning, and protocol choice (HTTP/3 over UDP) directly affect scalability and cost.
+Modern web performance is largely a networking problem: connection setup cost, head-of-line blocking, geographic distance, and buffer bloat dominate user-perceived speed as much as server CPU. **CDN (Content Delivery Network)** placement, keep-alive tuning, and protocol choice (HTTP/3 over UDP) directly affect scalability and cost.
 
 ### End-to-end path (typical HTTPS API call)
 
@@ -55,7 +55,7 @@ Modern web performance is largely a networking problem: connection setup cost, h
 flowchart LR
     Client --> DNS[1.8 DNS]
     DNS --> CDN[1.19 CDN / Edge]
-    CDN --> LB[1.20 Load Balancer]
+    CDN --> LB[1.20 LB]
     LB --> TLS[1.11 TLS terminate]
     TLS --> App[Application]
 ```
@@ -64,8 +64,8 @@ flowchart LR
 
 | Layer | Protocols (this chapter) | PDU |
 |-------|--------------------------|-----|
-| Application | HTTP, DNS, WebSocket | Message |
-| Security | TLS (runs above TCP) | — |
+| Application | HTTP, DNS, **WebSocket** | Message |
+| Security | **TLS (Transport Layer Security)** (runs above TCP) | — |
 | Transport | TCP ([1.3](#13-tcp-handshake)), UDP ([1.4](#14-udp)), QUIC ([1.13](#113-quic)) | Segment / Datagram |
 | Network | IPv4, IPv6, ICMP | Packet |
 | Link | Ethernet, Wi-Fi | Frame |
@@ -92,14 +92,6 @@ Every **new** HTTPS connection pays setup cost before application data flows:
 | First HTTP response | +1 | [1.10](#110-httphttps) |
 
 **Mitigations:** DNS caching, [keep-alive](#114-keep-alive-connections), TLS session resumption, [HTTP/2 multiplexing](#112-http2-http3), regional [CDN](#119-cdn).
-
-```mermaid
-flowchart LR
-    Client --> DNS
-    DNS --> CDN[CDN / Edge]
-    CDN --> LB[Load Balancer]
-    LB --> App[Application Server]
-```
 
 ---
 
@@ -623,6 +615,7 @@ CIDR notation (`10.0.0.0/16`) is the modern way to express what subnet masks onc
 
 ## 1.8 DNS
 
+For the client → resolver → authoritative **resolution chain** and per-layer caches, see [1.9 DNS Resolution](#19-dns-resolution).
 
 ### What is it?
 
@@ -644,11 +637,11 @@ api.shop.example.com.
 | Role | Who | Responsibility |
 |------|-----|----------------|
 | **Authoritative nameserver** | Domain owner (Route 53, Cloudflare, registrar) | **Source of truth** for a zone (`example.com` and below) |
-| **Recursive resolver** | ISP, `8.8.8.8`, `1.1.1.1`, corporate DNS | Queries on behalf of clients; **caches** answers until TTL expires |
+| **Recursive resolver** | ISP, `8.8.8.8`, `1.1.1.1`, corporate DNS | Queries on behalf of clients; **caches** answers until **TTL (Time To Live)** expires |
 
 ### Why it matters
 
-**Every** network interaction that uses a hostname starts with DNS—often multiple lookups (page HTML, CDN, API, analytics). DNS is on the **critical path** for availability:
+**Every** network interaction that uses a hostname starts with DNS—often multiple lookups (page HTML, **CDN (Content Delivery Network)**, API, analytics). DNS is on the **critical path** for availability:
 
 - Wrong A record → entire service unreachable
 - Stale cache after migration → split traffic to old and new IPs
@@ -663,20 +656,8 @@ DNS also enables **traffic management** without app changes: weighted records, g
 
 1. **Zone delegation:** Parent zone (`.com`) holds **NS records** pointing to authoritative servers for `example.com`.
 2. **Authoritative server** answers queries for names in its zone from a **zone file** or API (Route 53, etc.).
-3. **Recursive resolver** walks the tree on cache miss: root → TLD → authoritative → returns answer to stub client.
-4. Every positive answer includes **TTL** (seconds); resolvers cache and may serve stale answers until expiry.
-5. **UDP port 53** by default; responses > 512 bytes (classic) or > EDNS0 size trigger **TCP fallback** (extra RTT).
-
-```mermaid
-flowchart TB
-    Client[Stub resolver / OS] --> Rec[Recursive resolver / 8.8.8.8]
-    Rec -->|cache miss| Root[Root servers .]
-    Root --> TLD[TLD .com]
-    TLD --> Auth[Authoritative NS / ns1.example.com]
-    Auth --> Ans[A 203.0.113.10 / TTL=300]
-    Ans --> Rec
-    Rec --> Client
-```
+3. Every positive answer includes **TTL (Time To Live)** (seconds)—how long downstream caches may reuse the record; see table below. *Who* walks the tree on a cache miss is covered in [1.9](#19-dns-resolution).
+4. **UDP port 53** by default; responses > 512 bytes (classic) or > EDNS0 size trigger **TCP fallback** (extra RTT).
 
 **Common record types (what to know for interviews):**
 
@@ -707,24 +688,6 @@ api.example.com.  300  IN  A  203.0.113.10
 | Low (30–60) | Fast propagation | High query volume | Migrations, blue/green |
 | Pre-migration | Lower TTL **days before** cutover | — | Planned IP change |
 
-**Authoritative vs recursive (worked example):**
-
-```text
-You type: curl https://api.example.com
-
-1. OS asks recursive resolver (configured via DHCP or 8.8.8.8):
-   "What is A for api.example.com?"
-
-2. Recursive (if not cached):
-   - Asks root: "where is .com?" → gets .com TLD NS
-   - Asks .com TLD: "where is example.com?" → gets example.com authoritative NS
-   - Asks authoritative: "A for api.example.com?" → 203.0.113.10, TTL=300
-
-3. Recursive caches 203.0.113.10 for 300 s, returns to OS.
-
-4. OS caches in its own resolver cache; curl opens TCP to 203.0.113.10.
-```
-
 You **configure** authoritative DNS when you own a domain. You **consume** recursive DNS as a client (or run your own resolver internally).
 
 ### Key details
@@ -739,56 +702,11 @@ You **configure** authoritative DNS when you own a domain. You **consume** recur
 
 **Interview point:** CNAME vs A—CNAME adds an extra lookup hop and cannot be used at apex; A is direct but you must update IP manually on migration.
 
-### Production rules
-
-#### TTL migration runbook
-
-DNS is **eventually consistent** — you cannot flip traffic instantly unless TTL was lowered **before** the change.
-
-| Phase | When | Action | TTL target |
-|-------|------|--------|------------|
-| **T−7d** | Planned migration | Lower TTL on records that will change | 60–300 s (not 86400) |
-| **T−48h** | Verify propagation | `dig @8.8.8.8`, `dig @1.1.1.1`, corp resolver — confirm low TTL live | — |
-| **T0** | Cutover | Update A/AAAA/CNAME to new target | Keep low TTL |
-| **T+2×old TTL** | Soak | Monitor error rate, origin traffic split | — |
-| **T+7d** | Steady state | Raise TTL on stable records | 3600+ for static CDN CNAME |
-
-```text
-Old TTL = 3600 s → worst-case stale cache = 1 hour after change
-New TTL = 60 s  → wait 2×3600 = 2 h for old caches to expire BEFORE cutover
-                 then 2×60 = 2 min after cutover for global convergence
-```
-
-**Never** lower TTL during an active incident and expect instant failover — resolvers already holding the old answer will not re-query until their cached TTL expires.
-
-#### Failover records
-
-Managed DNS (Route 53, Cloudflare, Azure Traffic Manager) can return different answers based on health:
-
-| Pattern | Mechanism | Failover speed | Caveat |
-|---------|-----------|----------------|--------|
-| **Active/passive** | Primary A + standby A; health check fails → swap | TTL-bound (60–300 s typical) | Both records must have **low TTL** on primary |
-| **Weighted routing** | 90% new / 10% old during canary | Gradual | Clients cache one answer for full TTL |
-| **Latency-based** | Nearest healthy region | Good for multi-region | Not a substitute for app health |
-| **DNS-only failover** | LB VIP unchanged; DNS points to standby region | Minutes | Slower than LB health-check drain |
-
-```text
-Runbook — primary region hard-down:
-1. Confirm origin/LB health check shows primary unhealthy (not just one resolver)
-2. If using Route 53 failover: secondary should auto-promote — verify dig from 3+ resolvers
-3. If manual: update A record to standby VIP; do NOT raise TTL yet
-4. Page comms: "DNS propagation up to {current TTL} seconds"
-5. After stable 24h: consider restoring primary with weighted 0% → ramp up
-```
-
-#### Sizing and query load
-
-| Signal | Rule of thumb | Action |
-|--------|---------------|--------|
-| TTL too low globally | >10× baseline QPS on authoritative NS | Raise TTL on stable records; use separate low-TTL failover record |
-| Resolver rate limit | SERVFAIL or timeout under deploy | Stagger record changes; avoid mass TTL=0 |
-| Health-checked records | 1 probe/region/30s per record set | Budget probe traffic; align with LB health path |
-| CNAME at edge | +1 lookup per cache miss | Prefer ALIAS/ANAME at apex; flatten chains |
+| Ops topic | Guidance |
+|-----------|----------|
+| **TTL migration** | T−7d: lower TTL to 60–300 s on records that will change; T0: cutover; T+2×old TTL: soak; T+7d: raise TTL on stable records. Never lower TTL mid-incident and expect instant failover. |
+| **Failover** | Active/passive (health-checked swap), weighted canary, latency routing—speed always bounded by cached TTL. DNS-only failover is slower than **LB (load balancer)** drain. |
+| **Sizing** | TTL too low → resolver QPS spike; keep stable CDN CNAMEs high, migration A records low; prefer ALIAS/ANAME at apex over long CNAME chains. |
 
 ### When to use
 
@@ -796,7 +714,7 @@ Runbook — primary region hard-down:
 - **Internal platforms:** Private zones (Route 53 Private, Azure Private DNS) for service discovery.
 - **Kubernetes:** CoreDNS resolves `*.svc.cluster.local` inside the cluster.
 - **Traffic shifting:** Weighted/latency records before deploying new region.
-- **Debugging:** `dig +trace`, `nslookup`, check TTL before planned migration.
+- **Debugging:** `dig`, `nslookup`; for full delegation path use `dig +trace` ([1.9](#19-dns-resolution))
 
 ### Trade-offs / Pitfalls
 
@@ -822,10 +740,11 @@ Runbook — primary region hard-down:
 
 ## 1.9 DNS Resolution
 
+For record types, **TTL (Time To Live)** strategy, and failover runbooks, see [1.8 DNS](#18-dns).
 
 ### What is it?
 
-**DNS resolution** is the end-to-end process of turning a hostname into one or more IP addresses (and other record data)—from the application's `getaddrinfo("api.example.com")` call through browser/OS caches, stub resolver, recursive resolver, and the authoritative chain (root → TLD → zone).
+**DNS (Domain Name System) resolution** is the end-to-end process of turning a hostname into one or more IP addresses (and other record data)—from the application's `getaddrinfo("api.example.com")` call through browser/OS caches, stub resolver, recursive resolver, and the authoritative chain (root → TLD → zone).
 
 Resolution is **not** a single lookup: CNAME chains add hops; A + AAAA mean two logical questions; negative answers (NXDOMAIN) are also cached.
 
@@ -920,16 +839,16 @@ function resolve(name, type):
 
 ### Key details
 
-| Mechanism | Behavior |
-|-----------|----------|
-| **Positive caching** | A/AAAA/CNAME stored until TTL expires |
-| **Negative caching (NXDOMAIN)** | "Name does not exist" cached per SOA MINIMUM TTL |
-| **DNS prefetch** | `<link rel="dns-prefetch" href="//cdn.example.com">` warms browser cache early |
-| **Preconnect** | DNS + TCP + TLS in advance (`rel="preconnect"`) |
-| **mDNS (.local)** | Multicast on LAN; not global DNS |
-| **DoH / DoT** | DNS over HTTPS/TLS to recursive—privacy, bypasses local ISP DNS |
-| **QNAME minimization** | Recursive sends minimal labels to each hop (privacy) |
-| **getaddrinfo blocking** | Sync call can block thread; use async DNS in servers |
+| Layer / concern | Behavior |
+|-----------------|----------|
+| **Browser cache** | Per-tab; Chrome ~60 s minimum; bypass with hard refresh |
+| **OS stub** (`systemd-resolved`, Windows DNS Client) | Machine-wide; TTL from record; flush with `ipconfig /flushdns` or `systemd-resolve --flush-caches` |
+| **`/etc/hosts`** | Static override (∞ TTL until edited) — short-circuits before network |
+| **Recursive resolver** (8.8.8.8, corp DNS) | Iterative walk on miss; cannot flush remotely — wait TTL or change resolver |
+| **Positive / negative caching** | A/AAAA/CNAME until TTL; NXDOMAIN per SOA MINIMUM |
+| **DNS prefetch / preconnect** | `<link rel="dns-prefetch">` warms browser; preconnect adds TCP + **TLS (Transport Layer Security)** |
+| **Happy eyeballs (RFC 8305)** | Races AAAA vs A; broken IPv6 adds **300 ms+** before IPv4 wins — fix routing or remove AAAA |
+| **Hot path** | Never block event loop on sync `getaddrinfo`; pool connections to avoid repeat lookups |
 
 **Worked example — cache layers after first lookup:**
 
@@ -938,6 +857,8 @@ T+0s:   Full resolution → 80 ms (recursive miss)
 T+10s:  Same host again → 0 ms (OS cache hit)
 T+400s: TTL=300 expired → 20 ms (recursive still cached? depends on when recursive TTL started)
 ```
+
+**Runbook — "DNS updated but clients still see old IP":** `dig @authoritative-ns` → `dig @8.8.8.8` → `dig` (local stub); flush OS cache if layer (3) stale. Effective staleness = max of independent layer TTLs.
 
 **Debugging commands:**
 
@@ -950,69 +871,10 @@ nslookup -type=A api.example.com 8.8.8.8
 
 **Interview point:** `dig +trace` shows iterative resolution; `dig` alone shows what **your stub resolver** returns (may be cached).
 
-### Production rules
-
-#### Cache layers (stacked TTL)
-
-Resolution latency depends on **which layer** answers first. Each layer has its own TTL clock — they do not synchronize.
-
-| Layer | Scope | Typical TTL | Bypass |
-|-------|-------|-------------|--------|
-| **Browser** | Per-tab; Chrome ~60 s min | min(browser policy, record TTL) | Hard refresh; new profile |
-| **OS stub** | Whole machine (`systemd-resolved`, Windows DNS Client) | Record TTL | `systemd-resolve --flush-caches`; `ipconfig /flushdns` |
-| **`/etc/hosts`** | Static | ∞ until edited | Edit file (immediate) |
-| **Recursive resolver** | All clients of 8.8.8.8 / corp DNS | Record TTL from authoritative | Cannot flush remotely; wait or use different resolver |
-| **Authoritative** | Source of truth | What you configured | Change record + wait downstream |
-
-```text
-Effective staleness after record change = max(layer caches still holding old answer)
-Worst case: OS cache (300s) + recursive (300s) are independent — client may hit
-recursive hit (fast) while another client on same LAN still has OS cache (old IP)
-```
-
-**Runbook — "DNS updated but clients still see old IP":**
-
-```text
-1. dig @authoritative-ns api.example.com     → confirm authoritative is correct
-2. dig @8.8.8.8 api.example.com            → recursive layer
-3. dig api.example.com                       → stub + OS (your machine)
-4. If (1) wrong → fix zone; if (2) stale → wait TTL or lower TTL retroactively for next time
-5. If (3) stale → flush OS cache; check /etc/hosts and VPN split-DNS overrides
-```
-
-#### Happy eyeballs — incidents and mitigation
-
-RFC 8305: clients race **AAAA** (IPv6) and **A** (IPv4) with a short connection timeout (often 250 ms, then 50 ms stagger).
-
-| Symptom | Likely cause | Fix |
-|---------|--------------|-----|
-| +300–2000 ms on **first** connect only | AAAA published but IPv6 path black-holed | Fix IPv6 routing/firewall or **remove AAAA** until ready |
-| Intermittent slow loads | Some resolvers return AAAA, path flaky | `curl -6` vs `curl -4` from affected networks |
-| Works on Wi-Fi, slow on mobile | Carrier IPv6 broken; eyeballs delay before IPv4 wins | Remove AAAA or fix PMTUD on IPv6 path |
-| After dual-stack cutover | App listens IPv4 only; AAAA points to same host | Bind `[::]` or don't publish AAAA |
-
-```text
-Diagnose:
-  dig AAAA api.example.com
-  curl -6 -w "connect:%{time_connect}\n" -o /dev/null -s https://api.example.com
-  curl -4 -w "connect:%{time_connect}\n" -o /dev/null -s https://api.example.com
-
-If -6 hangs or >> -4: fix or remove AAAA before blaming app latency.
-```
-
-#### Sizing
-
-| Concern | Rule | Notes |
-|---------|------|-------|
-| Sync DNS in hot path | **Never** block event loop on `getaddrinfo` | Use async resolver (c-ares, `dns.lookup` promisified, Go resolver with context) |
-| Resolver QPS per service | ~1 query per `(hostname, TTL expiry)` per client pool | Connection pooling slashes repeat lookups |
-| Corporate resolver SPOF | Plan secondary resolver in DHCP | Laptop "internet works, corp API dead" = split-DNS issue |
-| Negative cache | NXDOMAIN cached per SOA MINIMUM (often 300–3600 s) | Typos in deploy config stick longer than you expect |
-
 ### When to use
 
 - **Incident debugging:** Is it DNS or TCP/TLS/app? (`dig` vs `curl -v` vs `traceroute`)
-- **Migration planning:** Lower TTL → change records → wait 2× old TTL → verify global propagation (`dig @multiple resolvers`)
+- **Migration planning:** Follow [1.8](#18-dns) TTL runbook; verify propagation (`dig @multiple resolvers`)
 - **Performance:** Prefetch/preconnect for critical third-party origins; pool connections to avoid repeat lookups
 - **Split-horizon issues:** Compare answers from corporate resolver vs `8.8.8.8`
 - **Local dev:** `/etc/hosts` or `dnsmasq` to point `api.local` → `127.0.0.1`
@@ -1033,7 +895,7 @@ If -6 hangs or >> -4: fix or remove AAAA before blaming app latency.
 | nscd / systemd-resolved stuck | Local cache ignores authoritative change | Restart resolver or flush caches |
 | DoH bypasses corp split-DNS | Internal names fail on laptop | Policy DoH off on corp devices or internal DoH forwarder |
 
-**Happy eyeballs (brief):** Modern stacks try IPv6 and IPv4 in parallel with short timeout; broken AAAA can add **300 ms+** delay before falling back to IPv4. See **Production rules** above for incident runbook.
+**Happy eyeballs (brief):** Modern stacks try IPv6 and IPv4 in parallel with short timeout; broken AAAA can add **300 ms+** delay before falling back to IPv4 — see Key details table above.
 
 ### References
 
@@ -1172,6 +1034,60 @@ HTTP itself forgot Request 1; the COOKIE carries identity.
 - **Cookies:** `Set-Cookie` with `HttpOnly`, `Secure`, `SameSite` — security-critical.
 - **Chunked transfer:** Body without fixed `Content-Length` (streaming).
 - **HTTP/2+:** Same semantics; different framing (multiplexing) — see section 1.12.
+
+#### Response compression (gzip / Brotli)
+
+Large JSON API responses (paginated lists, nested objects) inflate bandwidth and TTFB even when logic is fast. **Compression at the edge or server** shrinks payloads with no application code change when clients send `Accept-Encoding: gzip` (or `br`).
+
+**When it helps:**
+
+| Symptom | Typical cause | Compression impact |
+|---------|---------------|-------------------|
+| 8 KB+ JSON list responses | Verbose fields, no field filtering | 70–85% size reduction with gzip |
+| Slow mobile clients | High latency × large payload | Fewer bytes = faster download |
+| High egress cost | Repetitive API traffic | Lower bandwidth bill |
+
+**Spring Boot (server-level):**
+
+```yaml
+server:
+  compression:
+    enabled: true
+    mime-types: application/json,application/xml,text/html,text/plain
+    min-response-size: 1024   # only compress responses > 1 KB
+```
+
+**NGINX (recommended at reverse proxy / ingress):**
+
+```nginx
+http {
+    gzip on;
+    gzip_disable "msie6";
+    gzip_min_length 1024;
+    gzip_comp_level 5;
+    gzip_types application/json text/plain text/xml application/xml text/css application/javascript;
+    gzip_vary on;
+    gzip_proxied any;
+}
+```
+
+**Production rules:**
+
+| Rule | Why |
+|------|-----|
+| Set `min-response-size` ~1 KB | Tiny responses cost more CPU than they save |
+| Enable `gzip_vary on` | Correct CDN caching per `Accept-Encoding` |
+| Prefer compression at **LB/nginx** | Offloads app JVM; one config for all services |
+| Test with Postman/curl `-H 'Accept-Encoding: gzip'` | Verify `Content-Encoding: gzip` header |
+| Consider **Brotli (`br`)** for HTTPS | Better ratio than gzip; CPU slightly higher |
+| Don't compress already-compressed assets | JPEG/PNG/gzip files — wasted CPU |
+
+```bash
+curl -H "Accept-Encoding: gzip" -I https://api.example.com/users?page=1
+# Content-Encoding: gzip
+```
+
+See also [1.19 CDN](#119-cdn) (edge compression) and [7.5 API Gateway](../07-api-design/README.md#75-api-gateway).
 
 **Common interview mistakes:**
 
@@ -1754,53 +1670,15 @@ flowchart LR
 
 ## 1.18 Anycast/Multicast/Broadcast
 
+**Broadcast** — one-to-all on a LAN subnet (e.g., ARP, DHCP); does not cross routers.
 
-### What is it?
+**Multicast** — one-to-many to subscribed hosts (IGMP, `224.0.0.0/4`); common inside datacenters; limited on the public internet.
 
-Three IP delivery semantics: **Broadcast** (one-to-all on subnet), **Multicast** (one-to-many subscribed group), **Anycast** (one-to-nearest of a group sharing same IP). Anycast powers global DNS and CDN routing.
+**Anycast** — same IP announced from multiple sites via BGP; routers deliver to the **nearest** node. Powers global **DNS (Domain Name System)** resolvers (`8.8.8.8`), **CDN (Content Delivery Network)** edges, and DDoS scrubbing.
 
-### Why it matters
+**When asked in interviews:** contrast the three delivery semantics; note anycast + stateful TCP breaks if BGP path changes mid-session; multicast is rarely available in cloud VPCs.
 
-Anycast enables any PoP to respond on the same IP - BGP routes to topologically nearest node. Multicast efficient for streaming to many (limited internet support). Broadcast confined to L2 domains.
-
-### How it works
-
-**Broadcast:** packet to 255.255.255.255 or subnet broadcast — all hosts on the LAN.
-
-**Multicast:** join IGMP group (224.0.0.0/4); routers replicate to subscribers only.
-
-**Anycast:** same IP announced from multiple locations via BGP; router picks shortest path.
-
-```mermaid
-flowchart TB
-    Client --> BGP[BGP routing]
-    BGP --> Near[Nearest anycast node]
-    BGP -.-> Far[Farther node unused]
-```
-
-### Key details
-
-- Anycast: Cloudflare 1.1.1.1, Google 8.8.8.8, CDN edges
-- Multicast: IPTV within datacenter; not end-to-end internet
-- Broadcast storm risk led to L3 switching dominance
-- Anycast failure: BGP reconverges to next node (seconds)
-
-### When to use
-
-- Anycast: global DNS resolvers, CDN, DDoS scrubbing
-- Multicast: internal market data feeds, video distribution
-- Broadcast: ARP, DHCP within subnet only
-
-### Trade-offs / Pitfalls
-
-- Anycast stateful TCP connections break if route changes mid-session
-- Multicast not supported in most cloud VPCs
-- Broadcast doesn't cross routers by design
-- Anycast debugging confusing (which PoP answered?)
-
-### References
-
-- [Anycast, Multicast, Broadcast — video](https://www.youtube.com/watch?v=EcWhJbEWxHU)
+See [1.8 DNS](#18-dns) and [1.19 CDN](#119-cdn) for production examples.
 
 ---
 

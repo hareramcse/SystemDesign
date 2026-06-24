@@ -733,6 +733,34 @@ sequenceDiagram
 - Memory bounded per instance - each pod has its own L1 (not shared)
 - Stale L1 entries across pods until TTL expires if invalidation missed
 
+#### In-process Java cache only (no Redis) — when it works
+
+Some services use **Caffeine, Guava, or Spring `@Cacheable`** in the JVM heap with no Redis — and outperform remote cache for **single-instance or low-pod-count** deployments.
+
+| Advantage | Why |
+|-----------|-----|
+| No network hop | Microsecond access vs millisecond Redis RTT |
+| No serialization | Java objects stay in heap — no JSON round-trip |
+| Simple ops | No Redis cluster to run |
+
+| Failure mode | Why it breaks |
+|--------------|---------------|
+| **> ~10–50 pods** | Each pod has different cache → stale reads |
+| **Write on pod A, read on pod B** | B serves stale until TTL expires |
+| **Large heap cache** | GC pause spikes (Full GC) |
+| **No central invalidation** | Pub/sub or Redis required for instant consistency |
+
+| Condition | Java cache only | Redis / distributed |
+|-----------|-----------------|---------------------|
+| < 10 pods, read-heavy | ✔ Often sufficient | Optional |
+| > 50 pods | ❌ Stale data risk | ✔ Required |
+| Shared invalidation events | ❌ Hard | ✔ Pub/sub |
+| Cross-service cache sharing | ❌ No | ✔ Yes |
+
+**Migration trigger:** horizontal scale past ~10 pods, or user-visible stale data incidents.
+
+See [3.7 Distributed Cache](#37-distributed-cache).
+
 ### When to use
 
 - High QPS services with repeated reads of same keys per instance

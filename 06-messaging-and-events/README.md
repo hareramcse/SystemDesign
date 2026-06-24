@@ -352,103 +352,39 @@ flowchart TB
 
 | Setting | Dev | Production | Why |
 |---------|-----|------------|-----|
-| `replication.factor` | 1 | **3** | Survive 2 broker failures |
+| `replication.factor` (RF) | 1 | **3** | Survive 2 broker failures |
 | `min.insync.replicas` | 1 | **2** | With RF=3, leader won't ack `acks=all` if only 1 replica |
-| `acks` | 1 | **`all`** | Durability — wait for ISR |
+| `acks` | 1 | **`all`** | Durability — wait for in-sync replicas (ISR) |
 | `unclean.leader.election.enable` | true | **false** | Never promote out-of-sync replica (data loss) |
 | `log.retention.hours` | 168 | **72–168+** | Balance disk vs replay window |
 | `num.partitions` | 1 | **plan upfront** | Hard to change without rebalance pain |
 
-#### ISR (In-Sync Replicas) — production mental model
+#### In-sync replicas (ISR) and broker failures
+
+**In-sync replicas (ISR)** are followers caught up with the partition leader. With `replication.factor` (RF)=3 and `acks=all`, the producer waits for all ISR members before ack.
 
 ```text
-Topic: orders, partition 0, replication.factor=3
-
-Broker 1 = LEADER   (offset 1000)
-Broker 2 = FOLLOWER (offset 1000)  ← in ISR
-Broker 3 = FOLLOWER (offset 998)   ← lagging, NOT in ISR
-
-Producer with acks=all:
-  → waits for Broker 1 + all ISR followers (Broker 2)
-  → Broker 3 catch-up does not block ack
-
-If Broker 1 dies:
-  → Controller elects new leader from ISR only (Broker 2)
-  → Broker 3 catches up later, rejoins ISR
+Leader dies → controller elects new leader from ISR only (seconds of pause)
+ISR shrinks to 1 → page on-call (next broker loss = data loss)
 ```
 
-**ISR shrink alert** (`UnderReplicatedPartitions` / `OfflinePartitions`):
+| Event | Effect |
+|-------|--------|
+| Follower dies | Under-replicated until catch-up |
+| Leader dies | Brief produce/consume pause; election from ISR |
+| Disk full | ISR shrinks; expand disk or reduce retention |
+
+#### Consumer lag
 
 ```text
-Symptom:  ISR size drops from 3 → 1
-Cause:    Slow disk, network partition, broker JVM GC pause
-Risk:     Single replica — next broker death = data loss
-Action:   Page on-call; do not ignore "ISR=1" in prod
+lag = log_end_offset − committed_offset
 ```
 
-#### Broker failure scenarios
-
-| Event | What happens | Your action |
-|-------|--------------|-------------|
-| **Follower dies** | ISR shrinks; leader continues; under-replicated | Replace broker; ISR heals when follower catches up |
-| **Leader dies** | Controller elects new leader from ISR (~seconds) | Brief produce/consume pause; monitor `LeaderElectionRate` |
-| **Controller dies** | Another broker becomes controller | Usually transparent |
-| **AZ loss (RF=3, 3 AZs)** | 1 broker per partition lost; 2 ISR remain | Cluster survives if `min.insync.replicas=2` |
-| **AZ loss (RF=3, 2 AZs)** | Some partitions lose majority | **Offline partitions** — manual recovery |
-| **Disk full on broker** | Broker stops; ISR shrinks | Expand disk; retention policy; tiered storage |
-
-**Broker replacement runbook (simplified):**
-
-```text
-1. Confirm cluster health (under-replicated count)
-2. Decommission broker gracefully (kafka-reassign-partitions or KRaft remove)
-3. Provision replacement with same broker.id OR new id + rebalance
-4. Wait until all partitions ISR=RF
-5. Verify consumer lag normalized
-```
-
-#### Consumer lag — alerting and triage
-
-**Lag definition:**
-
-```text
-lag(partition) = log_end_offset - committed_offset
-
-Consumer group lag = sum(lag) across all assigned partitions
-```
-
-**Alert thresholds (starting points):**
-
-| Metric | Warning | Critical | Notes |
-|--------|---------|----------|-------|
-| **Max partition lag** | > 10K msgs | > 100K or growing 15m | One stuck partition blocks ordering for that key |
-| **Group lag (time)** | > 5 min behind | > 30 min | Use `kafka-consumer-groups --describe` |
-| **Lag growth rate** | +20%/5min | monotonic 30m | Consumer slower than produce rate |
-| **Under-replicated partitions** | > 0 for 5m | > 0 for 15m | Replication problem, not consumer |
-
-**Triage flowchart:**
-
-```mermaid
-flowchart TB
-    Lag[Consumer lag alert] --> Growing{Lag growing?}
-    Growing -->|No| Spike[Deploy/rebalance spike — wait]
-    Growing -->|Yes| Slow{Produce rate up or consume down?}
-    Slow -->|Produce up| Scale[Add partitions / consumers / brokers]
-    Slow -->|Consume down| Debug[Check consumer errors, GC, DB, rebalance]
-    Debug --> Poison{One partition only?}
-    Poison -->|Yes| Hot[Hot key or poison message → DLQ]
-    Poison -->|No| All[All partitions — downstream or fleet issue]
-```
-
-**Common lag causes:**
-
-| Symptom | Cause | Fix |
-|---------|-------|-----|
-| One partition lag only | Hot key, poison message loop | Salt keys; DLQ bad message (6.15) |
-| All partitions lag after deploy | Slow handler, missing index | Rollback; profile consumer |
-| Lag after rebalance | `max.poll.interval` exceeded | Increase interval; shrink batch size |
-| Lag spikes at top of hour | Batch job publishes burst | Pre-scale consumers; partition count |
-| Lag flat but high | Under-provisioned forever | Add consumers (≤ partition count) |
+| Symptom | Likely cause | Fix |
+|---------|--------------|-----|
+| One partition lagging | Hot key or poison message | Salt keys; dead letter queue (DLQ) — [6.15](#615-dead-letter-queue) |
+| All partitions lagging | Slow handler or under-provisioned | Scale consumers (≤ partition count); profile DB |
+| Lag after deploy | Rebalance or `max.poll.interval` | See [6.7](#67-kafka-consumer-groups) |
 
 #### Producer durability checklist
 
@@ -465,16 +401,54 @@ max.in.flight.requests=5    # or 1 for strict ordering per partition
 
 | Resource | Rule |
 |----------|------|
-| **Partitions** | Start with `max(12, target_throughput_MB/s ÷ per_partition_MB/s)`; often 12–48 per topic |
-| **Consumers per group** | ≤ partition count (extra consumers idle) |
-| **Brokers** | RF=3 → min 3 brokers; add brokers before disk >70% |
+| **Partitions** | `expected_RPS / consumer_speed` where `consumer_speed = 1 / avg_processing_time` |
+| **Consumers per group** | ≤ partition count (one consumer thread per partition max) |
+| **Brokers** | RF=3 → min 3 brokers; 20–50+ for enterprise throughput |
 | **Disk** | `daily_ingress_GB × retention_days × RF × 1.1` |
 | **Network** | Replication doubles write traffic internally |
+| **Compression** | LZ4 or Snappy on producers |
+
+**Partition formula (worked example):**
+
+```text
+Expected writes: 500,000 msg/sec
+Processing time: 5 ms/msg → consumer_speed = 200 msg/sec
+Partitions needed = 500,000 / 200 = 2,500 partitions
+```
+
+**Brokers vs nodes:**
+
+```text
+Node (VM/EC2)     → usually hosts 1 Kafka broker process
+Broker            → holds subset of partition replicas
+Cluster           → all brokers together
+
+K8s: kafka-0, kafka-1, kafka-2 (StatefulSet) = 3 brokers on 3 nodes
+```
+
+**Partitions per broker (balance load):**
+
+| Total partitions | Brokers | Per broker | Verdict |
+|------------------|---------|------------|---------|
+| 2,500 | 5 | 500 | ✔ Balanced |
+| 2,500 | 1 | 2,500 | ❌ Hot broker, slow recovery |
+
+| If you need... | Minimum brokers |
+|----------------|-----------------|
+| ~100 partitions | 3 |
+| ~1,000 partitions | 5–7 |
+| ~10,000 partitions | 10–20 |
+| ~50,000 partitions | 30–50 |
+
+```bash
+kafka-topics --create --topic user-events \
+  --partitions 300 --replication-factor 3
+```
 
 - **Hot partition problem:** bad key choice (all `key=null`) → one partition gets all traffic → salt keys or increase partitions with awareness of ordering needs
 - **Exactly-once:** idempotent producer + transactions for read-process-write; most teams use at-least-once + idempotent consumers
 - **Compaction:** `log.cleanup.policy=compact` keeps latest value per key (changelog topics, CDC state)
-- **KRaft:** removes ZooKeeper dependency (Kafka 3.3+ production ready); plan migration for ZK clusters
+- **KRaft (Kafka Raft metadata mode):** removes ZooKeeper dependency (Kafka 3.3+); plan migration for ZooKeeper clusters
 
 **Kafka vs traditional queue:**
 
@@ -518,55 +492,16 @@ max.in.flight.requests=5    # or 1 for strict ordering per partition
 
 ## 6.6 Kafka Partitions
 
+> **Interview focus:** partitions = unit of **parallelism** and **per-key ordering**. Full Kafka context: [6.5](#65-kafka).
 
-### What is it?
+| Concept | Rule |
+|---------|------|
+| Ordering | Guaranteed **within** a partition only |
+| Partition key | `hash(key) % N` → same key → same partition |
+| Consumers | Max **one consumer per partition** per group |
+| Count | `partitions ≥ expected_write_RPS / consumer_speed` (see 6.5) |
 
-A **Kafka partition** is an ordered, immutable sequence of records within a topic. Partitions are the unit of parallelism - more partitions -> higher throughput and more consumer parallelism.
-
-### Why it matters
-
-Partition design determines ordering scope, max consumer count per group, and load distribution. Wrong partition count is expensive to fix.
-
-### How it works
-
-1. Topic created with N partitions (e.g., 12).
-2. Producer with key: `partition = hash(key) mod N` -> per-key ordering.
-3. Producer without key: sticky or round-robin assignment.
-4. Each partition has one leader broker; replicas on others.
-5. Consumers in group: max one consumer per partition per group.
-
-### Diagram
-
-```mermaid
-flowchart TB
-    Topic["Topic: orders"] --> P0[Partition 0]
-    Topic --> P1[Partition 1]
-    Topic --> P2[Partition 2]
-    P0 --> C1[Consumer 1]
-    P1 --> C2[Consumer 2]
-    P2 --> C3[Consumer 3]
-```
-
-### Key details
-
-- Ordering guaranteed **within** partition only.
-- Partition count ≥ max consumers in group for full parallelism.
-- Increasing partitions does not reorder existing keys retroactively.
-
-### When to use
-
-- Scale consumption horizontally with partition count.
-- Preserve order per entity (user_id, order_id) via partition key.
-
-### Trade-offs / Pitfalls
-
-- Too few partitions -> throughput ceiling; too many -> file handles and election overhead.
-- Re-partitioning changes key->partition mapping - plan upfront.
-- Cross-partition transactions are limited and costly.
-
-### References
-
-*(No curated references for this sub-topic in `_topics.json`.)*
+**Pitfalls:** too few partitions caps throughput; too many adds metadata overhead; changing partition count does not remap existing keys.
 
 ---
 
@@ -799,105 +734,26 @@ flowchart LR
 
 ## 6.9 ActiveMQ
 
+**Legacy/alternative broker:** Apache ActiveMQ (Classic and Artemis) is a **JMS**-compliant message broker for Java queues and topics. Common in enterprise Java estates; Artemis is preferred for new deployments within the ActiveMQ family. New systems typically choose Kafka for scale and replay.
 
-### What is it?
+| vs Kafka | ActiveMQ | Kafka |
+|----------|----------|-------|
+| Model | Queue/topic (delete on ack) | Durable log with replay |
 
-**Apache ActiveMQ** (Classic and Artemis) is a JMS-compliant message broker supporting queues, topics, and enterprise integration patterns with Java-centric APIs.
-
-### Why it matters
-
-Legacy enterprise messaging standard - common in Java EE estates migrating to Kafka or cloud-native brokers.
-
-### How it works
-
-1. Producers send to JMS queue or topic via ConnectionFactory.
-2. Broker persists (KahaDB) or holds in memory.
-3. Consumers receive via push or pull; transacted sessions for batch ACK.
-4. Artemis uses journal + paging for high performance vs Classic.
-
-### Diagram
-
-```mermaid
-flowchart LR
-    JMS[JMS Producer] --> Broker[ActiveMQ]
-    Broker --> Q[Queue]
-    Q --> JMS2[JMS Consumer]
-```
-
-### Key details
-
-- JMS 1.1/2.0 semantics: queues (P2P) vs topics (pub/sub).
-- Artemis redesigned storage; preferred for new deployments.
-- Bridges and network of brokers for federation.
-
-### When to use
-
-- Existing JMS application estate.
-- Java middleware requiring standard APIs.
-- Moderate messaging with enterprise support contracts.
-
-### Trade-offs / Pitfalls
-
-- Lower ecosystem momentum vs Kafka/RabbitMQ for new systems.
-- Network of brokers complexity for geo distribution.
-- Migration to Kafka often needed for scale and replay.
-
-### References
-
-*(No curated references for this sub-topic in `_topics.json`.)*
+Use when maintaining an existing JMS estate; migrate to Kafka when throughput, replay, or stream processing are required.
 
 ---
 
 
 ## 6.10 Pulsar
 
+**Legacy/alternative broker:** Apache Pulsar separates serving (brokers) from storage (BookKeeper ledgers). Offers multi-tenancy, geo-replication, and tiered offload to object storage — an alternative when compute and storage must scale independently.
 
-### What is it?
+| vs Kafka | Pulsar | Kafka |
+|----------|--------|-------|
+| Storage | BookKeeper ledgers + S3 tiering | Broker-local log segments |
 
-**Apache Pulsar** separates **serving** (brokers) from **storage** (Apache BookKeeper ledgers). Topics are segmented ledgers; supports multi-tenancy, geo-replication, and unified queuing + streaming.
-
-### Why it matters
-
-Alternative to Kafka when you need independent compute/storage scale, native tiered storage, and built-in multi-tenancy without cluster sprawl.
-
-### How it works
-
-1. Producer writes to topic partition (managed ledger on BookKeeper).
-2. Broker serves consumers; storage nodes persist entry replicas.
-3. Subscriptions: exclusive, shared, failover, key_shared.
-4. Offload old segments to S3 for cheap retention.
-
-### Diagram
-
-```mermaid
-flowchart TB
-    Prod[Producer] --> Broker[Pulsar Broker]
-    Broker --> BK[BookKeeper]
-    BK --> S3[Tiered Storage]
-    Broker --> Sub[Subscriptions]
-```
-
-### Key details
-
-- **Key_shared** subscription: order per key with parallelism (like Kafka partitions).
-- Geo-replication at namespace level.
-- Functions framework for lightweight stream processing.
-
-### When to use
-
-- Multi-tenant SaaS messaging backbone.
-- Long retention with tiered storage cost control.
-- Need both queue and stream semantics in one platform.
-
-### Trade-offs / Pitfalls
-
-- Smaller community/tooling vs Kafka.
-- BookKeeper adds operational surface area.
-- Migration path from Kafka exists but not trivial.
-
-### References
-
-*(No curated references for this sub-topic in `_topics.json`.)*
+Use for multi-tenant SaaS backbones or long retention with cheap tiered storage; expect smaller ecosystem and extra BookKeeper operations vs Kafka.
 
 ---
 
@@ -1044,86 +900,27 @@ but Group A and Group B are not synchronized with each other
 
 ## 6.12 At Most Once Delivery
 
-
 ### What is it?
 
-**At-most-once** delivery guarantees a message is delivered **zero or one times** — **never duplicated**, but **loss is possible**. Achieved when the system ACKs or discards a message **before** durable processing completes, or when the producer does not wait for broker persistence.
-
-Also called **fire-and-forget** or **best-effort** semantics.
-
-```mermaid
-flowchart LR
-    subgraph AtMostOnce['At-most-once path']
-        M[Message] --> ACK[ACK / discard]
-        ACK --> P[Process]
-        P -->|crash here| X[Message gone forever]
-    end
-```
+**At-most-once** delivery guarantees a message is delivered **zero or one times** — never duplicated, but **loss is possible**. The system ACKs or discards before durable processing completes, or the producer does not wait for broker persistence (**fire-and-forget** / **best-effort**).
 
 ### Why it matters
 
-Highest **throughput** and lowest **latency** — acceptable when approximate data beats correctness:
-
-- Metrics and telemetry (missing 0.01% of datapoints OK)
-- Sampled distributed traces
-- Live dashboard tick updates
-- Non-critical notifications
-
-**Critical distinction:** at-most-once is often chosen **accidentally** via misconfiguration (`enable.auto.commit=true` before process, `acks=0`), not deliberately.
+Highest throughput and lowest latency — acceptable for metrics, sampled traces, and ephemeral notifications. Often chosen **accidentally** via `enable.auto.commit=true` before process or `acks=0`, not deliberately.
 
 ### How it works
 
-**Producer-side loss:**
+**Producer-side loss:** Kafka `acks=0` (no broker wait); `acks=1` with unreplicated leader failure; async send without flush.
 
-| Config | Broker behavior | Loss scenario |
-|--------|-----------------|---------------|
-| Kafka `acks=0` | No wait for broker | Broker crash before replicate |
-| Kafka `acks=1` + leader dies | Leader ACK only | Unreplicated leader failure |
-| UDP / unreliable transport | No retry | Network drop |
-| Async send without callback | Client buffer loss | Process crash before flush |
-
-**Consumer-side loss (most common accidental pattern):**
-
-```mermaid
-sequenceDiagram
-    participant B as Broker
-    participant C as Consumer
-    B->>C: deliver msg_42
-    C->>C: commit offset 42
-    Note over C: offset committed FIRST
-    C->>C: process msg_42
-    Note over C: CRASH before finish
-    C->>B: restart, offset=43
-    Note over B,C: msg_42 never processed - LOST
-```
+**Consumer-side loss (common accident):**
 
 ```text
-WRONG (at-most-once):
-  poll() → commit offset → process()   // crash after commit = loss
-
-RIGHT (at-least-once):
-  poll() → process() → commit offset   // crash before commit = redelivery
+poll() → commit offset → process()   # crash after commit = LOST
 ```
 
-**Kafka configurations that produce at-most-once:**
+Kafka: `acks=0`, `enable.auto.commit=true`. RabbitMQ: auto-ACK (`noAck=true`) removes message on deliver before processing.
 
-```properties
-# Producer: may lose before broker
-acks=0
-
-# Consumer: commit before processing
-enable.auto.commit=true
-# (auto-commit runs on poll interval, often before your handler finishes)
-```
-
-**RabbitMQ at-most-once:**
-
-- Auto-ACK mode (`noAck=true`) — broker removes message on deliver, before consumer processes
-- Consumer crash after delivery = message gone
-
-### Key details
-
-**Delivery semantics comparison:**
+### Delivery semantics comparison
 
 | Semantic | Duplicates | Loss | Typical config |
 |----------|------------|------|----------------|
@@ -1133,98 +930,39 @@ enable.auto.commit=true
 
 *Assuming broker durability and correct config.
 
-**When at-most-once is deliberate:**
-
-```text
-Metrics agent → statsd/Kafka with acks=0
-  Lose occasional counter increment
-  SLO: 99.9% visibility acceptable
-  Cost: cannot afford 50ms per metric for acks=all
-```
-
-**Detecting silent loss:**
-
-| Technique | How |
-|-----------|-----|
-| Producer counter vs consumer counter | Compare `sent_total` vs `received_total` |
-| Sequence gaps | Monotonic `seq` field; alert on gaps |
-| End-to-end checksum | Sample audit trail |
-| Broker metrics | `record-error-rate`, under-replicated partitions |
-
-**Production patterns:**
-
-- **Explicit choice** — document in SLO: "telemetry stream is best-effort"
-- **Never at-most-once for money** — orders, payments, inventory need at-least-once minimum
-- **Kafka metrics pipeline** — `acks=1` or `acks=0` with monitoring; not for billing events
-- **Separate topics** — critical events on `acks=all` topic; metrics on fire-and-forget topic
-- **Review auto-commit** — default `enable.auto.commit=true` surprises teams migrating from queues
+Detect silent loss with producer vs consumer counters, sequence gaps, or broker `record-error-rate`. Document deliberate best-effort in SLOs; **never** use for orders, payments, or audit trails.
 
 ### When to use
 
-- Metrics, click streams, sampled logs where **loss < 0.1%** is acceptable.
-- High-frequency sensor data with redundant sources.
-- Ephemeral notifications ("typing indicator") where missing one is invisible.
-- **Never** for orders, payments, audit trails, or legally required records.
+Metrics, click streams, sensor data with redundant sources — where **loss < 0.1%** is acceptable.
 
 ### Trade-offs / Pitfalls
 
-- **Silent loss** — no redelivery means no second chance; hardest failure mode to debug.
-- **Accidental at-most-once** — most common bug: commit offset before DB transaction commits.
-- **`acks=0` during broker maintenance** — silent drop spike invisible to producer.
-- **Confusing with idempotency** — at-most-once avoids duplicates by accepting loss; different goal than exactly-once.
-- **Testing blind spot** — happy-path tests pass; loss only visible under crash injection.
+Silent loss with no redelivery; accidental at-most-once from commit-before-DB-commit; `acks=0` drops spike during broker maintenance.
 
 ### References
 
 - Kafka producer `acks` documentation
-- Messaging semantics overview (Jakob Jenkov / enterprise integration patterns)
 
 ---
 
 
 ## 6.13 At Least Once Delivery
 
-
 ### What is it?
 
-**At-least-once** delivery means the broker will deliver a message **one or more times** - it will **never silently drop** a persisted message, but **duplicates are possible**.
-
-Achieved when: message is **persisted** before ACK to producer, consumer **ACKs after processing**, and broker **redelivers** on missing ACK or consumer crash.
+**At-least-once** delivery means the broker delivers a message **one or more times** — no silent drop of persisted messages, but **duplicates are possible**. Consumer ACKs **after** processing; broker redelivers on missing ACK or crash.
 
 ### Why it matters
 
-This is the **default practical guarantee** for production messaging. It is achievable without exotic infrastructure. The trade-off is explicit: **you must make consumers idempotent** (safe to process the same message twice).
-
-Most teams should default to at-least-once + idempotency rather than chasing true exactly-once everywhere.
+**Default practical guarantee** for production messaging. Requires **idempotent consumers** — most teams prefer at-least-once + idempotency over chasing exactly-once everywhere (see comparison table in [6.12](#612-at-most-once-delivery)).
 
 ### How it works
 
-**Happy path:**
-
 ```text
-1. Producer sends message -> broker persists to disk/replicas
-2. Broker ACKs producer
-3. Consumer receives message
-4. Consumer processes (e.g. update DB)
-5. Consumer sends ACK / commits offset
-6. Broker marks message consumed
-```
-
-**Failure -> duplicate:**
-
-```text
-1-4. Same as above
-5. Consumer crashes BEFORE ACK
-6. Broker redelivers same message to another consumer
-7. Consumer processes again -> DUPLICATE unless idempotent
-```
-
-```mermaid
-flowchart LR
-    M[Message] --> Process[Process]
-    Process -->|success + ACK| Done[Done]
-    Process -->|crash before ACK| Redeliver[Broker redelivers]
-    Redeliver --> Process
+1. Producer → broker persists → ACK producer
+2. Consumer receives → processes → commits offset / ACK
+3. Crash before step 2 finishes → redelivery → DUPLICATE unless idempotent
 ```
 
 **Kafka offset commit timing (critical):**
@@ -1235,32 +973,17 @@ flowchart LR
 | Commit **before** process | At-most-once | **Loss** on crash after commit |
 | Transactional commit with process | Exactly-once (Kafka) | Complexity |
 
-**Idempotency patterns:**
+**Idempotency patterns:** natural idempotency (`SET status=PAID`); idempotency key with UNIQUE constraint; `processed(message_id)` dedup table; `ON CONFLICT DO NOTHING`.
 
-1. **Natural idempotency:** `SET status = PAID WHERE id=X` (same result if run twice)
-2. **Idempotency key:** client sends `Idempotency-Key: uuid`; store in DB with UNIQUE constraint
-3. **Message ID dedup table:** `INSERT INTO processed(message_id)` - duplicate insert fails
-4. **Upsert by business key:** `ON CONFLICT DO NOTHING`
-
-### Key details
-
-- RabbitMQ: manual ACK after successful processing; `nack` with requeue on transient failure
-- Kafka: `enable.auto.commit=false`; commit offset in `finally` block after DB commit
-- **Ordering + redelivery:** duplicate may arrive out of order - design for per-key idempotency
-- Pair with **DLQ** after N retries to stop poison message loops
+Kafka: `enable.auto.commit=false`; commit after DB commit. RabbitMQ: manual ACK after success. Pair with **dead letter queue (DLQ)** after N retries ([6.15](#615-dead-letter-queue)).
 
 ### When to use
 
-- Default for microservice event handlers, webhooks, async jobs
-- When duplicate handling is cheaper than distributed transactions
-- Payment-adjacent flows with strong idempotency keys
+Default for event handlers, webhooks, async jobs. Payment-adjacent flows with strong idempotency keys.
 
 ### Trade-offs / Pitfalls
 
-- **No idempotency = data corruption** (double charge, duplicate email)
-- Commit-before-process is NOT at-least-once - it is at-most-once with message loss
-- Infinite retry on poison message without DLQ blocks partition
-- Side effects outside DB (send email) need outbox pattern or idempotent provider APIs
+No idempotency = double charge or duplicate email; infinite retry without DLQ blocks partition; side effects outside DB need outbox ([6.20](#620-outbox-pattern)).
 
 ### References
 
@@ -1271,85 +994,39 @@ flowchart LR
 
 ## 6.14 Exactly Once Delivery
 
-
 ### What is it?
 
-**Exactly-once semantics** (EOS) means the **effect** of each message is applied **once**, even when the network retries, consumers crash, or producers resend. True end-to-end exactly-once across heterogeneous systems is **impossible** without cooperation at every layer; in practice we mean **exactly-once processing** within a bounded pipeline.
-
-Marketing says "exactly-once"; engineering means **idempotent producer + atomic offset commit + idempotent consumer** or equivalent.
+**Exactly-once semantics (EOS)** means each message's **effect** is applied once despite retries, crashes, or resends. True end-to-end EOS across heterogeneous systems is impossible without cooperation at every layer; engineering means **idempotent producer + atomic offset commit + idempotent consumer**.
 
 ### Why it matters
 
-Payments, inventory deduction, ledger postings cannot tolerate duplicates. Interviewers test whether you know the difference between **broker guarantee**, **producer guarantee**, and **end-to-end business guarantee**.
+Payments, inventory, and ledger postings cannot tolerate duplicates. Distinguish **broker**, **producer**, and **end-to-end business** guarantees.
 
 ### How it works
 
-**Three layers of "exactly once":**
+1. **Idempotent producer (Kafka):** `enable.idempotence=true` — broker dedupes by PID + sequence per partition
+2. **Transactional writes:** `transactional.id` — atomic multi-partition write + consumer offset in one transaction
+3. **Idempotent consumer:** business-level dedup if message arrives twice
 
-1. **Idempotent producer (Kafka):** `enable.idempotence=true` - broker dedupes by `PID + sequence number` per partition
-2. **Transactional writes (Kafka):** `transactional.id` - atomic write to multiple partitions + consumer offset in one transaction
-3. **Idempotent consumer:** business-level dedup even if message delivered twice
+**Outbox pattern:** DB update + outbox insert in one transaction; relay publishes to Kafka ([6.20](#620-outbox-pattern)).
 
-**Kafka exactly-once pipeline:**
-
-```text
-Producer (idempotent + transactional)
-  -> consume from input topic
-  -> process
-  -> produce to output topic + commit consumer offset
-  ALL in single transaction
-```
-
-**Outbox pattern (database + message broker):**
-
-```text
-BEGIN TRANSACTION
-  UPDATE orders SET status='PAID'
-  INSERT INTO outbox(event_id, payload) VALUES (...)
-COMMIT
--- separate relay process reads outbox, publishes to Kafka, marks sent
-```
-
-Ensures DB and event are consistent without dual-write race.
-
-```mermaid
-flowchart TB
-    P[Idempotent Producer] --> B[Broker dedup PID+seq]
-    B --> C[Consumer]
-    C --> T{Atomic}
-    T --> DB[(Database write)]
-    T --> O[Offset commit]
-```
-
-**What "exactly once" does NOT cover:**
-
-- Email sent twice if SMTP called outside transaction
-- External API without idempotency key
-- Consumer crash after DB commit but before offset commit -> duplicate on replay (need idempotent consumer anyway)
+EOS does **not** cover SMTP email, external APIs without idempotency keys, or crash after DB commit before offset commit (still need idempotent consumer).
 
 ### Key details
 
-- Kafka EOS requires: `acks=all`, `min.insync.replicas>=2`, idempotent producer, transactions
-- Performance cost: transactional overhead ~10-20% vs at-least-once
-- **Simpler alternative:** at-least-once + idempotency key in DB (Stripe model) - often preferred
-- Flink/Kafka Streams provide EOS within stream topology
+Kafka EOS requires `acks=all`, `min.insync.replicas>=2` with **in-sync replicas (ISR)**, idempotent producer, and transactions (~10–20% overhead). **Simpler alternative:** at-least-once + DB idempotency key. Flink/Kafka Streams provide EOS within stream topology.
 
 ### When to use
 
-- Financial transactions, inventory, accounting entries
-- Stream processing where duplicate aggregation corrupts results
-- When idempotency at consumer is hard (complex multi-table side effects)
+Financial transactions, inventory, stream processing where duplicate aggregation corrupts results.
 
 ### Trade-offs / Pitfalls
 
-- **EOS != end-to-end** across email, HTTP callbacks, third parties
-- Operational complexity: transaction timeout, `abortTransaction` on failure
-- Cross-service EOS needs **distributed transactions** or saga - not Kafka alone
-- Many teams over-engineer EOS when idempotency key would suffice
+EOS ≠ end-to-end across HTTP callbacks; transaction timeout complexity; cross-service EOS needs saga — not Kafka alone. Many teams over-engineer when idempotency key suffices.
 
 ### References
 
-- Kafka exactly-once semantics (Confluent); Transactional outbox pattern (microservices.io)
+- Kafka exactly-once semantics (Confluent); Transactional outbox (microservices.io)
 
 ---
 
