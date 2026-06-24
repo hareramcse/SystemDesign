@@ -34,8 +34,6 @@
 
 This chapter is a **networking reference for system design**: protocol layers, transport (TCP/UDP/QUIC), IP addressing, DNS, HTTP/TLS, and edge infrastructure (CDN, load balancers, proxies).
 
-> **Diagrams:** Flow charts use [Mermaid](https://mermaid.js.org/). Open this file in **Markdown Preview** (Cursor/VS Code: `Ctrl+Shift+V`) or view on GitHub to render them.
-
 ---
 
 ## 1.1 OSI Model
