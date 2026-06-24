@@ -31,133 +31,262 @@
 | 1.21 | [Load Balancer Algorithm](#121-load-balancer-algorithm) | Done |
 | 1.22 | [SSE, Polling & WebSockets](#122-sse-polling--websockets) | Done |
 
-### Reading path
-
-| Track | Sections | What you learn |
-|-------|----------|----------------|
-| **Foundations** | 1.1 → 1.7 | Layers, TCP/IP, handshakes, UDP, MTU, IP addressing |
-| **Naming** | 1.8 → 1.9 | DNS records, resolution chain, caching |
-| **Web stack** | 1.10 → 1.14 | HTTP/S, TLS, HTTP/2 & HTTP/3, QUIC, connection reuse |
-| **Edge & scale** | 1.15 → 1.21 | Proxies, NAT, CDN, load balancing |
-| **Real-time** | 1.22 | Polling vs SSE vs WebSockets |
-
 ---
-
-## Topic Overview
-
-Networking is the substrate on which every distributed system runs. Requests traverse **DNS (Domain Name System)**, load balancers, proxies, **TLS (Transport Layer Security)** terminators, and TCP connections before application code executes. Understanding the stack — from IP addressing and routing to HTTP/2 multiplexing and QUIC — lets you diagnose latency, design resilient architectures, and make informed trade-offs in interviews and production.
-
-Modern web performance is largely a networking problem: connection setup cost, head-of-line blocking, geographic distance, and buffer bloat dominate user-perceived speed as much as server CPU. **CDN (Content Delivery Network)** placement, keep-alive tuning, and protocol choice (HTTP/3 over UDP) directly affect scalability and cost.
-
-### End-to-end path (typical HTTPS API call)
-
-```mermaid
-flowchart LR
-    Client --> DNS[1.8 DNS]
-    DNS --> CDN[1.19 CDN / Edge]
-    CDN --> LB[1.20 LB]
-    LB --> TLS[1.11 TLS terminate]
-    TLS --> App[Application]
-```
-
-### Protocol stack
-
-| Layer | Protocols (this chapter) | PDU |
-|-------|--------------------------|-----|
-| Application | HTTP, DNS, **WebSocket** | Message |
-| Security | **TLS (Transport Layer Security)** (runs above TCP) | — |
-| Transport | TCP ([1.3](#13-tcp-handshake)), UDP ([1.4](#14-udp)), QUIC ([1.13](#113-quic)) | Segment / Datagram |
-| Network | IPv4, IPv6, ICMP | Packet |
-| Link | Ethernet, Wi-Fi | Frame |
-
-### TCP vs UDP — when to choose
-
-| Choose **TCP** | Choose **UDP** |
-|----------------|----------------|
-| Need reliable, ordered delivery (HTTP, gRPC, DB) | Lowest latency; late data worse than loss (VoIP, gaming) |
-| Want built-in congestion control | Custom reliability in userspace (QUIC, DNS) |
-| File transfer, APIs, web traffic | DNS queries, metrics, broadcast discovery |
-| See [1.3](#13-tcp-handshake), [1.10](#110-httphttps) | See [1.4](#14-udp), [1.13](#113-quic) |
-
-### Cold-connection latency budget
-
-Every **new** HTTPS connection pays setup cost before application data flows:
-
-| Step | Typical RTTs | Section |
-|------|--------------|---------|
-| DNS (cache miss) | 0–2 | [1.9](#19-dns-resolution) |
-| TCP handshake | 1 | [1.3](#13-tcp-handshake) |
-| TLS 1.3 handshake | +1 | [1.11](#111-ssltls) |
-| TLS 1.2 handshake | +2 | [1.11](#111-ssltls) |
-| First HTTP response | +1 | [1.10](#110-httphttps) |
-
-**Mitigations:** DNS caching, [keep-alive](#114-keep-alive-connections), TLS session resumption, [HTTP/2 multiplexing](#112-http2-http3), regional [CDN](#119-cdn).
-
----
-
 
 ## 1.1 OSI Model
 
+The **OSI (Open Systems Interconnection) Model** is a conceptual framework that explains how data travels from one computer to another over a network.
 
-### What is it?
+Think of it as a package delivery process. When you send a message from your laptop or mobile phone, many things happen behind the scenes before that message reaches the destination. The OSI model divides these responsibilities into **7 layers** so that each layer has a specific job.
 
-The **Open Systems Interconnection (OSI) model** is a seven-layer conceptual framework describing how data moves from application to physical wire and back. Each layer provides services to the layer above and uses services from the layer below.
+Data moves from **Layer 7 down to Layer 1** on the sender side and then from **Layer 1 up to Layer 7** on the receiver side.
 
-### Why it matters
+---
 
-It provides a shared vocabulary for troubleshooting ("layer 4 timeout" = transport) and separates concerns so protocols can evolve independently. Interviews use OSI to frame where encryption, routing, and framing occur.
+### Layer 7 — Application Layer
 
-### How it works
+**Purpose:**  
+This is the layer closest to the end user. It provides network services directly to applications.
 
-Data descends the stack on send (encapsulation) and ascends on receive (decapsulation):
+**Examples:** HTTP, HTTPS, DNS, SMTP, FTP, gRPC
 
-1. **Application (7):** HTTP, DNS, SMTP — user-facing protocols.
-2. **Presentation (6):** Encoding, encryption, compression (often folded into app layer in practice).
-3. **Session (5):** Session management (rarely distinct today).
-4. **Transport (4):** TCP, UDP — end-to-end delivery, ports.
-5. **Network (3):** IP — routing, addressing.
-6. **Data Link (2):** Ethernet, MAC addresses, frames.
-7. **Physical (1):** Bits on wire/fiber/radio.
+**What happens here?**
 
-```mermaid
-flowchart TB
-    L7[Application] --> L4[Transport]
-    L4 --> L3[Network IP]
-    L3 --> L2[Data Link]
-    L2 --> L1[Physical]
+When you open a browser and type:
+
+```text
+https://google.com
 ```
 
-### Key details
+The browser creates an HTTP request.
 
-| Layer | PDU | Example protocols |
-|-------|-----|-------------------|
-| 7 Application | Data | HTTP, gRPC, DNS |
-| 6 Presentation | Data | TLS, compression, encoding |
-| 5 Session | Data | (rarely distinct today) |
-| 4 Transport | Segment / Datagram | TCP, UDP |
-| 3 Network | Packet | IPv4, IPv6 |
-| 2 Data Link | Frame | Ethernet |
-| 1 Physical | Bits | Fiber, radio |
+When you send an email, the email client creates an SMTP request.
 
-- TCP/IP model (4 layers) maps loosely: App ≈ 5–7, Transport ≈ 4, Internet ≈ 3, Link ≈ 1–2
-- Real stacks blur layers 5–7 into "application"
-- **TLS** sits between application and transport in practice — see [1.11 SSL/TLS](#111-ssltls)
+When you send a WhatsApp message, the application creates a request that needs to be sent over the network.
 
-### When to use
+This layer only cares about: *"What information do I want to send?"*
 
-- Troubleshooting network issues by isolation layer
-- Explaining where TLS sits (between app and transport, historically "layer 6")
-- Teaching protocol layering in interviews
+It does not care about routing, IP addresses, cables, or packet delivery.
 
-### Trade-offs / Pitfalls
+**Real-world analogy:** You write a letter and decide what message should be written inside it.
 
-- OSI is theoretical - production debugging uses TCP/IP model more
-- Strict layer boundaries don't always match implementation (TLS in libraries)
-- Memorizing all seven layers without understanding function is low value
+---
 
-### References
+### Layer 6 — Presentation Layer
 
-- [OSI Model — computer networking playlist](https://www.youtube.com/playlist?list=PLxCzCOWd7aiGFBD2-2joCpWOLUrDLvVV_)
+**Purpose:**  
+Convert data into a format that both systems can understand.
+
+**Responsibilities:** Data formatting, serialization, encryption, decryption, compression, decompression
+
+**Examples:** JSON, XML, Protocol Buffers (Protobuf), TLS encryption, GZIP compression
+
+**What happens here?**
+
+Suppose your application wants to send:
+
+```text
+Hello World
+```
+
+The presentation layer may:
+
+- Convert text into bytes
+- Compress the data
+- Encrypt the data
+
+After encryption, anybody intercepting the traffic cannot easily read the message.
+
+**Real-world analogy:** Before sending a letter, you may translate it into another language or lock it inside a secure box.
+
+---
+
+### Layer 5 — Session Layer
+
+**Purpose:**  
+Manage communication sessions between two systems.
+
+**Responsibilities:** Create connection sessions, maintain active sessions, resume interrupted sessions, terminate sessions
+
+**Examples:** WebSocket session, TLS session, gRPC stream
+
+**What happens here?**
+
+Suppose two systems are continuously exchanging messages. The session layer manages:
+
+- Connection start
+- Connection maintenance
+- Connection recovery
+- Connection termination
+
+**Real-world analogy:** A phone call — someone starts the call, both people keep talking, the call remains active, eventually the call ends.
+
+---
+
+### Layer 4 — Transport Layer
+
+**Purpose:**  
+Ensure data reaches the correct application and reaches reliably when required.
+
+**Protocols:** TCP, UDP
+
+**Responsibilities:** Reliable delivery, error handling, flow control, port management, packet sequencing
+
+#### TCP (Transmission Control Protocol)
+
+TCP focuses on **reliability**.
+
+**Features:**
+
+- Guaranteed delivery
+- Ordered delivery
+- Retransmission of lost packets
+- Error detection
+
+**Example:**
+
+```text
+Packet 1 → Delivered
+Packet 2 → Lost
+TCP detects the loss and sends Packet 2 again.
+```
+
+**Used by:** HTTP, HTTPS, database connections, banking applications, payment systems
+
+**Real-world analogy:** A courier service that requires a delivery confirmation.
+
+See also: [1.3 TCP Handshake](#13-tcp-handshake)
+
+#### UDP (User Datagram Protocol)
+
+UDP focuses on **speed**.
+
+**Features:**
+
+- No delivery guarantee
+- No retransmission
+- No ordering guarantee
+- Lower overhead
+
+**Used by:** Video streaming, online gaming, voice calls, DNS queries
+
+**Real-world analogy:** Making an announcement through a loudspeaker — you simply broadcast the message and do not wait for confirmation.
+
+See also: [1.4 UDP](#14-udp)
+
+#### Ports
+
+Ports identify which application should receive the data.
+
+| Port | Application |
+|------|-------------|
+| 80 | HTTP |
+| 443 | HTTPS |
+| 3306 | MySQL |
+| 5432 | PostgreSQL |
+| 6379 | Redis |
+
+**IP address** identifies the machine. **Port** identifies the application running on that machine.
+
+**Example:**
+
+```text
+192.168.1.10:3306
+
+Machine:      192.168.1.10
+Application:  MySQL
+```
+
+---
+
+### Layer 3 — Network Layer
+
+**Purpose:**  
+Find the destination system and determine the path to reach it.
+
+**Main protocol:** IP (Internet Protocol)
+
+**Responsibilities:** Logical addressing, routing, path selection
+
+**Examples:** `192.168.1.10`, `10.0.0.5`, `8.8.8.8`
+
+**What happens here?**
+
+When data needs to travel from Bangalore to Mumbai — or even India to the USA — routers determine the best route.
+
+Routers only care about:
+
+- Source IP
+- Destination IP
+
+They do not care whether the data contains an HTTP request, email, image, or video. Their only job is: *"Where should I send this packet next?"*
+
+**Real-world analogy:** Courier company deciding which city or warehouse the package should move through.
+
+---
+
+### Layer 2 — Data Link Layer
+
+**Purpose:**  
+Deliver data within the local network.
+
+**Technologies:** Ethernet, Wi-Fi
+
+**Main identifier:** MAC address (e.g. `AA:BB:CC:DD:EE:FF`)
+
+**Responsibilities:** Local communication, frame creation, MAC addressing, error detection within local network
+
+**Devices:** Network switches
+
+**What happens here?**
+
+Suppose multiple devices are connected to the same office network. The switch checks: *Which device owns this MAC address?* Then forwards the frame to the correct device.
+
+**Real-world analogy:**
+
+- **IP address** → apartment address
+- **MAC address** → specific person living in that apartment
+
+---
+
+### Layer 1 — Physical Layer
+
+**Purpose:**  
+Physically transmit data.
+
+**Examples:** Network cables, fiber optics, wireless radio signals, network cards
+
+**Responsibilities:** Transmit bits; convert bits into electrical signals, light signals, or radio signals
+
+At this layer there is no HTTP, TCP, UDP, IP, or JSON. Everything becomes **0 and 1**.
+
+**Example:**
+
+```text
+01001010
+10101011
+11100001
+```
+
+**Real-world analogy:** Roads, cables, and transportation infrastructure used to physically move packages.
+
+---
+
+### How a Google request travels
+
+| Step | What happens |
+|------|--------------|
+| 1 | User enters `https://google.com` |
+| 2 | **Application layer** creates HTTP request |
+| 3 | **Presentation layer** encrypts request using TLS |
+| 4 | **Session layer** manages the communication session |
+| 5 | **Transport layer** uses TCP and breaks data into segments |
+| 6 | **Network layer** adds source and destination IP addresses |
+| 7 | **Data link layer** adds source and destination MAC addresses |
+| 8 | **Physical layer** converts everything into electrical / light / radio signals |
+| 9 | Data travels through switches, routers, ISPs, and internet backbone networks |
+| 10 | Google receives the data |
+| 11 | The process happens in **reverse order** until Google's application receives the HTTP request |
 
 ---
 
