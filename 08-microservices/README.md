@@ -788,56 +788,138 @@ flowchart LR
 
 ### What is it?
 
-**Service discovery** is the client or platform mechanism to **find** available instances of a service name - via registry lookup, DNS, or service mesh control plane.
+**Service discovery** is how callers resolve a **logical service name** (`payment-service`, `orders.grpc`) to **healthy instance endpoints** (IP:port, pod DNS) in dynamic infrastructure where instances are created and destroyed continuously.
+
+Without discovery, every deploy changes IPs and breaks hardcoded configs.
 
 ### Why it matters
 
-Enables location transparency: callers use logical name `order-service`, not IP lists that change every deploy.
+```text
+K8s pod restarts → new IP every 30 seconds
+Auto-scaling adds 10 instances at 9am
+AZ failure removes half the fleet
+
+Caller must find current healthy backends without manual config updates
+```
+
+Discovery failures manifest as **intermittent 503s**, **sticky calls to dead IPs**, or **thundering herd on one instance**.
 
 ### How it works
 
 **Client-side discovery:**
 
-1. Client queries registry for `payment-service`.
-2. Load balances across returned instances (round-robin, least-conn).
-3. Caches list; refreshes on failure or TTL.
+```mermaid
+sequenceDiagram
+    participant C as Client + LB library
+    participant R as Registry (Eureka/Consul)
+    participant I1 as Instance 1
+    participant I2 as Instance 2
+    C->>R: lookup payment-service
+    R-->>C: [10.0.1.5:8080, 10.0.2.3:8080]
+    C->>I1: request (round-robin)
+    Note over I1: I1 dies
+    C->>I1: timeout
+    C->>R: refresh / health fail
+    C->>I2: retry
+```
+
+1. Client queries registry for service name.
+2. Client caches instance list locally.
+3. Client load-balances (round-robin, least-conn, weighted).
+4. On failure, refresh cache or mark instance bad.
 
 **Server-side discovery:**
 
-1. Client calls load balancer / K8s Service VIP.
-2. Platform resolves to healthy pod/backend.
-
-### Diagram
-
 ```mermaid
-flowchart TB
-    Client --> DNS[DNS / K8s Service]
-    DNS --> P1[Pod 1]
-    DNS --> P2[Pod 2]
+flowchart LR
+    C[Client] --> VIP[K8s Service / ALB VIP]
+    VIP --> P1[Pod 1]
+    VIP --> P2[Pod 2]
+    VIP --> P3[Pod 3]
+```
+
+1. Client calls stable virtual IP / DNS name.
+2. Platform (kube-proxy, ALB, Envoy) routes to healthy backend.
+3. Client has no instance list — platform handles it.
+
+| Mode | Examples | Who load-balances |
+|------|----------|-------------------|
+| **Client-side** | Eureka + Ribbon, gRPC custom resolver, Consul | Application library |
+| **Server-side** | K8s Service, AWS ALB/NLB, GCP ILB | Platform proxy |
+| **Service mesh** | Istio, Linkerd via xDS | Sidecar Envoy |
+
+**Kubernetes specifics:**
+
+```text
+Service "payment" → ClusterIP 10.96.0.5
+kube-proxy / eBPF dataplane → endpoints from ready pods
+DNS: payment.default.svc.cluster.local → ClusterIP
+
+Headless service (clusterIP: None) → DNS returns all pod A records
+  → client-side LB for StatefulSets
 ```
 
 ### Key details
 
-| Mode | Examples |
-|------|----------|
-| Client-side | Eureka + Ribbon, gRPC resolver |
-| Server-side | AWS ALB, K8s kube-proxy |
-| Mesh | Istio xDS endpoints |
+#### Production failure modes
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| Calls to dead IP | Stale client cache, long TTL | Lower cache TTL; fail-fast refresh |
+| All traffic to one pod | Broken LB algorithm / subsetting bug | Check endpoint count; restart kube-proxy |
+| 503 after deploy | Readiness probe passes before app warm | PreStop hook, graceful drain, minReadySeconds |
+| Intermittent cross-AZ latency | Suboptimal locality | Topology-aware routing, same-AZ preference |
+| Eureka "self-preservation" | Registry won't evict dead instances | Tune thresholds; prefer K8s native discovery |
+| DNS NXDOMAIN after scale-up | DNS cache at client (JVM 30s+) | Use HTTP keep-alive + reconnect; or mesh |
+
+#### Stale registry timeline
+
+```text
+T=0   Instance crashes (no graceful deregister)
+T=1   Registry still lists instance (heartbeat TTL 30s)
+T=2   Clients send traffic → timeouts for 30–90s
+T=3   Registry evicts; cache refresh
+
+Mitigation: health-check from client; connection timeout < 2s; outlier detection (mesh)
+```
+
+#### Discovery + health checks
+
+```text
+Registration ≠ healthy
+
+Good: register only when /health returns 200 AND dependencies up
+Better: readiness probe removes from endpoints before SIGTERM
+Best:  graceful shutdown — deregister → wait in-flight → exit
+```
+
+**gRPC discovery:**
+
+```text
+resolver://kubernetes:///payment:grpc
+→ watches Endpoints API
+→ updates channel backends on pod changes
+```
 
 ### When to use
 
-- All microservice communication in dynamic infra.
-- Multi-region active-active with geo-DNS layer.
+- All microservice communication in dynamic infra (K8s, ECS, Nomad)
+- Multi-region with geo-DNS + regional service registries
+- gRPC long-lived channels (need resolver watching backend changes)
 
 ### Trade-offs / Pitfalls
 
-- Client-side: library coupling and cache staleness in every language.
-- DNS TTL delays propagation of changes.
-- Hardcoded service URLs in config defeat discovery purpose.
+| Approach | Pros | Cons |
+|----------|------|------|
+| Client-side | Fine-grained LB; no extra hop | Library per language; cache bugs |
+| Server-side | Simple client; battle-tested LBs | Extra hop; less per-request control |
+| DNS-based | Universal | TTL propagation delay |
+| Hardcoded URLs | "Simple" | Breaks on every deploy — never in prod |
 
 ### References
 
-*(No curated references for this sub-topic in `_topics.json`.)*
+- Kubernetes Services and Endpoints; gRPC load balancing guide
+- See [8.14 Service Mesh](#814-service-mesh), [1.20 Load Balancer](../01-networking/README.md#120-load-balancer)
 
 ---
 
@@ -1097,54 +1179,156 @@ except CircuitOpen:
 
 ### What is it?
 
-The **retry pattern** re-attempts failed operations - transient network blips, 503 responses - with backoff and jitter, bounded by max attempts.
+The **retry pattern** re-attempts failed operations when errors are **transient** — network blips, `503 Service Unavailable`, connection resets, throttling — using **bounded attempts**, **exponential backoff**, and **jitter**.
+
+Retries are dangerous without rules: they can turn a brief outage into a **retry storm** that prevents recovery.
 
 ### Why it matters
 
-Networks and clouds are unreliable; sensible retries convert transient failures into success without user-visible errors.
+```text
+Without retries:  1 transient blip → user-visible failure
+With bad retries: 1 outage → 10× amplified load → longer outage
+With good retries: most blips heal; dependency gets breathing room
+```
+
+Every microservice client library (HTTP, gRPC, AWS SDK) has retries — you must **configure** them, not accept defaults blindly.
 
 ### How it works
 
-1. Call fails with retryable error (timeout, 503, connection reset).
-2. Wait `base * 2^attempt + random_jitter`.
-3. Retry up to N times.
-4. Non-retryable errors (400, 404) fail immediately.
-5. Only safe with **idempotent** operations or idempotency keys.
+**Decision tree:**
 
-### Diagram
+```mermaid
+flowchart TB
+    Call[Outbound call] --> OK{Success?}
+    OK -->|Yes| Return[Return result]
+    OK -->|No| Type{Error type?}
+    Type -->|4xx except 429| Fail[Do not retry]
+    Type -->|408, 429, 5xx, timeout| CB{Circuit open?}
+    CB -->|Yes| Fast[Fail fast]
+    CB -->|No| Attempts{Attempts left?}
+    Attempts -->|No| Fail
+    Attempts -->|Yes| Wait[Backoff + jitter]
+    Wait --> Call
+```
+
+**Exponential backoff with jitter:**
+
+```text
+delay = min(max_delay, base * 2^attempt) + random(0, jitter_ms)
+
+Example: base=200ms, attempt=3, jitter=0-100ms
+  delay = 200 * 8 + rand = ~1600-1700ms
+```
+
+**Retryable vs non-retryable (HTTP):**
+
+| Status / error | Retry? | Why |
+|----------------|--------|-----|
+| `200–299` | N/A | Success |
+| `400 Bad Request` | No | Client bug — same request will fail |
+| `401/403` | No | Auth issue — won't self-heal |
+| `404` | No | Resource missing |
+| `408 Timeout` | Yes | Transient |
+| `429 Too Many Requests` | Yes | Respect `Retry-After` header |
+| `500/502/503/504` | Yes | Server/overload — may recover |
+| Connection reset / timeout | Yes | Network blip |
+
+**Idempotency requirement:**
+
+```text
+GET, PUT, DELETE     → safe to retry (idempotent by HTTP semantics)
+POST create charge   → MUST use Idempotency-Key header before retry
+                     → otherwise duplicate payment on timeout+retry
+```
 
 ```mermaid
 sequenceDiagram
-    participant C as Caller
+    participant C as Client
     participant S as Service
-    C->>S: request
-    S-->>C: 503
-    Note over C: backoff 200ms
-    C->>S: retry
-    S-->>C: 200 OK
+    C->>S: POST /charge (Idempotency-Key: abc)
+    S-->>C: timeout (unknown if processed)
+    Note over C: backoff 500ms
+    C->>S: POST /charge (Idempotency-Key: abc)
+    S-->>C: 200 OK (deduped on server)
 ```
 
 ### Key details
 
-- Exponential backoff + jitter prevents thundering herd on recovery.
-- Retry budgets cap total retry traffic (Google SRE).
-- Idempotent POST requires idempotency key before retrying.
+#### Production configuration
+
+| Parameter | Typical value | Notes |
+|-----------|---------------|-------|
+| `maxAttempts` | 3–5 | More = longer tail latency |
+| `baseDelay` | 100–500 ms | Per dependency SLA |
+| `maxDelay` | 5–30 s | Cap exponential growth |
+| `jitter` | Full or equal | AWS recommends full jitter |
+| `retryBudget` | 10% of requests | Google SRE — limit total retry traffic |
+| `perTryTimeout` | < total deadline | Leave room for multiple attempts |
+
+**gRPC retry policy (conceptual):**
+
+```json
+{
+  "maxAttempts": 4,
+  "initialBackoff": "0.2s",
+  "maxBackoff": "5s",
+  "backoffMultiplier": 2,
+  "retryableStatusCodes": ["UNAVAILABLE", "DEADLINE_EXCEEDED"]
+}
+```
+
+#### Retry + circuit breaker + bulkhead
+
+```text
+1. Bulkhead limits concurrent calls to dependency (8.18)
+2. Circuit breaker opens when failure rate high (8.16)
+3. When OPEN → do not retry (fail fast immediately)
+4. When CLOSED → retry with backoff for transient errors
+5. When HALF-OPEN → single probe, no retry loop
+```
+
+**Retry storm timeline:**
+
+```text
+T=0   Dependency slow (p99 5s)
+T=1   1000 clients timeout at 2s, each retries 3×
+T=2   Effective load = 3000+ RPS → dependency dies
+T=5   Full outage
+
+Mitigation: jitter + circuit breaker + lower maxAttempts
+```
+
+#### Message consumers (Kafka/SQS)
+
+Same rules apply — retry in consumer loop must coordinate with:
+
+- **Idempotent handler** (dedup table)
+- **max.poll.interval** (Kafka — don't block poll thread long)
+- **Visibility timeout** (SQS — extend or delete before retry)
+- **DLQ** after max attempts (6.15)
 
 ### When to use
 
-- Read operations and idempotent writes.
-- gRPC/HTTP clients with configurable retry policies.
-- Message consumers processing at-least-once.
+- Read operations and idempotent writes
+- gRPC/HTTP clients calling internal services
+- Message consumers with at-least-once delivery
+- Cloud SDK calls (throttling, regional failover blips)
 
 ### Trade-offs / Pitfalls
 
-- Retries without breaker amplify outage (retry storm).
-- Non-idempotent POST retry -> duplicate side effects.
-- Max attempts too high -> multiplies tail latency.
+| Pitfall | Consequence | Mitigation |
+|---------|-------------|------------|
+| Retry non-idempotent POST | Duplicate orders/charges | Idempotency-Key |
+| Retry when circuit open | Amplifies outage | Check breaker state first |
+| No jitter | Synchronized retry wave | Always add randomness |
+| maxAttempts too high | p99 explodes | Cap at 3–5 for user-facing |
+| Retry on 400 | Waste + log noise | Classify errors explicitly |
+| Default AWS SDK retries | Hidden retry storm | Configure explicitly |
 
 ### References
 
-*(No curated references for this sub-topic in `_topics.json`.)*
+- Google SRE — Handling Overload; AWS exponential backoff and jitter
+- See [8.16 Circuit Breaker](#816-circuit-breaker), [6.16 Retry Queue](../06-messaging-and-events/README.md#616-retry-queue)
 
 ---
 

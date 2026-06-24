@@ -348,12 +348,133 @@ flowchart TB
 
 ### Key details
 
-- **Replication factor** 3 is common production default (survive 2 broker loss with `min.insync.replicas=2`)
-- **Hot partition problem:** bad key choice (all `key=null`) -> one partition gets all traffic
-- **Consumer lag:** `high_watermark - committed_offset` - primary health metric
-- **Exactly-once:** idempotent producer (`enable.idempotence=true`) + transactions for read-process-write
-- **Compaction:** `log.cleanup.policy=compact` keeps latest value per key (changelog topics)
-- **KRaft:** removes ZooKeeper dependency (Kafka 3.3+ production ready)
+#### Production configuration (defaults to verify)
+
+| Setting | Dev | Production | Why |
+|---------|-----|------------|-----|
+| `replication.factor` | 1 | **3** | Survive 2 broker failures |
+| `min.insync.replicas` | 1 | **2** | With RF=3, leader won't ack `acks=all` if only 1 replica |
+| `acks` | 1 | **`all`** | Durability — wait for ISR |
+| `unclean.leader.election.enable` | true | **false** | Never promote out-of-sync replica (data loss) |
+| `log.retention.hours` | 168 | **72–168+** | Balance disk vs replay window |
+| `num.partitions` | 1 | **plan upfront** | Hard to change without rebalance pain |
+
+#### ISR (In-Sync Replicas) — production mental model
+
+```text
+Topic: orders, partition 0, replication.factor=3
+
+Broker 1 = LEADER   (offset 1000)
+Broker 2 = FOLLOWER (offset 1000)  ← in ISR
+Broker 3 = FOLLOWER (offset 998)   ← lagging, NOT in ISR
+
+Producer with acks=all:
+  → waits for Broker 1 + all ISR followers (Broker 2)
+  → Broker 3 catch-up does not block ack
+
+If Broker 1 dies:
+  → Controller elects new leader from ISR only (Broker 2)
+  → Broker 3 catches up later, rejoins ISR
+```
+
+**ISR shrink alert** (`UnderReplicatedPartitions` / `OfflinePartitions`):
+
+```text
+Symptom:  ISR size drops from 3 → 1
+Cause:    Slow disk, network partition, broker JVM GC pause
+Risk:     Single replica — next broker death = data loss
+Action:   Page on-call; do not ignore "ISR=1" in prod
+```
+
+#### Broker failure scenarios
+
+| Event | What happens | Your action |
+|-------|--------------|-------------|
+| **Follower dies** | ISR shrinks; leader continues; under-replicated | Replace broker; ISR heals when follower catches up |
+| **Leader dies** | Controller elects new leader from ISR (~seconds) | Brief produce/consume pause; monitor `LeaderElectionRate` |
+| **Controller dies** | Another broker becomes controller | Usually transparent |
+| **AZ loss (RF=3, 3 AZs)** | 1 broker per partition lost; 2 ISR remain | Cluster survives if `min.insync.replicas=2` |
+| **AZ loss (RF=3, 2 AZs)** | Some partitions lose majority | **Offline partitions** — manual recovery |
+| **Disk full on broker** | Broker stops; ISR shrinks | Expand disk; retention policy; tiered storage |
+
+**Broker replacement runbook (simplified):**
+
+```text
+1. Confirm cluster health (under-replicated count)
+2. Decommission broker gracefully (kafka-reassign-partitions or KRaft remove)
+3. Provision replacement with same broker.id OR new id + rebalance
+4. Wait until all partitions ISR=RF
+5. Verify consumer lag normalized
+```
+
+#### Consumer lag — alerting and triage
+
+**Lag definition:**
+
+```text
+lag(partition) = log_end_offset - committed_offset
+
+Consumer group lag = sum(lag) across all assigned partitions
+```
+
+**Alert thresholds (starting points):**
+
+| Metric | Warning | Critical | Notes |
+|--------|---------|----------|-------|
+| **Max partition lag** | > 10K msgs | > 100K or growing 15m | One stuck partition blocks ordering for that key |
+| **Group lag (time)** | > 5 min behind | > 30 min | Use `kafka-consumer-groups --describe` |
+| **Lag growth rate** | +20%/5min | monotonic 30m | Consumer slower than produce rate |
+| **Under-replicated partitions** | > 0 for 5m | > 0 for 15m | Replication problem, not consumer |
+
+**Triage flowchart:**
+
+```mermaid
+flowchart TB
+    Lag[Consumer lag alert] --> Growing{Lag growing?}
+    Growing -->|No| Spike[Deploy/rebalance spike — wait]
+    Growing -->|Yes| Slow{Produce rate up or consume down?}
+    Slow -->|Produce up| Scale[Add partitions / consumers / brokers]
+    Slow -->|Consume down| Debug[Check consumer errors, GC, DB, rebalance]
+    Debug --> Poison{One partition only?}
+    Poison -->|Yes| Hot[Hot key or poison message → DLQ]
+    Poison -->|No| All[All partitions — downstream or fleet issue]
+```
+
+**Common lag causes:**
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| One partition lag only | Hot key, poison message loop | Salt keys; DLQ bad message (6.15) |
+| All partitions lag after deploy | Slow handler, missing index | Rollback; profile consumer |
+| Lag after rebalance | `max.poll.interval` exceeded | Increase interval; shrink batch size |
+| Lag spikes at top of hour | Batch job publishes burst | Pre-scale consumers; partition count |
+| Lag flat but high | Under-provisioned forever | Add consumers (≤ partition count) |
+
+#### Producer durability checklist
+
+```text
+enable.idempotence=true     # dedup within producer session (PID + sequence)
+acks=all                    # wait for ISR
+retries > 0                 # safe with idempotence
+max.in.flight.requests=5    # or 1 for strict ordering per partition
+```
+
+**What you still DON'T get:** cross-partition atomicity without transactions; consumer-side exactly-once needs transactional consume or outbox (6.20).
+
+#### Capacity planning rules of thumb
+
+| Resource | Rule |
+|----------|------|
+| **Partitions** | Start with `max(12, target_throughput_MB/s ÷ per_partition_MB/s)`; often 12–48 per topic |
+| **Consumers per group** | ≤ partition count (extra consumers idle) |
+| **Brokers** | RF=3 → min 3 brokers; add brokers before disk >70% |
+| **Disk** | `daily_ingress_GB × retention_days × RF × 1.1` |
+| **Network** | Replication doubles write traffic internally |
+
+- **Hot partition problem:** bad key choice (all `key=null`) → one partition gets all traffic → salt keys or increase partitions with awareness of ordering needs
+- **Exactly-once:** idempotent producer + transactions for read-process-write; most teams use at-least-once + idempotent consumers
+- **Compaction:** `log.cleanup.policy=compact` keeps latest value per key (changelog topics, CDC state)
+- **KRaft:** removes ZooKeeper dependency (Kafka 3.3+ production ready); plan migration for ZK clusters
 
 **Kafka vs traditional queue:**
 
@@ -375,15 +496,22 @@ flowchart TB
 
 ### Trade-offs / Pitfalls
 
-- **Operational complexity:** partition count planning, rebalance storms, ISR shrink alerts
-- **Not a task queue** - no native per-message delay/retry UI (use retry topics + DLQ pattern)
-- Small clusters with over-partitioning -> overhead; under-partitioning -> no parallelism
-- `acks=1` can lose messages if leader dies before replication
-- Consumer rebalance stops processing briefly - tune `session.timeout.ms`, cooperative rebalancing
+| Pitfall | Symptom | Fix |
+|---------|---------|-----|
+| `acks=1` only | Messages lost on leader crash before replicate | `acks=all` + `min.insync.replicas=2` |
+| `unclean.leader.election=true` | Silent data loss after failover | Set **false** in prod |
+| ISR=1 ignored | Total data loss on next failure | Alert on under-replicated partitions |
+| Over-partitioning | High metadata overhead, slow rebalance | 12–48/topic typical; don't use 1000s lightly |
+| Under-partitioning | Can't scale consumers | Add partitions early (requires rebalance) |
+| No lag alerts | Discover outage from users | Alert max lag + growth rate |
+| Rebalance storm | Periodic consume stalls | Static membership, cooperative rebalance (6.7) |
+| Treating Kafka as task queue | No native delay/retry | Retry topics + DLQ (6.15, 6.16) |
+| `key=null` on everything | Single hot partition | Hash meaningful business key |
 
 ### References
 
 - Apache Kafka documentation; Confluent blog (design papers)
+- See [6.7 Consumer Groups](#67-kafka-consumer-groups), [6.15 DLQ](#615-dead-letter-queue), [6.20 Outbox](#620-outbox-pattern)
 
 ---
 
@@ -448,51 +576,166 @@ flowchart TB
 
 ### What is it?
 
-A **consumer group** is a set of consumers sharing a `group.id` that jointly consume a topic - each partition assigned to exactly one member. Enables scalable parallel processing with at-least-once semantics.
+A **consumer group** is a set of consumers sharing the same `group.id` that **jointly consume** a topic — each partition is assigned to **at most one** consumer in the group at a time. This is Kafka's **horizontal scaling unit** for processing.
+
+Different groups reading the same topic are **independent** (fan-out). Consumers **within** a group **compete** for partitions (load sharing).
 
 ### Why it matters
 
-The scaling mechanism for Kafka consumers. Adding consumers (up to partition count) divides work; removing triggers rebalance.
+Misconfigured consumer groups cause **rebalance storms**, **duplicate processing**, **stuck partitions**, and **lag incidents** — the most common Kafka production pain after hot partitions.
 
 ### How it works
 
-1. Consumers join group; coordinator assigns partitions (range, round-robin, sticky).
-2. Member reads assigned partitions, commits offsets to `__consumer_offsets`.
-3. Member failure -> rebalance -> partitions reassigned.
-4. New group with same id resumes from last committed offsets.
+**Assignment:**
 
-### Diagram
+```text
+Topic orders: 12 partitions (P0..P11)
+Consumer group checkout-workers: 4 consumers
+
+Ideal assignment (range or cooperative sticky):
+  C1 → P0, P1, P2
+  C2 → P3, P4, P5
+  C3 → P6, P7, P8
+  C4 → P9, P10, P11
+
+Max useful consumers = partition count (12)
+13th consumer sits idle
+```
 
 ```mermaid
-flowchart LR
-    subgraph Group A
+flowchart TB
+    subgraph Topic
+        P0[Partition 0]
+        P1[Partition 1]
+        P2[Partition 2]
+    end
+    subgraph Group checkout-workers
         C1[Consumer 1]
         C2[Consumer 2]
     end
-    P0[Partition 0] --> C1
-    P1[Partition 1] --> C2
+    P0 --> C1
+    P1 --> C1
+    P2 --> C2
 ```
+
+**Lifecycle events that trigger rebalance:**
+
+| Event | What happens |
+|-------|----------------|
+| New consumer joins | Partitions revoked + reassigned ("stop-the-world" in classic protocol) |
+| Consumer leaves / crashes | Its partitions reassigned |
+| Consumer exceeds `max.poll.interval.ms` | Considered dead → rebalance |
+| Partition count increased | Rebalance to include new partitions |
+| Rolling deploy | Pod kill → join → rebalance per wave |
+
+**Read + commit flow:**
+
+```mermaid
+sequenceDiagram
+    participant C as Consumer
+    participant B as Broker
+    participant App as Handler
+    C->>B: poll(max_records)
+    B-->>C: batch offset 100-150
+    C->>App: process messages
+    App-->>C: success
+    C->>B: commit offset 150
+    Note over C: On crash before commit, replay from last commit
+```
+
+1. Consumer polls assigned partitions.
+2. Processes batch (ideally idempotent).
+3. Commits offset **after** successful processing (at-least-once).
+4. On restart, resumes from last committed offset.
 
 ### Key details
 
-- Static membership reduces rebalance churn during rolling deploys.
-- `max.poll.interval` and session timeout govern failure detection.
-- Separate groups = independent consumption of same topic (fan-out).
+#### Production configuration
+
+| Setting | Typical prod value | Pitfall if wrong |
+|---------|-------------------|------------------|
+| `max.poll.interval.ms` | 5–15 min (long handlers) | Too low → rebalance during slow job |
+| `session.timeout.ms` | 10–45 s | Too low → false death detection |
+| `heartbeat.interval.ms` | < session/3 | Must be frequent enough |
+| `max.poll.records` | Tune with processing time | Huge batch → exceed poll interval |
+| `enable.auto.commit` | **false** for critical paths | Auto-commit before process → message loss on crash |
+| `partition.assignment.strategy` | `CooperativeStickyAssignor` | Range assignor → more churn |
+
+**Static membership (rolling deploys):**
+
+```properties
+group.instance.id=checkout-worker-pod-3
+session.timeout.ms=60000
+```
+
+Pod restarts with same `group.instance.id` → **no immediate rebalance** → avoids stop-the-world during deploy.
+
+#### Consumer lag (primary health metric)
+
+```text
+lag(partition) = log_end_offset - committed_offset
+
+Alert: lag > 10,000 for 15 min
+Alert: lag increasing while processing rate flat → slow consumer or poison message
+```
+
+| Lag pattern | Likely cause |
+|-------------|--------------|
+| One partition hot | Bad key skew (all to one partition) |
+| All partitions lag | Under-provisioned consumers or slow handler |
+| Lag spike after deploy | Rebalance + duplicate processing window |
+| Lag flat high | Consumer stuck / blocked on DB |
+
+#### Processing guarantees
+
+```text
+# WRONG — at-most-once (lose messages)
+process(msg)
+commit(offset)
+
+# WRONG — can lose on crash between process and commit
+auto.commit = true
+
+# RIGHT — at-least-once
+process(msg)          # must be idempotent
+commit(offset)
+
+# Exactly-once effect
+idempotent consumer + outbox / dedup table (6.20)
+```
+
+**Rebalance storm during deploy:**
+
+```text
+10 pods rolling restart, no static membership
+→ 10 sequential rebalances in 5 minutes
+→ processing stops each time
+→ lag explodes
+
+Fix: static group.instance.id, cooperative sticky, or pause consumption during deploy
+```
 
 ### When to use
 
-- Horizontally scale event processing workers.
-- Deploy multiple services reading same topic with different logic.
+- Scale event processing horizontally (add consumers up to partition count)
+- Independent fan-out: `billing-group` and `analytics-group` both read `orders`
+- Competing workers on same task queue topic
 
 ### Trade-offs / Pitfalls
 
-- Rebalance stops consumption briefly - "stop-the-world" during deploys if not tuned.
-- One slow consumer on a partition blocks that partition's progress.
-- Duplicate processing during rebalance if offsets committed after processing incorrectly.
+| Pitfall | Symptom | Mitigation |
+|---------|---------|------------|
+| More consumers than partitions | Idle consumers, no speedup | Increase partitions (plan ahead — hard to reduce) |
+| Long processing in poll loop | `max.poll.interval` exceeded | Async processing + pause/resume, or increase interval |
+| Commit before process | Lost messages on crash | Commit after success |
+| Rebalance during processing | Duplicate handling | Idempotent consumer + `processed_events` table |
+| No lag monitoring | Silent backlog until SLA breach | Alert per group/topic |
+| `EARLIEST` reset on new group | Reprocess entire history | Use `LATEST` or explicit offset |
 
 ### References
 
-*(No curated references for this sub-topic in `_topics.json`.)*
+- Kafka consumer protocol; CooperativeStickyAssignor docs
+- See [6.5 Kafka](#65-kafka), [6.15 Dead Letter Queue](#615-dead-letter-queue)
 
 ---
 
@@ -1116,48 +1359,143 @@ flowchart TB
 
 ### What is it?
 
-A **dead letter queue (DLQ)** holds messages that failed processing after max retries - poison messages isolated so they don't block the main queue.
+A **dead letter queue (DLQ)** isolates messages that **cannot be processed successfully** after bounded retries — **poison messages** — so they do not block the main queue or infinite-retry the entire pipeline.
+
+DLQ is not "logging" — it is a **first-class queue/topic** with monitoring, ownership, and a **replay runbook**.
 
 ### Why it matters
 
-Prevents one bad message from infinite retry loops starving healthy traffic; enables manual inspection and replay after fix.
+One bad message (schema change, corrupt JSON, unexpected null) without a DLQ can:
+
+```text
+1. Consumer throws on every poll
+2. Partition processing stalls (lag grows forever)
+3. Retries hammer already-failing downstream
+4. On-call pages for "Kafka lag" with no obvious root cause
+```
+
+DLQ converts "infinite failure loop" into **actionable quarantine**.
 
 ### How it works
 
-1. Consumer fails processing; NACK or retry count increments.
-2. Broker routes to DLQ after threshold (RabbitMQ DLX, SQS redrive policy, Kafka retry topic).
-3. Operators alert on DLQ depth.
-4. Fix bug/schema; replay DLQ to main topic with tooling.
-
-### Diagram
+**Standard pipeline:**
 
 ```mermaid
 flowchart LR
-    Main[Main Queue] --> Consumer
-    Consumer -->|fail max retries| DLQ[Dead Letter Queue]
-    DLQ --> Ops[Manual Replay]
+    Main[Main topic / queue] --> Consumer
+    Consumer -->|success| Done[Commit offset / ACK]
+    Consumer -->|retryable fail| Retry[Retry topic + backoff]
+    Retry -->|after max attempts| DLQ[Dead letter topic]
+    DLQ --> Ops[Alert + triage + replay]
+```
+
+1. Consumer processes message.
+2. **Retryable error** (503, timeout) → retry topic with delay (6.16).
+3. **Non-retryable** or **max attempts exceeded** → publish to DLQ with metadata.
+4. Alert fires on `DLQ depth > 0`.
+5. Engineer fixes bug/schema → **replay** DLQ to main topic.
+
+**Kafka DLQ message envelope (recommended):**
+
+```json
+{
+  "original_topic": "orders",
+  "original_partition": 3,
+  "original_offset": 918273,
+  "original_key": "ord_123",
+  "original_payload": { "...": "..." },
+  "failure_reason": "JsonParseException: missing field amount",
+  "stack_trace": "...",
+  "failed_at": "2026-06-24T10:15:00Z",
+  "consumer_group": "checkout-workers",
+  "retry_count": 5
+}
+```
+
+**Broker-native vs application pattern:**
+
+| Platform | DLQ mechanism |
+|----------|---------------|
+| **RabbitMQ** | Dead-letter exchange (DLX) + `x-death` headers |
+| **SQS** | Redrive policy → DLQ after `maxReceiveCount` |
+| **Kafka** | Manual: `orders-retry` → `orders-dlq` topics (no built-in DLQ) |
+| **Azure Service Bus** | Forward to dead-letter sub-queue |
+
+**Kafka retry + DLQ topology:**
+
+```text
+orders (main)
+  → consumer fails
+  → orders-retry-1s (delay via consumer sleep or timing wheel)
+  → still fails
+  → orders-retry-5m
+  → still fails
+  → orders-dlq
 ```
 
 ### Key details
 
-- Include failure reason, stack trace, original headers in DLQ metadata.
-- Monitor DLQ as critical alert - not optional logging.
-- Idempotent replay to avoid duplicate side effects.
+#### Production rules
+
+| Rule | Why |
+|------|-----|
+| **Alert on any DLQ depth > 0** | DLQ is not optional logging — page on-call |
+| **Include original metadata** | Cannot debug without offset/key/payload |
+| **Cap retries** | Never infinite retry (amplifies outages) |
+| **Idempotent replay** | Reprocessing DLQ must not double-charge |
+| **Separate DLQ per domain** | `payments-dlq` vs `emails-dlq` — different owners |
+| **Retention on DLQ** | Keep 7–30 days for investigation |
+
+#### Replay runbook
+
+```text
+1. STOP auto-replay scripts
+2. Identify failure class (schema? downstream? bad data?)
+3. Fix code / deploy / backfill schema registry
+4. Sample 10 DLQ messages — dry-run in staging
+5. Replay in batches (1000/msg) with rate limit
+6. Monitor main consumer lag + error rate
+7. If errors reappear → STOP replay (not fixed yet)
+```
+
+**Replay without re-poisoning:**
+
+```text
+# Option A: New consumer group reads DLQ, publishes to main
+# Option B: kafka-console-producer with transformed payload
+# Option C: Admin tool with idempotency keys preserved
+```
+
+#### DLQ vs discard
+
+| Approach | When |
+|----------|------|
+| **DLQ** | Unknown failure, needs human triage, compliance audit |
+| **Discard + metric** | Known bad format, sampled telemetry, no business value |
+| **Skip + log** | Only if volume is huge and loss is acceptable (rare) |
 
 ### When to use
 
-- Any production queue/stream consumer pipeline.
-- Schema validation failures and downstream dependency outages.
+- Every production async consumer pipeline (Kafka, SQS, RabbitMQ)
+- Schema evolution (Avro/Protobuf) — incompatible reader version
+- Downstream dependency failures after retry exhaustion
+- Payment, inventory, billing — never silently drop
 
 ### Trade-offs / Pitfalls
 
-- DLQ growth without process -> unbounded storage and missed incidents.
-- Replaying without root-cause fix re-poisons main queue.
-- Kafka needs explicit retry/DLT pattern (not one built-in DLQ button).
+| Pitfall | Consequence | Fix |
+|---------|-------------|-----|
+| DLQ with no alerts | Messages die silently | Pager on depth |
+| Replay without fix | Re-poisons main queue | Root-cause first |
+| No idempotency on replay | Duplicate charges | Dedup table / idempotency keys |
+| DLQ grows unbounded | Storage cost + lost visibility | Retention + weekly review |
+| Stripping payload for PII | Cannot reproduce bug | Tokenize, don't delete |
+| Kafka "DLQ" as afterthought | Ad-hoc log topic nobody owns | Formal topic + dashboard |
 
 ### References
 
-*(No curated references for this sub-topic in `_topics.json`.)*
+- RabbitMQ dead-letter exchanges; AWS SQS DLQ
+- See [6.16 Retry Queue](#616-retry-queue), [6.7 Consumer Groups](#67-kafka-consumer-groups)
 
 ---
 
@@ -1167,49 +1505,106 @@ flowchart LR
 
 ### What is it?
 
-A **retry queue** (delay queue) holds failed messages for backoff period before re-attempting main processing - separate from DLQ which is terminal failure.
+A **retry queue** (or retry topic) holds messages that failed with **transient errors** and schedules **delayed re-attempts** before they are sent to the **DLQ** (6.15). It separates "try again later" from "give up forever."
 
 ### Why it matters
 
-Transient failures (DB timeout, rate limit) self-heal with backoff; immediate redelivery amplifies outages.
+Without delayed retry:
+
+```text
+Consumer fails on DB timeout
+→ immediate redelivery
+→ 1000 consumers × instant retry = DB never recovers (retry storm)
+```
+
+Backoff gives dependencies time to heal.
 
 ### How it works
 
-1. Processing fails with retryable error.
-2. Message published to retry topic with delay header/TTL.
-3. After delay, message returns to main consumer.
-4. Exponential backoff: 1s, 5s, 30s, 5m; then DLQ.
-
-### Diagram
-
 ```mermaid
 flowchart LR
-    Main --> Consumer
-    Consumer -->|retryable| Retry[Retry Queue + delay]
-    Retry -->|after TTL| Main
-    Consumer -->|exhausted| DLQ
+    Main[Main topic] --> Consumer
+    Consumer -->|success| ACK[Commit]
+    Consumer -->|retryable| R1[Retry 1s]
+    R1 --> Consumer
+    Consumer -->|still fail| R2[Retry 5m]
+    R2 --> Consumer
+    Consumer -->|max attempts| DLQ[DLQ]
 ```
+
+**Exponential backoff schedule (example):**
+
+| Attempt | Delay before next try |
+|---------|----------------------|
+| 1 | 1 s |
+| 2 | 5 s |
+| 3 | 30 s |
+| 4 | 5 min |
+| 5 | 30 min |
+| 6+ | → DLQ |
+
+**With jitter:**
+
+```text
+delay = min(cap, base * 2^attempt) + random(0, base)
+# prevents synchronized retry wave when DB recovers
+```
+
+**Classify errors in code:**
+
+```text
+Retryable:    TimeoutException, 503, 429, OptimisticLockException
+Non-retryable: JsonParseException, 400, 404, ValidationException
+              → skip retry, go straight to DLQ
+```
+
+**Kafka implementation patterns:**
+
+| Pattern | How |
+|---------|-----|
+| **Multiple retry topics** | `orders-retry-1s`, `orders-retry-5m` — consumer per delay |
+| **Single retry + sleep** | Consumer sleeps (blocks partition — avoid for long delays) |
+| **Timing wheel / scheduler** | Store in DB/Redis with `retry_at`, republish later |
+| **Broker delay plugins** | RabbitMQ TTL + DLX; SQS visibility timeout |
 
 ### Key details
 
-- Distinguish retryable vs non-retryable exceptions in code.
-- Jitter prevents synchronized retry storms.
-- Max attempts cap required - never infinite retry.
+| Practice | Reason |
+|----------|--------|
+| **Max attempts cap** | e.g. 5–7; then DLQ |
+| **Jitter on every retry** | Avoid thundering herd on recovery |
+| **Circuit breaker on downstream** | Stop retrying into fire (8.16) |
+| **Retry budget** | Cap total retry QPS per service |
+| **Preserve message key** | Same key → same partition → ordering preserved |
+
+**Retry storm scenario:**
+
+```text
+Payment API down 10 minutes
+→ 50K messages fail
+→ all retry in 30s
+→ 50K concurrent calls when API flickers up
+→ API dies again
+
+Fix: exponential backoff + jitter + circuit breaker open → fast-fail to retry topic slowly
+```
 
 ### When to use
 
-- Downstream dependency blips (HTTP 503, throttling).
-- Optimistic locking conflicts with short backoff.
+- Transient downstream blips (DB failover, 503, rate limits)
+- Optimistic locking conflicts
+- Network timeouts between services
 
 ### Trade-offs / Pitfalls
 
-- Retry storm during regional outage overwhelms recovering service - use circuit breaker.
-- Clock-based delay queues vary in broker support.
-- Ordering not preserved across retry paths.
+- Retry without DLQ → infinite loop
+- Long delay in Kafka consumer thread → `max.poll.interval` violation (6.7)
+- Retrying non-idempotent side effects → duplicates (need idempotency keys)
+- Regional outage → millions of retries — pause consumption globally
 
 ### References
 
-*(No curated references for this sub-topic in `_topics.json`.)*
+- See [6.15 Dead Letter Queue](#615-dead-letter-queue), [8.17 Retry Pattern](../08-microservices/README.md#817-retry-pattern)
 
 ---
 
@@ -1601,49 +1996,137 @@ Debezium transforms row → Kafka topic `Order` with key `ord_123` — no custom
 
 ### What is it?
 
-**Event replay** re-processes historical events from the log or event store - rebuilding projections, recovering after bug, or bootstrapping new consumer.
+**Event replay** re-processes **historical events** from a durable log (Kafka, event store, WAL) to rebuild read models, recover from bugs, bootstrap new consumers, or backfill analytics — without re-emitting from source systems.
+
+Replay is Kafka's superpower: the log is retained; consumers are **views** over history.
 
 ### Why it matters
 
-Unique advantage of event streaming and event sourcing; turns the log into reproducible system history.
+```text
+Bug shipped in projector: "revenue = price × qty × 1.1" (wrong tax)
+→ all dashboards wrong for 30 days
+→ fix code + replay from offset 0 → correct projections without touching OLTP
+```
+
+Without replay capability, you must run expensive one-off SQL migrations or lose historical correctness.
 
 ### How it works
 
-1. Reset consumer offset to `earliest` or specific timestamp.
-2. Or deploy new projector reading full event store from version 0.
-3. Process events idempotently into target store.
-4. Cut over read traffic when projection caught up.
-5. Snapshots accelerate replay start point.
+**Three replay modes:**
 
-### Diagram
+| Mode | How | Use case |
+|------|-----|----------|
+| **Offset reset** | New consumer group, `auto.offset.reset=earliest` | New service needs full history |
+| **Timestamp seek** | `offsetsForTimes()` from T0 | Replay from incident start |
+| **Partition clone** | Copy topic to `orders-replay` | Isolate replay load from live |
 
 ```mermaid
-flowchart LR
-    Log[Event Log] -->|replay| Proj[New Projector]
-    Proj --> NewDB[(New Read DB)]
+flowchart TB
+    Log[(Kafka / Event Store)] -->|read from offset 0 or T0| Proj[Projector / Consumer]
+    Proj -->|idempotent upsert| ReadDB[(Read model / warehouse)]
+    Proj -->|suppress| Side[External side effects]
+    Snap[Snapshot at offset N] -.->|start here| Proj
+```
+
+**Standard replay runbook:**
+
+```text
+1. DECLARE replay window (start offset/time, end offset/time)
+2. DEPLOY fixed projector code (feature flag: replay_mode=true)
+3. SCALE consumers (≤ partition count; watch downstream DB)
+4. SUPPRESS side effects (emails, webhooks, charges)
+5. MONITOR lag + DB write IOPS (expect 2–10× normal load)
+6. VALIDATE row counts / checksums vs sample
+7. CUT OVER read traffic OR swap table
+8. DISABLE replay_mode; document offsets replayed
+```
+
+**Replay with snapshots (event sourcing):**
+
+```text
+Aggregate state at offset 1,000,000 stored as snapshot
+Replay events 1,000,001 → latest only
+→ hours → minutes for large aggregates
+```
+
+**Kafka offset reset example:**
+
+```bash
+# New group reads from beginning
+kafka-consumer-groups --bootstrap-server $BS \
+  --group billing-rebuild-v2 \
+  --reset-offsets --to-earliest \
+  --topic orders --execute
+
+# Or seek to timestamp (incident at 2026-06-20 14:00 UTC)
 ```
 
 ### Key details
 
-- Replay speed limited by processing throughput - parallelize by partition.
-- Side effects (emails) must be suppressed or deduped during replay.
-- Versioned projectors: replay with new business logic = new view.
+#### Side effects during replay
+
+| Side effect | Replay behavior |
+|-------------|-----------------|
+| **DB projection** | Safe with idempotent upsert (`ON CONFLICT UPDATE`) |
+| **Send email** | **Suppress** — check `replay_mode` flag |
+| **Charge card** | **Never replay** — use read-only projection |
+| **Publish downstream event** | Write to `orders-replay-output` topic, not live |
+| **Metrics** | Tag `replay=true` to exclude from SLO dashboards |
+
+```text
+if (context.isReplay()) {
+    return; // skip external API
+}
+paymentClient.charge(...);
+```
+
+#### Performance and sizing
+
+| Factor | Rule of thumb |
+|--------|---------------|
+| **Throughput** | Replay speed ≤ min(producer ingest, consumer CPU, DB write capacity) |
+| **Parallelism** | One consumer per partition — add partitions before replay if needed |
+| **DB load** | Expect 2–10× write IOPS; throttle with `max.poll.records` |
+| **Duration** | `total_events / replay_throughput` — plan maintenance window |
+| **Retention** | Kafka retention must cover replay window or use tiered storage / export |
+
+**2× load rule:** replay + live traffic on same DB → schedule replay off-peak or use isolated replica.
+
+#### Versioned projectors
+
+```text
+ProjectorV1: OrderPlaced → flat order table
+ProjectorV2: OrderPlaced + OrderLineItem → normalized schema
+
+Replay with V2 code over V1-era events:
+  → upcast V1 events to V2 in handler (6.22)
+  → or maintain separate projection table `orders_v2`
+```
 
 ### When to use
 
-- Bug fix in projection logic requires rebuild.
-- New analytics consumer needs full history.
-- Disaster recovery of derived read models.
+- Bug fix in projection / aggregation logic
+- New consumer service bootstrapping from history
+- Reindex search (Elasticsearch) from canonical event log
+- DR recovery of derived read models (not source of truth)
+- Regulatory backfill / audit reconstruction
 
 ### Trade-offs / Pitfalls
 
-- Re-emitting side effects duplicates external actions - use "replay mode" flag.
-- Long replays delay time-to-recovery - maintain snapshots.
-- Storage retention must cover replay window needed.
+| Pitfall | Consequence | Fix |
+|---------|-------------|-----|
+| Replay without `replay_mode` | Duplicate emails/charges | Flag + idempotency keys |
+| Replay on live consumer group | Offset chaos for prod | **New** consumer group name |
+| Same DB as production | Replay kills prod p99 | Isolated replica or off-peak |
+| Retention too short | Can't replay far enough | Export to S3 / extend retention |
+| Non-idempotent upserts | Duplicate rows | Business-key upsert |
+| Ignoring ordering | Corrupt aggregate state | Replay per-partition in order |
+| No end offset | Replays into live events | Set `--to-offset` or timestamp end |
 
 ### References
 
-*(No curated references for this sub-topic in `_topics.json`.)*
+- Kafka consumer offset management; Martin Fowler — Event Sourcing
+- See [6.22 Event Versioning](#622-event-versioning), [6.13 At Least Once](#613-at-least-once-delivery), [6.20 Outbox](#620-outbox-pattern)
 
 ---
 

@@ -608,53 +608,144 @@ Mitigate when p99 latency or throttle errors correlate with single partition met
 
 ### What is it?
 
-**Rebalancing** moves partitions between nodes to restore even load and capacity utilization after adds, removes, or traffic skew.
+**Rebalancing** moves **partitions** (shards, hash slots, token ranges) between nodes to restore even load, disk utilization, and replication health after cluster resize, node failure, or traffic skew.
+
+Without rebalancing, adding 3 new nodes leaves them **idle** while old nodes stay at 95% disk — you paid for capacity you cannot use.
 
 ### Why it matters
 
-Without rebalancing, new nodes sit idle while old nodes overload; removing failed nodes leaves data under-replicated.
+| Without rebalancing | With rebalancing |
+|---------------------|------------------|
+| New nodes sit empty | Load spreads across cluster |
+| Hot node stays hot after split | Partitions migrate off saturated hosts |
+| RF=3 but data only on 2 live nodes | Under-replicated ranges repaired |
+| Manual ops firefight during growth | Planned background migration |
+
+Rebalancing is **continuous operations** in Cassandra, Kafka, Redis Cluster, and Vitess — not a one-time migration project.
 
 ### How it works
 
-1. Monitor per-node partition size, QPS, and disk usage.
-2. Select partitions to move (largest, hottest, or random under consistent hash).
-3. Copy partition data to target node while serving reads (often dual-read period).
-4. Update routing metadata atomically; drain old copy; verify consistency.
+**Trigger conditions:**
 
-### Diagram
+```text
+1. Scale-out: added brokers/shards/nodes
+2. Scale-in: removed node (decommission)
+3. Skew: one node > 120% of average partition size or QPS
+4. Failure: node died → re-replicate to restore replication factor
+5. Planned: token-aware repair before peak season
+```
+
+**Generic migration phases:**
 
 ```mermaid
 sequenceDiagram
-    participant C as Coordinator
-    participant A as Node A
-    participant B as Node B
-    C->>A: Stream partition P
-    A->>B: Copy data
-    C->>C: Update routing table
-    C->>A: Drop local P
+    participant Meta as Routing metadata
+    participant Src as Source node
+    participant Dst as Target node
+    participant Client as Clients
+    Note over Meta: Mark partition P as MOVING
+    Src->>Dst: Stream/copy partition data
+    Note over Src,Dst: Dual-read period (both may serve)
+    Meta->>Meta: Atomically update token map
+    Client->>Dst: New writes/read ownership
+    Src->>Src: Drop local copy of P
+```
+
+1. **Select partitions to move** — largest, hottest, or random under consistent hash.
+2. **Copy data** — streaming replication (Cassandra `nodetool move`, Kafka partition reassignment).
+3. **Dual-write / catch-up** — target catches up to latest offset/version.
+4. **Atomic routing flip** — metadata service updates partition → node map.
+5. **Drain source** — remove old copy after verification.
+
+**Platform-specific patterns:**
+
+| System | Rebalance mechanism | Client impact |
+|--------|---------------------|---------------|
+| **Cassandra** | `nodetool repair` + automatic token range movement on add/remove | Brief extra read latency during stream |
+| **Kafka** | `kafka-reassign-partitions.sh` / Cruise Control | Consumer rebalance + possible lag spike |
+| **Redis Cluster** | `redis-cli --cluster reshard` | `MOVED`/`ASK` redirects storm |
+| **MongoDB** | Balancer migrates chunks between shards | Chunk migration locks brief |
+| **Vitess** | VReplication / resharding workflows | Dual-read cutover with traffic switch |
+| **Postgres (Citus)** | Rebalance shards across workers | Background move + metadata update |
+
+**Vitess / application-level resharding (conceptual):**
+
+```text
+Phase 1: Dual-write to old + new shard map (feature flag)
+Phase 2: Backfill historical rows to new shards (batch job)
+Phase 3: Verify row counts + checksums per shard
+Phase 4: Flip read traffic to new routing table
+Phase 5: Stop writes to old shards; decommission
 ```
 
 ### Key details
 
-- Background migration throttled to avoid saturating network/disk.
-- Consistent hashing minimizes keys moved when adding one node.
-- Rebalancing during peak traffic risks latency spikes - schedule or rate-limit.
+#### Production rules
+
+| Rule | Why |
+|------|-----|
+| **Throttle migration bandwidth** | Full-speed copy saturates disk/network → user-facing latency |
+| **Never rebalance only in API path** | Long-running partition moves belong in background jobs |
+| **Use locks / leader election** | Two operators running resharding scripts → corrupt routing |
+| **Verify replication factor after** | Each partition must have RF healthy copies |
+| **Schedule during low traffic** | Kafka reassignment during peak → consumer lag incident |
+| **Monitor lag throughout** | `replication_lag`, `under_replicated_partitions`, `streaming_state` |
+
+#### Sizing and duration
+
+```text
+Partition size = 50 GB, network = 500 MB/s effective
+Copy time ≈ 50 GB / 500 MB/s ≈ 100 seconds (ideal)
+Reality: 2-10× longer due to compaction, concurrent traffic, checksums
+
+Plan: start rebalance at 60% disk, not 95%
+```
+
+**Worked example — Kafka partition reassignment:**
+
+```bash
+# Generate reassignment JSON (move partitions off broker 3)
+kafka-reassign-partitions.sh --bootstrap-server kafka:9092 \
+  --reassignment-json-file plan.json --execute
+
+# Monitor until complete (hours for TB-scale)
+kafka-reassign-partitions.sh --bootstrap-server kafka:9092 \
+  --reassignment-json-file plan.json --verify
+```
+
+During reassignment: consumers may see **leader election** per partition → brief pause.
+
+#### Failure modes
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| Split reads | Routing updated before copy complete | Roll back metadata; finish stream first |
+| Lost writes during flip | Writes went to old owner after map change | Dual-write window + version checks |
+| Rebalance never finishes | Throttle too low or node failing mid-stream | Check disk; increase concurrency carefully |
+| Hotter after rebalance | Hash skew unchanged — moved wrong keyspace | Re-key or salt hot tenants (5.6) |
+| `UNDER_REPLICATED` alert | Node down during rebalance | Restore failed node or replace |
 
 ### When to use
 
-- After scaling cluster up or down.
-- When hot partitions or disk imbalance detected.
-- Post-failure recovery to restore replication factor.
+- After **adding/removing** nodes in sharded cluster
+- When **disk or CPU skew** > 20% between nodes persists 24h+
+- Post-failure to restore **replication factor**
+- Before **decommissioning** hardware (drain node first)
+- Pre-scale event: rebalance **before** traffic spike, not during
 
 ### Trade-offs / Pitfalls
 
-- Moving large partitions takes hours - plan capacity before urgency.
-- Incorrect routing updates cause split reads or lost writes.
-- Rebalance + production traffic competes for I/O.
+- Large partition moves take **hours** — capacity plan early
+- Rebalance + production traffic **compete for I/O** — throttle mandatory
+- Incorrect routing update → **split brain reads** or lost writes
+- Kafka rebalance triggers **consumer group rebalance** — double pain during deploy
+- Consistent hashing minimizes moved keys on **±1 node** change; naive `% N` resharding moves ~everything
+- **Do not confuse** Kafka broker rebalance with consumer group rebalance (6.7)
 
 ### References
 
-*(No curated references for this sub-topic in `_topics.json`.)*
+- Kafka partition reassignment; Cassandra nodetool operations
+- See [5.8 Consistent Hashing](#58-consistent-hashing), [5.29 Sharding, Bucketing & Partitioning](#529-sharding-bucketing--partitioning)
 
 ---
 

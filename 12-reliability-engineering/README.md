@@ -651,176 +651,379 @@ flowchart LR
 ---
 
 
-2.6 Disaster Recovery
+## 12.6 Disaster Recovery
 
 
-### What is it
+### What is it?
 
-Planned capability to restore IT systems and data after catastrophic events - region loss, ransomware, datacenter fire - meeting defined RPO and RTO targets.
+**Disaster Recovery (DR)** is the planned capability to restore IT systems after **catastrophic** failures — entire region loss, ransomware, datacenter fire, operator error at scale — meeting defined **RPO** (how much data you can lose) and **RTO** (how fast you're back).
+
+DR is not HA: HA survives a pod or AZ; DR survives losing a **region** or needing to **rebuild from backups**.
 
 ### Why it matters
 
-Without DR, a single regional outage or corruption event can end the business. DR translates risk appetite into architecture (warm standby, pilot light) and tested procedures.
+```text
+us-east-1 regional outage (real events: 2017, 2021)
+→ every service in one region down simultaneously
+→ HA within region does not help
+
+Ransomware encrypts production DB
+→ replicas are encrypted too
+→ only immutable offsite backup saves you
+```
+
+Without tested DR, RPO/RTO numbers on slide decks are fiction.
 
 ### How it works
 
-Classify tiers by criticality. Choose DR pattern (backup-restore, pilot light, warm standby, active-active). Replicate data cross-region. Document runbooks; test restores quarterly. DNS/global load balancer shifts traffic to DR site.
+**Step 1 — Tier your workloads:**
 
-### Diagram
+| Tier | RTO | RPO | Example | Pattern |
+|------|-----|-----|---------|---------|
+| **Tier 0** | ~0 | ~0 | Payments auth | Active-active multi-region |
+| **Tier 1** | < 15 min | < 1 min | Core API | Hot standby + sync/async repl |
+| **Tier 2** | < 4 hr | < 1 hr | Internal admin | Warm standby / pilot light |
+| **Tier 3** | < 24 hr | < 24 hr | Analytics | Backup-restore |
+
+**Step 2 — Choose DR pattern (AWS terminology):**
 
 ```mermaid
 flowchart TB
-    subgraph Primary['Primary Region']
-        PApp[Applications]
-        PDB[(Database)]
+    subgraph Patterns['DR patterns — cost vs RTO']
+        AA[Active-Active / RTO ~0]
+        Hot[Hot Standby / RTO 1-5 min]
+        Warm[Warm Standby / RTO 15-60 min]
+        Pilot[Pilot Light / RTO 1-4 hr]
+        Backup[Backup-Restore / RTO 4-24+ hr]
     end
-    subgraph DR['DR Region']
+    AA -->|highest cost| Hot --> Warm --> Pilot --> Backup
+```
+
+| Pattern | What's running in DR | RTO | Cost |
+|---------|---------------------|-----|------|
+| **Backup-restore** | Nothing; restore from S3 | Hours–days | $ |
+| **Pilot light** | DB replica only; apps on demand | 1–4 hr | $$ |
+| **Warm standby** | Scaled-down apps + DB | 15–60 min | $$$ |
+| **Hot standby** | Full stack at reduced traffic | 1–5 min | $$$$ |
+| **Active-active** | Full traffic both regions | ~0 | $$$$$ |
+
+**Step 3 — Regional failover runbook:**
+
+```text
+1. DECLARE disaster (SEV1) — who can authorize failover?
+2. ASSESS scope (region? AZ? data corruption?)
+3. STOP writes to primary (prevent split-brain)
+4. PROMOTE DR database replica (or restore from backup)
+5. SCALE DR application tier
+6. UPDATE DNS / Global LB (Route53 health check, Cloudflare)
+7. VALIDATE smoke tests (login, checkout, payment)
+8. COMMUNICATE status page + internal channels
+9. POSTMORTEM + decide when to fail back
+```
+
+```mermaid
+flowchart TB
+    subgraph Primary['Primary Region us-east-1']
+        PApp[Applications]
+        PDB[(Database Primary)]
+    end
+    subgraph DR['DR Region us-west-2']
         DApp[Standby Apps]
-        DDB[(Replica)]
+        DDB[(Replica / Standby)]
     end
     PDB -->|async replication| DDB
     GLB[Global Load Balancer] --> PApp
-    GLB -.->|failover| DApp
+    GLB -.->|failover on health fail| DApp
 ```
 
 ### Key details
 
-- DR tiers: Tier 1 (minutes RTO) vs Tier 3 (days)
-- Patterns: backup-restore, pilot light, warm standby, multi-site active
-- Test failover, not just backup existence
-- Include runbooks for DNS, secrets, and dependencies
+#### Game day checklist (quarterly)
+
+```text
+□ Failover to DR region in isolated exercise (not prod traffic first time)
+□ Measure actual RTO vs target
+□ Measure actual RPO (data gap after promote)
+□ Verify secrets, IAM roles, DNS exist in DR region
+□ Verify third-party webhooks point to DR endpoints
+□ Run smoke test suite against DR
+□ Document gaps; assign owners
+```
+
+#### Common DR gaps
+
+| Gap | Incident outcome |
+|-----|------------------|
+| Backups exist but never restored | Restore fails — wrong version, missing permissions |
+| DR region missing secrets | Apps boot-loop after failover |
+| Hardcoded region in SDK | DR apps still call us-east-1 |
+| Async repl lag not monitored | Promote → lose last 30 min of orders |
+| No write-stop procedure | Split-brain — two primaries |
+| Runbook is someone's head | 2 hr debate during outage |
+
+#### Ransomware-specific DR
+
+```text
+1. Isolate infected systems (disconnect network)
+2. Do NOT pay without legal/compliance review
+3. Restore from IMMUTABLE backup (S3 Object Lock, air-gapped)
+4. Rebuild infra from IaC (don't restore compromised VMs)
+5. Rotate ALL credentials before cutover
+```
 
 ### When to use
 
-- Any business requiring continuity beyond single-AZ HA
-- Regulatory and contractual uptime commitments
-- Protection against regional cloud failures
+- Any business beyond "we can be down a day"
+- Regulatory requirements (finance, healthcare)
+- Contractual SLA with financial penalties
+- Protection against cloud regional failures
 
-### Trade-offs
+### Trade-offs / Pitfalls
 
-| Pros | Cons |
-|------|------|
-| Business survival | Cost of standby infrastructure |
-| Regulatory compliance | Complexity of multi-region ops |
-| Customer trust | Drift between primary and DR |
+| Pitfall | Consequence | Fix |
+|---------|-------------|-----|
+| DR never tested | RTO 4× worse than planned | Quarterly game days |
+| Active-active without conflict handling | Duplicate writes, data merge hell | CRDT, idempotency, or single-writer region |
+| Async repl only, RPO=0 claimed | Data loss on failover | Honest RPO or sync repl |
+| DR drift | DR apps 3 versions behind | Automated sync deploys |
+| Failback untested | Stuck in DR for weeks | Document failback runbook |
 
 ### References
 
 - [AWS Disaster Recovery whitepaper](https://docs.aws.amazon.com/whitepapers/latest/disaster-recovery-workloads-on-aws/disaster-recovery-workloads-on-aws.html)
+- See [12.4 RPO](#124-rpo), [12.5 RTO](#125-rto), [12.7 Backup](#127-backup-strategy)
 
 ---
 
 
-2.7 Backup Strategy
+## 12.7 Backup Strategy
 
 
-### What is it
+### What is it?
 
-Systematic policies for what to backup, how often, where to store copies, and how long to retain them - covering databases, configs, and stateful workloads.
+A **backup strategy** defines **what** to back up, **how often**, **where** copies live, **how long** to retain them, and **who** can restore — covering databases, object storage, configs, secrets metadata, and IaC.
+
+Backups are insurance. A strategy without **tested restores** is a receipt for false confidence.
 
 ### Why it matters
 
-Backups are the last line against data loss from bugs, ransomware, and operator error. A strategy without tested restores is wishful thinking.
+```text
+Operator runs DELETE FROM orders WHERE 1=1 (wrong env)
+Ransomware encrypts RDS + replicas
+Bad deploy corrupts 40% of rows
+
+Only backups with point-in-time recovery (PITR) bring you back
+```
 
 ### How it works
 
-Identify critical data sources. Schedule snapshots (hourly incremental, daily full). Store offsite/immutable (S3 Object Lock, vault). Encrypt backups. Version retention (GFS: grandfather-father-son). Monitor backup job success; alert on failure.
+**The 3-2-1 rule:**
 
-### Diagram
+```text
+3 copies of data
+2 different storage media/types
+1 copy offsite (different region/account)
+```
 
 ```mermaid
 flowchart LR
-    DB[(Production DB)] -->|snapshot| BK[Backup Job]
-    BK --> S3[(Object Storage)]
-    S3 -->|cross-region| DR[(DR Copy)]
-    S3 -->|immutable| Vault[WORM Vault]
+    DB[(Production DB)] -->|continuous WAL| PITR[PITR / WAL archive]
+    DB -->|daily snapshot| Snap[Automated snapshot]
+    Snap --> S3[(S3 / Blob storage)]
+    S3 -->|cross-region replication| DR[(DR region copy)]
+    S3 -->|Object Lock WORM| Vault[Immutable vault]
+    CFG[Configs / IaC / secrets refs] --> S3
+```
+
+**Backup types:**
+
+| Type | Consistency | RPO | Use |
+|------|-------------|-----|-----|
+| **Crash-consistent snapshot** | Disk as-is | Minutes–hours | VMs, fast snapshots |
+| **Application-consistent** | Quiesced app + DB | Minutes | RDS, quiesced MySQL |
+| **Continuous WAL/binlog** | Transaction log stream | Seconds | PITR to any point in time |
+| **Logical dump** | `pg_dump`, `mysqldump` | Hours | Portability, selective restore |
+
+**GFS retention (Grandfather-Father-Son):**
+
+| Tier | Frequency | Retention |
+|------|-----------|-----------|
+| **Son (daily)** | Every day | 7–14 days |
+| **Father (weekly)** | Weekly | 4–8 weeks |
+| **Grandfather (monthly)** | Monthly | 6–12 months |
+| **Yearly** | Annual | 7+ years (compliance) |
+
+**Production checklist:**
+
+```text
+□ Automated backups — no manual cron on one engineer's laptop
+□ Alert on backup job FAILURE (not just success logs)
+□ Cross-region copy for regional disaster
+□ Immutable / WORM for ransomware (S3 Object Lock, Azure Immutable)
+□ Encrypt at rest + in transit; separate KMS keys from prod
+□ Backup credentials in separate account (ransomware can't delete)
+□ Include: DB, Redis RDB (if stateful), Kafka tiered storage, Terraform state
+□ Document RPO achieved per system
 ```
 
 ### Key details
 
-- 3-2-1 rule: 3 copies, 2 media types, 1 offsite
-- Application-consistent vs crash-consistent snapshots
-- Separate backup credentials from production
-- Backup configs, IaC, and secrets metadata too
+| Topic | Production detail |
+|-------|-------------------|
+| **PITR window** | RDS default 7 days; extend to 35 for critical DBs |
+| **Backup window load** | Schedule off-peak; use replica for logical dumps |
+| **Large tables** | Tablespace-level or incremental; avoid locking prod |
+| **K8s** | Velero for PV snapshots + resource manifests |
+| **Compliance** | GDPR right-to-erasure vs backup retention — legal hold process |
 
 ### When to use
 
-- All stateful systems
+- All stateful systems (always)
 - Before schema migrations and major releases
-- Ransomware defense (immutable backups)
+- Ransomware defense layer
+- Regulatory audit evidence
 
-### Trade-offs
+### Trade-offs / Pitfalls
 
-| Pros | Cons |
-|------|------|
-| Recovery from logical errors | Storage cost |
-| Point-in-time recovery | Backup window load on DB |
-| Compliance evidence | Restore untested backups fail |
+| Pitfall | Consequence | Fix |
+|---------|-------------|-----|
+| Backups never restored | Discover corrupt backup at incident | Quarterly restore drills (12.8) |
+| Replica = backup | Logical delete replicates; ransomware hits replica | Immutable offsite copy |
+| Same account credentials | Attacker deletes backups too | Separate backup account |
+| Crash-consistent only | Restored DB won't start clean | App-consistent or WAL |
+| No monitoring | Silent backup failure for weeks | Pager on failed jobs |
 
 ### References
 
-- [Google SRE  -  Data Integrity](https://sre.google/sre-book/data-integrity/)
+- [Google SRE — Data Integrity](https://sre.google/sre-book/data-integrity/)
+- See [12.8 Restore Strategy](#128-restore-strategy), [12.6 Disaster Recovery](#126-disaster-recovery)
 
 ---
 
 
-2.8 Restore Strategy
+## 12.8 Restore Strategy
 
 
-### What is it
+### What is it?
 
-Documented, tested procedures to recover systems from backups to a known-good state within RTO -  including validation steps and communication plans.
+A **restore strategy** is the documented, **tested** procedure to recover systems from backups to a known-good state within **RTO** — including infrastructure provisioning, data restore, validation, traffic cutover, and communication.
+
+> *"Everybody has backups. Nobody has restores."* — every SRE who's been paged at 3am
 
 ### Why it matters
 
-Backups without restore drills are unknown liabilities. During incidents, untested restores fail under pressure when every minute counts.
+During an incident, untested restores fail because:
+
+```text
+- Backup is encrypted with key that rotated 6 months ago
+- Restored DB version doesn't match app version
+- Restore to wrong VPC — no route to apps
+- 800 GB restore takes 6 hours — RTO was "1 hour"
+```
 
 ### How it works
 
-Define restore order (DNS -> DB -> apps -> cache). Provision infrastructure (IaC). Restore DB from snapshot/PITR. Replay binlogs to target time. Deploy application version matching data epoch. Run smoke tests. Cut traffic via DNS/LB.
+**Restore order (dependency-aware):**
 
-### Diagram
+```text
+1. Network / VPC / security groups (IaC)
+2. Secrets (from vault — NOT from compromised backup)
+3. Database restore (longest pole)
+4. Message broker / cache (may rebuild from empty)
+5. Application deploy (version pinned to data epoch)
+6. Background workers
+7. DNS / traffic cutover
+8. Smoke tests → open traffic
+```
 
 ```mermaid
 flowchart TB
-    Detect[Incident Detected] --> Scope[Assess Scope]
-    Scope --> Prov[Provision Infra]
-    Prov --> Restore[Restore Data]
-    Restore --> Deploy[Deploy Apps]
-    Deploy --> Validate[Smoke Tests]
-    Validate --> Cutover[Traffic Cutover]
-    Cutover --> Post[Postmortem]
+    Detect[Incident detected] --> Scope[Assess: corrupt? deleted? ransomware?]
+    Scope --> Prov[Provision infra via Terraform]
+    Prov --> Restore[Restore DB — snapshot or PITR]
+    Restore --> Binlog[Replay WAL/binlog to target time]
+    Binlog --> Deploy[Deploy app version matching data]
+    Deploy --> Validate[Automated smoke tests]
+    Validate --> Cutover[DNS / LB cutover]
+    Cutover --> Post[Postmortem + RPO/RTO actuals]
 ```
+
+**PITR restore example (PostgreSQL mental model):**
+
+```text
+1. Restore base backup from Sunday 00:00
+2. Replay WAL archives Sunday 00:00 → Tuesday 14:32:00 (before bad deploy)
+3. Promote restored instance
+4. Deploy app commit from Tuesday 14:00 (matches schema)
+5. Validate: row count, checksum sample, test checkout
+```
+
+**Game day exercise (quarterly):**
+
+| Step | Success criteria |
+|------|------------------|
+| Pick random backup | Not the newest — simulate unknown age |
+| Restore to isolated env | No prod traffic risk |
+| Stopwatch RTO | Compare to target |
+| Run smoke suite | Login, read, write, payment sandbox |
+| Document gaps | Update runbook same week |
 
 ### Key details
 
-- Quarterly game-day restores to isolated environment
-- Document RPO achieved vs target after restore
-- Tabletop exercises for ransomware scenarios
-- Maintain runbook with exact commands and contacts
+#### Ransomware restore
+
+```text
+1. Do NOT restore into compromised network
+2. Build clean VPC from IaC
+3. Restore from IMMUTABLE backup predating infection
+4. Rotate ALL secrets before any traffic
+5. Forensics on infected systems — don't rush wipe
+```
+
+#### Parallelism
+
+```text
+Sequential (bad):  DB 4hr → then apps 30min → RTO 4.5hr
+Parallel (good):   DB restore + app deploy to staging simultaneously
+                   → RTO dominated by DB only
+```
+
+#### Data epoch mismatch
+
+| Mistake | Symptom |
+|---------|---------|
+| New app + old DB | Migration errors, missing columns |
+| Old app + new DB | App crash on unknown schema |
+| Restored cache with stale keys | Phantom reads |
+
+**Rule:** tag backups with `app_version` and `schema_migration_id`.
 
 ### When to use
 
-- After defining backup strategy
-- Following any failed restore test
-- Major version upgrades (rollback plan)
+- Immediately after defining backup strategy
+- After any failed restore test
+- Before major version upgrades (rollback plan)
+- Annual ransomware tabletop
 
-### Trade-offs
+### Trade-offs / Pitfalls
 
-| Pros | Cons |
-|------|------|
-| Proven RTO | Time-consuming drills |
-| Reduces panic in incidents | Test environments cost money |
-| Finds backup gaps early | Data epoch mismatch risks |
+| Pitfall | Consequence | Fix |
+|---------|-------------|-----|
+| No isolated restore env | Test corrupts prod | Dedicated restore VPC |
+| Runbook without commands | Improvise under pressure | Copy-paste CLI in runbook |
+| Ignore DNS TTL | "Restored" but users still on broken region | Pre-lower TTL |
+| Skip communication plan | Support flooded; executives blind | Pre-written status templates |
+| Restore without validation | Bad data goes live | Automated smoke + manual spot check |
 
 ### References
 
 - [AWS Backup restore testing](https://docs.aws.amazon.com/aws-backup/latest/devguide/restore-testing.html)
+- See [12.7 Backup Strategy](#127-backup-strategy), [12.5 RTO](#125-rto)
 
 ---
 
 
-2.9 Chaos Engineering
+## 12.9 Chaos Engineering
 
 
 ### What is it
@@ -1025,7 +1228,7 @@ flowchart TB
 ---
 
 
-2.10 Fault Injection
+## 12.10 Fault Injection
 
 
 ### What is it
