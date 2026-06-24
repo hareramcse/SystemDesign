@@ -3,8 +3,8 @@
 | # | Topic | Sub-topics | Status |
 |---|-------|------------|--------|
 | 1 | [Networking](./01-networking/README.md) | 22 | Documented |
-| 2 | [Databases](./02-databases/README.md) | 19 | Documented |
-| 3 | [Caching](./03-caching/README.md) | 13 | Documented |
+| 2 | [Databases](./02-databases/README.md) | 22 | Documented |
+| 3 | [Caching](./03-caching/README.md) | 14 | Documented |
 | 4 | [Distributed System](./04-distributed-system/README.md) | 23 | Documented |
 | 5 | [Distributed Databases](./05-distributed-databases/README.md) | 28 | Documented |
 | 6 | [Messaging & Events](./06-messaging-and-events/README.md) | 23 | Documented |
@@ -17,5 +17,6 @@
 | 13 | [Advanced Topics](./13-advanced-topics/README.md) | 11 | Documented |
 | 14 | [Search Systems](./14-search-systems/README.md) | 9 | Documented |
 | 15 | [Big Data](./15-big-data/README.md) | 10 | Documented |
+| 16 | [System Design Interview Guide](./16-interview-guide/README.md) | 7 | Documented |
 
-**Total:** 15 topics · 281 sub-topics · all **Documented**
+**Total:** 16 topics · 292 sub-topics · all **Documented**

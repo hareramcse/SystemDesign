@@ -21,6 +21,7 @@
 | 3.11 | [Cache Avalanche](#311-cache-avalanche) | Done |
 | 3.12 | [Cache Penetration](#312-cache-penetration) | Done |
 | 3.13 | [Cache Warming](#313-cache-warming) | Done |
+| 3.14 | [Write Around Cache](#314-write-around-cache) | Done |
 
 
 
@@ -150,9 +151,42 @@ flowchart LR
 
 | Concept | Description |
 |---------|-------------|
-| **Write policy** | Whether writes go to cache, source, or both (see 3.2-3.5) |
+| **Write policy** | Whether writes go to cache, source, or both (see 3.2-3.6, 3.14) |
 | **Cache coherence** | How multiple cache layers stay consistent with each other and the source |
 | **Working set** | Unique keys accessed in a time window; must fit in cache for high hit ratio |
+
+#### Caching at every layer
+
+Caches are not only Redis. Production systems stack multiple cache tiers — each closer to the consumer and faster than the tier below:
+
+| Layer | Examples | What gets cached | Typical TTL |
+|-------|----------|------------------|-------------|
+| **Client / browser** | HTTP cache, `localStorage`, service worker | Static assets, API responses with `Cache-Control` | Minutes–days |
+| **CDN edge** | CloudFront, Cloudflare, Fastly | JS, CSS, images, video, some HTML | Hours–days |
+| **Reverse proxy / web server** | Nginx, Varnish, Envoy | Static files, rendered pages, API responses | Seconds–hours |
+| **Application (distributed)** | Redis, Memcached | Hot objects, sessions, rate-limit counters | Seconds–hours |
+| **Near / in-process** | Caffeine, Guava Cache | Per-JVM hot keys, config snapshots | Seconds–minutes |
+| **Database** | Buffer pool, page cache | Table/index pages in memory | Managed by DB |
+
+```mermaid
+flowchart TB
+    Browser[Browser cache] --> CDN[CDN edge]
+    CDN --> Proxy[Reverse proxy]
+    Proxy --> App[App + near cache]
+    App --> Redis[(Redis)]
+    Redis --> DB[(DB page cache)]
+```
+
+Design each layer with explicit **invalidation** — a deploy that updates HTML must purge CDN; a DB write must invalidate Redis and optionally browser cache via headers.
+
+#### Query-level vs object-level caching
+
+| Approach | How it works | Pros | Cons |
+|----------|--------------|------|------|
+| **Query-level** | Hash SQL/query string → cache result set | Easy to add around legacy ORM | Hard to invalidate when one row changes; complex queries multiply keys |
+| **Object-level** | Cache assembled domain objects (`User`, `Order`) | Precise invalidation per entity; reusable across endpoints | App must assemble objects; more code |
+
+**Rule of thumb:** prefer **object-level** (or key-per-entity) caching in greenfield services; use query-level only for expensive read-only reports with clear TTL.
 
 ### When to use
 
@@ -266,6 +300,7 @@ If a user updates their profile then immediately reads it, they may hit stale ca
   - Read-through: cache loads on miss automatically (app only talks to cache)
   - Write-through: cache and DB updated together on write (stronger consistency, slower writes)
   - Write-back: write to cache first, async flush to DB (fast writes, durability risk)
+  - Write-around: write to DB only, skip cache on write; populate on read miss (see 3.14)
 
 ### When to use
 
@@ -1171,6 +1206,72 @@ flowchart LR
 - Stale data if warm snapshot is old and TTL is long
 - Race with live invalidation during warm job
 - Warm job failure leaves cache cold - monitor and alert
+
+---
+
+
+## 3.14 Write Around Cache
+
+
+### What is it?
+
+**Write-around** (also called **write-bypass**) writes new data **directly to the database**, skipping the cache on write. The cache is populated only on a subsequent **read miss** (lazy load), or the entry is **invalidated** if it already existed.
+
+Unlike write-through (sync write to cache + DB) or write-back (async flush from cache), write-around treats the cache as **read-only on the write path**.
+
+### Why it matters
+
+Write-heavy data that is **rarely read** should not pollute cache memory. Logging streams, audit events, and append-only writes are classic cases — caching them on write wastes RAM and evicts genuinely hot keys.
+
+### How it works
+
+1. Application receives a write (create/update).
+2. Application writes to **database only** (source of truth).
+3. Application **invalidates** cache key if present (or does nothing if key never cached).
+4. Next read: cache miss → load from DB → populate cache (cache-aside on read).
+
+```mermaid
+sequenceDiagram
+    participant App
+    participant Cache
+    participant DB
+    App->>DB: write(key, value)
+    DB-->>App: OK
+    App->>Cache: invalidate(key) optional
+    Note over App: later read
+    App->>Cache: get(key)
+    Cache-->>App: miss
+    App->>DB: read(key)
+    DB-->>App: value
+    App->>Cache: set(key, value)
+```
+
+### Key details
+
+| Pattern | Write path | Read path | Best for |
+|---------|------------|-----------|----------|
+| Cache-aside | DB + invalidate cache | Cache → DB on miss | General read-heavy |
+| Write-through | Cache + DB sync | Cache | Strong cache/DB sync on write |
+| Write-back | Cache only (async DB) | Cache | Write-heavy, latency-sensitive |
+| **Write-around** | **DB only** | Cache on read miss | Write-heavy, **cold** data |
+
+- Often combined with **cache-aside** for reads.
+- Do **not** skip invalidation — stale cache after update if old key remains.
+- Distinct from "never cache this entity" — write-around still caches after first read if access pattern shifts.
+
+### When to use
+
+- Write-heavy records read infrequently (audit logs, IoT telemetry landing in DB)
+- Large objects written once and read rarely (archived documents)
+- Preventing cache pollution from bulk imports or batch writes
+- Systems where write latency to cache adds cost without read benefit
+
+### Trade-offs / Pitfalls
+
+- First read after write is always a **cache miss** (higher latency until warmed)
+- Forgetting invalidation → **stale reads** after updates
+- Wrong pattern for read-after-write hot paths — use write-through or cache-aside with update
+- Not a substitute for "don't cache" — if data is never read, skip caching entirely
 
 ---
 

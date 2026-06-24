@@ -27,6 +27,9 @@
 | 2.17 | [Search Databases](#217-search-databases) | Done |
 | 2.18 | [Vector Databases](#218-vector-databases) | Done |
 | 2.19 | [Multi Model Databases](#219-multi-model-databases) | Done |
+| 2.20 | [ACID Properties](#220-acid-properties) | Done |
+| 2.21 | [BASE Properties](#221-base-properties) | Done |
+| 2.22 | [SQL Tuning](#222-sql-tuning) | Done |
 
 
 
@@ -1476,6 +1479,210 @@ flowchart TB
 ### References
 
 - [Multi-Model Databases  -  overview video](https://www.youtube.com/watch?v=hwYadL33HdI)
+
+---
+
+
+## 2.20 ACID Properties
+
+
+### What is it?
+
+**ACID** is the set of guarantees relational databases provide for **transactions** — grouped operations that succeed or fail as a unit:
+
+| Property | Meaning | Example failure if violated |
+|----------|---------|----------------------------|
+| **Atomicity** | All operations in a transaction commit or none do | Money debited but not credited |
+| **Consistency** | Transaction brings DB from one valid state to another (constraints hold) | Negative account balance allowed |
+| **Isolation** | Concurrent transactions don't interfere improperly | Lost update, dirty read |
+| **Durability** | Committed data survives crash | Power loss after "success" loses write |
+
+### Why it matters
+
+OLTP systems (payments, inventory, bookings) depend on ACID for correctness. When interviews ask for "strong consistency," they often mean **ACID transactions on a single database** — distinct from distributed linearizability (see [Ch. 4](../04-distributed-system/README.md)).
+
+### How it works
+
+1. Client begins transaction (`BEGIN`).
+2. Executes reads/writes within transaction boundary.
+3. Database holds changes in transaction log / MVCC snapshot.
+4. `COMMIT` → WAL flushed, locks released, durable.
+5. `ROLLBACK` → all changes in transaction discarded.
+
+```mermaid
+sequenceDiagram
+    participant App
+    participant DB
+    App->>DB: BEGIN
+    App->>DB: UPDATE accounts SET balance = balance - 100
+    App->>DB: UPDATE accounts SET balance = balance + 100
+    App->>DB: COMMIT
+    DB-->>App: OK (durable)
+```
+
+### Key details
+
+- **Consistency** in ACID ≠ CAP consistency — ACID consistency means constraint satisfaction, not replica agreement.
+- Isolation level (see [2.6](#26-isolation-levels)) trades concurrency for anomalies.
+- Durability via **WAL** — commit returns after log fsync, not necessarily data page write.
+- Single-node ACID is well understood; **distributed ACID** (2PC, Spanner) adds latency and availability trade-offs.
+
+### When to use
+
+- Financial transfers, order placement, inventory decrement
+- Any multi-step write that must not leave partial state
+- Default choice for RDBMS OLTP workloads
+
+### Trade-offs / Pitfalls
+
+- ACID transactions don't span arbitrary microservices without distributed transaction cost
+- Long transactions hold locks → throughput collapse
+- Over-using serializable isolation when read committed suffices
+
+---
+
+
+## 2.21 BASE Properties
+
+
+### What is it?
+
+**BASE** describes the relaxed consistency model common in **NoSQL** and highly available distributed stores — a deliberate alternative to strict ACID:
+
+| Property | Meaning |
+|----------|---------|
+| **Basically Available** | System guarantees availability for most requests; degraded responses possible under stress |
+| **Soft state** | State may change over time without new input (replication lag, TTL expiry) |
+| **Eventually consistent** | Given no new writes, all replicas converge to the same value |
+
+BASE is not "no consistency" — it accepts **temporary inconsistency** in exchange for **availability and partition tolerance** (AP in CAP).
+
+### Why it matters
+
+At scale, synchronous cross-replica coordination is expensive. Dynamo-style KV stores, Cassandra, and DNS prioritize availability; applications handle staleness via versioning, conflict resolution, or user-tolerant UX (social likes, view counts).
+
+### How it works
+
+1. Write goes to one or more replicas (often async replication).
+2. Read may return slightly stale data from nearest replica.
+3. Background replication, read repair, or anti-entropy converge replicas.
+4. Application uses **idempotency**, **version vectors**, or **last-write-wins** for conflicts.
+
+```mermaid
+flowchart LR
+    W[Write to node A] --> A[(Replica A)]
+    A -.->|async| B[(Replica B)]
+    A -.->|async| C[(Replica C)]
+    R[Read from B] -->|may be stale| Client
+```
+
+### ACID vs BASE
+
+| Aspect | ACID (RDBMS) | BASE (NoSQL / distributed) |
+|--------|--------------|----------------------------|
+| Consistency | Strong per transaction | Eventual across replicas |
+| Availability under partition | May block writes (CP) | Serves reads/writes (AP) |
+| Schema | Fixed, enforced | Flexible, application-enforced |
+| Best for | Transactions, joins | High write throughput, global scale |
+| Examples | PostgreSQL, MySQL | Cassandra, DynamoDB, Riak |
+
+Many systems are **hybrid**: PostgreSQL for payments (ACID) + Redis/Cassandra for sessions and feeds (BASE).
+
+### When to use
+
+- High availability more important than immediate global consistency
+- Read-heavy with tolerable staleness (feeds, recommendations, analytics)
+- Geographic distribution with async replication
+
+### Trade-offs / Pitfalls
+
+- "Eventually" without bound is not a spec — define acceptable staleness
+- Application must handle conflicts — not pushed to DB
+- BASE inappropriate for invariant-critical data without careful design (use strong quorum or separate ACID store)
+
+---
+
+
+## 2.22 SQL Tuning
+
+
+### What is it?
+
+**SQL tuning** is the practice of optimizing query performance and database resource usage — indexes, query shape, execution plans, connection management, and schema design — without changing application correctness.
+
+### Why it matters
+
+A missing index on a 100M-row table can turn a 5 ms query into a 30-second full table scan. SQL tuning is often the **highest ROI** performance work before sharding or adding cache layers.
+
+### How it works
+
+**1. Measure first**
+
+```sql
+EXPLAIN (ANALYZE, BUFFERS) SELECT * FROM orders WHERE user_id = 123;
+```
+
+Look for: `Seq Scan` (bad on large tables), high `rows`, `Buffers: shared read` (disk I/O).
+
+**2. Index strategically**
+
+- Index columns in `WHERE`, `JOIN`, `ORDER BY` predicates.
+- Composite index column order matters: `(user_id, created_at)` supports `WHERE user_id = ? ORDER BY created_at`.
+- Avoid over-indexing — each index slows writes.
+
+**3. Fix query patterns**
+
+| Problem | Symptom | Fix |
+|---------|---------|-----|
+| **N+1 queries** | 1 query + N per row in loop | JOIN, batch `IN (...)`, ORM eager load |
+| **SELECT \*** | Large row transfer | Select only needed columns |
+| **Implicit cast** | Index not used | Match column type to parameter |
+| **OR on different columns** | Full scan | `UNION ALL` of two indexed queries |
+| **OFFSET pagination** | Slow deep pages | Keyset / cursor pagination |
+
+**4. Connection pool sizing**
+
+```text
+pool_size ≈ (core_count × 2) + effective_spindle_count   # rough starting point
+```
+
+Too many connections → DB context switching; too few → app threads block.
+
+**5. Schema and planner hints**
+
+- Keep statistics updated (`ANALYZE`).
+- Partition large tables by time or tenant.
+- Use covering indexes (`INCLUDE` columns) to avoid heap lookups.
+
+```mermaid
+flowchart TB
+    Slow[Slow query] --> Explain[EXPLAIN ANALYZE]
+    Explain --> Scan{Seq scan?}
+    Scan -->|Yes| Idx[Add/fix index]
+    Scan -->|No| Shape[Rewrite query / N+1 fix]
+    Idx --> Verify[Re-measure]
+    Shape --> Verify
+```
+
+### Key details
+
+- **p99 matters** — average query time hides tail latency from lock contention.
+- **Read replicas** offload analytics; don't run heavy reports on primary OLTP.
+- **Materialized views** (see [2.5](#25-views-materialized-view)) precompute expensive aggregations.
+- Cache (Ch. 3) complements tuning — don't cache your way out of a missing index on hot path.
+
+### When to use
+
+- p99 latency SLO breached on DB-bound endpoints
+- CPU or IOPS saturation on database node
+- Before scaling horizontally — tune single node first
+
+### Trade-offs / Pitfalls
+
+- Index every column — write amplification and storage bloat
+- Hint forcing bad plan after data distribution changes
+- Tuning reports on production primary during peak
+- Ignoring lock contention — fast plan but serializes all writers
 
 ---
 

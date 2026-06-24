@@ -1544,6 +1544,44 @@ flowchart LR
 - Providers: Cloudflare, Akamai, Fastly, CloudFront
 - **Stale-while-revalidate** serves old while refreshing
 
+#### Push CDN vs pull CDN
+
+CDNs populate edge caches in two fundamentally different ways:
+
+| Model | How content reaches edge | Who initiates upload | Storage at edge | Best for |
+|-------|--------------------------|----------------------|-----------------|----------|
+| **Pull CDN** | Edge fetches from origin on first user request (cache miss) | Origin passive; CDN pulls on demand | Minimized — only recently requested content | High-traffic sites; content accessed unpredictably |
+| **Push CDN** | You upload or pre-publish content directly to CDN | Developer/CI pushes to CDN | Higher — you control what is stored | Low-traffic sites; infrequent updates; large releases you want live immediately |
+
+**Pull CDN flow:**
+1. User requests `cdn.example.com/app.js`.
+2. Edge PoP has miss → fetches from origin.
+3. Caches with TTL from `Cache-Control`.
+4. Subsequent users at that PoP get cache hit.
+
+**Push CDN flow:**
+1. Build pipeline uploads assets to CDN storage (S3 + CloudFront invalidation, or FTP/API upload).
+2. URLs point directly to CDN hostname.
+3. Content is at edge before first user request — no cold-start latency on first hit.
+
+```mermaid
+flowchart LR
+    subgraph Pull["Pull CDN"]
+        U1[User] --> E1[Edge]
+        E1 -->|miss| O1[Origin]
+    end
+    subgraph Push["Push CDN"]
+        CI[CI / deploy] --> E2[Edge storage]
+        U2[User] --> E2
+    end
+```
+
+**Trade-offs:**
+- **Pull:** simpler origin integration; first request per PoP is slow; TTL expiry can cause redundant origin fetches if content unchanged.
+- **Push:** predictable go-live; you manage upload + purge; wasted edge storage if content is rarely accessed.
+
+Most modern CDNs (CloudFront, Cloudflare, Fastly) support **both** — static sites often use pull with origin (S3/nginx); release artifacts and versioned bundles are often pushed via deploy hooks.
+
 ### When to use
 
 - Static assets (JS, CSS, images, video)
