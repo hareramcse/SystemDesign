@@ -1,6 +1,6 @@
 ﻿# 1. Networking
 
-> Status: **Documented**  -  master reference
+> Status: **Documented** — master reference
 
 [<- Back to master index](../README.md)
 
@@ -19,9 +19,9 @@
 | 1.9 | [DNS Resolution](#19-dns-resolution) | Done |
 | 1.10 | [HTTP/HTTPS](#110-httphttps) | Done |
 | 1.11 | [SSL/TLS](#111-ssltls) | Done |
-| 1.12 | [HTTP2 & HTTP3](#112-http2-http3) | Done |
+| 1.12 | [HTTP/2 & HTTP/3](#112-http2-http3) | Done |
 | 1.13 | [QUIC](#113-quic) | Done |
-| 1.14 | [Keep Alive Connections](#114-keep-alive-connections) | Done |
+| 1.14 | [Keep-Alive Connections](#114-keep-alive-connections) | Done |
 | 1.15 | [Forward & Reverse Proxy](#115-forward-reverse-proxy) | Done |
 | 1.16 | [NAT](#116-nat) | Done |
 | 1.17 | [VPN](#117-vpn) | Done |
@@ -29,17 +29,69 @@
 | 1.19 | [CDN](#119-cdn) | Done |
 | 1.20 | [Load Balancer](#120-load-balancer) | Done |
 | 1.21 | [Load Balancer Algorithm](#121-load-balancer-algorithm) | Done |
-| 1.22 | [SSE & Polling & Websocets](#122-sse-polling-websocets) | Done |
+| 1.22 | [SSE, Polling & WebSockets](#122-sse-polling--websockets) | Done |
 
+### Reading path
 
+| Track | Sections | What you learn |
+|-------|----------|----------------|
+| **Foundations** | 1.1 → 1.7 | Layers, TCP/IP, handshakes, UDP, MTU, IP addressing |
+| **Naming** | 1.8 → 1.9 | DNS records, resolution chain, caching |
+| **Web stack** | 1.10 → 1.14 | HTTP/S, TLS, HTTP/2 & HTTP/3, QUIC, connection reuse |
+| **Edge & scale** | 1.15 → 1.21 | Proxies, NAT, CDN, load balancing |
+| **Real-time** | 1.22 | Polling vs SSE vs WebSockets |
 
-
+---
 
 ## Topic Overview
 
-Networking is the substrate on which every distributed system runs. Requests traverse DNS, load balancers, proxies, TLS terminators, and TCP connections before application code executes. Understanding the stack - from IP addressing and routing to HTTP/2 multiplexing and QUIC - lets you diagnose latency, design resilient architectures, and make informed trade-offs in interviews and production.
+Networking is the substrate on which every distributed system runs. Requests traverse DNS, load balancers, proxies, TLS terminators, and TCP connections before application code executes. Understanding the stack — from IP addressing and routing to HTTP/2 multiplexing and QUIC — lets you diagnose latency, design resilient architectures, and make informed trade-offs in interviews and production.
 
 Modern web performance is largely a networking problem: connection setup cost, head-of-line blocking, geographic distance, and buffer bloat dominate user-perceived speed as much as server CPU. CDN placement, keep-alive tuning, and protocol choice (HTTP/3 over UDP) directly affect scalability and cost.
+
+### End-to-end path (typical HTTPS API call)
+
+```mermaid
+flowchart LR
+    Client --> DNS[1.8 DNS]
+    DNS --> CDN[1.19 CDN / Edge]
+    CDN --> LB[1.20 Load Balancer]
+    LB --> TLS[1.11 TLS terminate]
+    TLS --> App[Application]
+```
+
+### Protocol stack
+
+| Layer | Protocols (this chapter) | PDU |
+|-------|--------------------------|-----|
+| Application | HTTP, DNS, WebSocket | Message |
+| Security | TLS (runs above TCP) | — |
+| Transport | TCP ([1.3](#13-tcp-handshake)), UDP ([1.4](#14-udp)), QUIC ([1.13](#113-quic)) | Segment / Datagram |
+| Network | IPv4, IPv6, ICMP | Packet |
+| Link | Ethernet, Wi-Fi | Frame |
+
+### TCP vs UDP — when to choose
+
+| Choose **TCP** | Choose **UDP** |
+|----------------|----------------|
+| Need reliable, ordered delivery (HTTP, gRPC, DB) | Lowest latency; late data worse than loss (VoIP, gaming) |
+| Want built-in congestion control | Custom reliability in userspace (QUIC, DNS) |
+| File transfer, APIs, web traffic | DNS queries, metrics, broadcast discovery |
+| See [1.3](#13-tcp-handshake), [1.10](#110-httphttps) | See [1.4](#14-udp), [1.13](#113-quic) |
+
+### Cold-connection latency budget
+
+Every **new** HTTPS connection pays setup cost before application data flows:
+
+| Step | Typical RTTs | Section |
+|------|--------------|---------|
+| DNS (cache miss) | 0–2 | [1.9](#19-dns-resolution) |
+| TCP handshake | 1 | [1.3](#13-tcp-handshake) |
+| TLS 1.3 handshake | +1 | [1.11](#111-ssltls) |
+| TLS 1.2 handshake | +2 | [1.11](#111-ssltls) |
+| First HTTP response | +1 | [1.10](#110-httphttps) |
+
+**Mitigations:** DNS caching, [keep-alive](#114-keep-alive-connections), TLS session resumption, [HTTP/2 multiplexing](#112-http2-http3), regional [CDN](#119-cdn).
 
 ```mermaid
 flowchart LR
@@ -67,11 +119,11 @@ It provides a shared vocabulary for troubleshooting ("layer 4 timeout" = transpo
 
 Data descends the stack on send (encapsulation) and ascends on receive (decapsulation):
 
-1. **Application (7):** HTTP, DNS, SMTP  -  user-facing protocols.
+1. **Application (7):** HTTP, DNS, SMTP — user-facing protocols.
 2. **Presentation (6):** Encoding, encryption, compression (often folded into app layer in practice).
 3. **Session (5):** Session management (rarely distinct today).
-4. **Transport (4):** TCP, UDP  -  end-to-end delivery, ports.
-5. **Network (3):** IP  -  routing, addressing.
+4. **Transport (4):** TCP, UDP — end-to-end delivery, ports.
+5. **Network (3):** IP — routing, addressing.
 6. **Data Link (2):** Ethernet, MAC addresses, frames.
 7. **Physical (1):** Bits on wire/fiber/radio.
 
@@ -87,13 +139,17 @@ flowchart TB
 
 | Layer | PDU | Example protocols |
 |-------|-----|-------------------|
-| 7 | Data | HTTP, gRPC |
-| 4 | Segment/Datagram | TCP, UDP |
-| 3 | Packet | IPv4, IPv6 |
-| 2 | Frame | Ethernet |
+| 7 Application | Data | HTTP, gRPC, DNS |
+| 6 Presentation | Data | TLS, compression, encoding |
+| 5 Session | Data | (rarely distinct today) |
+| 4 Transport | Segment / Datagram | TCP, UDP |
+| 3 Network | Packet | IPv4, IPv6 |
+| 2 Data Link | Frame | Ethernet |
+| 1 Physical | Bits | Fiber, radio |
 
-- TCP/IP model (4 layers) maps loosely: App ≈ 5-7, Transport ≈ 4, Internet ≈ 3, Link ≈ 1-2
-- Real stacks blur layers 5 - 7 into "application"
+- TCP/IP model (4 layers) maps loosely: App ≈ 5–7, Transport ≈ 4, Internet ≈ 3, Link ≈ 1–2
+- Real stacks blur layers 5–7 into "application"
+- **TLS** sits between application and transport in practice — see [1.11 SSL/TLS](#111-ssltls)
 
 ### When to use
 
@@ -109,7 +165,7 @@ flowchart TB
 
 ### References
 
-- [OSI Model  -  computer networking playlist](https://www.youtube.com/playlist?list=PLxCzCOWd7aiGFBD2-2joCpWOLUrDLvVV_)
+- [OSI Model — computer networking playlist](https://www.youtube.com/playlist?list=PLxCzCOWd7aiGFBD2-2joCpWOLUrDLvVV_)
 
 ---
 
@@ -162,7 +218,7 @@ flowchart LR
 
 ### References
 
-- [TCP/IP  -  networking fundamentals video](https://www.youtube.com/watch?v=2QGgEk20RXM)
+- [TCP/IP — networking fundamentals video](https://www.youtube.com/watch?v=2QGgEk20RXM)
 
 ---
 
@@ -329,7 +385,7 @@ Warm keep-alive:    ~70 ms (one RTT for HTTP only)
 
 ### References
 
-- [TCP Handshake  -  TCP/IP video](https://www.youtube.com/watch?v=2QGgEk20RXM)
+- [TCP Handshake — TCP/IP video](https://www.youtube.com/watch?v=2QGgEk20RXM)
 
 ---
 
@@ -362,10 +418,21 @@ flowchart LR
 
 ### Key details
 
-- Max practical payload ~65 KB; often limited to avoid fragmentation (~1200 - 1400 bytes safe)
-- **QUIC** builds reliable streams on UDP in userspace
-- Firewalls often block UDP except DNS - HTTP/3 needs UDP 443 open
+| Property | TCP | UDP |
+|----------|-----|-----|
+| Connection | Connection-oriented (handshake) | Connectionless |
+| Reliability | Guaranteed delivery, ordering | Best-effort |
+| Congestion control | Built-in | None (app must implement) |
+| Header size | 20+ bytes | 8 bytes |
+| First packet latency | 1+ RTT (handshake) | Immediate |
+| Typical uses | HTTP, gRPC, databases | DNS, QUIC, VoIP, gaming |
+
+- Max practical payload ~65 KB; often limited to avoid fragmentation (~1200–1400 bytes safe)
+- **QUIC** builds reliable streams on UDP in userspace — see [1.13 QUIC](#113-quic)
+- Firewalls often block UDP except DNS — HTTP/3 needs UDP 443 open
 - Broadcast/multicast built on UDP at IP layer
+
+**Interview point:** "Use TCP unless you need UDP's simplicity or can build reliability on top (QUIC)."
 
 ### When to use
 
@@ -383,7 +450,7 @@ flowchart LR
 
 ### References
 
-- [UDP  -  TCP/IP and UDP video](https://www.youtube.com/watch?v=2QGgEk20RXM)
+- [UDP — TCP/IP and UDP video](https://www.youtube.com/watch?v=2QGgEk20RXM)
 
 ---
 
@@ -436,7 +503,7 @@ flowchart LR
 
 ### References
 
-- [MTU and path MTU discovery  -  video](https://www.youtube.com/watch?v=XMcYwr-yJGA)
+- [MTU and path MTU discovery — video](https://www.youtube.com/watch?v=XMcYwr-yJGA)
 
 ---
 
@@ -489,7 +556,7 @@ flowchart TB
 
 ### References
 
-- [IP Addressing and Subnetting  -  video](https://www.youtube.com/watch?v=eWb35_xIKho)
+- [IP Addressing and Subnetting — video](https://www.youtube.com/watch?v=eWb35_xIKho)
 
 ---
 
@@ -519,6 +586,10 @@ flowchart LR
     R -->|192.168.0.0/16| Office
 ```
 
+### CIDR vs subnet mask
+
+CIDR notation (`10.0.0.0/16`) is the modern way to express what subnet masks once did (`255.255.0.0`). See [1.6 IP Addressing/Subnetting](#16-ip-addressingsubnetting) for design context; CIDR is the notation used in cloud rules and routing.
+
 ### Key details
 
 | CIDR | Hosts (approx) | Common use |
@@ -545,7 +616,7 @@ flowchart LR
 
 ### References
 
-- [CIDR notation  -  video](https://www.youtube.com/watch?v=7u0XnqS-5xs)
+- [CIDR notation — video](https://www.youtube.com/watch?v=7u0XnqS-5xs)
 
 ---
 
@@ -690,7 +761,7 @@ You **configure** authoritative DNS when you own a domain. You **consume** recur
 
 ### References
 
-- [DNS  -  how DNS works video](https://www.youtube.com/watch?v=vhfRArT11jc)
+- [DNS — how DNS works video](https://www.youtube.com/watch?v=vhfRArT11jc)
 
 ---
 
@@ -850,7 +921,7 @@ nslookup -type=A api.example.com 8.8.8.8
 
 ### References
 
-- [DNS Resolution  -  step-by-step video](https://www.youtube.com/watch?v=BZISxpdl4lQ)
+- [DNS Resolution — step-by-step video](https://www.youtube.com/watch?v=BZISxpdl4lQ)
 
 ---
 
@@ -1024,7 +1095,7 @@ DNS + TCP + TLS + HTTP request/response
 
 ### References
 
-- [HTTP and HTTPS  -  web protocol video](https://www.youtube.com/watch?v=FmgIQBQ87fo)
+- [HTTP and HTTPS — web protocol video](https://www.youtube.com/watch?v=FmgIQBQ87fo)
 
 ---
 
@@ -1051,31 +1122,22 @@ TLS protects credentials, PII, and session tokens from interception and tamperin
 
 **Interview framing:** "HTTPS is not just encryption — the client must **trust** the server's identity via a CA-signed certificate, then both sides derive a **session key** that never crosses the wire."
 
----
+### How it works
 
-### Part 1: Certificate creation (one-time setup)
+#### 1. Certificate issuance (one-time setup)
 
 Before any client connects, the server obtains a **digital certificate** from a **Certificate Authority (CA)**.
 
 **Actors:** Browser/client · Server (e.g. `google.com`) · Certificate Authority (Let's Encrypt, DigiCert, etc.)
 
-**Step 1 — Server generates a key pair**
+**Server generates a key pair:**
 
 | Key | Where it lives | Purpose |
 |-----|----------------|---------|
 | **Server public key** | Embedded in certificate; shared with world | Encrypt/verify; identity binding |
 | **Server private key** | **Only on server** — never sent | Prove ownership of certificate |
 
-**Step 2 — Server requests certificate**
-
-Server sends to CA:
-
-- Domain name (e.g. `api.example.com`)
-- Server public key (in a CSR — Certificate Signing Request)
-
-**Step 3 — CA issues certificate**
-
-CA verifies domain ownership (HTTP challenge, DNS TXT, etc.) and issues a certificate containing:
+**Server requests certificate** — sends domain name + public key (CSR) to CA. CA verifies domain ownership (HTTP challenge, DNS TXT) and issues:
 
 ```text
 Certificate contents:
@@ -1085,13 +1147,7 @@ Certificate contents:
   - Validity dates, serial number
 ```
 
-**Important:** The certificate is **not encrypted** — it is **signed**. Think of it as:
-
-```text
-Identity card  +  trusted authority stamp
-```
-
-The CA signature means: *"This public key belongs to this domain."* Anyone can read the certificate; only the CA could have produced a valid signature (using the **CA private key**).
+**Important:** The certificate is **not encrypted** — it is **signed** (identity card + trusted authority stamp). Anyone can read it; only the CA could produce a valid signature using the **CA private key**.
 
 ```mermaid
 sequenceDiagram
@@ -1103,98 +1159,42 @@ sequenceDiagram
     CA->>Server: Signed certificate
 ```
 
----
+#### 2. TLS handshake
 
-### Part 2: TLS handshake
+**ClientHello** — client sends supported TLS versions, cipher suites, **client random**, and **SNI** (hostname, e.g. `api.example.com`).
 
-**Step 4 — Client connects: ClientHello**
+**ServerHello** — server responds with chosen params, **server random**, and **certificate chain** (leaf → intermediate → root).
 
-Client sends:
-
-- Supported TLS versions and cipher suites
-- **Client random** (nonce)
-- **SNI** (Server Name Indication) — hostname it wants (`google.com`)
-
-**Step 5 — Server responds: ServerHello**
-
-Server sends:
-
-- Chosen TLS version and cipher suite
-- **Server random** (nonce)
-- **Certificate** (chain: leaf → intermediate → root)
-
-**Step 6 — Client verifies certificate**
-
-The client OS/browser ships a **trust store** of root CA public keys.
-
-Client checks:
+**Client verifies certificate** using OS trust store:
 
 | Check | Failure result |
 |-------|----------------|
-| Certificate not expired | Reject connection |
-| Domain name matches (CN/SAN vs SNI) | Certificate name mismatch warning |
-| Signature valid (verify with CA public key) | Untrusted certificate |
-| Chain builds to trusted root | Unknown issuer |
+| Not expired | Reject connection |
+| Domain matches SNI (CN/SAN) | Name mismatch warning |
+| CA signature valid | Untrusted certificate |
+| Chain to trusted root | Unknown issuer |
 
-If verification succeeds → client **trusts the server's public key** from the certificate.
+**Server proves private key ownership** — typically **CertificateVerify** (TLS 1.3): signs handshake transcript with server private key. Blocks MITM even if an attacker has a stolen cert without the private key.
 
----
+#### 3. Session key derivation
 
-### Part 3: Server authentication
-
-The client now has the server's **public key** from a trusted certificate — but still must confirm it is talking to the **holder of the matching private key**, not someone replaying a stolen cert.
-
-The server proves ownership by using its **private key** — typically signing the handshake transcript in a **CertificateVerify** message (TLS 1.3). Only the real server could produce that signature.
-
-```text
-Client knows:  server public key (from cert)
-Server proves: "I own the private key" (cryptographic proof)
-```
-
-This blocks passive eavesdropping and many MITM attacks (attacker cannot forge the private-key proof).
-
----
-
-### Part 4: Session key creation
-
-**Goal:** Both sides derive the same **symmetric session key** for bulk encryption — without ever sending that key over the network.
-
-**Inputs (simplified):**
+Both sides independently compute the same **symmetric session key** — it is **never sent on the network**.
 
 | Input | Source |
 |-------|--------|
 | Client random | ClientHello |
 | Server random | ServerHello |
-| Shared secret | **Key exchange** (e.g. ECDHE — Elliptic Curve Diffie-Hellman) |
+| Shared secret | ECDHE key exchange |
 
-Both client and server run the same **key derivation function (KDF)** locally and arrive at identical **session keys** (separate keys for encrypt/decrypt in practice).
+A **key derivation function (KDF)** combines these into session keys (separate encrypt/decrypt keys in practice). Unique randoms per connection enable **forward secrecy** with ECDHE.
 
-```text
-Session key is NEVER transmitted over the network.
-Both sides compute it independently → same result.
-```
+#### 4. Encrypted application data
 
-**Why random values matter:**
-
-```text
-Connection 1 → Session Key A
-Connection 2 → Session Key B
-Connection 3 → Session Key C
-```
-
-Each connection gets unique keys — compromising one session does not decrypt past sessions (**forward secrecy** when ECDHE is used).
-
----
-
-### Part 5: Encrypted communication
-
-Both sides now share the **session key**.
-
-1. Client encrypts `GET /users` → sends ciphertext over TCP.
+1. Client encrypts `GET /users` → ciphertext over TCP.
 2. Server decrypts with session key → processes request.
-3. Server encrypts response → client decrypts with same key.
+3. Server encrypts response → client decrypts.
 
-All HTTPS traffic after the handshake uses **symmetric encryption** (AES-GCM, ChaCha20-Poly1305) — fast for bulk data. Asymmetric crypto (public/private keys) is used only during the handshake.
+Bulk traffic uses **symmetric** ciphers (AES-GCM, ChaCha20-Poly1305). Asymmetric keys are used only during the handshake.
 
 ```mermaid
 sequenceDiagram
@@ -1209,37 +1209,36 @@ sequenceDiagram
     Server->>Client: Encrypted HTTP response
 ```
 
----
+**Handshake quick reference:**
 
-### Who uses which key?
+1. ClientHello → 2. ServerHello + cert → 3. Verify + key exchange → 4. Finished → 5. Encrypted HTTP
+
+### Key details
+
+#### Who uses which key?
 
 | Key | Used by | Purpose |
 |-----|---------|---------|
 | **CA private key** | CA only | Sign certificates |
 | **CA public key** | Client (trust store) | Verify certificate signature |
 | **Server public key** | Client | Know server's identity; key exchange |
-| **Server private key** | Server only | Prove cert ownership; decrypt handshake material |
-| **Session key** | Client **and** server | Encrypt/decrypt all HTTPS application data |
-
----
-
-### How it works (quick reference)
-
-1. **ClientHello** — TLS versions, ciphers, client random, SNI.
-2. **ServerHello** — chosen params, server random, certificate chain.
-3. **Certificate verify** — client validates chain; server proves private key.
-4. **Key exchange** — ECDHE shared secret + randoms → session keys via KDF.
-5. **Finished** — both sides confirm handshake integrity.
-6. **Application data** — HTTP encrypted with session key.
-
-### Key details
+| **Server private key** | Server only | Prove cert ownership |
+| **Session key** | Client **and** server | Encrypt/decrypt all HTTPS traffic |
 
 - **TLS 1.3:** 1-RTT full handshake; **0-RTT resumption** with replay risk
 - **TLS 1.2:** often 2-RTT full handshake; still common on legacy systems
 - **Certificate chain:** leaf → intermediate → root CA in trust store
-- **mTLS:** client also presents a certificate — mutual authentication for service mesh / internal APIs
-- **Termination:** LB decrypts TLS at edge, forwards HTTP to backend (or re-encrypts with backend TLS)
+- **mTLS:** client also presents a certificate — mutual auth for service mesh / internal APIs
+- **Termination:** LB decrypts TLS at edge, forwards HTTP to backend (or re-encrypts)
 - **Session resumption:** TLS tickets / PSK skip full handshake on repeat connections
+
+**Summary:**
+
+1. Server gets **CA-signed certificate** binding domain → public key.
+2. Client **verifies** cert via trusted CA public keys.
+3. Server **proves** private key ownership.
+4. Both **derive** the same session key (never on the wire).
+5. All HTTPS traffic encrypted with session key.
 
 ### When to use
 
@@ -1256,18 +1255,9 @@ sequenceDiagram
 - CPU cost of encryption — hardware AES-NI mitigates
 - Confusing **certificate** (public, signed identity) with **encrypted channel** (session key does bulk encryption)
 
-### Final summary
-
-1. Server obtains a **CA-signed certificate** binding domain → public key.
-2. Client **verifies** the certificate using trusted CA public keys.
-3. Client **trusts** the server's public key from the certificate.
-4. Server **proves** it owns the matching private key.
-5. Client and server **independently derive** the same session key (never sent on the network).
-6. All HTTPS traffic is **encrypted** with the session key.
-
 ### References
 
-- [SSL/TLS  -  encryption handshake video](https://www.youtube.com/watch?v=LJDsdSh1CYM)
+- [SSL/TLS — encryption handshake video](https://www.youtube.com/watch?v=LJDsdSh1CYM)
 
 ---
 
@@ -1277,7 +1267,7 @@ sequenceDiagram
 
 ### What is it?
 
-**HTTP/2** multiplexes many requests over one TCP connection with binary framing, header compression (HPACK), and stream prioritization - reducing connection count and head-of-line blocking at HTTP layer. **HTTP/3** uses QUIC over UDP instead of TCP, eliminating TCP-level head-of-line blocking.
+**HTTP/2** multiplexes many requests over one TCP connection with binary framing, header compression (HPACK), and stream prioritization — reducing connection count and head-of-line blocking at the HTTP layer. **HTTP/3** uses [QUIC](#113-quic) over UDP instead of TCP, eliminating TCP-level head-of-line blocking. See [1.13 QUIC](#113-quic) for transport details.
 
 ### Why it matters
 
@@ -1327,7 +1317,7 @@ flowchart TB
 
 ### References
 
-- [HTTP/2 and HTTP/3  -  protocol evolution video](https://www.youtube.com/watch?v=UMwQjFzTQXw)
+- [HTTP/2 and HTTP/3 — protocol evolution video](https://www.youtube.com/watch?v=UMwQjFzTQXw)
 
 ---
 
@@ -1337,7 +1327,7 @@ flowchart TB
 
 ### What is it?
 
-**QUIC (Quick UDP Internet Connections)** is a transport protocol on UDP combining encryption (TLS 1.3 integrated), multiplexed streams, connection migration, and reduced handshake latency. HTTP/3 is the primary application.
+**QUIC (Quick UDP Internet Connections)** is a transport protocol on UDP combining encryption (TLS 1.3 integrated), multiplexed streams, connection migration, and reduced handshake latency. **HTTP/3** is its primary application — see [1.12 HTTP/2 & HTTP/3](#112-http2-http3) for how they relate.
 
 ### Why it matters
 
@@ -1380,7 +1370,7 @@ flowchart LR
 
 ### References
 
-- [QUIC protocol  -  deep dive video](https://www.youtube.com/watch?v=HnDsMehSSY4)
+- [QUIC protocol — deep dive video](https://www.youtube.com/watch?v=HnDsMehSSY4)
 
 ---
 
@@ -1437,7 +1427,7 @@ sequenceDiagram
 
 ### References
 
-- [Keep-Alive connections  -  HTTP performance video](https://www.youtube.com/watch?v=zRUdSu3JlK8)
+- [Keep-Alive connections — HTTP performance video](https://www.youtube.com/watch?v=zRUdSu3JlK8)
 
 ---
 
@@ -1454,7 +1444,7 @@ A **proxy** is an intermediary that forwards requests on behalf of another party
 | **Forward proxy** | Clients (outbound) | Yes (configured) | Corporate egress, VPN, privacy |
 | **Reverse proxy** | Servers (inbound) | No (looks like origin) | Load balancing, TLS, API gateway |
 
-**Reverse proxy** is what most system design discussions mean: nginx, HAProxy, Envoy, AWS ALB, Cloudflare.
+**Reverse proxy** is what most system design discussions mean: nginx, HAProxy, Envoy, AWS ALB, Cloudflare. Overlaps heavily with [1.20 Load Balancer](#120-load-balancer) and [1.19 CDN](#119-cdn) edge caching.
 
 ### Why it matters
 
@@ -1589,7 +1579,7 @@ flowchart LR
 
 ### References
 
-- [NAT  -  network address translation video](https://www.youtube.com/watch?v=FTUV0t6JaDA)
+- [NAT — network address translation video](https://www.youtube.com/watch?v=FTUV0t6JaDA)
 
 ---
 
@@ -1641,7 +1631,7 @@ flowchart LR
 
 ### References
 
-- [VPN  -  virtual private networks video](https://www.youtube.com/watch?v=R-JUOpCgTZc)
+- [VPN — virtual private networks video](https://www.youtube.com/watch?v=R-JUOpCgTZc)
 
 ---
 
@@ -1659,7 +1649,7 @@ Anycast enables any PoP to respond on the same IP - BGP routes to topologically 
 
 ### How it works
 
-**Broadcast:** packet to 255.255.255.255 or subnet broadcast - æ‰€æœ‰ hosts on LAN.
+**Broadcast:** packet to 255.255.255.255 or subnet broadcast — all hosts on the LAN.
 
 **Multicast:** join IGMP group (224.0.0.0/4); routers replicate to subscribers only.
 
@@ -1694,7 +1684,7 @@ flowchart TB
 
 ### References
 
-- [Anycast, Multicast, Broadcast  -  video](https://www.youtube.com/watch?v=EcWhJbEWxHU)
+- [Anycast, Multicast, Broadcast — video](https://www.youtube.com/watch?v=EcWhJbEWxHU)
 
 ---
 
@@ -1785,7 +1775,7 @@ Most modern CDNs (CloudFront, Cloudflare, Fastly) support **both** — static si
 
 ### References
 
-- [CDN  -  content delivery networks video](https://www.youtube.com/watch?v=ouqqU0FJjhQ)
+- [CDN — content delivery networks video](https://www.youtube.com/watch?v=ouqqU0FJjhQ)
 
 ---
 
@@ -1811,7 +1801,7 @@ No single server handles modern traffic volumes. The load balancer is the **fron
 
 1. Client resolves DNS to LB VIP (virtual IP) or hostname (`api.example.com`)
 2. Client connects to LB (TLS often terminates here at L7)
-3. LB selects backend using algorithm (round-robin, least connections, consistent hash)
+3. LB selects backend using algorithm — see [1.21 Load Balancer Algorithm](#121-load-balancer-algorithm) (round-robin, least connections, consistent hash)
 4. LB forwards request (L7 proxy) or connection (L4 pass-through)
 5. **Health checks** probe backends (`GET /health` every 10s); unhealthy nodes removed from pool
 6. Optional **session affinity (sticky sessions):** same client always hits same backend via cookie or source IP hash
@@ -2048,12 +2038,12 @@ consistent:   ~25% of keys remap (only new node's arc)
 
 ### References
 
-- [Load Balancer Algorithms  -  comparison video](https://www.youtube.com/watch?v=1fN2UDbtGDQ)
+- [Load Balancer Algorithms — comparison video](https://www.youtube.com/watch?v=1fN2UDbtGDQ)
 
 ---
 
 
-## 1.22 SSE & Polling & Websocets
+## 1.22 SSE, Polling & WebSockets
 
 
 ### What is it?
