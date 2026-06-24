@@ -2900,14 +2900,13 @@ dig @8.8.8.8 api.example.com   # query a specific recursive resolver
 
 ## 1.10 HTTP/HTTPS
 
+### HTTP
 
-### What is it?
+**HTTP (Hypertext Transfer Protocol)** is an application-layer, request/response protocol. A client sends a **request** (method, path, headers, optional body); a server returns a **response** (status code, headers, body).
 
-**HTTP (Hypertext Transfer Protocol)** is an **application-layer**, **request/response** protocol. A client sends a **request** (method, path, headers, optional body); a server returns a **response** (status code, headers, body). HTTP is deliberately **stateless**: each request is independent unless the application adds state (cookies, tokens, server-side sessions).
+HTTP is **stateless** — each request is independent unless the application adds state (cookies, tokens, server-side sessions).
 
-**HTTPS** is HTTP over **TLS** (Transport Layer Security). TLS provides **confidentiality** (encryption), **integrity** (tamper detection), and **authentication** (certificate proves server identity). Browsers require HTTPS for modern features (HTTP/2 in practice, geolocation, secure cookies).
-
-**Request structure (HTTP/1.1):**
+**Request example (HTTP/1.1):**
 
 ```http
 GET /api/users/42 HTTP/1.1
@@ -2915,221 +2914,217 @@ Host: api.example.com
 Accept: application/json
 Authorization: Bearer eyJhbG...
 Connection: keep-alive
-
-(body empty for GET)
 ```
 
-**Response structure:**
+**Response example:**
 
 ```http
 HTTP/1.1 200 OK
 Content-Type: application/json
 Cache-Control: private, max-age=60
-Content-Length: 87
 
 {"id":42,"name":"Ada"}
 ```
 
-### Why it matters
+**HTTP methods:**
 
-HTTP semantics drive **REST API design**, **CDN caching**, **browser security**, and **observability** (status codes, headers in logs). Misusing methods or cache headers causes subtle production bugs: double POST charges, stale data served from CDN, credentials leaked over plaintext.
-
-HTTPS is baseline for security: prevents credential sniffing, enables integrity, and is a ranking signal. Termination point (LB vs app) affects certificate management, client IP visibility, and mTLS options.
-
-**Interview point:** HTTP is stateless; "session" is application-layer convention (cookie + server store or JWT).
-
-### How it works
-
-**Typical HTTPS request lifecycle:**
-
-```mermaid
-sequenceDiagram
-    participant Client
-    participant Server
-
-    Note over Client,Server: 1. TCP 3-way handshake
-    Note over Client,Server: 2. TLS handshake (cert verify, key exchange)
-    Client->>Server: GET /api/users HTTP/1.1 / Host: api.example.com
-    Server->>Server: Route, auth, business logic
-    Server-->>Client: HTTP/1.1 200 OK / Content-Type: application/json
-    Note over Client,Server: 3. Connection kept alive (reuse for next request)
-```
-
-1. **DNS** resolves hostname → IP.
-2. **TCP** connection established (3-way handshake).
-3. **TLS handshake** (HTTPS): negotiate cipher suite, verify server certificate chain, derive session keys.
-4. Client sends **HTTP request** over encrypted channel.
-5. Server maps path to handler; may read body (POST/PUT).
-6. Server returns **status + headers + body**.
-7. **Connection: keep-alive** (default HTTP/1.1) reuses TCP+TLS for subsequent requests on same host.
-
-**HTTP methods (semantics matter for APIs and caches):**
-
-| Method | Safe? | Idempotent? | Typical use | Body? |
-|--------|-------|-------------|-------------|-------|
-| **GET** | Yes | Yes | Read resource | No |
-| **HEAD** | Yes | Yes | Metadata only (no body) | No |
-| **POST** | No | No | Create, actions, non-idempotent ops | Yes |
-| **PUT** | No | Yes | Replace entire resource | Yes |
-| **PATCH** | No | No* | Partial update | Yes |
-| **DELETE** | No | Yes | Remove resource | Optional |
-
-*PATCH idempotency depends on patch document design.
+| Method | Safe? | Idempotent? | Typical use |
+|--------|-------|-------------|-------------|
+| **GET** | Yes | Yes | Read resource |
+| **POST** | No | No | Create, actions |
+| **PUT** | No | Yes | Replace resource |
+| **PATCH** | No | No* | Partial update |
+| **DELETE** | No | Yes | Remove resource |
 
 **Status code classes:**
 
 | Class | Meaning | Examples |
 |-------|---------|----------|
-| **1xx** | Informational | `100 Continue` |
 | **2xx** | Success | `200 OK`, `201 Created`, `204 No Content` |
-| **3xx** | Redirection | `301 Moved Permanently`, `302 Found`, `304 Not Modified` |
-| **4xx** | Client error | `400 Bad Request`, `401 Unauthorized`, `403 Forbidden`, `404 Not Found`, `429 Too Many Requests` |
-| **5xx** | Server error | `500 Internal Server Error`, `502 Bad Gateway`, `503 Service Unavailable`, `504 Gateway Timeout` |
+| **3xx** | Redirection | `301`, `302`, `304 Not Modified` |
+| **4xx** | Client error | `400`, `401`, `403`, `404`, `429` |
+| **5xx** | Server error | `500`, `502`, `503`, `504` |
 
-**Worked example — conditional GET (caching):**
-
-```http
-# First request
-GET /logo.png HTTP/1.1
-→ 200 OK, ETag: "abc123", body: (image bytes)
-
-# Second request
-GET /logo.png HTTP/1.1
-If-None-Match: "abc123"
-→ 304 Not Modified (no body — browser uses cache)
-```
-
-**HTTPS / TLS overview** — full walkthrough (CA certificate issuance, handshake steps, session key derivation, who uses which key): see **[1.11 SSL/TLS](#111-ssltls)**.
-
-| Phase | Purpose |
-|-------|---------|
-| ClientHello | Client proposes TLS version, cipher suites, SNI (hostname) |
-| ServerHello + Certificate | Server picks params; sends cert chain for `api.example.com` |
-| Key exchange | ECDHE → shared secret (forward secrecy); session key never sent on wire |
-| Finished | Both sides derive symmetric keys; HTTP now encrypted |
-
-TLS 1.3 completes in **1 RTT** (vs 2 for TLS 1.2). **Session resumption** (tickets/PSK) can reduce repeat connection cost to **0 RTT** (with replay trade-offs).
-
-**Stateless model:**
+**Stateless sessions (application layer):**
 
 ```text
-Request 1: POST /login → 200 + Set-Cookie: session=xyz
-Request 2: GET /profile + Cookie: session=xyz → server looks up session store
+POST /login  →  200 + Set-Cookie: session=xyz
+GET /profile + Cookie: session=xyz  →  server looks up session
 
-HTTP itself forgot Request 1; the COOKIE carries identity.
+HTTP forgot Request 1; the cookie carries identity.
 ```
 
-### Key details
+---
 
-- **Host header:** Required in HTTP/1.1 for virtual hosting (one IP, many sites).
-- **Content-Type / Accept:** Negotiate representation (`application/json` vs `text/html`).
-- **Cache-Control:** `public`, `private`, `max-age`, `no-store` — drives CDN and browser behavior.
-- **Authorization:** `Bearer` JWT, Basic (rare), custom schemes — not the same as `401` vs `403`.
-- **Cookies:** `Set-Cookie` with `HttpOnly`, `Secure`, `SameSite` — security-critical.
-- **Chunked transfer:** Body without fixed `Content-Length` (streaming).
-- **HTTP/2+:** Same semantics; different framing (multiplexing) — see section 1.12.
+### HTTPS (HTTP Secure)
 
-#### Response compression (gzip / Brotli)
+**HTTPS = HTTP + TLS (Transport Layer Security)**
 
-Large JSON API responses (paginated lists, nested objects) inflate bandwidth and TTFB even when logic is fast. **Compression at the edge or server** shrinks payloads with no application code change when clients send `Accept-Encoding: gzip` (or `br`).
+HTTP provides communication between client and server. TLS adds:
 
-**When it helps:**
+- **Encryption**
+- **Authentication**
+- **Integrity**
 
-| Symptom | Typical cause | Compression impact |
-|---------|---------------|-------------------|
-| 8 KB+ JSON list responses | Verbose fields, no field filtering | 70–85% size reduction with gzip |
-| Slow mobile clients | High latency × large payload | Fewer bytes = faster download |
-| High egress cost | Repetitive API traffic | Lower bandwidth bill |
+Without HTTPS, data is sent in plain text. With HTTPS, data is encrypted before transmission.
 
-**Spring Boot (server-level):**
+Full TLS deep dive: [1.11 SSL/TLS](#111-ssltls)
 
-```yaml
-server:
-  compression:
-    enabled: true
-    mime-types: application/json,application/xml,text/html,text/plain
-    min-response-size: 1024   # only compress responses > 1 KB
-```
+---
 
-**NGINX (recommended at reverse proxy / ingress):**
+#### Why do we need HTTPS?
 
-```nginx
-http {
-    gzip on;
-    gzip_disable "msie6";
-    gzip_min_length 1024;
-    gzip_comp_level 5;
-    gzip_types application/json text/plain text/xml application/xml text/css application/javascript;
-    gzip_vary on;
-    gzip_proxied any;
-}
-```
+Without HTTPS:
 
-**Production rules:**
+- Passwords can be intercepted
+- Session cookies can be stolen
+- Sensitive information can be read
+- Data can be modified in transit
 
-| Rule | Why |
-|------|-----|
-| Set `min-response-size` ~1 KB | Tiny responses cost more CPU than they save |
-| Enable `gzip_vary on` | Correct CDN caching per `Accept-Encoding` |
-| Prefer compression at **LB/nginx** | Offloads app JVM; one config for all services |
-| Test with Postman/curl `-H 'Accept-Encoding: gzip'` | Verify `Content-Encoding: gzip` header |
-| Consider **Brotli (`br`)** for HTTPS | Better ratio than gzip; CPU slightly higher |
-| Don't compress already-compressed assets | JPEG/PNG/gzip files — wasted CPU |
+HTTPS protects communication from attackers sitting between client and server. This attack is known as **Man-In-The-Middle (MITM)**.
 
-```bash
-curl -H "Accept-Encoding: gzip" -I https://api.example.com/users?page=1
-# Content-Encoding: gzip
-```
+---
 
-See also [1.19 CDN](#119-cdn) (edge compression) and [7.5 API Gateway](../07-api-design/README.md#75-api-gateway).
+#### HTTPS request flow
 
-**Common interview mistakes:**
-
-| Mistake | Correct mental model |
-|---------|---------------------|
-| GET with side effects (delete on GET) | Violates safe semantics; caches may replay GET |
-| 401 vs 403 | 401 = not authenticated; 403 = authenticated but denied |
-| POST is always create | POST is "process this" — create is common convention |
-| HTTPS encrypts URL path | SNI/hostname visible; path encrypted in TLS 1.3+ (ESNI/ECH emerging) |
-
-### When to use
-
-- **REST/HTTP APIs:** Map resources to nouns; methods to safe/idempotent semantics.
-- **CDN configuration:** Cache GET/HEAD with correct `Cache-Control`; don't cache POST.
-- **Auth design:** Stateless JWT in `Authorization` vs session cookie.
-- **TLS termination:** At LB (centralized certs, WAF) vs app (end-to-end, mTLS to backend).
-- **Debugging:** `curl -v`, browser DevTools Network tab — status, headers, waterfall.
-
-### Trade-offs / Pitfalls
-
-| Pitfall | Impact | Mitigation |
-|---------|--------|------------|
-| HTTP/1.1 HOL blocking | One slow response blocks others on same connection | HTTP/2 multiplexing or more connections |
-| Large cookies on every request | Inflates every request header | Slim tokens; domain-scoped cookies |
-| Mixed content (HTTPS page, HTTP assets) | Browser blocks or warns | Upgrade all assets to HTTPS |
-| `no-store` forgotten on sensitive pages | Cached at shared proxy | Explicit cache headers |
-| Terminate TLS at LB only | Traffic LB→app may be plaintext | TLS to backend or private network |
-| Long polling holds connections | Exhausts worker/connection limits | WebSocket/SSE or async workers |
-| Retry POST on timeout | Duplicate side effects | Idempotency keys |
-
-**Latency stack (recap):**
+User opens:
 
 ```text
-DNS + TCP + TLS + HTTP request/response
-≈ 0–100 ms + 1 RTT + 1–2 RTT + 1 RTT  (minimum one RTT for HTTP/1.1 response)
+https://google.com
 ```
 
-### References
+| Step | What happens | Section |
+|------|--------------|---------|
+| 1 | DNS lookup | [1.9](#19-dns-resolution) |
+| 2 | TCP handshake | [1.3](#13-tcp-handshake) |
+| 3 | TLS handshake | [1.11](#111-ssltls) |
+| 4 | Secure HTTP communication | (this section) |
 
-- [HTTP and HTTPS — web protocol video](https://www.youtube.com/watch?v=FmgIQBQ87fo)
+---
+
+#### TLS handshake (overview)
+
+**Purpose:**
+
+- Verify server identity
+- Exchange encryption keys
+- Establish secure channel
+
+##### Step 1 — Client Hello
+
+Browser sends:
+
+- Supported TLS versions
+- Supported cipher suites
+- Random value
+
+Example: *"I support TLS 1.2 and TLS 1.3"*
+
+##### Step 2 — Server Hello
+
+Server responds with:
+
+- Selected TLS version
+- Selected cipher suite
+- Server certificate
+
+Example: *"I choose TLS 1.3"*
+
+##### Step 3 — Certificate verification
+
+Browser validates:
+
+- Certificate is not expired
+- Domain name matches
+- Certificate issued by trusted CA
+- Certificate signature is valid
+
+If validation fails, browser displays: **"Your connection is not private"**
+
+##### What is a certificate?
+
+A certificate is a website's **digital identity card**.
+
+**Contains:** domain name, public key, issuer (CA), expiry date
+
+Example: `google.com` certificate proves *"This server really belongs to google.com"*
+
+##### What is a Certificate Authority (CA)?
+
+A CA is a trusted organization that issues certificates.
+
+**Examples:** Let's Encrypt, DigiCert, GlobalSign
+
+Browsers already trust these authorities.
+
+##### Step 4 — Key exchange
+
+Client and server securely generate a shared secret used to create **session keys**. After this step, secure communication begins.
+
+---
+
+#### Why two types of encryption?
+
+**Asymmetric encryption** — uses public key + private key
+
+- **Purpose:** Securely exchange keys
+- **Examples:** RSA, ECDHE
+
+**Symmetric encryption** — uses a single shared key
+
+- **Purpose:** Encrypt actual data (much faster)
+- **Examples:** AES, ChaCha20
+
+---
+
+#### Session keys
+
+Once the TLS handshake completes, client and server generate temporary session keys. All requests and responses are encrypted using these keys.
+
+**Benefits:** Fast encryption, better performance, unique per connection
+
+---
+
+#### TLS 1.2 vs TLS 1.3
+
+| | TLS 1.2 | TLS 1.3 |
+|---|---------|---------|
+| Handshake | More steps | Faster handshake |
+| Security | Older algorithms allowed | Fewer insecure algorithms |
+| Today | Still seen | **Preferred** |
+
+---
+
+#### What HTTPS protects
+
+- Passwords
+- Credit card data
+- API tokens
+- Session cookies
+- Request/response payloads
+
+---
+
+#### What HTTPS does NOT hide
+
+HTTPS does **not** completely hide:
+
+- Destination IP
+- Domain name (visible via SNI in most deployments)
+- Traffic volume
+- Traffic timing
+
+**Network can know:** you visited `google.com`  
+**Network cannot see:** what you searched
+
+See also: [1.14 Keep-Alive](#114-keep-alive-connections) · [1.12 HTTP/2 & HTTP/3](#112-http2-http3)
 
 ---
 
 
 ## 1.11 SSL/TLS
 
-
-### What is it?
+HTTPS overview (why HTTPS, request flow, what it protects): [1.10 HTTP/HTTPS](#110-httphttps).
 
 **TLS (Transport Layer Security)**, successor to SSL, provides **encryption**, **integrity**, and **server authentication** (optional client auth) for TCP connections. **HTTPS = HTTP + TLS**.
 
@@ -3288,272 +3283,981 @@ sequenceDiagram
 ---
 
 
-## 1.12 HTTP2 & HTTP3
+## 1.12 HTTP/2 & HTTP/3
 
+QUIC transport details: [1.13 QUIC](#113-quic) · HTTP/HTTPS basics: [1.10](#110-httphttps)
 
-### What is it?
+---
 
-**HTTP/2** multiplexes many requests over one TCP connection with binary framing, header compression (HPACK), and stream prioritization — reducing connection count and head-of-line blocking at the HTTP layer. **HTTP/3** uses [QUIC](#113-quic) over UDP instead of TCP, eliminating TCP-level head-of-line blocking. See [1.13 QUIC](#113-quic) for transport details.
+### Why was HTTP/2 introduced?
 
-### Why it matters
+HTTP/1.1 had several problems:
 
-HTTP/2 dramatically improved web performance (single connection per origin). HTTP/3 further improves lossy/mobile networks where TCP retransmission blocks all streams.
+- Multiple TCP connections required
+- Head-of-line (HOL) blocking
+- Duplicate headers in every request
+- Higher latency
 
-### How it works
+HTTP/2 was introduced to improve performance while still using **TCP**.
 
-**HTTP/2:**
-1. One TCP + TLS connection per origin.
-2. Requests split into **streams** with unique IDs.
-3. Frames interleaved on wire; HPACK compresses headers.
-4. Server push (largely deprecated in practice).
-5. TCP loss still blocks all streams (HOL at transport layer).
+---
 
-**HTTP/3:**
-1. QUIC connection over UDP with built-in TLS 1.3.
-2. Independent streams - loss on one doesn't block others.
-3. Connection migration by connection ID (WiFi -> cellular).
+### Why was HTTP/3 introduced?
 
-```mermaid
-flowchart TB
-    H2[HTTP/2 over TCP] --> S1[Stream 1]
-    H2 --> S2[Stream 2]
-    H3[HTTP/3 over QUIC] --> Q1[QUIC stream 1]
-    H3 --> Q2[QUIC stream 2]
+HTTP/2 solved many HTTP problems but still inherited **TCP limitations**.
+
+**Main issue:** Packet loss in one stream can block all other streams because TCP delivers data in order. This is called **TCP head-of-line blocking**.
+
+HTTP/3 was introduced to solve this using **QUIC over UDP**.
+
+---
+
+### Protocol stack
+
+**HTTP/1.1:**
+
+```text
+HTTP → TCP → IP
 ```
 
-### Key details
+**HTTP/2:**
 
-- HTTP/2 requires TLS in all major browsers (facto HTTPS)
-- **ALPN** negotiates h2 during TLS handshake
-- Alt-Svc header advertises HTTP/3 availability
-- Load balancers need L7 HTTP/2 or pass-through
+```text
+HTTP/2 → TCP → TLS → IP
+```
 
-### When to use
+**HTTP/3:**
 
-- HTTP/2: default for modern web servers (nginx, Cloudflare)
-- HTTP/3: mobile apps, global users on lossy networks
-- API gateways supporting multiplexed client connections
+```text
+HTTP/3 → QUIC → UDP → IP
+```
 
-### Trade-offs / Pitfalls
+---
 
-- HTTP/2 multiplexing can overwhelm single server thread if not configured
-- QUIC UDP blocked on some corporate firewalls
-- Debugging HTTP/3 harder than TCP (Wireshark needs keys)
-- Server push wasted bandwidth when assets cached
+### Transport protocol
 
-### References
+| | HTTP/2 | HTTP/3 |
+|---|--------|--------|
+| Transport | **TCP** | **QUIC** (built on UDP) |
 
-- [HTTP/2 and HTTP/3 — protocol evolution video](https://www.youtube.com/watch?v=UMwQjFzTQXw)
+This is the biggest difference.
+
+---
+
+### Multiplexing
+
+#### HTTP/2
+
+Supports multiplexing. Multiple requests can use a **single TCP connection**.
+
+```text
+Request 1
+Request 2
+Request 3
+
+All travel simultaneously over one connection.
+```
+
+This removes the need for multiple TCP connections.
+
+#### HTTP/3
+
+Also supports multiplexing — but each stream is **independent**. A problem in one stream does not block other streams.
+
+---
+
+### Head-of-line blocking
+
+#### HTTP/2
+
+Application-level HOL blocking is solved. **TCP-level HOL blocking still exists.**
+
+**Example:** Stream A loses a packet → TCP waits for retransmission → Stream B and Stream C must also wait. **All streams are blocked.**
+
+#### HTTP/3
+
+Uses QUIC. Each stream is independent.
+
+If Stream A loses a packet → **only Stream A waits** → Stream B and Stream C continue normally.
+
+**Result:** Better performance on unreliable networks.
+
+---
+
+### Connection establishment
+
+#### HTTP/2
+
+```text
+TCP handshake (SYN → SYN-ACK → ACK)
+        +
+TLS handshake (Client Hello → Server Hello → ...)
+```
+
+#### HTTP/3
+
+QUIC combines transport and security setup. **Fewer round trips.** Faster connection establishment.
+
+---
+
+### Latency
+
+| | HTTP/2 | HTTP/3 |
+|---|--------|--------|
+| Setup cost | TCP handshake + TLS handshake | QUIC integrated with TLS 1.3 — faster setup |
+| Overall | Higher latency than HTTP/3 | **Lower latency** |
+
+---
+
+### Packet loss handling
+
+#### HTTP/2
+
+Packet loss impacts the **entire TCP connection**. Performance drops significantly on mobile networks, Wi-Fi, and long-distance links.
+
+#### HTTP/3
+
+Packet loss affects **only the impacted stream**. Other streams continue processing. Better user experience.
+
+---
+
+### Mobile networks
+
+| | HTTP/2 | HTTP/3 |
+|---|--------|--------|
+| Network change (Wi-Fi → mobile data) | May require reconnecting; noticeable degradation | Handles transitions better — connection can continue more smoothly |
+
+See [1.13 QUIC](#113-quic) for connection migration (connection ID).
+
+---
+
+### TLS support
+
+| | HTTP/2 | HTTP/3 |
+|---|--------|--------|
+| TLS versions | Typically TLS 1.2 or TLS 1.3 (separate from TCP) | **Always TLS 1.3** — built directly into QUIC |
+
+---
+
+### Header compression
+
+| | HTTP/2 | HTTP/3 |
+|---|--------|--------|
+| Compression | **HPACK** — reduces header size | **QPACK** — improved version designed for QUIC |
+
+---
+
+### Real-world example
+
+Browser requests: `index.html`, `style.css`, `app.js`, `logo.png`
+
+#### HTTP/2
+
+Single TCP connection. If the packet carrying `app.js` is lost, TCP pauses delivery — **other resources may also wait**.
+
+#### HTTP/3
+
+Single QUIC connection. If `app.js` packet is lost, **only the `app.js` stream waits** — other resources continue downloading. Page loads faster.
+
+---
+
+### When HTTP/3 shines
+
+Most beneficial on:
+
+- Mobile networks
+- High-latency networks
+- Unstable connections
+- Networks with packet loss
+
+---
+
+### Advantages of HTTP/2
+
+- Multiplexing
+- Header compression (HPACK)
+- Single TCP connection
+- Reduced latency vs HTTP/1.1
+- Widely supported
+
+---
+
+### Advantages of HTTP/3
+
+- Uses QUIC over UDP
+- No TCP head-of-line blocking
+- Faster connection setup
+- Better packet loss recovery
+- Better mobile performance
+- Lower latency
+
+---
+
+### Interview questions
+
+| Question | Answer |
+|----------|--------|
+| Why was HTTP/2 introduced? | Solve HTTP/1.1 inefficiencies using multiplexing and header compression |
+| Why was HTTP/3 introduced? | Eliminate TCP head-of-line blocking |
+| What protocol does HTTP/2 use? | **TCP** |
+| What protocol does HTTP/3 use? | **QUIC over UDP** |
+| Biggest advantage of HTTP/3? | Packet loss in one stream does not block other streams |
+| Does HTTP/3 use TLS? | Yes — TLS 1.3 is built into QUIC |
+
+---
+
+### Quick comparison
+
+| Feature | HTTP/2 | HTTP/3 |
+|---------|--------|--------|
+| Transport | TCP | QUIC (UDP) |
+| Multiplexing | Yes | Yes |
+| HOL blocking | TCP level still exists | Eliminated at stream level |
+| TLS | Separate from TCP | Built-in (TLS 1.3) |
+| Connection setup | Slower | Faster |
+| Packet loss impact | Entire connection | Single stream only |
+| Mobile performance | Good | Better |
+| Latency | Lower than HTTP/1.1 | Lowest |
 
 ---
 
 
 ## 1.13 QUIC
 
+HTTP/2 vs HTTP/3 comparison: [1.12 HTTP/2 & HTTP/3](#112-http2-http3) · UDP basics: [1.4](#14-udp)
 
-### What is it?
+**QUIC (Quick UDP Internet Connections)** is a modern transport protocol developed by Google. It was created to overcome some of TCP's limitations and improve web performance.
 
-**QUIC (Quick UDP Internet Connections)** is a transport protocol on UDP combining encryption (TLS 1.3 integrated), multiplexed streams, connection migration, and reduced handshake latency. **HTTP/3** is its primary application — see [1.12 HTTP/2 & HTTP/3](#112-http2-http3) for how they relate.
+**HTTP/3 is built on top of QUIC.**
 
-### Why it matters
+Think of it as: **TCP + TLS + performance improvements** combined into a single protocol.
 
-QUIC solves TCP's head-of-line blocking and slow handshake, improving web performance especially on mobile. Google pioneered it; now IETF standard with broad CDN/browser support.
+---
 
-### How it works
+### Why was QUIC created?
 
-1. Client sends initial packet with crypto handshake (0-RTT possible with prior ticket).
-2. Connection identified by **Connection ID**, not IP:port tuple.
-3. Multiple bidirectional streams within one QUIC connection.
-4. Loss recovery per-stream, not whole connection.
-5. Built-in congestion control in userspace (not kernel TCP stack).
+HTTP/2 improved HTTP significantly but still used TCP.
 
-```mermaid
-flowchart LR
-    Client -->|UDP| QUIC
-    QUIC --> Streams[Multiplexed streams]
-    Streams --> H3[HTTP/3]
+**Problem:** TCP suffers from head-of-line (HOL) blocking. If one packet is lost, TCP pauses delivery of subsequent packets until the lost packet is retransmitted — even unrelated streams must wait.
+
+**Result:** Higher latency and slower page loads.
+
+QUIC was designed to solve this.
+
+---
+
+### QUIC vs TCP
+
+| | TCP | QUIC |
+|---|-----|------|
+| Base | Connection-oriented | Built on **UDP** |
+| Reliability | Yes | Yes |
+| Ordering | Ordered delivery (whole connection) | Ordered **per stream** |
+| TLS | Separate handshake | **TLS 1.3 built-in** |
+| HOL blocking | Yes | **No TCP-level HOL blocking** |
+
+---
+
+### If QUIC uses UDP, how is it reliable?
+
+UDP itself is connectionless — no acknowledgements, no retransmissions, no ordering guarantees.
+
+**QUIC adds these features itself:**
+
+- Packet acknowledgements
+- Retransmissions
+- Flow control
+- Congestion control
+- Stream management
+
+```text
+UDP provides transport.
+QUIC implements reliability in user space.
 ```
 
-### Key details
+---
 
-- **0-RTT:** resumption sends data immediately (replay risk for non-idempotent ops)
-- **Connection migration:** CID survives IP change
-- Kernel bypass: userspace implementation (CPU consideration)
-- Port 443 UDP standard for HTTP/3
+### QUIC protocol stack
 
-### When to use
+```text
+HTTP/3 → QUIC → UDP → IP
+```
 
-- Public websites via CDN (Cloudflare, Fastly default HTTP/3)
-- Mobile-first applications
-- When TCP middleboxes cause issues
+Full comparison with HTTP/1.1 and HTTP/2 stacks: [1.12](#112-http2-http3)
 
-### Trade-offs / Pitfalls
+---
 
-- UDP rate limiting by ISPs
-- Higher CPU than kernel TCP at extreme throughput
-- NAT rebinding can break CID if not handled
-- Incomplete tooling ecosystem vs. TCP
+### Biggest benefit: no head-of-line blocking
 
-### References
+Suppose browser downloads: `index.html`, `style.css`, `app.js`
 
-- [QUIC protocol — deep dive video](https://www.youtube.com/watch?v=HnDsMehSSY4)
+#### TCP (HTTP/2)
+
+If a packet from `app.js` is lost, TCP waits — `style.css` and `index.html` may also be delayed. **Entire connection is affected.**
+
+#### QUIC (HTTP/3)
+
+Each resource uses its own stream. If `app.js` packet is lost, **only the `app.js` stream waits** — `style.css` and `index.html` continue normally.
+
+**Result:** Faster page loading.
+
+---
+
+### QUIC streams
+
+A QUIC connection contains multiple **independent streams**.
+
+```text
+Connection
+ |
+ |-- Stream 1 → HTML
+ |-- Stream 2 → CSS
+ |-- Stream 3 → JavaScript
+ |-- Stream 4 → Images
+```
+
+Each stream operates independently. Packet loss in one stream does not affect others.
+
+---
+
+### Faster connection setup
+
+#### HTTP/2
+
+```text
+TCP handshake (SYN → SYN-ACK → ACK)
+        +
+TLS handshake (Client Hello → Server Hello → ...)
+```
+
+Multiple round trips required.
+
+#### QUIC
+
+TLS 1.3 is built directly into QUIC. Transport setup and security setup happen **together**.
+
+**Result:** Fewer round trips, lower latency.
+
+---
+
+### Connection migration
+
+One unique feature of QUIC.
+
+**Example:** Phone on Wi-Fi → user switches to mobile data during a video call.
+
+| | TCP | QUIC |
+|---|-----|------|
+| Network change | Connection usually breaks; new connection often required | Connection can **continue** |
+
+QUIC identifies connections using **connection IDs** instead of relying only on IP addresses.
+
+**Result:** Better mobile experience.
+
+---
+
+### Encryption
+
+| | TCP | QUIC |
+|---|-----|------|
+| Encryption | Optional — TLS added separately | **Mandatory** — TLS 1.3 built in |
+
+Every QUIC connection is encrypted.
+
+---
+
+### Congestion control
+
+Just like TCP, QUIC implements:
+
+- Congestion control
+- Flow control
+- Packet retransmission
+
+**Purpose:** Prevent network overload and maintain performance.
+
+---
+
+### Why QUIC is faster
+
+1. **Fewer round trips** — transport and TLS setup combined
+2. **No TCP head-of-line blocking** — streams operate independently
+3. **Faster recovery** — packet loss impacts only the affected stream
+4. **Connection migration** — handles network changes smoothly
+
+---
+
+### Real-world example
+
+You open `youtube.com`. Browser downloads HTML, CSS, JavaScript, images, video chunks.
+
+| | Behavior |
+|---|----------|
+| **TCP** | Packet loss may slow everything |
+| **QUIC** | Only the affected stream waits; other downloads continue |
+
+This improves page load time, video streaming, and mobile performance.
+
+---
+
+### Disadvantages of QUIC
+
+- More complex implementation
+- Higher CPU usage compared to TCP
+- Some firewalls may block UDP traffic
+- Newer protocol — not as mature as TCP
+
+---
+
+### Interview questions
+
+| Question | Answer |
+|----------|--------|
+| What is QUIC? | A transport protocol built on UDP that powers HTTP/3 |
+| Why was QUIC introduced? | Eliminate TCP head-of-line blocking and reduce latency |
+| Does QUIC use UDP? | Yes — QUIC runs on top of UDP |
+| If UDP is unreliable, how does QUIC work? | QUIC implements reliability, retransmission, flow control, and congestion control itself |
+| Biggest advantage of QUIC? | Independent streams — packet loss in one stream does not block others |
+| Does QUIC use TLS? | Yes — TLS 1.3 is built into QUIC |
+
+---
+
+### Quick comparison
+
+| Feature | TCP | QUIC |
+|---------|-----|------|
+| Transport | TCP | UDP |
+| Reliable | Yes | Yes |
+| TLS | Separate | Built-in |
+| HOL blocking | Yes | No |
+| Multiplexing | Limited | Native |
+| Connection setup | Slower | Faster |
+| Connection migration | No | Yes |
+| Used by | HTTP/1, HTTP/2 | **HTTP/3** |
+
+---
+
+### Memory trick
+
+```text
+TCP  = Reliable but can block all streams
+QUIC = Reliable UDP with built-in TLS and independent streams
+
+HTTP/2 = Multiplexing over TCP
+HTTP/3 = Multiplexing over QUIC
+```
+
+**Interview one-liner:** QUIC is a modern transport protocol built on UDP that provides TCP-like reliability, built-in TLS, faster connection setup, and eliminates TCP head-of-line blocking.
 
 ---
 
 
 ## 1.14 Keep Alive Connections
 
+TCP handshake details: [1.3 TCP Handshake](#13-tcp-handshake) · HTTP/2 multiplexing: [1.12 HTTP/2 & HTTP/3](#112-http2-http3) · HTTPS: [1.10](#110-httphttps)
 
-### What is it?
+**HTTP Keep-Alive** is a mechanism that allows multiple HTTP requests and responses to reuse the same TCP connection.
 
-**HTTP keep-alive (persistent connections)** reuses the same TCP connection for multiple HTTP requests/responses, avoiding repeated TCP (+ TLS) handshakes. Controlled by `Connection: keep-alive` header (default in HTTP/1.1).
+Instead of creating a new TCP connection for every request, the existing connection remains open and is reused.
 
-### Why it matters
+This is also called a **persistent connection**.
 
-Connection setup can cost 2 - 3 RTTs (TCP + TLS). Without keep-alive, each asset on a page opens new connection - devastating for HTTP/1.1 with browser connection limits (6 per host).
+---
 
-### How it works
+### Why do we need Keep-Alive?
 
-1. Client and server complete initial TCP + TLS handshake.
-2. First HTTP request/response completes; connection stays open.
-3. Subsequent requests sent on same connection (serial in HTTP/1.1).
-4. Connection closed after `Keep-Alive: timeout=N, max=M` or idle timeout.
-5. HTTP/2 multiplexes many requests on one keep-alive connection.
+Creating a TCP connection is expensive. Every new connection requires a TCP handshake:
 
-```mermaid
-sequenceDiagram
-    participant Client
-    participant Server
-    Note over Client,Server: Single TCP connection
-    Client->>Server: Request 1
-    Server-->>Client: Response 1
-    Client->>Server: Request 2
-    Server-->>Client: Response 2
+```text
+Client → SYN
+Server → SYN-ACK
+Client → ACK
 ```
 
-### Key details
+This introduces:
 
-- **HTTP/1.1 default:** persistent unless `Connection: close`
-- Server `keepalive_timeout` (nginx default 75s)
-- **Connection pooling:** client-side reuse to same host (HttpClient, OkHttp)
-- **Head-of-line blocking** in HTTP/1.1 motivates HTTP/2 single connection
+- Extra network latency
+- Additional CPU overhead
+- More memory usage
+- More network traffic
 
-### When to use
+Keep-Alive avoids paying this cost repeatedly.
 
-- Always for HTTP/1.1 production servers
-- Client libraries: configure pool size matching expected concurrency
-- Database and Redis connection pooling (same concept, different protocol)
+---
 
-### Trade-offs / Pitfalls
+### Without Keep-Alive
 
-- Idle connections consume server file descriptors and memory
-- Load balancer idle timeout must exceed client keep-alive (or RST mid-request)
-- Sticky connection to dead server until client reconnects
-- Too many pooled connections across microservices -> connection storm on DB
+Suppose browser loads a webpage containing HTML, CSS, JavaScript, and a logo image.
 
-### References
+For each resource:
 
-- [Keep-Alive connections — HTTP performance video](https://www.youtube.com/watch?v=zRUdSu3JlK8)
+```text
+Open TCP Connection → Request Resource → Receive Response → Close Connection
+```
+
+```text
+Connection 1 → HTML
+Connection 2 → CSS
+Connection 3 → JS
+Connection 4 → Image
+```
+
+**Result:** 4 TCP handshakes, 4 TCP teardowns — wasteful.
+
+---
+
+### With Keep-Alive
+
+Browser opens **1 TCP connection**, then:
+
+```text
+Request HTML   → Response HTML
+Request CSS    → Response CSS
+Request JS     → Response JS
+Request Image  → Response Image
+```
+
+Same TCP connection reused.
+
+**Result:** Only 1 TCP handshake — much faster.
+
+---
+
+### Visual comparison
+
+#### Without Keep-Alive
+
+```text
+Browser
+   |
+TCP Handshake
+   |
+Request 1 → Response 1 → Close
+
+Browser
+   |
+TCP Handshake
+   |
+Request 2 → Response 2 → Close
+
+Browser
+   |
+TCP Handshake
+   |
+Request 3 → Response 3 → Close
+```
+
+#### With Keep-Alive
+
+```text
+Browser
+   |
+TCP Handshake
+   |
+Request 1 → Response 1
+   |
+Request 2 → Response 2
+   |
+Request 3 → Response 3
+   |
+Close Connection
+```
+
+---
+
+### Performance benefits
+
+1. **Lower latency** — TCP handshake performed only once
+2. **Less CPU usage** — fewer connections created and destroyed
+3. **Less network overhead** — fewer SYN and FIN packets
+4. **Better throughput** — more useful data transferred, less protocol overhead
+
+---
+
+### Real-world example
+
+Suppose **RTT = 100ms**.
+
+**New TCP connection:**
+
+```text
+TCP Handshake = 100ms
+HTTP Request  = 100ms
+Total         ≈ 200ms
+```
+
+**10 separate requests without Keep-Alive:**
+
+```text
+10 × 200ms ≈ 2000ms
+```
+
+**With Keep-Alive:**
+
+```text
+Handshake paid once: 100ms
+10 requests:         10 × 100ms ≈ 1000ms
+Total:               ≈ 1100ms
+```
+
+Almost half the latency.
+
+---
+
+### HTTP/1.0 vs HTTP/1.1
+
+| | HTTP/1.0 | HTTP/1.1 |
+|---|----------|----------|
+| Default | Connection closed after every request | **Keep-Alive enabled by default** |
+| Keep-Alive | Had to be explicitly enabled | Connections stay open unless explicitly closed |
+
+This significantly improved performance.
+
+---
+
+### How long does connection stay open?
+
+Server does not keep connections forever. **Idle timeout** is configured — e.g. 30, 60, or 120 seconds.
+
+If no activity occurs, server closes the connection.
+
+---
+
+### Keep-Alive header
+
+**HTTP/1.1 — keep connection open:**
+
+```http
+GET /users HTTP/1.1
+Host: api.company.com
+Connection: keep-alive
+```
+
+**Close connection after response:**
+
+```http
+Connection: close
+```
+
+---
+
+### Keep-Alive in microservices
+
+```text
+API Gateway → User Service → Order Service → Payment Service
+```
+
+| | Behavior |
+|---|----------|
+| **Without Keep-Alive** | Each request creates a new TCP connection — large overhead |
+| **With Keep-Alive** | Services reuse existing connections |
+
+**Benefits:** Lower latency, lower CPU consumption, better scalability
+
+---
+
+### Keep-Alive and connection pooling
+
+Most applications use **connection pools** — Spring Boot, Apache HttpClient, OkHttp, Netty.
+
+Instead of creating a connection every time, the pool maintains reusable connections.
+
+**Keep-Alive makes pooling possible.**
+
+---
+
+### Keep-Alive and load balancers
+
+```text
+Client → Load Balancer → Backend Server
+```
+
+Persistent connections reduce TCP handshakes, TLS handshakes, and CPU usage — improving overall throughput.
+
+---
+
+### Keep-Alive and HTTPS
+
+This is where Keep-Alive becomes even more valuable. HTTPS requires:
+
+```text
+TCP Handshake + TLS Handshake
+```
+
+Both are expensive.
+
+| | Cost per request |
+|---|------------------|
+| **Without Keep-Alive** | Every request pays TCP setup + TLS setup |
+| **With Keep-Alive** | TCP setup once, TLS setup once — multiple requests reuse the secure connection |
+
+Huge performance improvement. TLS details: [1.11 SSL/TLS](#111-ssltls)
+
+---
+
+### Interview questions
+
+| Question | Answer |
+|----------|--------|
+| What is HTTP Keep-Alive? | Reusing the same TCP connection for multiple HTTP requests |
+| Why is Keep-Alive useful? | Reduces connection setup overhead and latency |
+| What problem does it solve? | Repeated TCP and TLS handshakes |
+| Is Keep-Alive enabled by default in HTTP/1.1? | **Yes** |
+| Why is Keep-Alive important for HTTPS? | Avoids repeated TCP and TLS handshakes |
+| How does Keep-Alive improve microservices? | Reduces network overhead and improves throughput |
+
+---
+
+### Keep-Alive vs HTTP/2
+
+| | HTTP/1.1 + Keep-Alive | HTTP/2 |
+|---|----------------------|--------|
+| Connection | One connection reused | One connection reused |
+| Requests | Generally processed **sequentially** | Multiple requests processed **simultaneously** (multiplexing) |
+
+HTTP/2 still uses Keep-Alive but is much more efficient. See [1.12](#112-http2-http3).
+
+---
+
+### Memory trick
+
+```text
+Without Keep-Alive:
+  Request → New TCP Connection → Response → Close → (repeat)
+
+With Keep-Alive:
+  One TCP Connection → Request 1 → Request 2 → Request 3 → Request 4 → Close later
+```
+
+**Interview one-liner:** HTTP Keep-Alive allows multiple HTTP requests to reuse the same TCP connection, avoiding repeated TCP/TLS handshakes and significantly reducing latency.
 
 ---
 
 
 ## 1.15 Forward & Reverse Proxy
 
+Load balancing deep dive: [1.20 Load Balancer](#120-load-balancer) · CDN edge caching: [1.19 CDN](#119-cdn) · TLS: [1.11 SSL/TLS](#111-ssltls)
 
-### What is it?
+A **proxy** is an intermediary that sits between two parties and forwards requests and responses.
 
-A **proxy** is an intermediary that forwards requests on behalf of another party.
-
-| Type | Sits in front of | Client knows proxy? | Typical use |
-|------|------------------|---------------------|-------------|
-| **Forward proxy** | Clients (outbound) | Yes (configured) | Corporate egress, VPN, privacy |
-| **Reverse proxy** | Servers (inbound) | No (looks like origin) | Load balancing, TLS, API gateway |
-
-**Reverse proxy** is what most system design discussions mean: nginx, HAProxy, Envoy, AWS ALB, Cloudflare. Overlaps heavily with [1.20 Load Balancer](#120-load-balancer) and [1.19 CDN](#119-cdn) edge caching.
-
-### Why it matters
-
-- **TLS termination** at edge - backends speak plain HTTP in private VPC
-- **Load balancing** across app pool
-- **Caching** static responses at edge
-- **Security** - WAF, rate limiting, DDoS absorption, hide internal IPs
-- **Routing** - path-based routing (`/api` -> service A, `/admin` -> service B)
-
-Forward proxies control **outbound** traffic: block malicious sites, log employee browsing, cache downloads.
-
-### How it works
-
-**Reverse proxy flow:**
+Instead of client and server communicating directly:
 
 ```text
-1. Client resolves api.example.com -> LB/proxy IP (public)
-2. Client TLS handshake with proxy (certificate for api.example.com)
-3. Proxy decrypts, inspects HTTP request
-4. Proxy selects backend (round-robin, least-conn, consistent hash)
-5. Proxy forwards to backend:10.0.1.5 (private IP)
-6. Backend responds; proxy returns to client (may re-encrypt)
+Client → Proxy → Server
 ```
 
-**Forward proxy flow:**
+The proxy acts on behalf of either the **client** or the **server**.
+
+---
+
+### Why do we need a proxy?
+
+Common reasons:
+
+- Security
+- Access control
+- Caching
+- Load balancing
+- Anonymity
+- Traffic monitoring
+- Rate limiting
+
+---
+
+### Forward proxy
+
+#### What is it?
+
+A **forward proxy** sits in front of **clients** and acts on behalf of clients.
+
+The internet sees the proxy, not the actual client.
 
 ```text
-1. Browser configured: HTTP_PROXY=proxy.corp.com:8080
-2. Browser sends GET http://example.com TO proxy (not direct)
-3. Proxy fetches example.com on behalf of client
-4. Proxy returns response; origin sees proxy IP, not client IP
+Client → Forward Proxy → Internet Server
 ```
 
-```mermaid
-flowchart LR
-    subgraph Reverse
-        C1[Internet Client] --> RP[Reverse Proxy / nginx]
-        RP --> S1[App Server 1]
-        RP --> S2[App Server 2]
-    end
-    subgraph Forward
-        C2[Corporate Client] --> FP[Forward Proxy / Squid]
-        FP --> Internet[Internet Origin]
-    end
+---
+
+#### How it works
+
+**Without proxy:**
+
+```text
+Client → google.com
 ```
 
-**Critical headers (reverse proxy):**
+Server knows client's IP.
 
-| Header | Purpose |
-|--------|---------|
-| `X-Forwarded-For` | Original client IP chain |
-| `X-Forwarded-Proto` | `http` or `https` as client used |
-| `X-Request-ID` | Correlation for tracing |
-| `Host` | Original host header for virtual hosting |
+**With forward proxy:**
 
-Apps must trust these only from known proxy IPs.
+```text
+Client → Forward Proxy → google.com
+```
 
-### Key details
+Server sees **proxy IP**. Client IP is hidden.
 
-- **nginx** - most common reverse proxy + static file server
-- **Envoy** - L7 proxy, foundation of Istio service mesh
-- **API Gateway** (Kong, AWS API Gateway) - reverse proxy + auth + rate limit + analytics
-- **Transparent forward proxy** - intercepts traffic via network policy without client config
-- **Service mesh sidecar** - each pod has local reverse+forward proxy (Envoy) for east-west traffic
+---
 
-### When to use
+#### Real-world example
 
-- **Reverse:** every production web/API tier; SSL at edge; path routing to microservices
-- **Forward:** corporate networks, compliance filtering, anonymizing scrapers
-- **Both together:** mesh sidecar proxies outbound calls from app container
+Suppose a company blocks Facebook, YouTube, and Instagram.
 
-### Trade-offs / Pitfalls
+All employee traffic goes through a **corporate forward proxy**. The proxy can:
 
-- Reverse proxy **SPOF** without HA (keepalived VIP or cloud-managed LB)
-- Wrong `X-Forwarded-For` trust -> IP spoofing bypasses rate limits
-- TLS termination shifts trust boundary - encrypt VPC east-west or use mTLS to backends
-- Extra network hop adds latency (~0.5-2ms)
-- Large file uploads need proxy buffer tuning (`client_max_body_size`)
+- Allow websites
+- Block websites
+- Log requests
+- Scan downloads
 
-### References
+---
 
-- [Proxy Server - Hareram Singh](https://medium.com/@hareramcse/proxy-server-d390bc83f3a9)
-- [Forward and Reverse Proxy - video](https://www.youtube.com/watch?v=xo5V9g9joFs)
+#### Benefits of forward proxy
+
+1. **Client anonymity** — server sees proxy IP instead of client IP
+2. **Access control** — block specific websites
+3. **Content filtering** — filter inappropriate content
+4. **Caching** — store frequently requested resources
+5. **Traffic monitoring** — track user activity
+
+---
+
+#### Forward proxy example
+
+```text
+Home User → VPN / Corporate Proxy → google.com
+```
+
+`google.com` sees **proxy IP**, not user IP.
+
+---
+
+#### Who knows about the proxy?
+
+| | Forward proxy |
+|---|---------------|
+| Client | **Knows** (configured) |
+| Server | Usually does not care |
+
+Think: **proxy representing the client**
+
+---
+
+### Reverse proxy
+
+#### What is it?
+
+A **reverse proxy** sits in front of **servers** and acts on behalf of servers.
+
+Clients communicate with the proxy. Clients may not know backend servers even exist.
+
+```text
+Client → Reverse Proxy → Backend Servers
+```
+
+---
+
+#### How it works
+
+Client requests `api.company.com`.
+
+Request first reaches the **reverse proxy**. Proxy forwards request to a **backend server**. Response returns through the proxy.
+
+---
+
+#### Visual flow
+
+```text
+Client
+   |
+Reverse Proxy
+   |
+---------------------
+|         |         |
+Server1  Server2  Server3
+```
+
+---
+
+#### Benefits of reverse proxy
+
+1. **Load balancing** — distributes traffic across multiple servers
+2. **Security** — backend servers hidden from clients
+3. **SSL termination** — handles HTTPS/TLS; backends may use plain HTTP internally
+4. **Caching** — serve cached responses
+5. **Rate limiting** — prevent abuse
+6. **DDoS protection** — filters malicious traffic
+
+---
+
+#### Real-world example
+
+When you access `https://amazon.com`, you are usually talking to a **load balancer / reverse proxy** — not directly to application servers.
+
+The proxy decides which backend server should handle the request.
+
+---
+
+#### SSL termination
+
+```text
+Client
+   |
+HTTPS
+   |
+Reverse Proxy
+   |
+HTTP
+   |
+Backend Service
+```
+
+Proxy handles TLS handshake, certificate management, and encryption/decryption. Backend services stay simpler.
+
+---
+
+#### Load balancing example
+
+```text
+Client Requests
+   |
+Reverse Proxy
+   |
+-------------------------
+|          |           |
+App1       App2       App3
+```
+
+```text
+Request 1 → App1
+Request 2 → App2
+Request 3 → App3
+```
+
+Traffic distributed evenly. Algorithms and pitfalls: [1.20](#120-load-balancer)
+
+---
+
+#### Common reverse proxy products
+
+- Nginx
+- HAProxy
+- Envoy
+- Traefik
+- Cloudflare
+- AWS ALB
+
+---
+
+### Forward proxy vs reverse proxy
+
+| Feature | Forward proxy | Reverse proxy |
+|---------|---------------|---------------|
+| Represents | **Client** | **Server** |
+| Placed in front of | Clients | Servers |
+| Hides | Client identity | Server identity |
+| Used by | Clients | Server owners |
+| Common uses | VPN, filtering | Load balancing |
+| Internet sees | Proxy IP | Proxy IP |
 
 ---
 
