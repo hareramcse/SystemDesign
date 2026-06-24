@@ -12,7 +12,7 @@ Distributed databases spread data and query load across multiple nodes - often i
 
 Designing or operating a distributed database means choosing trade-offs you cannot escape: partition tolerance is mandatory on real networks, so you pick between consistency and availability (CAP), and between latency and consistency when the network is healthy (PACELC). Interview discussions usually center on partition keys, replication mode, quorum math, failure handling, and when distributed transactions are worth the cost.
 
-This chapter walks from horizontal scaling mechanics (sharding, hashing) through replication and quorums, distributed transactions, consensus algorithms, and logical clocks - everything you need to reason about systems like Cassandra, DynamoDB, CockroachDB, etcd, and Kafka's metadata layer.
+This chapter walks from horizontal scaling mechanics (sharding, hashing) through replication and quorums, distributed transactions, consensus algorithms, and logical clocks — including a **production multi-layer placement pattern** (shard → bucket → partition) for high-volume OLTP on PostgreSQL-style databases.
 
 ---
 
@@ -48,6 +48,7 @@ This chapter walks from horizontal scaling mechanics (sharding, hashing) through
 | 5.26 | [Vector Clocks](#526-vector-clocks) | Done |
 | 5.27 | [Gossip Protocol](#527-gossip-protocol) | Done |
 | 5.28 | [Membership Protocols](#528-membership-protocols) | Done |
+| 5.29 | [Sharding, Bucketing & Partitioning](#529-sharding-bucketing--partitioning) | Done |
 
 
 
@@ -89,6 +90,8 @@ Every distributed database partitions data — the design question is *how*, not
 - **Query routing** — single-partition queries stay local; scatter-gather costs multiply
 
 Poor partition design creates hot spots, expensive cross-partition transactions, and painful rebalancing.
+
+For a **full production stack** combining sharding, schema-as-bucket, and in-table range partitions (PostgreSQL-style), see [5.29 Sharding, Bucketing & Partitioning](#529-sharding-bucketing--partitioning).
 
 ### How it works
 
@@ -264,6 +267,7 @@ sequenceDiagram
 - **MongoDB** — `mongos` routes; chunks migrated by balancer; shard key immutable after collection creation.
 - **DynamoDB** — transparent sharding; partitions split/merge automatically; hot key problem remains.
 - **Tenant isolation** — enterprise tier on dedicated shard; free tier on shared shard pool.
+- **Schema-as-bucket (PostgreSQL)** — each customer group in its own schema on a shared instance; see [5.29](#529-sharding-bucketing--partitioning).
 - **Read replicas per shard** — scale reads without multiplying write shards.
 
 **Resharding strategies:**
@@ -384,6 +388,43 @@ flowchart LR
 - Risk of hot spots on latest time range or popular prefixes.
 - Split/merge operations rebalance without full rehash.
 
+#### Rolling partitions (retention at scale)
+
+For append-heavy tables (events, logs, audit), **do not let one partition grow forever**. Use a **rolling window**:
+
+```text
+Before: P1  P2  P3  P4  P5
+After:       P2  P3  P4  P5  P6   (drop P1, add P6)
+```
+
+| Operation | Cost | When to use |
+|-----------|------|-------------|
+| `DELETE FROM events WHERE id < X` | Slow; vacuum/bloat; index churn | Small tables only |
+| `DROP TABLE events_p1` | Fast metadata operation | Retention at millions+ rows |
+
+**Safe drop workflow:**
+
+1. Identify unprocessed rows in the partition to be dropped.
+2. Move them to the latest (active) partition if still needed.
+3. `DROP TABLE` the old partition — instant reclaim of storage.
+
+**Capacity planning for spikes (2× rule):**
+
+During **reindex**, **replay**, or **bulk import**, live data may temporarily **double** (old + new copy). Size partitions and reserves for **2× active data**, not just steady state.
+
+**Reserve partitions:**
+
+Keep at least **2 empty partitions** ready so burst inserts never fail waiting for partition creation.
+
+```text
+total_partitions ≈ (2 × active_partitions) + reserve
+Example: 10 active → 20 + 2 reserve = 22 partitions provisioned
+```
+
+> **Capacity ≠ reserve** — `space_left` on a shard tracks headroom; reserve partitions are empty tables waiting for traffic.
+
+Create partitions via **background scheduler**, not synchronously in the API hot path.
+
 ### When to use
 
 - Time-series, logs, and ordered event data.
@@ -394,10 +435,13 @@ flowchart LR
 
 - Append-mostly workloads pile onto the "latest" partition - mitigate with pre-splitting or hash sub-partitioning.
 - Uneven range sizes require active rebalancing.
+- Creating partitions in the request path blocks APIs under load — use schedulers.
+- Dropping partitions without moving in-flight data causes silent data loss.
 
 ### References
 
-*(No curated references for this sub-topic in `_topics.json`.)*
+- PostgreSQL declarative partitioning docs; DDIA Ch. 6 (partitioning)
+- See [5.29 Sharding, Bucketing & Partitioning](#529-sharding-bucketing--partitioning) for combined production pattern
 
 ---
 
@@ -2302,6 +2346,318 @@ flowchart TB
 ### References
 
 *(No curated references for this sub-topic in `_topics.json`.)*
+
+---
+
+
+## 5.29 Sharding, Bucketing & Partitioning
+
+
+### What is it?
+
+A **three-layer data placement pattern** used in production OLTP systems (especially PostgreSQL) when a single database and single table cannot keep up:
+
+| Layer | Purpose | Typical implementation |
+|-------|---------|------------------------|
+| **Sharding** | Spread load across machines | Multiple DB instances (PhDB) |
+| **Bucketing** | Isolate tenant/customer groups | Schema per bucket inside a logical DB |
+| **Partitioning** | Keep individual tables fast | Range (or hash) sub-tables inside each bucket |
+
+**Mental model:**
+
+```text
+Customer → Bucket → Schema → LoDB (logical DB) → PhDB (physical DB)
+```
+
+```mermaid
+flowchart TB
+    subgraph PhDB1["PhDB-1 (PostgreSQL instance)"]
+        LoDB1[installbase_db]
+        LoDB1 --> B1[bucket_0001 schema]
+        LoDB1 --> B2[bucket_0002 schema]
+    end
+    subgraph PhDB2["PhDB-2"]
+        LoDB2[installbase_db]
+        LoDB2 --> B3[bucket_0003 schema]
+    end
+    B1 --> P1[events_p1..pN partitions]
+    CP[(Control plane / metadata)] -->|routes| B1
+    CP --> B3
+```
+
+**Analogy:** PhDB = country · LoDB = state · Schema (bucket) = city · Customer = resident
+
+### Why it matters
+
+Without design, one table (`index_events`) growing 1M → 100M rows causes:
+
+| Symptom | Root cause |
+|---------|------------|
+| Slow INSERT | Every insert updates larger indexes; more disk I/O |
+| Slow SELECT | Large working set; even indexed queries degrade |
+| Slow DELETE | Row-by-row delete; vacuum/bloat overhead |
+| Painful maintenance | Reindex, vacuum lock or throttle production |
+| Reindex / replay breaks SLA | Millions of writes in hours overload one node |
+
+**Combined approach:**
+
+- **Sharding** → horizontal **scale** (CPU, disk, connections)
+- **Bucketing** → **isolation** (no cross-tenant blast radius)
+- **Partitioning** → **performance** (smaller indexes, fast retention via DROP)
+
+### How it works
+
+#### Layer 1 — Physical DB (PhDB)
+
+The actual PostgreSQL **instance or cluster** (CPU, memory, disk). Often **primary + replica** per instance for HA.
+
+```text
+PhDB-1 (Server A)    PhDB-2 (Server B)
+```
+
+#### Layer 2 — Logical DB (LoDB)
+
+Application-facing database: `CREATE DATABASE installbase_db;` — connection string usually targets LoDB, not raw instance name.
+
+#### Layer 3 — Bucket (= schema)
+
+Each bucket is a **namespace** with identical table structure, holding a **disjoint subset of customers**:
+
+```sql
+CREATE SCHEMA bucket_0001;
+-- same tables in every bucket: customer, events, ...
+```
+
+**Distribution example** (1M customers, ~100k per bucket):
+
+```text
+bucket_0001 → customers 1–100k      on PhDB-1
+bucket_0002 → customers 100k–200k   on PhDB-1
+bucket_0003 → customers 200k–300k   on PhDB-2
+...
+```
+
+#### Layer 4 — Partitioning (inside bucket)
+
+High-volume tables (events, logs) use **range partitioning** within the bucket:
+
+```sql
+CREATE TABLE events (
+  id BIGINT,
+  data TEXT
+) PARTITION BY RANGE (id);
+
+-- P1: 0–1M, P2: 1M–2M, P3: 2M–3M ...
+```
+
+PostgreSQL routes inserts to the correct child partition; queries with range predicates **prune** irrelevant partitions.
+
+#### Shared-nothing rules
+
+1. **All data for one customer lives in exactly one bucket** — never split a customer across buckets.
+2. **No cross-bucket joins** in the hot path.
+
+```sql
+-- Allowed (single bucket)
+SELECT * FROM bucket_0003.customer WHERE id = 'CUST_101';
+
+-- Avoid (cross-bucket — slow, breaks scale)
+-- JOIN bucket_0001.customer WITH bucket_0005.orders
+```
+
+Cross-shard queries need **scatter-gather**, **denormalization**, or an **analytics pipeline** — not OLTP SQL joins.
+
+### Control plane (metadata)
+
+A small **routing catalog** (often a separate lightweight DB) answers: *where is this customer?*
+
+**`buckets` — where buckets live and capacity:**
+
+```sql
+CREATE TABLE buckets (
+  bucket_id        INT PRIMARY KEY,
+  db_instance_id   TEXT NOT NULL,      -- e.g. 'PhDB-2'
+  space_left       INT NOT NULL DEFAULT 1000000,
+  privileged       BOOLEAN NOT NULL DEFAULT FALSE,
+  is_active        BOOLEAN NOT NULL DEFAULT TRUE,
+  bucket_schema    TEXT               -- e.g. 'bucket_0003'
+);
+```
+
+**`entity_buckets` — customer → bucket (most important routing table):**
+
+```sql
+CREATE TABLE entity_buckets (
+  entity_id   TEXT PRIMARY KEY,
+  bucket_id   INT REFERENCES buckets(bucket_id)
+);
+```
+
+```text
+CUST_101 → bucket_0002
+CUST_202 → bucket_0005
+```
+
+Use a sequence (`seq_bucket`) for new bucket IDs. This is your **shard map** — equivalent to Vitess topology or DynamoDB partition metadata.
+
+### Runtime request flows
+
+#### Read flow
+
+```mermaid
+sequenceDiagram
+    participant API
+    participant Meta as Control plane
+    participant DB as PhDB + LoDB
+    API->>Meta: entity_id = CUST_101
+    Meta->>Meta: SELECT bucket_id, db_instance_id
+    API->>DB: CONNECT installbase_db
+    API->>DB: SET search_path TO bucket_0002
+    API->>DB: SELECT ... WHERE id = CUST_101
+```
+
+1. Lookup `entity_buckets` → `bucket_id`
+2. Lookup `buckets` → `db_instance_id`, `bucket_schema`
+3. Connect to target PhDB / LoDB
+4. `SET search_path TO bucket_000X` (PostgreSQL)
+5. Execute query
+
+**Important:** If mapping **not found** on read → return empty / not found. **Do not** auto-assign a bucket on read.
+
+#### Write flow (new customer)
+
+1. Check `entity_buckets` — exists?
+2. If **no** → assign bucket (see below), insert mapping
+3. Connect + `SET search_path`
+4. Insert / update business data
+5. Decrement `space_left` on bucket (or recompute periodically)
+
+#### Bucket assignment (even distribution)
+
+```sql
+SELECT bucket_id
+FROM buckets
+WHERE space_left > 0 AND privileged = FALSE AND is_active = TRUE
+ORDER BY space_left DESC
+LIMIT 1;
+```
+
+If none available → **create new bucket** (pick least-loaded PhDB, `CREATE SCHEMA`, run DDL, register in `buckets`).
+
+Prefer buckets with the **most remaining capacity** (`ORDER BY space_left DESC`) to avoid hotspots.
+
+### Bucket creation
+
+1. Choose **least-loaded** PhDB (by bucket count or disk/CPU).
+2. `nextval('seq_bucket')` → new `bucket_id`.
+3. `CREATE SCHEMA bucket_XXXX;` + create all tables (migrations).
+4. Insert row in `buckets`; ready for assignments.
+
+Run DDL via **migration job**, not user-facing API.
+
+### Partition lifecycle (inside bucket)
+
+```mermaid
+flowchart LR
+    Inserts[Inserts to active partition] --> Monitor[Monitor sequence / size]
+    Monitor --> Create[Scheduler creates next partition]
+    Monitor --> Drop[Drop oldest after data move]
+    Drop --> Move[Move unprocessed rows to latest]
+```
+
+1. Inserts land in current range partition.
+2. Monitor ID sequence or row count.
+3. **Background scheduler** adds future partitions (keep **2+ empty reserve**).
+4. Before **DROP** old partition → move any unprocessed rows to latest partition.
+5. `DROP TABLE` old partition — O(metadata), not O(rows).
+
+**Full reindex / replay scenario:**
+
+1. Read master data
+2. Bulk insert into `events` (may hit **2×** row count during migration)
+3. Process / index
+4. Drop old partitions when cutover complete
+
+**Why partition + DROP beats DELETE:**
+
+```text
+DELETE millions of rows → vacuum storm, index bloat, long locks
+DROP partition           → instant, predictable
+```
+
+**Partition count formula:**
+
+```text
+total_partitions ≈ (2 × active_partitions) + reserve_partitions
+Example: 10 active → 20 + 2 = 22 provisioned
+```
+
+Plan for **2× active data** during reindex, replay, or bulk import.
+
+### Combined stack (final picture)
+
+```text
+PhDB-2
+└── installbase_db (LoDB)
+    ├── bucket_0003 (schema)
+    │   ├── customer
+    │   └── events → events_p1, events_p2, ... (range partitions)
+    └── bucket_0004
+        └── ...
+```
+
+| Concern | Layer that solves it |
+|---------|---------------------|
+| Machine limits | Sharding (PhDB) |
+| Tenant isolation | Bucketing (schema) |
+| Table size / retention | Partitioning (range + DROP) |
+| Routing | Control plane (`entity_buckets`) |
+
+### Key details
+
+| Practice | Reason |
+|----------|--------|
+| Partition creation in **scheduler** | Avoid API latency spikes and lock contention |
+| **Locks** around bucket creation / partition DDL | Prevent duplicate bucket IDs or half-created schemas |
+| Monitor `space_left`, partition fill rate, vacuum | Early warning before insert failures |
+| **Privileged** buckets | Dedicated enterprise tenants — excluded from shared pool assignment |
+| `search_path` per request | Wrong schema = wrong tenant data (critical security bug) |
+
+### When to use
+
+- Millions of customers or entities with **per-entity locality** (all rows for customer X together)
+- Continuous writes + heavy deletes (retention) + periodic **full reindex**
+- PostgreSQL (or similar) where **schema-per-tenant** is acceptable vs database-per-tenant cost
+- Team can operate **control plane** + automated bucket/partition jobs
+
+### Trade-offs / Pitfalls
+
+| Pitfall | Consequence | Mitigation |
+|---------|-------------|------------|
+| Missing `search_path` | Cross-tenant data leak or wrong reads | Set schema in connection/session middleware |
+| Uneven bucket fill | One PhDB overloaded | `space_left` + least-loaded PhDB on create |
+| No reserve partitions | Insert fails during spike | Pre-create 2+ empty partitions |
+| Large partitions never dropped | Storage and query decay | Rolling window + DROP not DELETE |
+| Cross-bucket joins in API | Latency, distributed tx pain | Denormalize; async aggregation |
+| Auto-assign bucket on read | Phantom tenants, routing corruption | Assign only on explicit create/write |
+| Partition DDL in API | Timeouts under load | Background scheduler only |
+| Ignoring 2× during reindex | Disk full mid-migration | Size for double active set |
+
+### Final takeaway
+
+```text
+Sharding      → SCALE      (many machines)
+Bucketing     → ISOLATION  (customer groups)
+Partitioning  → PERFORMANCE (manageable tables, fast retention)
+```
+
+Together: data is **distributed**, customers are **isolated**, and tables stay **operationally small**.
+
+### References
+
+- PostgreSQL declarative partitioning; `search_path` and schemas
+- Vitess / Citus (alternative sharding routers)
+- Designing Data-Intensive Applications, Ch. 6
 
 ---
 
