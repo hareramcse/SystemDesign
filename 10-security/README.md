@@ -16,27 +16,27 @@ Production designs layer these controls: authentication and authorization, encry
 
 | # | Sub-topic |
 |---|-----------|
-| 10.1 | Authentication |
-| 10.2 | Authorization |
-| 10.3 | OAuth2 |
-| 10.4 | OpenID Connect |
-| 10.5 | JWT |
-| 10.6 | Session Management |
-| 10.7 | RBAC |
-| 10.8 | ABAC |
-| 10.9 | Encryption at Rest |
-| 10.10 | Encryption in Transit |
-| 10.11 | KMS |
-| 10.12 | Secret Management |
-| 10.13 | CSRF |
-| 10.14 | XSS |
-| 10.15 | SQL Injection |
-| 10.16 | SSRF |
-| 10.17 | Clickjacking |
-| 10.18 | DDoS Protection |
-| 10.19 | WAF |
-| 10.20 | Zero Trust Security |
-| 10.21 | Audit Logging |
+| 10.1 | [Authentication](#101-authentication) |
+| 10.2 | [Authorization](#102-authorization) |
+| 10.3 | [OAuth2](#103-oauth2) |
+| 10.4 | [OpenID Connect](#104-openid-connect) |
+| 10.5 | [JWT](#105-jwt) |
+| 10.6 | [Session Management](#106-session-management) |
+| 10.7 | [RBAC](#107-rbac) |
+| 10.8 | [ABAC](#108-abac) |
+| 10.9 | [Encryption at Rest](#109-encryption-at-rest) |
+| 10.10 | [Encryption in Transit](#1010-encryption-in-transit) |
+| 10.11 | [KMS](#1011-kms) |
+| 10.12 | [Secret Management](#1012-secret-management) |
+| 10.13 | [CSRF](#1013-csrf) |
+| 10.14 | [XSS](#1014-xss) |
+| 10.15 | [SQL Injection](#1015-sql-injection) |
+| 10.16 | [SSRF](#1016-ssrf) |
+| 10.17 | [Clickjacking](#1017-clickjacking) |
+| 10.18 | [DDoS Protection](#1018-ddos-protection) |
+| 10.19 | [WAF](#1019-waf) |
+| 10.20 | [Zero Trust Security](#1020-zero-trust-security) |
+| 10.21 | [Audit Logging](#1021-audit-logging) |
 
 ---
 
