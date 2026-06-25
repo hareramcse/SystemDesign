@@ -8,15 +8,82 @@
 
 ## Overview
 
-API design defines how services expose capabilities to clients and each other - shaping developer experience, evolvability, performance, and security. Modern systems choose among **REST** (resource-oriented HTTP), **GraphQL** (client-driven queries), **gRPC** (binary RPC over HTTP/2), and legacy **SOAP** based on audience, latency needs, and contract rigor.
+API design defines how services expose capabilities to clients and each other — shaping developer experience, evolvability, performance, and security.
 
-Beyond protocol choice, production APIs need **gateways** for cross-cutting concerns (auth, rate limits, routing), consistent **pagination and filtering**, explicit **versioning**, and **idempotency** for safe retries. Poor API design creates coupling, outage amplification, and breaking changes that stall client teams.
+Choose a **protocol** ([REST](#71-rest), [GraphQL](#72-graphql), [gRPC](#73-grpc), or legacy [SOAP](#74-soap)) based on audience, latency, and contract needs. Production APIs add an **[API gateway](#75-api-gateway)** for cross-cutting policy, **[versioning](#78-api-versioning)** for safe evolution, **[OpenAPI](#712-openapi)** contracts, **[security](#716-api-security)** and **[traffic control](#718-rate-limiting)**, and **[idempotency](#720-idempotency)** for safe retries.
 
-This chapter covers protocol trade-offs, gateway patterns, query conventions, documentation (OpenAPI/Swagger), security, traffic control, and contract testing - everything needed to design and defend API decisions in system design interviews.
+```mermaid
+flowchart LR
+    subgraph protocols [§7.1–7.4 Protocols]
+        REST[REST] --- GQL[GraphQL]
+        GQL --- GRPC[gRPC]
+        GRPC --- SOAP[SOAP]
+    end
+    subgraph edge [§7.5–7.7 Edge & composition]
+        GW[Gateway] --> AGG[Aggregation]
+        AGG --> COMP[Composition]
+    end
+    subgraph lists [§7.8–7.11 Lists & evolution]
+        VER[Versioning] --> FIL[Filter]
+        FIL --> SORT[Sort]
+        SORT --> PAGE[Paginate]
+    end
+    subgraph contract [§7.12–7.15 Contract & quality]
+        OAS[OpenAPI] --> SW[Swagger]
+        SW --> VAL[Validation]
+        VAL --> CT[Contract tests]
+    end
+    subgraph ops [§7.16–7.21 Security & reliability]
+        SEC[Security] --> WH[Webhooks]
+        WH --> RL[Rate limit]
+        RL --> TH[Throttle]
+        TH --> IDEM[Idempotency]
+    end
+    protocols --> edge
+    edge --> lists
+    lists --> contract
+    contract --> ops
+```
+
+### Protocol picker
+
+| | [REST](#71-rest) | [GraphQL](#72-graphql) | [gRPC](#73-grpc) | [SOAP](#74-soap) |
+|---|------------------|------------------------|------------------|------------------|
+| **Nature** | Architectural style | Query language + runtime | RPC framework | XML protocol |
+| **Payload** | JSON (typical) | JSON | Protobuf (binary) | XML |
+| **Transport** | HTTP | HTTP (`POST /graphql`) | HTTP/2 | HTTP, SMTP, … |
+| **Contract** | [OpenAPI](#712-openapi) | GraphQL SDL | `.proto` | WSDL |
+| **Caching** | Strong for `GET` | Harder | Internal use | Limited |
+| **Best for** | Public CRUD, mobile/web | Multi-client, flexible screens | Service-to-service | Enterprise, regulated legacy |
+
+Public browsers usually see REST or GraphQL at the edge; gRPC behind the [gateway](#75-api-gateway); SOAP only where mandated.
+
+### List API pipeline
+
+```mermaid
+flowchart LR
+    REQ[GET /users?...] --> F[Filter §7.10]
+    F --> S[Sort §7.11]
+    S --> P[Paginate §7.9]
+    P --> RES[Response page]
+```
+
+Always **filter → sort → paginate**. Document query params in OpenAPI.
+
+### Multi-service responses
+
+| Pattern | When | Latency |
+|---------|------|---------|
+| **[Aggregation](#76-api-aggregation)** | Independent service calls (dashboard fan-out) | `MAX` of calls |
+| **[Composition](#77-api-composition)** | Sequential chains (step B needs step A's result) | `SUM` of calls |
+
+Often implemented in a **BFF** behind the gateway — not heavy domain logic in gateway plugins.
 
 ---
 
 ## Sub-topics
+
+### Protocols & styles
 
 | # | Sub-topic | Status |
 |---|-----------|--------|
@@ -24,1370 +91,3760 @@ This chapter covers protocol trade-offs, gateway patterns, query conventions, do
 | 7.2 | [GraphQL](#72-graphql) | Done |
 | 7.3 | [gRPC](#73-grpc) | Done |
 | 7.4 | [SOAP](#74-soap) | Done |
+
+### Edge, routing & multi-service APIs
+
+| # | Sub-topic | Status |
+|---|-----------|--------|
 | 7.5 | [API Gateway](#75-api-gateway) | Done |
-| 7.6 | [API Aggregation](#76-api-aggregation) | Done |
-| 7.7 | [API Composition](#77-api-composition) | Done |
+| 7.6 | [API Aggregation](#76-api-aggregation) | Done — parallel fan-out |
+| 7.7 | [API Composition](#77-api-composition) | Done — sequential + business view |
+
+### Versioning & list APIs
+
+| # | Sub-topic | Status |
+|---|-----------|--------|
 | 7.8 | [API Versioning](#78-api-versioning) | Done |
 | 7.9 | [Pagination](#79-pagination) | Done |
 | 7.10 | [Filtering](#710-filtering) | Done |
 | 7.11 | [Sorting](#711-sorting) | Done |
-| 7.12 | [OpenAPI](#712-openapi) | Done |
-| 7.13 | [Swagger](#713-swagger) | Done |
+
+### Contract, validation & testing
+
+| # | Sub-topic | Status |
+|---|-----------|--------|
+| 7.12 | [OpenAPI](#712-openapi) | Done — specification |
+| 7.13 | [Swagger](#713-swagger) | Done — tooling |
 | 7.14 | [Request Validation](#714-request-validation) | Done |
 | 7.15 | [Contract Testing](#715-contract-testing) | Done |
+
+### Security, events & traffic
+
+| # | Sub-topic | Status |
+|---|-----------|--------|
 | 7.16 | [API Security](#716-api-security) | Done |
 | 7.17 | [Webhooks](#717-webhooks) | Done |
-| 7.18 | [Rate Limiting](#718-rate-limiting) | Done |
-| 7.19 | [Throttling](#719-throttling) | Done |
-| 7.20 | [Idempotency](#720-idempotency) | Done |
-| 7.21 | [Idempotency Keys](#721-idempotency-keys) | Done |
+| 7.18 | [Rate Limiting](#718-rate-limiting) | Done — reject excess |
+| 7.19 | [Throttling](#719-throttling) | Done — slow/queue under load |
 
+### Safe retries
 
-
-
-
-```mermaid
-flowchart LR
-    Client --> GW[API Gateway]
-    GW --> REST[REST Service]
-    GW --> GQL[GraphQL]
-    GW --> GRPC[gRPC Backend]
-```
-
----
-
+| # | Sub-topic | Status |
+|---|-----------|--------|
+| 7.20 | [Idempotency](#720-idempotency) | Done — concept & HTTP methods |
+| 7.21 | [Idempotency Keys](#721-idempotency-keys) | Done — `POST` implementation |
 
 ---
 
 ## 7.1 REST
 
+> **Protocol context:** compare [REST vs GraphQL vs gRPC vs SOAP](#protocol-picker) in the chapter intro.
 
-### What is it?
+### What is REST?
 
-**REST** (Representational State Transfer) is an architectural style for networked APIs defined by Roy Fielding. It models the system as **resources** (nouns) identified by URLs, manipulated with **HTTP verbs**, exchanged as **representations** (JSON, XML), and governed by **stateless** request/response semantics and standard **status codes**.
-
-REST is not a protocol — it is a set of constraints. A "RESTful" API uses HTTP as the application protocol and lets clients navigate via links (HATEOAS) when hypermedia is adopted.
-
-### Why it matters
-
-- **Universal tooling:** browsers, CDNs, proxies, load balancers, and every language have HTTP clients
-- **Cache-friendly reads:** `GET` + `Cache-Control` / `ETag` reduce backend load at the edge
-- **Predictable semantics:** verbs and status codes communicate intent without custom error enums
-- **Interview default:** when asked "design a public API," REST is the baseline unless latency or client-flexibility demands GraphQL/gRPC
-
-### How it works
-
-**1. Resources (nouns, not verbs)**
-
-Resources are things in your domain — not actions. URLs identify resources; HTTP verbs express actions on them.
-
-| Good (resource-oriented) | Bad (RPC disguised as REST) |
-|--------------------------|-----------------------------|
-| `GET /users/42` | `POST /getUser` |
-| `POST /orders` | `POST /createOrder` |
-| `GET /orders/99/items` | `GET /fetchOrderItems?orderId=99` |
-
-Naming conventions:
+**REST (Representational State Transfer)** is an architectural style used for building web services and APIs. It allows different applications to communicate over **HTTP**.
 
 ```text
-/users              collection
-/users/{id}         single resource
-/users/{id}/orders  sub-collection (use when orders are owned by user)
-/orders/{id}        prefer flat top-level when order is a first-class aggregate
+Mobile App → REST API → Database
+Web App    → REST API → Database
 ```
 
-**2. HTTP verbs and safety**
+REST is not a protocol — it is a set of **constraints** on how to use HTTP. Compare alternatives: [§7.2 GraphQL](#72-graphql), [§7.3 gRPC](#73-grpc).
 
-| Verb | Safe | Idempotent | Request body | Typical success code | Use |
-|------|------|------------|--------------|---------------------|-----|
-| `GET` | Yes | Yes | No | `200 OK` | Read resource or collection |
-| `POST` | No | No | Yes | `201 Created` | Create; non-idempotent actions |
-| `PUT` | No | Yes | Yes | `200 OK` / `204 No Content` | Full replace / upsert |
-| `PATCH` | No | No* | Yes | `200 OK` | Partial update (JSON Patch, merge patch) |
-| `DELETE` | No | Yes | Rare | `204 No Content` | Remove resource |
+### Core idea
 
-\*PATCH idempotency depends on patch semantics — design patches to be repeatable when possible.
+Everything is treated as a **resource**.
 
-**Safe** = no side effects on server state (client can prefetch). **Idempotent** = multiple identical requests have the same effect as one (safe to retry).
+Examples: User, Product, Order, Payment.
 
-**3. Stateless**
+Resources are identified using **URLs**:
 
-Each request must contain everything the server needs: auth token, resource ID, representation. The server does **not** store client session state between requests (session data may live in a DB keyed by token, but the protocol is stateless).
+```text
+/users
+/products
+/orders
+```
+
+### HTTP methods
+
+| Method | Purpose | Example |
+|--------|---------|---------|
+| **GET** | Retrieve data | `GET /users/1` |
+| **POST** | Create new data | `POST /users` |
+| **PUT** | Update entire resource | `PUT /users/1` |
+| **PATCH** | Update partial resource | `PATCH /users/1` |
+| **DELETE** | Remove resource | `DELETE /users/1` |
+
+`GET` is **safe** (read-only). `PUT` and `DELETE` are **idempotent** (safe to retry). `POST` is not — use [§7.21 Idempotency Keys](#721-idempotency-keys) for safe retries.
+
+### Request and response
+
+**Client request:**
+
+```http
+GET /users/1
+```
+
+**Server response:**
+
+```json
+{
+  "id": 1,
+  "name": "John"
+}
+```
+
+### REST characteristics
+
+1. **Client–server** — client sends requests; server processes them
+2. **Stateless** — every request is independent; server does not remember previous requests
+3. **Cacheable** — responses can be stored and reused (`GET` + `Cache-Control` / `ETag`)
+4. **Uniform interface** — standard way to access resources (URLs + HTTP methods + representations)
+5. **Layered system** — requests can pass through API gateways, load balancers, CDNs — [§7.5 API Gateway](#75-api-gateway)
 
 ```mermaid
 flowchart LR
-    C1[Client Request 1 / Authorization + body] --> API[REST API]
-    C2[Client Request 2 / Authorization + body] --> API
-    API --> DB[(Resource Store)]
+    C[Client] --> GW[Gateway / CDN]
+    GW --> API[REST API]
+    API --> DB[(Database)]
 ```
 
-Implications:
+### Resource naming convention
 
-- No server-side "conversation context" — use URLs, headers, and body
-- Horizontal scaling is trivial — any instance can serve any request
-- Auth via `Authorization: Bearer <token>` or API key per request
+| Good | Bad |
+|------|-----|
+| `GET /users` | `GET /getUsers` |
+| `GET /orders` | `GET /fetchOrders` |
+| `POST /products` | `POST /createProduct` |
 
-**4. Representations and content negotiation**
+Use **nouns** for resources; HTTP methods express the action.
 
-A resource can have multiple representations. Client sends `Accept: application/json`; server returns JSON. Version via `Accept: application/vnd.myapi.v2+json` or URL prefix `/v2/users`.
-
-**5. HATEOAS basics (Hypermedia as the Engine of Application State)**
-
-HATEOAS embeds **links** in responses so clients discover next actions without hardcoding URLs:
-
-```json
-{
-  "id": "ord_123",
-  "status": "pending",
-  "total": 4999,
-  "_links": {
-    "self": { "href": "/orders/ord_123" },
-    "cancel": { "href": "/orders/ord_123/cancel", "method": "POST" },
-    "pay": { "href": "/orders/ord_123/payments", "method": "POST" }
-  }
-}
+```text
+/users           collection
+/users/{id}      single resource
+/users/{id}/orders   sub-collection (when owned by user)
 ```
 
-In practice, many "REST" APIs skip full HATEOAS and use OpenAPI docs instead — interview answer: "HATEOAS is ideal for evolvable public APIs; most internal APIs use documented URL conventions."
+### HTTP status codes
 
-**6. HTTP status codes (interview cheat sheet)**
+| Code | Meaning |
+|------|---------|
+| **200 OK** | Request successful |
+| **201 Created** | Resource created |
+| **400 Bad Request** | Invalid request |
+| **401 Unauthorized** | Authentication required |
+| **403 Forbidden** | Access denied |
+| **404 Not Found** | Resource does not exist |
+| **409 Conflict** | State conflict (duplicate, version mismatch) |
+| **422 Unprocessable Entity** | Valid syntax, business rule failure |
+| **429 Too Many Requests** | Rate limited — [§7.18](#718-rate-limiting) |
+| **500 Internal Server Error** | Server failure |
 
-| Code | Meaning | When to use |
-|------|---------|-------------|
-| `200 OK` | Success with body | `GET`, `PUT`, `PATCH` success |
-| `201 Created` | Resource created | `POST` create; include `Location: /resources/{id}` |
-| `204 No Content` | Success, no body | `DELETE`, some `PUT`/`PATCH` |
-| `400 Bad Request` | Client malformed input | Validation failure |
-| `401 Unauthorized` | Auth missing/invalid | No or bad token |
-| `403 Forbidden` | Auth OK, not allowed | Insufficient scope/role |
-| `404 Not Found` | Resource does not exist | Unknown ID (or hide existence with 404) |
-| `409 Conflict` | State conflict | Duplicate unique key, version mismatch |
-| `422 Unprocessable Entity` | Semantic validation | Business rule failure |
-| `429 Too Many Requests` | Rate limited | With `Retry-After` header |
-| `500 Internal Server Error` | Server bug | Never leak stack traces in prod |
-| `502` / `503` / `504` | Gateway / overload / timeout | Retriable by client with backoff |
+Return consistent error bodies (e.g. `application/problem+json`) instead of `200` with `{ "error": true }`.
 
-Use **problem+json** (`application/problem+json`) for consistent error bodies:
+### Simple flow
 
-```json
-{
-  "type": "https://api.example.com/errors/insufficient-funds",
-  "title": "Insufficient funds",
-  "status": 422,
-  "detail": "Account balance 10.00 is less than charge 49.99",
-  "instance": "/payments/pay_abc"
-}
+```text
+Client → GET /users/1 → Server → fetch from database
+→ JSON response → Client
 ```
-
-### Diagram
 
 ```mermaid
 sequenceDiagram
     participant C as Client
-    participant API as REST API
-    participant CDN as "CDN / Cache"
-
-    C->>CDN: GET /users/42 (If-None-Match: "etag-xyz")
-    alt cache hit
-        CDN-->>C: 304 Not Modified
-    else cache miss
-        CDN->>API: GET /users/42
-        API-->>CDN: 200 + ETag + Cache-Control
-        CDN-->>C: 200 JSON body
-    end
-    C->>API: POST /orders (Idempotency-Key: uuid)
-    API-->>C: 201 Created + Location: /orders/ord_99
+    participant S as Server
+    participant DB as Database
+    C->>S: GET /users/1
+    S->>DB: fetch user
+    DB-->>S: row data
+    S-->>C: 200 JSON { id, name, ... }
 ```
 
-### Key details
+### Data format
 
-- **Caching:** `GET` responses cacheable; `POST`/`PUT`/`DELETE` invalidate via keys or short TTL
-- **Pagination:** `?cursor=abc&limit=20` on collections; never unbounded list endpoints
-- **Partial updates:** prefer `PATCH` with JSON Merge Patch or JSON Patch over misusing `PUT`
-- **Idempotency:** `PUT`/`DELETE` naturally idempotent; `POST` needs `Idempotency-Key` (see 7.21)
+Most REST APIs use **JSON**.
 
-### When to use
+```json
+{
+  "id": 101,
+  "name": "Alice",
+  "email": "alice@example.com"
+}
+```
 
-- Public HTTP APIs, mobile/web clients, CDN-cacheable reads
+Content negotiation: client sends `Accept: application/json`. API versioning: [§7.8 API Versioning](#78-api-versioning). List APIs: [§7.9 Pagination](#79-pagination), [§7.10 Filtering](#710-filtering), [§7.11 Sorting](#711-sorting). Contract docs: [§7.12 OpenAPI](#712-openapi).
+
+### When to use REST
+
+- Public HTTP APIs for mobile and web clients
 - CRUD-heavy domains with clear resource boundaries
-- Teams prioritizing simplicity, debuggability, and broad client support
+- Cacheable reads and broad client/tooling support
 
-### Trade-offs / Pitfalls
+### Trade-offs
 
-- **Over/under-fetching:** fixed resource shapes → multiple round trips or bloated payloads (BFF or GraphQL mitigate)
-- **RPC-in-REST:** verbs in URLs (`/createUser`) lose HTTP semantics and cacheability
-- **Wrong status codes:** returning `200` with `{ "error": true }` breaks clients and monitoring
-- **Ignoring idempotency on POST:** retries after timeout cause duplicate side effects
-- **Chatty clients:** N+1 calls without aggregation — fix with BFF, batch endpoints, or field expansion
+- **Over/under-fetching** — fixed resource shapes may need multiple calls (BFF, GraphQL, or aggregation — [§7.6](#76-api-aggregation))
+- **RPC-in-REST** — verbs in URLs lose HTTP semantics
+- **POST without idempotency** — retries after timeout can duplicate side effects — [§7.20](#720-idempotency)
 
-### References
+### Summary
 
-- [RFC 9110 — HTTP Semantics](https://www.rfc-editor.org/rfc/rfc9110)
-- [Problem Details for HTTP APIs (RFC 9457)](https://www.rfc-editor.org/rfc/rfc9457)
+```text
+REST = architectural style for APIs
+Uses HTTP + URLs + resources + JSON (typically)
+Operations: GET, POST, PUT, PATCH, DELETE
+Goal: simple, scalable, standardized communication between applications
+```
 
 ---
 
 
 ## 7.2 GraphQL
 
+> **Protocol context:** [Protocol picker](#protocol-picker).
 
-### What is it?
+### What is GraphQL?
 
-**GraphQL** is a **query language** and **server runtime** where clients describe exactly what data they need in a single request. A **schema** defines types, fields, queries (reads), mutations (writes), and subscriptions (real-time). One HTTP endpoint (typically `POST /graphql`) serves all operations.
+**GraphQL** is a **query language for APIs**. It allows clients to request exactly the data they need from the server.
 
-Unlike REST's fixed resource endpoints, GraphQL returns a **graph-shaped response** matching the client's query tree.
+Developed by Facebook (Meta).
 
-### Why it matters
-
-- **Over-fetching:** REST `GET /user/123` returns all fields; mobile may only need `name` and `avatar`
-- **Under-fetching:** REST needs 3 calls (`/user`, `/orders`, `/recommendations`); GraphQL nests in one round trip
-- **Strong typing:** schema is contract + introspection powers GraphiQL, codegen, and validation
-- **Evolving clients:** add fields without new endpoints; deprecate with `@deprecated`
-
-### How it works
-
-1. **Schema definition (SDL):**
-
-```graphql
-type User {
-  id: ID!
-  name: String!
-  orders(first: Int): [Order!]!
-}
-type Query {
-  user(id: ID!): User
-}
-type Mutation {
-  updateUser(id: ID!, name: String!): User
-}
+```text
+Client → GraphQL API → Database
 ```
 
-2. **Client query** - only requested fields returned:
+Unlike [§7.1 REST](#71-rest), where the server defines fixed response shapes per endpoint, GraphQL returns a **graph-shaped response** matching the client's query tree.
+
+### Why GraphQL?
+
+In REST, the **server** decides what data is returned. In GraphQL, the **client** decides what fields are needed.
+
+This helps avoid:
+
+1. **Over-fetching** — getting more data than needed
+2. **Under-fetching** — making multiple API calls to get required data
+
+**Example:** User has `id`, `name`, `email`, `age`, `address`. Client only needs `name`:
 
 ```graphql
-query {
-  user(id: "123") {
+{
+  user(id: 1) {
     name
-    orders(first: 5) { id total }
   }
 }
 ```
 
-3. **Execution:** GraphQL engine parses query, validates against schema, calls **resolvers** per field
-4. **N+1 problem:** naive resolver per order -> N DB calls; fix with **DataLoader** batching
-5. **Mutations** for writes; **subscriptions** over WebSocket for push
+**Response:**
+
+```json
+{
+  "data": {
+    "user": {
+      "name": "John"
+    }
+  }
+}
+```
+
+### Core components
+
+| Component | Purpose |
+|-----------|---------|
+| **Query** | Read data |
+| **Mutation** | Create, update, delete data |
+| **Subscription** | Real-time updates |
+
+#### Query
+
+```graphql
+{
+  user(id: 1) {
+    id
+    name
+    email
+  }
+}
+```
+
+#### Mutation
+
+```graphql
+mutation {
+  createUser(name: "John") {
+    id
+    name
+  }
+}
+```
+
+#### Subscription
+
+```graphql
+subscription {
+  newMessage {
+    id
+    text
+  }
+}
+```
+
+### Single endpoint
+
+**REST** — multiple endpoints:
+
+```text
+GET /users
+GET /orders
+GET /products
+```
+
+**GraphQL** — single endpoint:
+
+```http
+POST /graphql
+```
+
+All queries, mutations, and subscriptions go through one endpoint.
+
+### Schema
+
+The **schema** defines available data, types, queries, and mutations.
+
+```graphql
+type User {
+  id: ID
+  name: String
+  email: String
+}
+
+type Query {
+  user(id: ID!): User
+}
+
+type Mutation {
+  createUser(name: String!): User
+}
+```
+
+Strong typing enables introspection, validation, and client code generation — [§7.12 OpenAPI](#712-openapi) plays a similar contract role for REST.
+
+### Resolver
+
+A **resolver** contains the logic for fetching or updating data.
+
+```text
+Query → resolver → database → response
+```
 
 ```mermaid
 flowchart TB
-    Client -->|POST /graphql| GQL[GraphQL Server]
-    GQL --> R1[User resolver]
-    GQL --> R2[Order resolver - batched via DataLoader]
-    R1 --> DB[(Database)]
-    R2 --> DB
+    C[Client] -->|POST /graphql| GQL[GraphQL server]
+    GQL --> R[Resolver]
+    R --> DB[(Database)]
+    DB --> R
+    R --> GQL
+    GQL --> C
 ```
 
-**Federation (Apollo):** multiple **subgraphs** (team-owned services) compose one **supergraph**; router delegates fields to subgraphs.
+### Example flow
 
-### Key details
+**Client query:**
 
-| Topic | Detail |
-|-------|--------|
-| **Query complexity** | Assign cost per field; reject expensive queries (depth limit, complexity score) |
-| **Caching** | No URL-level HTTP cache; use persisted queries, CDN for public read-only, or APQ |
-| **Errors** | Partial success: `200` with `{ data, errors[] }` - monitor both |
-| **Auth** | Field-level auth in resolvers; don't expose sensitive fields in schema |
-| **vs REST** | GraphQL for flexible clients; REST for simple CRUD, CDN caching, public APIs |
-| **vs BFF** | BFF is one backend per client; GraphQL is one schema many clients |
-
-**DataLoader pattern:**
+```graphql
+{
+  user(id: 1) {
+    name
+    email
+  }
+}
+```
 
 ```text
-orders(userId) called 50 times in one query
--> DataLoader batches: SELECT * FROM orders WHERE user_id IN (...)
--> returns Map userId -> orders to each resolver
+Client → GraphQL server → resolver → database
+→ response: { "data": { "user": { "name": "John", "email": "john@gmail.com" } } }
 ```
 
-### When to use
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant G as GraphQL server
+    participant R as Resolver
+    participant DB as Database
+    C->>G: query user(id: 1) { name email }
+    G->>R: resolve User fields
+    R->>DB: fetch user
+    DB-->>R: row
+    R-->>G: { name, email }
+    G-->>C: JSON data envelope
+```
 
-- Multiple clients (web, iOS, Android) with different data shape needs
-- Aggregating microservices behind one graph (with federation)
-- Rapid frontend iteration without backend deploy per screen change
-- Internal admin tools with ad-hoc field selection
+**N+1 pitfall:** one resolver call per nested object can explode DB queries — mitigate with **DataLoader** batching in production.
 
-### Trade-offs / Pitfalls
+### Advantages
 
-- **DoS via expensive queries** - must enforce depth/complexity limits and rate limiting
-- **Caching harder** than REST - whole query is POST body
-- **File upload** needs multipart spec or separate REST endpoint
-- **Error semantics** less crisp than HTTP status per resource
-- **Operational complexity** - schema versioning, resolver performance profiling, N+1 debugging
-- **Not for everything** - simple CRUD APIs are often better as REST
+- Fetch only required data
+- Single endpoint
+- Flexible queries
+- Strong schema and typing
+- Better for mobile (less payload, fewer round trips)
+- Reduces network calls
 
-### References
+### Disadvantages
 
-- GraphQL specification (graphql.org); Apollo Federation docs
+- More complex than REST
+- Query optimization can be difficult (depth/complexity limits, rate limiting — [§7.18](#718-rate-limiting))
+- Caching is harder than REST `GET` + CDN
+- Higher learning curve
+- Expensive queries can stress backends without guardrails
+
+### When to use GraphQL?
+
+- Multiple clients (web, iOS, Android) with different field needs
+- Screens that aggregate data from many domains in one request
+- Rapid frontend iteration without a new REST endpoint per screen
+
+### When not to use?
+
+- Simple CRUD APIs where REST + OpenAPI suffices
+- Public APIs that rely heavily on HTTP/CDN caching
+- Teams without capacity to operate schema versioning and resolver performance
+
+### Summary
+
+```text
+GraphQL = query language for APIs
+Components: Query, Mutation, Subscription
+Key benefit: client requests exactly the data it needs
+Common endpoint: POST /graphql
+```
+
+**Goal:** Flexible, client-driven data fetching over a single typed schema.
 
 ---
 
 
 ## 7.3 gRPC
 
+> **Protocol context:** [Protocol picker](#protocol-picker).
 
-### What is it?
+### What is gRPC?
 
-**gRPC** is a high-performance **RPC framework** using **Protocol Buffers (protobuf)** for binary serialization over **HTTP/2**. Services define contracts in `.proto` files; code generators produce typed client/server stubs in Java, Go, Python, etc.
+**gRPC (Google Remote Procedure Call)** is a high-performance communication framework developed by Google. It allows one service to directly call methods on another service **as if they were local functions**.
 
-Four RPC types: **unary**, **server streaming**, **client streaming**, **bidirectional streaming**.
+Commonly used in **microservices**.
 
-### Why it matters
+```text
+Service A → gRPC → Service B
+```
 
-Default choice for **internal microservice** communication where browsers are not direct clients:
-- **3-10x smaller payloads** than JSON REST
-- **Strong contracts** - breaking changes caught at compile time
-- **HTTP/2 multiplexing** - many RPCs on one connection
-- **First-class streaming** for logs, metrics, live feeds
-- **Built-in deadlines**, metadata (headers), and status codes
+### Why gRPC?
 
-### How it works
+**Traditional REST:** HTTP + JSON.
 
-**1. Define contract (`user.proto`):**
+**gRPC:** HTTP/2 + **Protocol Buffers (Protobuf)**.
+
+Benefits:
+
+- Faster communication
+- Smaller payload size
+- Lower latency
+- Better performance
+
+### Basic idea
+
+Instead of calling URLs:
+
+```http
+GET /users/1
+```
+
+You call methods directly:
+
+```text
+GetUser(1)
+```
+
+Looks like a normal function call in generated client code.
+
+### Architecture
+
+```text
+Client → RPC call → gRPC server → business logic → database → response
+```
+
+```mermaid
+flowchart TB
+    C[gRPC client] -->|HTTP/2| S[gRPC server]
+    S --> BL[Business logic]
+    BL --> DB[(Database)]
+```
+
+### Protocol Buffers (Protobuf)
+
+Protobuf is a compact **binary** format used by gRPC.
+
+```protobuf
+// user.proto
+message User {
+  int32 id = 1;
+  string name = 2;
+}
+```
+
+Advantages:
+
+- Smaller than JSON
+- Faster serialization
+- Language independent (code generation for Java, Go, Python, etc.)
+
+### Service definition
 
 ```protobuf
 service UserService {
-  rpc GetUser (GetUserRequest) returns (User);
-  rpc ListUsers (ListUsersRequest) returns (stream User);
+  rpc GetUser(UserRequest) returns (UserResponse);
 }
-message User { string id = 1; string name = 2; }
 ```
 
-**2. Codegen:** `protoc --go_out=... --grpc-go_out=...`
+Meaning: client calls `GetUser()`; server returns `UserResponse`.
 
-**3. Server** implements `UserServiceServer` interface; registers on gRPC server
+**Request:**
 
-**4. Client** calls stub: `client.GetUser(ctx, &GetUserRequest{Id: "123"})`
+```protobuf
+message UserRequest {
+  int32 id = 1;
+}
+```
 
-**5. HTTP/2 framing** underneath - single TCP connection, header compression (HPACK)
+**Response:**
+
+```protobuf
+message UserResponse {
+  int32 id = 1;
+  string name = 2;
+}
+```
+
+### Communication flow
+
+```text
+Client: GetUser(1)
+  → gRPC stub → HTTP/2 request → gRPC server → database
+  → UserResponse returned
+```
 
 ```mermaid
 sequenceDiagram
-    participant C as gRPC Client
-    participant S as gRPC Server
-    C->>S: Unary GetUser (protobuf)
-    S-->>C: User message
-    C->>S: Server-stream WatchOrders
-    loop events
-        S-->>C: Order event
-    end
+    participant C as Client
+    participant Stub as gRPC stub
+    participant S as gRPC server
+    participant DB as Database
+    C->>Stub: GetUser(1)
+    Stub->>S: HTTP/2 + protobuf
+    S->>DB: fetch user
+    DB-->>S: row
+    S-->>Stub: UserResponse
+    Stub-->>C: typed result
 ```
 
-**Status codes:** `OK`, `INVALID_ARGUMENT`, `NOT_FOUND`, `DEADLINE_EXCEEDED`, `UNAVAILABLE` (mapped from HTTP-style semantics)
+### HTTP/2 features
 
-**Load balancing:** client-side (pick from resolver list) or **service mesh** (Envoy L7)
+1. **Multiplexing** — multiple requests over one connection
+2. **Header compression** (HPACK) — smaller network overhead
+3. **Persistent connection** — connection reused many times
+4. **Streaming support** — real-time communication
 
-**grpc-web:** browser clients need proxy (Envoy, grpc-web) - browsers can't speak native gRPC
+### Types of gRPC calls
 
-### Key details
+| Type | Pattern | Example |
+|------|---------|---------|
+| **1. Unary** | One request → one response | `GetUser()` |
+| **2. Server streaming** | One request → many responses | `GetAllOrders()` |
+| **3. Client streaming** | Many requests → one response | `UploadLogs()` |
+| **4. Bidirectional streaming** | Many requests ↔ many responses | Chat application |
 
-| vs REST/JSON | gRPC |
-|--------------|------|
-| Payload | Binary protobuf (~compact) |
-| Contract | `.proto` + codegen |
-| Streaming | Native 4 modes |
-| Browser | Needs grpc-web proxy |
-| Debugging | grpcurl, reflection |
-| Versioning | Add fields with new numbers; never reuse numbers |
+```text
+Unary:           Client ---> Server --->
 
-**Protobuf field rules:**
-- Field numbers are permanent; reserve deprecated numbers
-- `optional`, `repeated`, `oneof` for schema evolution
-- Unknown fields ignored (forward compatibility)
+Server streaming: Client ---> Server <--- (stream)
 
-**Deadlines:** always set `ctx` timeout - `context.WithTimeout(ctx, 2*time.Second)` prevents hung calls
+Client streaming: Client ---> (stream) ---> Server <---
 
-**mTLS:** mutual TLS for service identity in zero-trust networks (common with Istio)
+Bidirectional:    Client <----------> Server
+```
 
-### When to use
+### Stub
 
-- Service-to-service sync calls in microservices
-- High-throughput internal APIs (payments orchestration, catalog)
-- Streaming: log tailing, price feeds, bidirectional chat backend
-- Polyglot teams needing generated clients in 10+ languages
+**Stub** is auto-generated client code. Instead of writing HTTP calls manually:
 
-### Trade-offs / Pitfalls
+```text
+userService.GetUser(1)
+```
 
-- **Not human-readable** - need grpcurl/protobuf decoding for debugging
-- **Browser limitation** - public APIs still often REST/GraphQL at edge, gRPC internal
-- **Load balancer** must support HTTP/2 (L7) or use client-side LB
-- **Breaking proto changes** (renumbering, type change) break all clients - use Buf breaking change detection
-- **JSON transcoding** (gRPC-Gateway) adds hop for REST compatibility
+The stub converts the call into a gRPC request over HTTP/2.
 
-### References
+### Advantages
 
-- gRPC.io documentation; Protocol Buffers language guide
+- Extremely fast; small payloads
+- HTTP/2 multiplexing and compression
+- Strongly typed APIs with code generation
+- Supports streaming (all four RPC types)
+- Ideal for microservices and polyglot teams
+
+### Disadvantages
+
+- Harder to debug than REST (binary, not human readable)
+- **Limited browser support** — needs grpc-web proxy at the edge
+- Higher learning curve (`.proto`, codegen, tooling)
+- Load balancers must support HTTP/2 (L7) or client-side balancing
+
+**Production habits:** set **deadlines/timeouts** on every RPC; use **mTLS** in zero-trust networks; never reuse protobuf field numbers when evolving schemas.
+
+### When to use gRPC?
+
+- Building microservices with low latency and high throughput
+- Real-time streaming (logs, metrics, feeds, chat backends)
+- Internal service-to-service communication
+
+### When not to use?
+
+- Public browser-facing APIs (prefer REST or GraphQL at the edge)
+- Teams without protobuf/codegen workflow
+- Simple integrations where curl-friendly JSON is enough
+
+### Summary
+
+```text
+gRPC = high-performance RPC framework
+Uses HTTP/2 + Protocol Buffers (Protobuf)
+RPC types: Unary, Server streaming, Client streaming, Bidirectional streaming
+Best use case: fast communication between microservices
+```
+
+**Goal:** Typed, low-latency RPC between backend services.
 
 ---
 
 
 ## 7.4 SOAP
 
+> **Protocol context:** [Protocol picker](#protocol-picker).
 
-### What is it?
+### What is SOAP?
 
-**SOAP** (Simple Object Access Protocol) is an XML-based messaging protocol with strict contracts (WSDL), WS-* standards (security, transactions), common in enterprise and legacy integrations.
+**SOAP (Simple Object Access Protocol)** is a protocol used for exchanging data between applications over a network. It defines **strict rules** for how messages should be formatted and transmitted.
 
-### Why it matters
+SOAP was widely used before REST became popular. Today it remains in **legacy enterprise** and regulated integrations.
 
-Still present in banking, telecom, and government integrations - understanding SOAP helps maintain and wrap legacy systems behind modern APIs.
+```text
+Client → SOAP service → Database
+```
 
-### How it works
+Compare modern alternatives: [§7.1 REST](#71-rest), [§7.3 gRPC](#73-grpc).
 
-1. WSDL defines operations, types, and endpoint binding.
-2. Client sends SOAP envelope (XML) over HTTP(S) or JMS.
-3. Server validates against schema, executes operation, returns SOAP response.
-4. WS-Security for signing/encryption; often ESB middleware.
+### Why SOAP?
 
-### Diagram
+SOAP was designed for:
+
+- Standardized communication
+- Enterprise applications
+- High security
+- Reliability
+- Transaction support
+
+Commonly used in: banking systems, payment gateways, insurance systems, government services.
+
+### Message format
+
+SOAP uses **XML only**.
+
+```xml
+<soap:Envelope>
+  <soap:Body>
+    <GetUser>
+      <id>1</id>
+    </GetUser>
+  </soap:Body>
+</soap:Envelope>
+```
+
+All requests and responses are XML.
+
+### SOAP architecture
+
+```text
+Client → SOAP request (XML) → SOAP server → business logic → database
+→ SOAP response (XML) → client
+```
+
+```mermaid
+flowchart TB
+    C[SOAP client] -->|XML envelope| S[SOAP server]
+    S --> BL[Business logic]
+    BL --> DB[(Database)]
+```
+
+### Main components
+
+| # | Component | Role |
+|---|-----------|------|
+| 1 | **Envelope** | Root element — defines start and end of every message |
+| 2 | **Header** | Metadata (authentication, security tokens, transaction info) |
+| 3 | **Body** | Actual request or response data |
+| 4 | **Fault** | Error handling (e.g. invalid user ID) |
+
+**Header example:**
+
+```xml
+<Header>
+  <!-- Authentication info, WS-Security tokens -->
+</Header>
+```
+
+**Fault example:**
+
+```xml
+<Fault>
+  Invalid User ID
+</Fault>
+```
+
+### WSDL
+
+**WSDL (Web Services Description Language)** is an XML document describing:
+
+- Available operations
+- Request and response formats
+- Service endpoint
+
+Acts as a **contract** between client and server.
+
+```text
+Operations: GetUser(), CreateUser(), DeleteUser()
+```
+
+Similar role to OpenAPI for REST — [§7.12 OpenAPI](#712-openapi) — or `.proto` for gRPC.
+
+### Communication flow
+
+```text
+Client: GetUser request
+  → SOAP XML message → SOAP server → database
+  → SOAP XML response → client
+```
 
 ```mermaid
 sequenceDiagram
-    participant C as SOAP Client
-    participant S as SOAP Service
-    C->>S: XML Envelope
-    S-->>C: XML Response
+    participant C as Client
+    participant S as SOAP server
+    participant DB as Database
+    C->>S: SOAP XML GetUser
+    S->>DB: query
+    DB-->>S: result
+    S-->>C: SOAP XML User response
 ```
 
-### Key details
+### Transport protocols
 
-- Verbose XML payloads vs JSON/gRPC.
-- Strong tooling in Java/.NET enterprise stacks.
-- Often replaced by REST/gRPC with adapter layer.
+SOAP can work with:
 
-### When to use
+- HTTP / HTTPS
+- SMTP
+- TCP
+- JMS
 
-- Integrating with legacy enterprise systems requiring SOAP.
-- Contract mandates (B2B partner WSDL).
-- Not for greenfield public APIs.
+[§7.1 REST](#71-rest) mainly uses HTTP. SOAP supports **multiple transports** — useful when messaging buses or legacy middleware are required.
 
-### Trade-offs / Pitfalls
+### Security
 
-- High ceremony, poor developer ergonomics vs REST.
-- Performance and payload size overhead.
-- WS-* stack complexity and interoperability pain.
+SOAP provides **WS-Security**:
 
-### References
+- Message encryption
+- Digital signatures
+- Authentication
+- Integrity checking
 
-*(No curated references for this sub-topic in `_topics.json`.)*
+Used in highly secure, regulated systems. Detail: [§7.16 API Security](#716-api-security).
+
+### Reliability
+
+SOAP supports:
+
+- Guaranteed delivery
+- Transactions (WS-AtomicTransaction, etc.)
+- Message reliability
+
+Important in financial systems where delivery and atomicity matter.
+
+### SOAP request example
+
+```xml
+<soap:Envelope>
+  <soap:Body>
+    <GetUser>
+      <id>101</id>
+    </GetUser>
+  </soap:Body>
+</soap:Envelope>
+```
+
+### SOAP response example
+
+```xml
+<soap:Envelope>
+  <soap:Body>
+    <User>
+      <id>101</id>
+      <name>John</name>
+    </User>
+  </soap:Body>
+</soap:Envelope>
+```
+
+### Advantages
+
+- Strong security support (WS-Security)
+- Formal contract via WSDL
+- Reliable messaging and transaction support
+- Language independent
+- Enterprise standard with mature Java/.NET tooling
+
+### Disadvantages
+
+- Verbose XML — large payload size
+- Slower than REST or gRPC
+- More complex to develop and maintain
+- WS-* interoperability can be painful
+
+### When to use SOAP?
+
+- Strong security and compliance requirements
+- Transactions and guaranteed delivery matter
+- Integrating with **legacy enterprise** or B2B partners mandating WSDL
+- Banking, insurance, government systems
+
+### When not to use?
+
+- Greenfield public or mobile APIs (prefer REST or GraphQL)
+- High-throughput internal microservices (prefer gRPC)
+- Teams wanting simple JSON + curl debugging
+
+Modern pattern: wrap SOAP behind [§7.5 API Gateway](#75-api-gateway) or REST adapter for new clients.
+
+### Summary
+
+```text
+SOAP = XML-based protocol with WSDL contract and WS-Security
+Components: Envelope, Header, Body, Fault
+Best for: banking, insurance, government, enterprise integrations
+Key strength: security, reliability, standardization
+```
+
+**Goal:** Strict, secure, reliable messaging where enterprise contracts and WS-* standards are required.
 
 ---
 
 
 ## 7.5 API Gateway
 
+> **Cross-cutting hub:** auth and TLS → [§7.16](#716-api-security); rate limits → [§7.18](#718-rate-limiting); aggregation → [§7.6](#76-api-aggregation); composition/BFF → [§7.7](#77-api-composition).
 
-### What is it?
+### What is an API gateway?
 
-An **API gateway** is a managed **reverse proxy** at the system edge — the single public entry point (`api.example.com`) that terminates TLS, authenticates callers, enforces rate limits, routes to internal services, and emits observability signals. Examples: Kong, AWS API Gateway, Azure API Management, Envoy Gateway, NGINX Plus.
+An **API gateway** is a **single entry point** for all client requests in a microservices architecture.
 
-The gateway is **infrastructure cross-cutting concern** — not a place for domain business rules.
+Instead of clients calling multiple services directly, they communicate through the gateway.
 
-### Why it matters
+```text
+Client → API Gateway → User Service
+                    → Order Service
+                    → Payment Service
+```
 
-- **One front door:** clients never need internal hostnames or topology changes
-- **Centralized security:** JWT validation, API keys, mTLS, WAF integration once at the edge
-- **Operational control:** canary routing, blue/green, A/B tests without client redeploys
-- **Cost efficiency:** rate limiting and auth at edge before expensive backend work
-- **Interview framing:** "Gateway = edge policy; BFF = client-specific aggregation" (see below)
+### Problem without API gateway
+
+The client must know every service URL:
+
+```text
+Mobile App → User Service
+          → Order Service
+          → Payment Service
+```
+
+Issues: complex client logic, tight coupling, multiple network calls, difficult service discovery.
+
+### Solution: API gateway
+
+```text
+Client → API Gateway → User / Order / Payment services
+```
+
+Benefits: simpler clients, better security, centralized routing.
 
 ### How it works
 
-**Request path through a gateway:**
+```text
+Step 1: Client sends request — GET /users/101
+Step 2: API gateway receives request
+Step 3: Gateway routes to User Service
+Step 4: Response returned to client
+```
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant GW as API Gateway
+    participant US as User service
+    C->>GW: GET /users/101
+    GW->>GW: auth, rate limit, route
+    GW->>US: forward request
+    US-->>GW: user JSON
+    GW-->>C: 200 response
+```
+
+### Responsibilities
+
+| # | Responsibility | Summary |
+|---|----------------|---------|
+| 1 | **Request routing** | `/users` → User Service, `/orders` → Order Service |
+| 2 | **Authentication** | Validate identity (e.g. JWT) before forwarding |
+| 3 | **Authorization** | Check permissions (e.g. `/admin` for admins only) |
+| 4 | **Load balancing** | Distribute across service instances |
+| 5 | **Rate limiting** | Cap requests (e.g. 100/min) → `429` — [§7.18](#718-rate-limiting) |
+| 6 | **Caching** | Return cached `GET /products` without hitting backend |
+| 7 | **Monitoring & logging** | Requests, latency, errors, traffic |
+| 8 | **Request aggregation** | Combine multi-service data in one response — [§7.6](#76-api-aggregation) |
+
+#### 1. Request routing
+
+```text
+/users    → User Service
+/orders   → Order Service
+/payments → Payment Service
+```
+
+#### 2. Authentication
+
+```text
+Client → JWT token → API Gateway → verify token → forward to service
+```
+
+Detail: [§7.16 API Security](#716-api-security).
+
+#### 3. Authorization
+
+```text
+Admin user → can access /admin
+Normal user → denied
+```
+
+#### 4. Load balancing
+
+```text
+Gateway → User Service instance 1 / 2 / 3
+```
+
+Prevents overload on a single instance.
+
+#### 5. Rate limiting
+
+Cap requests per client (e.g. 100/min → `429`). Detail: [§7.18 Rate Limiting](#718-rate-limiting) — not [§7.19 Throttling](#719-throttling) (slow/queue).
+
+#### 6. Caching
+
+```text
+GET /products → gateway cache hit → response without backend call
+```
+
+Lower latency and reduced database load.
+
+#### 7. Monitoring & logging
+
+Track requests, response times, errors, and traffic for troubleshooting and SLOs.
+
+#### 8. Request aggregation
+
+**Without gateway/BFF:** client calls User, Order, and Payment services — **3 network calls**.
+
+**With aggregation:** client makes **1 call**; gateway (or BFF) fans out and merges — [§7.6 API Aggregation](#76-api-aggregation).
+
+### Architecture
 
 ```mermaid
 flowchart TB
-    Client[External Client] --> TLS[TLS Termination]
-    TLS --> Auth[Authentication]
-    Auth --> AuthZ[Authorization / Scopes]
-    AuthZ --> RL[Rate Limit / Quota]
-    RL --> Route[Path / Host Routing]
-    Route --> Transform[Optional Transform]
-    Transform --> S1[Users Service]
-    Transform --> S2[Orders Service]
-    Route --> Trace[Inject traceId / requestId]
+    C[Client] --> GW[API Gateway]
+    GW --> US[User service]
+    GW --> OS[Order service]
+    GW --> PS[Payment service]
 ```
 
-**1. Authentication at the gateway**
+### API gateway vs load balancer
 
-| Mechanism | Gateway role | Backend receives |
-|-----------|--------------|------------------|
-| **JWT (Bearer)** | Validate signature via JWKS; check `exp`, `iss`, `aud` | Trusted headers (`X-User-Id`, `X-Scopes`) or forwarded JWT |
-| **API key** | Lookup key in store; map to tenant/plan | `X-Tenant-Id`, rate-limit tier |
-| **OAuth2 token** | Introspect at auth server or local JWKS verify | User identity claims |
-| **mTLS** | Client cert validation at edge | Client SPIFFE ID / cert DN |
+| | Load balancer | API gateway |
+|---|---------------|-------------|
+| **Routes to** | Multiple instances of the **same** service | **Different** services |
+| **Example** | User Service → instance 1, 2, 3 | `/users`, `/orders`, `/payments` |
+| **Extra features** | Traffic distribution | Auth, rate limiting, caching, routing, aggregation |
 
-Gateway can **terminate auth** (backend trusts gateway headers on private network) or **pass-through** (backend re-validates — defense in depth).
+### API gateway vs BFF
 
-```text
-Authorization: Bearer eyJhbGciOiJSUzI1NiIs...
-→ Gateway: verify RS256 signature, exp not passed
-→ Forward: X-User-Sub: usr_42, X-Scopes: orders:read
-```
+| | API gateway | BFF (Backend for Frontend) |
+|---|-------------|----------------------------|
+| **Job** | Edge policy: TLS, auth, quotas, routing | Client-specific aggregation and response shaping |
+| **Logic** | Infrastructure only — no domain rules | Thin orchestration per client (mobile vs web) |
+| **Typical path** | `Client → Gateway → Services` | `Client → Gateway → BFF → Services` |
 
-**2. Routing**
+Detail: [§7.7 API Composition](#77-api-composition) for sequential fan-out.
 
-Routing rules map external paths to internal services:
+### Popular API gateways
 
-| Rule type | Example | Use case |
-|-----------|---------|----------|
-| Path prefix | `/v1/users/*` → `user-service:8080` | Versioned REST |
-| Host | `mobile.api.example.com` → mobile BFF | Per-client hostname |
-| Header | `X-Api-Version: 2` → v2 cluster | Header-based versioning |
-| Weight | 90% v1, 10% v2 | Canary deployment |
-| Method | `POST /payments` → payment cluster | Fine-grained rules |
+- Kong
+- NGINX / NGINX Plus
+- AWS API Gateway
+- Spring Cloud Gateway
+- Apigee
+- Traefik
+- Envoy
 
-```mermaid
-flowchart LR
-    GW[API Gateway]
-    GW -->|/v1/users/*| US[User Service]
-    GW -->|/v1/orders/*| OS[Order Service]
-    GW -->|/v1/search/*| SS[Search Service]
-```
+### Advantages
 
-**3. Rate limiting at the gateway**
+- Single entry point; simplifies clients
+- Centralized security (auth, TLS termination)
+- Load balancing, rate limiting, caching
+- Better monitoring and observability
+- Request aggregation at the edge
 
-Enforce per-API-key, per-IP, or per-tenant quotas **before** backends (see 7.18 for algorithms). Gateway is the ideal placement: shared Redis/DynamoDB counter, consistent `429` + `Retry-After`, plan-based tiers.
+### Disadvantages
 
-```text
-Free tier:    100 req/min per API key
-Pro tier:     10,000 req/min
-/login:       5 req/min per IP (anti brute-force)
-```
+- Additional network hop (latency)
+- Can become a bottleneck without scaling
+- **Single point of failure** if not deployed redundantly (multi-AZ, ≥2 instances)
+- Increased operational complexity (routing config, GitOps)
 
-**4. API Gateway vs BFF — critical interview distinction**
+**Mitigation:** HA gateway tier, autoscaling, never put domain business logic in gateway plugins — keep policy at edge, aggregation in BFF.
 
-| Dimension | API Gateway | BFF (Backend for Frontend) |
-|-----------|-------------|----------------------------|
-| **Primary job** | Edge security, routing, quotas, TLS | Client-specific aggregation and response shaping |
-| **Audience** | All external clients uniformly | One client type (mobile, web, partner) |
-| **Business logic** | None — policy only | Thin orchestration, field trimming |
-| **Ownership** | Platform / infra team | Client or domain team |
-| **Examples** | Kong, AWS API Gateway | Mobile BFF, Web BFF services |
-| **Typical stack** | `Client → Gateway → Services` | `Client → Gateway → BFF → Services` |
-
-```mermaid
-flowchart TB
-    Mobile --> GW[API Gateway]
-    Web --> GW
-    GW --> MobileBFF[Mobile BFF]
-    GW --> WebBFF[Web BFF]
-    MobileBFF --> Core[Core Microservices]
-    WebBFF --> Core
-```
-
-**When both:** Gateway handles auth/rate-limit/TLS; BFF handles "mobile needs 3 fields, web needs 20" and parallel fan-out. Anti-pattern: putting aggregation logic in gateway plugins ("smart gateway").
-
-**5. Additional gateway capabilities**
-
-- Protocol translation: REST → gRPC, HTTP/1.1 → HTTP/2
-- Request/response transformation: header injection, body mapping
-- Observability: access logs, Prometheus metrics, W3C `traceparent` propagation
-- WAF integration: OWASP CRS at edge
-
-### Key details
-
-| Capability | Benefit | Pitfall if misused |
-|------------|---------|-------------------|
-| TLS termination | Central cert rotation | End-to-end TLS needed for some compliance |
-| JWT validation | Offload crypto from every service | Trust boundary — secure gateway→service link |
-| Rate limiting | Protect backends | Per-instance limits without shared store fail in K8s |
-| Path routing | Hide internal topology | Routing table becomes ops burden |
-| Canary weights | Safe rollout | Sticky sessions may skew canary metrics |
-
-Products: Kong, Apigee, AWS API Gateway, Azure APIM, Envoy Gateway, NGINX.
-
-### Production rules
-
-| Rule | Rationale |
-|------|-----------|
-| **HA gateway tier** | Run ≥2 gateway instances per AZ behind regional LB; gateway outage = total API outage |
-| **Declarative config in Git** | Kong deck, Envoy xDS, APIM ARM/Bicep — no click-ops route changes in prod |
-| **Auth termination + mTLS to backends** | Gateway validates JWT; backend traffic on private network with mTLS or signed internal headers |
-| **Never trust `X-User-Id` from internet** | Strip inbound identity headers at edge; inject only after auth succeeds |
-| **Rate limit before route** | Reject abusive traffic before fan-out to N backends — saves DB and downstream cost |
-| **Request size + timeout limits** | Cap body size (e.g., 1–10 MB) and upstream timeout at gateway — prevents slowloris and hung backends |
-| **Propagate trace context** | Inject or forward W3C `traceparent`; gateway root span anchors distributed traces |
-| **Separate internal vs external gateways** | Public gateway (strict WAF, quotas) vs internal mesh ingress (mTLS, no public exposure) |
-| **Health-check gateway itself** | Synthetic probes through gateway path, not only backend `/health` |
-| **Version routes explicitly** | `/v1/*` and `/v2/*` as distinct upstream clusters — enables independent canary and sunset |
-
-**Capacity planning:** gateway CPU scales with TLS termination and JWT crypto. Rule of thumb: benchmark at expected RPS + 2× headroom; JWT validation at 10K RPS can dominate CPU on smaller instances.
-
-### When to use
+### When to use an API gateway?
 
 - Multiple microservices exposed to external clients
-- Centralized API keys, OAuth, and quota tiers
-- Need canary/blue-green at edge without client changes
-- Combine with BFF when client-specific shaping is required
+- Centralized API keys, OAuth, JWT validation, quota tiers
+- Need canary routing or protocol translation (REST → gRPC — [§7.3](#73-grpc))
 
-### Trade-offs / Pitfalls
+### Summary
 
-| Pitfall | Symptom | Mitigation |
-|---------|---------|------------|
-| **SPOF / bottleneck** | Total API outage when gateway tier fails | Multi-AZ, autoscaling, active-active LB, chaos-test gateway failure |
-| **Smart gateway** | Business logic in Lua/plugins; undeployable without gateway release | Policy only at edge; aggregation in BFF; domain rules in services |
-| **Latency stacking** | p99 +10–20 ms per extra hop | Co-locate gateway with backends; avoid gateway → gateway chains |
-| **Header trust boundary** | Spoofed `X-User-Id` if client reaches backend directly | Private subnets, mTLS, strip external identity headers at ingress |
-| **Config sprawl** | Drift between envs; accidental prod route change | GitOps, PR review for routes, automated diff in CI |
-| **Cold JWT validation** | JWKS fetch latency on first request after key rotation | Cache JWKS with TTL; pre-warm on deploy; monitor validation p99 |
-| **WebSocket/gRPC gaps** | Long-lived connections dropped on gateway upgrade | Connection draining, sticky upgrades, or dedicated L4 path for streaming |
-| **Over-caching at edge** | Stale authz after role revocation | Short TTL on cacheable GETs; never cache authenticated mutations |
+```text
+API Gateway = single entry point for microservices
+Responsibilities: routing, auth, authorization, load balancing,
+  rate limiting, caching, monitoring, aggregation
+Simplifies client communication with multiple backend services
+```
 
-### References
-
-- [AWS API Gateway patterns](https://docs.aws.amazon.com/apigateway/latest/developerguide/welcome.html)
-- [Kong Gateway documentation](https://docs.konghq.com/gateway/latest/)
+**Goal:** One secure, observable front door for all public API traffic.
 
 ---
 
 
 ## 7.6 API Aggregation
 
+> **Parallel fan-out:** combine independent service calls at once. For **sequential** calls when later steps depend on earlier results, see [§7.7 API Composition](#77-api-composition).
 
-### What is it?
+### What is API aggregation?
 
-**API aggregation** combines data from multiple backend services into **one response** for the client - reducing round trips (mobile on slow networks).
+**API aggregation** is a pattern where data from **multiple services** is combined into a **single response**.
 
-### Why it matters
+Instead of the client calling many services, one component gathers data from all services and returns a unified response.
 
-Clients shouldn't orchestrate five REST calls per screen; aggregation improves latency and simplifies client code.
+**Goal:** reduce client-side complexity and network calls.
 
-### How it works
+### Problem
 
-1. Client calls aggregated endpoint (BFF or gateway plugin).
-2. Aggregator fans out parallel requests to services A, B, C.
-3. Waits for all (or partial with timeout/fallback).
-4. Merges results into unified DTO.
-5. Returns single JSON to client.
+E-commerce example — services: User, Order, Payment. A user dashboard needs user info, orders, and payment details.
 
-### Diagram
+**Without aggregation:**
 
-```mermaid
-flowchart LR
-    Client --> Agg[Aggregator BFF]
-    Agg --> S1[Service A]
-    Agg --> S2[Service B]
-    Agg --> S3[Service C]
-    Agg --> Client
+```text
+Client → User Service
+      → Order Service
+      → Payment Service
 ```
 
-### Key details
+Three separate API calls.
 
-- Parallel `async` fetches minimize wall-clock latency.
-- Partial failure: return degraded response vs fail entire request.
-- Caching aggregated responses reduces backend load.
+**Issues:** more network calls, higher latency, complex client logic, more error handling on the client.
 
-### When to use
+### Solution: API aggregation
 
-- Mobile/web screens needing data from many domains.
-- Public API simplifying partner integration.
-- GraphQL resolvers perform aggregation implicitly.
+```text
+Client → Aggregator service
+           → User Service
+           → Order Service
+           → Payment Service
+→ one combined response
+```
 
-### Trade-offs / Pitfalls
+Often implemented as a **BFF** behind [§7.5 API Gateway](#75-api-gateway).
 
-- Aggregator couples to backend schemas - changes ripple.
-- Tail latency = slowest dependency; set per-call deadlines.
-- Without caching, aggregator amplifies load on backends.
+### Example flow
 
-### References
+**Step 1:** Client requests `GET /dashboard/101`
 
-*(No curated references for this sub-topic in `_topics.json`.)*
+**Step 2:** Aggregator calls User, Order, and Payment services (in parallel when independent)
+
+**Step 3:** Responses collected:
+
+```json
+{ "id": 101, "name": "John" }
+{ "orders": [ ... ] }
+{ "payments": [ ... ] }
+```
+
+**Step 4–5:** Aggregator merges and returns:
+
+```json
+{
+  "user": { "id": 101, "name": "John" },
+  "orders": [ ... ],
+  "payments": [ ... ]
+}
+```
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant A as Aggregator
+    participant U as User service
+    participant O as Order service
+    participant P as Payment service
+    C->>A: GET /dashboard/101
+    par parallel fan-out
+        A->>U: get user
+        A->>O: get orders
+        A->>P: get payments
+    end
+    U-->>A: user JSON
+    O-->>A: orders JSON
+    P-->>A: payments JSON
+    A-->>C: combined dashboard JSON
+```
+
+### Architecture
+
+```mermaid
+flowchart TB
+    C[Client] --> A[Aggregator service]
+    A --> US[User service]
+    A --> OS[Order service]
+    A --> PS[Payment service]
+```
+
+### Benefits
+
+1. Fewer network calls
+2. Lower client complexity
+3. Better user experience (faster screens)
+4. Centralized data composition
+5. Reduced latency (when parallel)
+
+### Parallel execution
+
+Good aggregators call independent services **in parallel**:
+
+```text
+Aggregator → User Service
+          → Order Service   (simultaneously)
+          → Payment Service
+
+Total latency = MAX(user, order, payment)
+NOT SUM(user + order + payment)
+```
+
+Set **per-call deadlines** — tail latency equals the slowest dependency.
+
+### Failure handling
+
+```text
+User ✓  Order ✓  Payment ✗
+```
+
+**Options:**
+
+1. **Partial data** — `{ "user": {...}, "orders": [...], "payments": null }`
+2. **Fail entire request** — `500 Internal Server Error`
+
+Choice depends on business requirements (degraded UI vs strict consistency).
+
+### Where aggregation happens
+
+| Location | Pattern |
+|----------|---------|
+| **API Gateway** | Gateway plugin or built-in composition — [§7.5](#75-api-gateway) |
+| **Dedicated aggregator / BFF** | Separate service owns dashboard/profile endpoints |
+
+Prefer a **dedicated BFF** over a “smart gateway” with heavy business logic in plugins.
+
+### Use cases
+
+- User dashboard, customer profile, order summary
+- Product detail page (product + reviews + inventory)
+- Analytics and reporting dashboards
+- Any screen requiring data from multiple services
+
+### API aggregation vs API composition
+
+Canonical comparison — detail in [§7.7](#77-api-composition).
+
+| | [Aggregation](#76-api-aggregation) (§7.6) | [Composition](#77-api-composition) (§7.7) |
+|---|------------------------------------------|------------------------------------------|
+| **Primary focus** | Parallel fan-out when calls are **independent** | **Sequential** chains when step B needs step A's output |
+| **Latency** | `MAX(service times)` | `SUM(service times)` for chains |
+| **Overlap** | Terms often used interchangeably for BFF dashboard patterns | Includes parallel assembly + business-centric merging |
+
+### API aggregation vs API gateway
+
+| | API aggregation | API gateway |
+|---|-----------------|-------------|
+| **Focus** | Data composition — merge multi-service responses | Edge entry point: routing, auth, rate limiting, caching, monitoring |
+| **Relationship** | Gateway **may** aggregate, but aggregation is only one feature | Gateway is not required to aggregate — prefer **BFF** for domain merge logic |
+
+### API aggregation vs GraphQL
+
+| | API aggregation | GraphQL |
+|---|-----------------|---------|
+| **Who shapes response** | Backend decides fixed DTO | Client chooses fields in query |
+| **Flexibility** | Fixed combined response | Flexible per screen — [§7.2](#72-graphql) |
+
+GraphQL resolvers often perform aggregation implicitly.
+
+### Challenges
+
+- Increased complexity and an extra service layer
+- Partial failures and timeout handling
+- Data consistency across services (eventual consistency)
+- Coupling to backend schemas — changes ripple to aggregator
+- Amplified load on backends without caching
+
+### Summary
+
+```text
+API Aggregation = combine data from multiple services into one response
+Purpose: fewer client calls, simpler frontend, better performance
+Flow: Client → Aggregator → Service A/B/C → single combined response
+Common use cases: dashboards, profiles, reporting, e-commerce screens
+```
+
+**Goal:** One round trip for multi-domain screens; parallelize independent fetches.
 
 ---
 
 
 ## 7.7 API Composition
 
+> **Canonical split:** see [Multi-service responses](#multi-service-responses) and [§7.6 Aggregation](#76-api-aggregation).
 
-### What is it?
+### What is API composition?
 
-**API composition** (choreographed aggregation) builds a response by **sequentially** calling services when later calls depend on earlier results - e.g., get user, then orders for that user.
+**API composition** fetches data from multiple microservices and merges it into a **single business-centric response** — often via a **BFF** behind [§7.5 API Gateway](#75-api-gateway).
 
-### Why it matters
+When calls are independent, use the same parallel pattern as [§7.6](#76-api-aggregation). Composition adds **sequential orchestration** when one service's output is input to the next.
 
-Differs from parallel aggregation; necessary when data dependencies exist. Common in saga-style read paths and GraphQL resolver chains.
+### Sequential composition (key differentiator)
 
-### How it works
+When one service **depends** on another, calls must run in order:
 
-1. Receive client request.
-2. Call service A -> extract ID needed for B.
-3. Call service B with ID from A.
-4. Optionally call C with combined context.
-5. Compose final response; handle any step failure.
+```text
+Get User → Get User Orders → Get Order Payments
 
-### Diagram
+Latency = SUM(step times)
+```
 
 ```mermaid
 sequenceDiagram
-    participant BFF as BFF
-    participant U as Users
-    participant O as Orders
-    BFF->>U: GET user
-    U-->>BFF: user_id
-    BFF->>O: GET orders(user_id)
-    O-->>BFF: orders list
+    participant B as Composer
+    participant U as User service
+    participant O as Order service
+    participant P as Payment service
+    B->>U: GET /users/101
+    U-->>B: userId
+    B->>O: GET /orders?userId=101
+    O-->>B: orderIds
+    B->>P: GET /payments?orderId=...
+    P-->>B: payments
+    B-->>B: merge into single response
 ```
 
-### Key details
+Minimize chain depth; cache intermediate results; use circuit breakers per hop.
 
-- Latency sums across sequential hops - minimize chain depth.
-- Cache intermediate results when keys repeat.
-- Circuit breakers per hop prevent cascade.
+### Example: order summary chain
 
-### When to use
+**Client:** `GET /order-summary/101`
 
-- Dependent data fetches unavoidable in business flow.
-- Server-side alternative to client-side waterfall requests.
+```text
+1. GET /users/101        → customer name
+2. GET /orders/101       → line items (needs valid user)
+3. GET /payments/order/101 → payment status (needs order id)
+```
 
-### Trade-offs / Pitfalls
+Composer returns one JSON object — client makes **one** round trip.
 
-- Deep chains fragile - prefer event-carried state or denormalized read models.
-- Error in step 2 wastes step 1 work - compensate or return partial.
-- Testing requires mocking full chain.
+### Parallel assembly
 
-### References
+When dashboard fields are independent (user + orders + payments by user id), parallel fan-out is identical to [§7.6 API Aggregation](#76-api-aggregation) — do not duplicate that pattern here.
 
-*(No curated references for this sub-topic in `_topics.json`.)*
+### Composition flow
+
+```text
+Receive request → determine services → fetch (parallel or sequential)
+→ transform and merge → return composed response
+```
+
+### Failure handling
+
+Same options as [§7.6](#76-api-aggregation): partial response vs fail entire request. Sequential chains fail fast on the blocking step — consider cached fallbacks for non-critical hops.
+
+### API composition vs database join
+
+| | Database join | API composition |
+|---|---------------|-----------------|
+| **Where data merges** | Single database | Application layer across microservices |
+| **Example** | `JOIN` users + orders in one DB | User DB + Order DB + Payment DB merged in composer |
+
+In microservices, data lives in separate stores — composition replaces SQL joins at the app layer.
+
+### Use cases
+
+- **Sequential:** booking (availability → reserve → pay), checkout, fraud check before payment
+- **Parallel:** customer dashboard — see [§7.6](#76-api-aggregation)
+- Admin reports, product detail (reviews after product id known)
+
+### Challenges
+
+- Deep chains add latency and fragility — prefer denormalized read models or CQRS projections for hot paths
+- Coupling to downstream schemas; partial failure handling
+- Do not put heavy composition in gateway plugins — use a dedicated BFF
+
+### Summary
+
+```text
+API Composition = unified response from multiple microservices
+Parallel independent calls → §7.6; sequential dependent chains → this section
+Flow: Client → Composer/BFF → services → composed response
+```
+
+**Goal:** One client-facing endpoint that assembles distributed domain data.
 
 ---
 
 
 ## 7.8 API Versioning
 
+### What is API versioning?
 
-### What is it?
+**API versioning** is the practice of maintaining different versions of an API when changes are introduced that may affect existing clients.
 
-**API versioning** manages breaking changes without stranding existing clients - via URL path (`/v2/`), headers (`Accept-Version`), query param, or content negotiation.
+It allows new features and modifications to be released **without breaking** applications already using the API.
 
-### Why it matters
+### Why API versioning is needed
 
-Clients update on different schedules; breaking changes without versioning cause production outages for integrators.
+1. Maintain backward compatibility
+2. Support existing clients
+3. Introduce new features safely
+4. Modify request/response structures
+5. Deprecate old functionality gradually
 
-### How it works
+Public and partner APIs on [§7.1 REST](#71-rest) almost always need an explicit versioning policy.
 
-1. Define compatibility policy: additive changes only within major version.
-2. Introduce `/v2` when breaking (field removal, semantic change).
-3. Run v1 and v2 in parallel during migration window.
-4. Deprecation headers (`Sunset`, `Deprecation`) signal timeline.
-5. Retire old version after metrics show zero traffic.
+### Example without versioning
 
-### Diagram
+**Original:**
 
-```mermaid
-flowchart LR
-    ClientOld --> V1[/v1/users]
-    ClientNew --> V2[/v2/users]
-    V1 --> Svc[User Service]
-    V2 --> Svc
+```http
+GET /users
 ```
 
-### Key details
+```json
+{ "id": 1, "name": "John" }
+```
 
-| Strategy | Pros | Cons |
-|----------|------|------|
-| URL path | Obvious, cacheable | URL proliferation |
-| Header | Clean URLs | Harder to test manually |
-| Separate deploy | Full isolation | Ops overhead |
+**Later breaking change:**
 
-### When to use
+```json
+{ "userId": 1, "fullName": "John" }
+```
 
-- Public APIs with external consumers.
-- Any breaking schema or behavior change.
+Clients expecting `id` and `name` may break. Versioning prevents this.
 
-### Trade-offs / Pitfalls
+### Example with versioning
 
-- Maintaining N versions doubles test matrix.
-- "Version everything" for internal APIs may be overkill - use compatibility discipline instead.
-- Forgetting sunset dates leaves eternal v1 debt.
+**Version 1:**
 
-### References
+```http
+GET /v1/users
+```
 
-*(No curated references for this sub-topic in `_topics.json`.)*
+```json
+{ "id": 1, "name": "John" }
+```
+
+**Version 2:**
+
+```http
+GET /v2/users
+```
+
+```json
+{ "userId": 1, "fullName": "John" }
+```
+
+Old clients stay on v1; new clients adopt v2.
+
+### Common versioning strategies
+
+| # | Strategy | Example |
+|---|----------|---------|
+| 1 | **URI versioning** | `GET /v1/users`, `GET /v2/users` |
+| 2 | **Query parameter** | `GET /users?version=1` |
+| 3 | **Header** | `GET /users` + `API-Version: 1` |
+| 4 | **Media type** | `Accept: application/vnd.company.v1+json` |
+
+#### 1. URI versioning
+
+Version in the URL path — most common.
+
+| Advantages | Disadvantages |
+|------------|---------------|
+| Easy to understand and test; widely used; cache-friendly | Multiple URLs for the same resource |
+
+#### 2. Query parameter versioning
+
+```http
+GET /users?version=1
+GET /users?version=2
+```
+
+| Advantages | Disadvantages |
+|------------|---------------|
+| Same path | Less common; easy to overlook |
+
+#### 3. Header versioning
+
+```http
+GET /users
+API-Version: 1
+```
+
+| Advantages | Disadvantages |
+|------------|---------------|
+| Clean URLs; resource path unchanged | Harder to test manually (curl needs headers) |
+
+#### 4. Media type versioning
+
+```http
+GET /users
+Accept: application/vnd.company.v1+json
+```
+
+| Advantages | Disadvantages |
+|------------|---------------|
+| Flexible; close to REST content negotiation | More complex for clients and documentation |
+
+Document the chosen strategy in [§7.12 OpenAPI](#712-openapi).
+
+### When to create a new version
+
+Create a new major version when:
+
+1. Response structure changes (breaking)
+2. Request structure changes (breaking)
+3. Existing fields are **removed**
+4. Field **names** change
+5. Business **behavior** changes incompatibly
+
+### When versioning may not be needed
+
+Usually **not** required for:
+
+1. Adding **optional** fields
+2. Performance improvements
+3. Internal refactoring
+4. Bug fixes
+5. Non-breaking enhancements
+
+```json
+// v1
+{ "id": 1, "name": "John" }
+// additive — OK without new version
+{ "id": 1, "name": "John", "email": "john@test.com" }
+```
+
+**Rule:** additive changes within a major version; breaking changes → new major version.
+
+### Backward compatibility
+
+Older clients continue working without changes until they migrate. v2 must not break v1 clients while both run in parallel.
+
+### API deprecation
+
+When an older version is no longer recommended:
+
+1. Announce deprecation (`Deprecation`, `Sunset` HTTP headers)
+2. Provide migration guide
+3. Allow transition period
+4. Remove version after sufficient notice and zero/low traffic
+
+```text
+/v1/users + /v2/users → v1 deprecated → clients migrate → v1 removed
+```
+
+### Real flow
+
+```text
+Client request → API gateway / REST API → identify version
+→ route to v1 or v2 logic → generate response → client
+```
+
+```mermaid
+flowchart TB
+    C[Client] --> GW[API gateway / REST API]
+    GW --> V{Version?}
+    V -->|v1| L1[v1 handlers]
+    V -->|v2| L2[v2 handlers]
+    L1 --> R[Response]
+    L2 --> R
+    R --> C
+```
+
+See [§7.5 API Gateway](#75-api-gateway) for edge routing (`/v1/*` vs `/v2/*`).
+
+### Best practices
+
+1. Use clear version naming (`v1`, `v2` — not dates unless policy says so)
+2. Maintain backward compatibility within a major version
+3. Avoid frequent major version bumps
+4. Document every version in OpenAPI
+5. Deprecate old versions gradually with timelines
+6. Give clients migration time
+7. Keep one consistent strategy across the API surface
+
+### Summary
+
+```text
+API Versioning = multiple API versions coexist; existing clients keep working
+Approaches: URI path, query param, header, media type (URI most common)
+Benefits: backward compatibility, safe evolution, controlled breaking changes
+```
+
+**Goal:** Evolve public APIs without stranding integrators — [§7.1 REST](#71-rest).
 
 ---
 
 
 ## 7.9 Pagination
 
+> See [List API pipeline](#list-api-pipeline-7911) in the chapter intro. Also: [§7.10 Filtering](#710-filtering), [§7.11 Sorting](#711-sorting) — apply **filter → sort → paginate**.
 
-### What is it?
+### What is pagination?
 
-**Pagination** splits large result sets into pages - via **offset/limit**, **cursor/keyset**, or **seek** methods - protecting server and client from unbounded responses.
+**Pagination** divides a large set of data into smaller **chunks (pages)** instead of returning everything in a single API response.
 
-### Why it matters
+**Without pagination:**
 
-Returning 1M rows crashes browsers and databases; pagination is mandatory for list APIs at scale.
+```http
+GET /users
+```
 
-### How it works
+```json
+[ User1, User2, ... User100000 ]
+```
 
-**Offset pagination:**
+Problems: large response size, increased network usage, slow response time, high memory consumption.
 
-1. Client requests `?offset=100&limit=20`.
-2. Server runs `LIMIT 20 OFFSET 100`.
-3. Returns data + total count (optional).
+### Why pagination is needed
 
-**Cursor pagination:**
+1. Faster API responses
+2. Reduced server load
+3. Reduced network traffic
+4. Better user experience
+5. Easier data navigation
 
-1. Server returns opaque cursor with page.
-2. Client requests `?cursor=abc&limit=20`.
-3. Server queries `WHERE id > last_id ORDER BY id LIMIT 20`.
+Never expose unbounded list endpoints in production — cap with a max `size`/`limit`.
 
-### Diagram
+### Common pagination parameters
+
+| Parameter | Meaning |
+|-----------|---------|
+| `page` | Page number (1-based typical) |
+| `size` or `limit` | Records per page |
+
+```http
+GET /users?page=1&size=10
+```
+
+Returns users 1–10.
+
+### How page numbers work
+
+Total users = 50, page size = 10:
+
+| Page | Records | Request |
+|------|---------|---------|
+| 1 | 1–10 | `GET /users?page=1&size=10` |
+| 2 | 11–20 | `GET /users?page=2&size=10` |
+| 3 | 21–30 | `GET /users?page=3&size=10` |
+| 4 | 31–40 | `GET /users?page=4&size=10` |
+| 5 | 41–50 | `GET /users?page=5&size=10` |
+
+### Database calculation
+
+```text
+OFFSET = (page - 1) × size
+
+page = 3, size = 10 → OFFSET = 20
+```
+
+```sql
+SELECT * FROM users
+LIMIT 10 OFFSET 20;
+```
+
+Skips first 20 rows, returns next 10.
+
+**Caveat:** deep `OFFSET` scans many rows — slow on large tables; prefer cursor pagination for feeds.
+
+### Typical paginated response
+
+```http
+GET /users?page=2&size=10
+```
+
+```json
+{
+  "page": 2,
+  "size": 10,
+  "totalRecords": 50,
+  "totalPages": 5,
+  "data": [ ... ]
+}
+```
+
+| Field | Meaning |
+|-------|---------|
+| `page` | Current page |
+| `size` | Records per page |
+| `totalRecords` | Total matching rows (optional — expensive to compute) |
+| `totalPages` | `ceil(totalRecords / size)` |
+| `data` | Records for this page |
+
+### 1. Page-based pagination
+
+```http
+GET /users?page=2&size=10
+```
+
+Simple for admin UIs with page numbers. Rows inserted/deleted during browsing can cause **duplicates or gaps** between pages.
+
+### 2. Limit-offset pagination
+
+```http
+GET /users?limit=10&offset=20
+```
+
+Same SQL as page-based: records 21–30. `offset=20`, `limit=10`.
+
+### 3. Cursor pagination
+
+Uses a **cursor** instead of page number:
+
+```http
+GET /users?cursor=100
+```
+
+```json
+{
+  "nextCursor": 110,
+  "data": [ ... ]
+}
+```
+
+Fetch records **after** cursor value 100. Stable when data changes frequently — avoids duplicate/missing records during navigation. Best for infinite scroll and high-churn feeds.
+
+```sql
+SELECT * FROM users WHERE id > :cursor ORDER BY id LIMIT 10;
+```
+
+### Sorting with pagination
+
+```http
+GET /users?page=1&size=10&sort=name
+GET /users?page=1&size=10&sort=createdDate,desc
+```
+
+Always define a **stable sort key** (often `id` as tiebreaker). Detail: [§7.11 Sorting](#711-sorting).
+
+### Filtering with pagination
+
+```http
+GET /users?status=ACTIVE&page=1&size=10
+```
+
+Process: filter → paginate → return page. Detail: [§7.10 Filtering](#710-filtering).
+
+### Real flow
+
+```text
+Client request → REST API → read page & size → calculate OFFSET
+→ query DB (LIMIT/OFFSET or cursor) → build paginated response → client
+```
 
 ```mermaid
 flowchart LR
-    Req[Request page 3] --> API
-    API --> DB[(Database)]
-    DB --> Page[20 items + next_cursor]
+    C[Client] --> API[REST API]
+    API --> Q[Parse page/size or cursor]
+    Q --> DB[(Database)]
+    DB --> R[Build response + metadata]
+    R --> C
 ```
 
-### Key details
+### Comparison
 
-- Offset: simple but slow/deep pages (`OFFSET` scans rows).
-- Cursor: stable under concurrent inserts; no random page jump.
-- Include `has_next`, `next_cursor` in response contract.
+| Approach | Example | Best for | Trade-off |
+|----------|---------|----------|-----------|
+| **Page-based** | `?page=2&size=10` | Admin tables, jump to page N | Offset cost; unstable under churn |
+| **Limit-offset** | `?limit=10&offset=20` | Same as page-based | Same |
+| **Cursor** | `?cursor=100` | Feeds, infinite scroll | No random page jump |
 
-### When to use
+### Summary
 
-- Cursor: infinite scroll, high-churn feeds, large tables.
-- Offset: admin UIs with page numbers, small datasets.
+```text
+Pagination = return data in manageable chunks
+Approaches: page-based, limit-offset, cursor
+Benefits: faster responses, lower memory, less traffic, better scale and UX
+```
 
-### Trade-offs / Pitfalls
-
-- Offset pagination inconsistent if rows inserted/deleted during browsing.
-- Omitting max `limit` allows `limit=999999` abuse.
-- Total count queries expensive - make optional.
-
-### References
-
-*(No curated references for this sub-topic in `_topics.json`.)*
+**Goal:** Bounded list responses on every collection endpoint in [§7.1 REST](#71-rest) APIs.
 
 ---
 
 
 ## 7.10 Filtering
 
+> Pipeline: [filter → sort → paginate](#list-api-pipeline-7911). Combine with [§7.9 Pagination](#79-pagination) and [§7.11 Sorting](#711-sorting).
 
-### What is it?
+### What is filtering?
 
-**Filtering** lets clients narrow collections with query parameters - `?status=active&role=admin` - translated to safe database/API predicates.
+**Filtering** retrieves only records that match specific conditions instead of returning all available data.
 
-### Why it matters
+It helps clients get exactly the data they need.
 
-Clients need subsets without downloading full collections; filtering must be indexed and validated to stay performant.
+```http
+GET /users              → all users
+GET /users?status=ACTIVE → only ACTIVE users
+```
 
-### How it works
+### Why filtering is needed
 
-1. Define allowed filter fields whitelist in API contract.
-2. Parse query params -> AST or SQL WHERE clauses (parameterized).
-3. Reject unknown fields with 400.
-4. Ensure DB indexes match common filter combinations.
-5. Document operators: `eq`, `gt`, `in`, `like` (RSQL/FIQL patterns).
+1. Reduce unnecessary data transfer
+2. Improve response time
+3. Reduce server processing
+4. Provide relevant data to clients
+5. Improve user experience
 
-### Diagram
+### Common filtering parameters
+
+Each query parameter acts as a filter condition:
+
+```http
+GET /users?status=ACTIVE
+GET /users?city=Bangalore
+GET /users?department=IT
+GET /products?category=Electronics
+```
+
+**Whitelist** allowed filter fields in the API contract; reject unknown parameters with `400`. Use **parameterized queries** only — never concatenate user input into SQL.
+
+### Single field filtering
+
+```http
+GET /users?status=ACTIVE
+```
+
+```sql
+SELECT * FROM users WHERE status = 'ACTIVE';
+```
+
+### Multiple field filtering
+
+```http
+GET /users?status=ACTIVE&city=Bangalore
+```
+
+```sql
+SELECT * FROM users
+WHERE status = 'ACTIVE' AND city = 'Bangalore';
+```
+
+### Filtering by numeric values
+
+```http
+GET /employees?salary=50000
+```
+
+```sql
+SELECT * FROM employees WHERE salary = 50000;
+```
+
+### Range filtering
+
+```http
+GET /products?minPrice=1000&maxPrice=5000
+```
+
+Products with price between 1000 and 5000:
+
+```sql
+SELECT * FROM products
+WHERE price >= 1000 AND price <= 5000;
+```
+
+### Date filtering
+
+```http
+GET /orders?orderDate=2026-06-25
+```
+
+```sql
+SELECT * FROM orders WHERE order_date = '2026-06-25';
+```
+
+```http
+GET /orders?fromDate=2026-01-01&toDate=2026-06-30
+```
+
+```sql
+SELECT * FROM orders
+WHERE order_date BETWEEN '2026-01-01' AND '2026-06-30';
+```
+
+### Search filtering
+
+**Exact:**
+
+```http
+GET /users?name=John
+```
+
+```sql
+SELECT * FROM users WHERE name = 'John';
+```
+
+**Partial:**
+
+```http
+GET /users?name=Joh
+```
+
+```sql
+SELECT * FROM users WHERE name LIKE '%Joh%';
+```
+
+Prefer indexed search (full-text, prefix) over leading-wildcard `LIKE` on large tables.
+
+### IN filtering
+
+```http
+GET /users?status=ACTIVE,PENDING
+```
+
+```sql
+SELECT * FROM users WHERE status IN ('ACTIVE', 'PENDING');
+```
+
+### Boolean filtering
+
+```http
+GET /users?verified=true
+```
+
+```sql
+SELECT * FROM users WHERE verified = true;
+```
+
+### Filtering with sorting
+
+```http
+GET /users?status=ACTIVE&sort=name,asc
+```
+
+Flow: filter → sort. Detail: [§7.11 Sorting](#711-sorting).
+
+```sql
+SELECT * FROM users
+WHERE status = 'ACTIVE'
+ORDER BY name ASC;
+```
+
+### Filtering with pagination
+
+```http
+GET /users?status=ACTIVE&page=1&size=10
+```
+
+Flow: filter → paginate. Detail: [§7.9 Pagination](#79-pagination).
+
+```sql
+SELECT * FROM users
+WHERE status = 'ACTIVE'
+LIMIT 10 OFFSET 0;
+```
+
+### Combined example
+
+```http
+GET /products?category=Electronics&minPrice=1000&maxPrice=10000&sort=price,asc&page=1&size=20
+```
+
+Flow:
+
+1. Filter by category
+2. Filter by price range
+3. Sort by price ascending
+4. Paginate (page 1, size 20)
+5. Return results
+
+### Real flow
+
+```text
+Client request → REST API → read filter parameters
+→ validate input → build WHERE conditions → fetch matching records
+→ optional sort → optional pagination → response
+```
 
 ```mermaid
 flowchart LR
-    Q['?status=open&priority=high'] --> API
-    API --> Valid[Validate whitelist]
-    Valid --> DB[(Indexed query)]
+    C[Client] --> API[REST API]
+    API --> V[Validate filter whitelist]
+    V --> Q[Build parameterized WHERE]
+    Q --> DB[(Indexed query)]
+    DB --> API
+    API --> C
 ```
 
-### Key details
+### Challenges
 
-- Never concatenate user input into SQL - parameterized queries only.
-- Composite indexes for multi-filter queries.
-- GraphQL: arguments on list fields serve same role.
+- Unindexed filters → full table scans
+- Overly flexible filter DSL → expensive queries; cap complexity
+- Composite indexes for common multi-filter combinations
 
-### When to use
+### Summary
 
-- Search/list APIs with varied client slice needs.
-- Admin dashboards and reporting endpoints.
+```text
+Filtering = return only records matching query conditions
+Examples: ?status=ACTIVE | ?city=Bangalore | ?minPrice=1000&maxPrice=5000
+Combine with sorting, pagination, search, and date ranges
+Benefits: faster responses, less data, more relevant results
+```
 
-### Trade-offs / Pitfalls
-
-- Unindexed filters cause full table scans.
-- Overly flexible filter DSL enables expensive queries - complexity limits needed.
-- Filter + sort + pagination interaction must be documented.
-
-### References
-
-*(No curated references for this sub-topic in `_topics.json`.)*
+**Goal:** Let clients narrow collections safely on every list endpoint — [§7.1 REST](#71-rest).
 
 ---
 
 
 ## 7.11 Sorting
 
+> Pipeline: [filter → sort → paginate](#list-api-pipeline-7911). Combine with [§7.9 Pagination](#79-pagination) and [§7.10 Filtering](#710-filtering).
 
-### What is it?
+### What is sorting?
 
-**Sorting** orders results by one or more fields - `?sort=created_at:desc,name:asc` - with whitelist validation and index backing.
+**Sorting** arranges data in a specific order before returning it from an API.
 
-### Why it matters
+Data can be sorted on fields such as name, age, salary, created date, updated date, or price.
 
-Consistent ordering required for cursor pagination and user-visible lists; arbitrary sort fields are a common DoS vector.
+Sorting helps clients receive data in a meaningful, organized way.
 
-### How it works
+### Why sorting is needed
 
-1. Client specifies `sort` parameter with field and direction.
-2. API validates against allowed sort fields.
-3. Translate to `ORDER BY` with parameter binding.
-4. Combine with pagination key (sort field often = cursor field).
-5. Default sort when omitted (e.g., `created_at desc`).
+1. Display data in a user-friendly order
+2. Show latest records first
+3. Show highest or lowest values
+4. Improve data readability
+5. Support reporting and analytics
 
-### Diagram
+Consistent ordering is required for stable [§7.9 cursor pagination](#79-pagination).
+
+### Ascending and descending order
+
+| Order | Meaning | Examples |
+|-------|---------|----------|
+| **ASC** | Smallest → largest; A → Z; oldest → newest | `1,2,3,4,5` · `A,B,C,D,E` |
+| **DESC** | Largest → smallest; Z → A; newest → oldest | `5,4,3,2,1` · `E,D,C,B,A` |
+
+### Sorting parameters in REST API
+
+```http
+GET /users?sort=name
+```
+
+Sort by `name` ascending (default).
+
+```http
+GET /users?sort=name,desc
+```
+
+Sort by `name` descending.
+
+**Whitelist** allowed sort fields in the API contract — reject unknown fields with `400` to prevent expensive or unsafe `ORDER BY`.
+
+### Example data
+
+```json
+[
+  { "id": 1, "name": "John" },
+  { "id": 2, "name": "Alice" },
+  { "id": 3, "name": "David" }
+]
+```
+
+### Sort by name ascending
+
+```http
+GET /users?sort=name,asc
+```
+
+```json
+[
+  { "id": 2, "name": "Alice" },
+  { "id": 3, "name": "David" },
+  { "id": 1, "name": "John" }
+]
+```
+
+### Sort by name descending
+
+```http
+GET /users?sort=name,desc
+```
+
+```json
+[
+  { "id": 1, "name": "John" },
+  { "id": 3, "name": "David" },
+  { "id": 2, "name": "Alice" }
+]
+```
+
+### Sorting by date
+
+```http
+GET /orders?sort=createdDate,desc   → newest first
+GET /orders?sort=createdDate,asc    → oldest first
+```
+
+### Multiple field sorting
+
+```http
+GET /employees?sort=department,asc&sort=salary,desc
+```
+
+1. Sort by `department` ascending
+2. Within same department, sort `salary` descending
+
+Use a **unique tiebreaker** (e.g. `id`) for stable pagination across pages.
+
+### Database query examples
+
+```http
+GET /users?sort=name,asc
+```
+
+```sql
+SELECT * FROM users ORDER BY name ASC;
+```
+
+```http
+GET /users?sort=name,desc
+```
+
+```sql
+SELECT * FROM users ORDER BY name DESC;
+```
+
+Ensure **indexes** match common `sort` + `filter` combinations.
+
+### Sorting with pagination
+
+```http
+GET /users?page=1&size=10&sort=name,asc
+```
+
+Flow: sort → paginate → return first page.
+
+```sql
+SELECT * FROM users
+ORDER BY name ASC
+LIMIT 10 OFFSET 0;
+```
+
+### Sorting with filtering
+
+```http
+GET /users?status=ACTIVE&sort=name,asc
+```
+
+Flow: filter → sort → return results.
+
+```sql
+SELECT * FROM users
+WHERE status = 'ACTIVE'
+ORDER BY name ASC;
+```
+
+### Common sortable fields
+
+| API | Examples |
+|-----|----------|
+| **User** | `name`, `age`, `city`, `createdDate` |
+| **Product** | `price`, `rating`, `createdDate` |
+| **Order** | `orderDate`, `amount`, `status` |
+
+### Real flow
+
+```text
+Client request → REST API → read sort parameter
+→ validate field name → ORDER BY → fetch sorted data → response
+```
 
 ```mermaid
 flowchart LR
-    Sort['sort=-price'] --> API
-    API --> IDX[(Index on price)]
-    IDX --> Ordered[Ordered page]
+    C[Client] --> API[REST API]
+    API --> V[Validate sort whitelist]
+    V --> DB[(ORDER BY + index)]
+    DB --> C
 ```
 
-### Key details
+### Summary
 
-- Multi-column sort order matters for stable pagination.
-- Sorting on unindexed JSON fields is slow.
-- Locale-aware string sort needs explicit collation rules.
+```text
+Sorting = arrange API data before sending to client
+Syntax: ?sort=name | ?sort=name,asc | ?sort=name,desc | ?sort=createdDate,desc
+Multi-field: ?sort=department,asc&sort=salary,desc
+Works with pagination and filtering for organized list APIs
+```
 
-### When to use
-
-- Any list API where order matters to users.
-- Cursor pagination requires deterministic sort key (ideally unique).
-
-### Trade-offs / Pitfalls
-
-- Sorting + filtering on different indexes -> planner may fail to use index.
-- Changing default sort is breaking for cursor clients.
-- Random sort (`ORDER BY RAND()`) doesn't scale.
-
-### References
-
-*(No curated references for this sub-topic in `_topics.json`.)*
+**Goal:** Predictable, indexed ordering on every collection endpoint — [§7.1 REST](#71-rest).
 
 ---
 
 
 ## 7.12 OpenAPI
 
+> **Tooling:** interactive docs and codegen live in [§7.13 Swagger](#713-swagger) — this section is the **specification**.
 
-### What is it?
+### What is OpenAPI?
 
-**OpenAPI Specification (OAS)** is a machine-readable YAML/JSON format describing REST API paths, parameters, request/response schemas, and security schemes - language-agnostic contract.
+**OpenAPI** is a standard specification used to describe [REST](#71-rest) APIs in a **machine-readable** format.
 
-### Why it matters
+It defines:
 
-Single source of truth for codegen, documentation, mock servers, contract tests, and gateway import - API-first design enabler.
+- Available endpoints
+- Request parameters
+- Request body
+- Response structure
+- Authentication methods
+- Error responses
 
-### How it works
+OpenAPI provides a **common contract** between API providers and API consumers.
 
-1. Author `openapi.yaml` (design-first) or generate from code annotations.
-2. Validate spec in CI (Spectral lint rules).
-3. Generate server stubs or client SDKs.
-4. Publish to portal (Redoc, Stoplight).
-5. Gate deployments on breaking change detection (oasdiff).
+### Why OpenAPI is needed
 
-### Diagram
+1. Standardized API documentation
+2. Better API understanding
+3. Automatic code generation
+4. Easy API testing
+5. Improved collaboration between teams
+6. Client SDK generation
+7. API contract definition
 
-```mermaid
-flowchart LR
-    Spec[openapi.yaml] --> Gen[Code Generator]
-    Spec --> Doc[Documentation]
-    Spec --> Test[Contract Tests]
+Versioned APIs ([§7.8](#78-api-versioning)) should document each major version in the spec (`info.version` and/or separate spec files per version).
+
+### What is OpenAPI Specification (OAS)?
+
+**OpenAPI Specification (OAS)** is the official format used to describe APIs.
+
+Usually written as:
+
+- **YAML** — `openapi.yaml`
+- **JSON** — `openapi.json`
+
+### Main components of OpenAPI
+
+| # | Component | Purpose |
+|---|-----------|---------|
+| 1 | OpenAPI version | Spec format version (`3.0.0`, `3.1.0`) |
+| 2 | `info` | API metadata (title, description, version) |
+| 3 | `servers` | Base URLs |
+| 4 | `paths` | Endpoints and HTTP methods |
+| 5 | `parameters` | Query, path, header params |
+| 6 | `requestBody` | Request payload schema |
+| 7 | `responses` | Status codes and response schemas |
+| 8 | `components` | Reusable schemas, parameters, responses |
+| 9 | `security` | Auth schemes (API key, OAuth2, JWT, etc.) |
+
+### Basic OpenAPI structure
+
+```yaml
+openapi: 3.0.0
+
+info:
+  title: User API
+  version: 1.0.0
+
+servers:
+  - url: https://api.example.com
+
+paths:
+  /users:
+    get:
+      summary: Get all users
 ```
 
-### Key details
+#### 1. OpenAPI version
 
-- OpenAPI 3.1 aligns with JSON Schema.
-- Reusable components: `schemas`, `parameters`, `responses`.
-- `examples` and `description` fields improve consumer UX.
+Specifies the OpenAPI specification version:
 
-### When to use
+```yaml
+openapi: 3.0.0
+# or
+openapi: 3.1.0
+```
 
-- REST APIs with external or multi-team consumers.
-- CI/CD SDK generation pipeline.
-- API review process before implementation.
+OpenAPI 3.1 aligns with JSON Schema — useful for rich validation rules in [§7.14 Request Validation](#714-request-validation).
 
-### Trade-offs / Pitfalls
+#### 2. Info section
 
-- Spec drift from implementation if not generated from code in CI.
-- Complex APIs produce huge specs hard to review.
-- Doesn't cover gRPC (use protobuf) or GraphQL (use SDL).
+API metadata:
 
-### References
+```yaml
+info:
+  title: User API
+  description: API for managing users
+  version: 1.0.0
+```
 
-*(No curated references for this sub-topic in `_topics.json`.)*
+Fields: `title`, `description`, `version`.
+
+#### 3. Servers section
+
+Defines API base URLs:
+
+```yaml
+servers:
+  - url: https://api.example.com
+```
+
+#### 4. Paths section
+
+Defines endpoints:
+
+```yaml
+paths:
+  /users:
+    get:
+      summary: Get Users
+    post:
+      summary: Create User
+```
+
+#### 5. Parameters
+
+Query parameters, path variables, headers, etc.
+
+`GET /users?page=1`:
+
+```yaml
+parameters:
+  - name: page
+    in: query
+    required: false
+    schema:
+      type: integer
+```
+
+See [§7.9 Pagination](#79-pagination), [§7.10 Filtering](#710-filtering), [§7.11 Sorting](#711-sorting) for list-API query params to document here.
+
+#### 6. Request body
+
+Request payload structure for `POST /users`:
+
+```json
+{ "name": "John" }
+```
+
+```yaml
+requestBody:
+  required: true
+  content:
+    application/json:
+      schema:
+        type: object
+        properties:
+          name:
+            type: string
+```
+
+#### 7. Responses
+
+```yaml
+responses:
+  "200":
+    description: Success
+  "404":
+    description: User Not Found
+```
+
+#### 8. Components
+
+Reusable definitions — reduces duplication:
+
+```yaml
+components:
+  schemas:
+    User:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+```
+
+Benefits: reusability, less duplication, easier maintenance.
+
+#### 9. Security
+
+Authentication mechanisms — API key, Basic auth, OAuth2, JWT:
+
+```yaml
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+security:
+  - bearerAuth: []
+```
+
+See [§7.16 API Security](#716-api-security) for auth patterns in production.
+
+### Complete simple example
+
+```yaml
+openapi: 3.0.0
+
+info:
+  title: User API
+  version: 1.0.0
+
+servers:
+  - url: https://api.example.com
+
+paths:
+  /users:
+    get:
+      summary: Get Users
+      responses:
+        "200":
+          description: Success
+```
+
+### OpenAPI documentation tools
+
+Common tools (details in [§7.13 Swagger](#713-swagger)):
+
+| Tool | Role |
+|------|------|
+| Swagger UI | Interactive API explorer |
+| Swagger Editor | Design and validate specs |
+| Swagger Codegen | Legacy code generation |
+| OpenAPI Generator | Modern client/server codegen |
+
+These tools can visualize APIs, generate documentation, client code, and server stubs.
+
+### OpenAPI vs Swagger
+
+```text
+OpenAPI = specification (§7.12) · Swagger = tooling (§7.13)
+```
+
+### Benefits of OpenAPI
+
+1. Clear API documentation
+2. Better developer experience
+3. Faster integration
+4. Automatic client generation
+5. Automated testing support ([§7.15 Contract Testing](#715-contract-testing))
+6. Consistent API design
+7. Improved maintainability
+
+**Pitfall:** spec drift from implementation — validate in CI (lint with Spectral, diff breaking changes with oasdiff) and keep spec and code in sync.
+
+### Real flow
+
+```text
+API design → create OpenAPI spec → generate documentation
+→ generate client SDKs → implement API → test API → publish docs
+```
+
+```mermaid
+flowchart TB
+    D[API design] --> S[OpenAPI spec]
+    S --> Doc[Documentation]
+    S --> SDK[Client SDKs]
+    S --> Impl[Implement API]
+    Impl --> T[Test API]
+    T --> Pub[Publish docs]
+```
+
+Design-first: write the spec before implementation. Code-first: generate the spec from annotations — either way, the spec is the contract.
+
+### Summary
+
+```text
+OpenAPI = machine-readable REST API contract (YAML/JSON)
+Defines: endpoints, parameters, bodies, responses, security, schemas
+Tools: Swagger UI, Swagger Editor, OpenAPI Generator
+Benefits: standardized docs, collaboration, codegen, testing, maintainability
+```
+
+**Goal:** One source of truth for what the API promises — [§7.1 REST](#71-rest).
 
 ---
 
 
 ## 7.13 Swagger
 
+> **Specification:** the contract format is [§7.12 OpenAPI](#712-openapi) — Swagger is the **tooling** layer.
 
-### What is it?
+### What is Swagger?
 
-**Swagger** is the tooling ecosystem around OpenAPI - Swagger UI (interactive docs), Swagger Editor, and historical name for the spec before OpenAPI 3 rebranding.
+**Swagger** is a set of tools used for designing, documenting, testing, and consuming [REST](#71-rest) APIs.
 
-### Why it matters
+It helps developers understand and interact with APIs through a **graphical interface** without writing client code first.
 
-De facto interactive API explorer during development; stakeholders try endpoints without Postman setup.
+Swagger works with the [OpenAPI Specification (OAS)](#712-openapi) — the spec is the contract; Swagger is the tooling layer.
 
-### How it works
+### Why Swagger is needed
 
-1. Host OpenAPI spec at `/openapi.json`.
-2. Swagger UI renders try-it-out forms per operation.
-3. OAuth2 flows configured for authenticated tryouts.
-4. Editor validates syntax live during design sessions.
+1. Interactive API documentation
+2. Easy API testing
+3. Better collaboration between teams
+4. Faster API development
+5. Automatic code generation
+6. Improved API understanding
 
-### Diagram
+### Swagger ecosystem
 
-```mermaid
-flowchart LR
-    Spec[OpenAPI Spec] --> UI[Swagger UI]
-    UI --> Dev[Developer try-out]
+| # | Tool | Purpose |
+|---|------|---------|
+| 1 | **Swagger UI** | Web UI from an OpenAPI spec — explore and try endpoints |
+| 2 | **Swagger Editor** | Create and edit OpenAPI YAML/JSON with validation |
+| 3 | **Swagger Codegen** | Generate clients and server stubs from specs |
+
+**Note:** [OpenAPI Generator](https://openapi-generator.tech/) is the actively maintained successor to Swagger Codegen for new projects.
+
+#### 1. Swagger UI
+
+Generates a web-based interface from an [OpenAPI](#712-openapi) specification.
+
+Features:
+
+- View API documentation
+- Explore endpoints
+- Execute API requests (**Try it out**)
+- View request and response details
+
+Example: for `GET /users`, click **Try it out** and execute the request in the browser.
+
+Typical URLs (Spring Boot and similar):
+
+```text
+/swagger-ui.html
+/swagger-ui/index.html
 ```
 
-### Key details
+Host the spec at `/openapi.json` or `/v3/api-docs`; Swagger UI reads it and renders operations.
 
-- Swagger UI vs Redoc: UI interactive, Redoc prettier read-only.
-- Don't expose Swagger UI in production without auth (info disclosure).
-- Codegen: OpenAPI Generator (successor to swagger-codegen).
+#### 2. Swagger Editor
 
-### When to use
+Used to create and edit OpenAPI specifications.
 
-- Dev/staging API documentation and manual testing.
-- Onboarding partners with live contract explorer.
+Features:
 
-### Trade-offs / Pitfalls
+- Write OpenAPI YAML
+- Validate specifications
+- Preview documentation
+- Detect syntax errors
 
-- Production exposure leaks full API surface to attackers.
-- "Try it out" against prod risky - disable or protect.
-- Confusion between Swagger 2.0 and OpenAPI 3.x feature sets.
+```yaml
+openapi: 3.0.0
 
-### References
+info:
+  title: User API
+  version: 1.0.0
+```
 
-*(No curated references for this sub-topic in `_topics.json`.)*
+Design-first workflows: author here, then implement against the spec ([§7.12](#712-openapi)).
+
+#### 3. Swagger Codegen
+
+Generates source code from OpenAPI definitions:
+
+- Java, Python, JavaScript clients
+- Server stubs
+
+Benefits: less manual coding, faster integration. Prefer **OpenAPI Generator** for new codegen pipelines.
+
+### How Swagger works
+
+```text
+Step 1: Create OpenAPI specification
+Step 2: Swagger reads specification
+Step 3: Generate interactive documentation
+Step 4: Developers test APIs
+```
+
+### Swagger UI example
+
+Endpoint `GET /users/{id}` — Swagger UI displays:
+
+```text
+GET /users/{id}
+
+Parameters:
+  id : integer
+
+Responses:
+  200 Success
+  404 Not Found
+```
+
+Users enter parameter values and execute requests directly from the browser.
+
+### Swagger with Spring Boot
+
+Swagger/OpenAPI can auto-generate documentation from Spring Boot apps:
+
+1. Add Swagger/OpenAPI dependency (e.g. springdoc-openapi)
+2. Start the application
+3. Open Swagger UI URL
+4. Explore APIs
+
+Annotation-driven: code changes can refresh the published spec — keep it aligned with [§7.12](#712-openapi) in CI.
+
+### Advantages of Swagger
+
+1. Interactive documentation
+2. Easy API testing
+3. Faster onboarding
+4. Better API visibility
+5. Reduced communication gaps
+6. Automatic documentation updates (when spec is generated from code)
+7. Code generation support
+
+**Production caution:** exposing Swagger UI without auth reveals the full API surface. Use dev/staging, or protect with auth; disable **Try it out** against production when possible.
+
+### Example OpenAPI document used by Swagger
+
+```yaml
+openapi: 3.0.0
+
+info:
+  title: User API
+  version: 1.0.0
+
+paths:
+  /users:
+    get:
+      summary: Get Users
+      responses:
+        "200":
+          description: Success
+```
+
+Swagger reads this file and generates browsable documentation.
+
+### Real flow
+
+```text
+Create API → create OpenAPI spec → Swagger reads spec
+→ generate documentation → developers test APIs → integrate applications
+```
+
+```mermaid
+flowchart TB
+    API[Create / implement API] --> Spec[OpenAPI spec]
+    Spec --> SW[Swagger UI / Editor]
+    SW --> Doc[Interactive docs]
+    Doc --> Test[Developers test APIs]
+    Test --> Int[Client integration]
+    Spec --> Gen[Codegen / OpenAPI Generator]
+    Gen --> SDK[Client SDKs]
+```
+
+### Common use cases
+
+1. API documentation
+2. API testing (manual try-it-out)
+3. Client SDK generation
+4. Server stub generation
+5. API design validation
+6. Team collaboration and partner onboarding
+
+Pairs with [§7.15 Contract Testing](#715-contract-testing) for automated verification beyond manual try-it-out.
+
+### Summary
+
+```text
+Swagger = toolset for OpenAPI (UI, Editor, Codegen)
+Swagger UI = explore and execute APIs in the browser
+OpenAPI = spec; Swagger = tools that read the spec
+Benefits: interactive docs, testing, codegen, collaboration
+```
+
+**Goal:** Make the [OpenAPI](#712-openapi) contract explorable without Postman — [§7.1 REST](#71-rest).
 
 ---
 
 
 ## 7.14 Request Validation
 
+### What is request validation?
 
-### What is it?
+**Request validation** is the process of checking incoming [REST](#71-rest) API requests **before** processing them.
 
-**Request validation** checks incoming payloads against schema - types, required fields, formats, bounds - before business logic runs, returning `400 Bad Request` with field-level errors.
+It ensures request data is correct, complete, and follows expected rules. If validation fails, the API returns an error response instead of processing invalid data.
 
-### Why it matters
+Rules are often defined in [§7.12 OpenAPI](#712-openapi) schemas and enforced at the API boundary.
 
-First defense against injection, malformed data, and confusing 500 errors; shifts failures left with clear client feedback.
+### Why request validation is needed
 
-### How it works
+1. Prevent invalid data from entering the system
+2. Improve data quality
+3. Avoid application errors (fewer opaque `500` responses)
+4. Improve security
+5. Provide meaningful error messages
+6. Maintain data integrity
 
-1. Define JSON Schema / OpenAPI / bean validation rules.
-2. Middleware validates body, query, path params on entry.
-3. Reject with structured error: `{ "field": "email", "error": "invalid format" }`.
-4. Pass validated DTO to handler - no raw map parsing in business code.
-5. Validate content-type and payload size limits.
+### Example without validation
 
-### Diagram
-
-```mermaid
-flowchart LR
-    Req[Request] --> Val[Validator]
-    Val -->|ok| Handler[Business Logic]
-    Val -->|fail| E400[400 Error]
+```http
+POST /users
 ```
 
-### Key details
+```json
+{
+  "name": "",
+  "email": "abc",
+  "age": -5
+}
+```
 
-- Frameworks: Jakarta Validation, Pydantic, JSON Schema middleware.
-- Whitelist unknown fields vs strip (fail-closed preferred for APIs).
-- Consistent error envelope across all endpoints.
+Problems: empty name, invalid email, negative age — invalid data may be stored in the database.
 
-### When to use
+### Example with validation
 
-- Every production API boundary - non-negotiable baseline.
-- Especially public APIs with untrusted clients.
+Same request → structured rejection:
 
-### Trade-offs / Pitfalls
+```json
+{
+  "message": "Validation Failed",
+  "errors": [
+    "Name cannot be empty",
+    "Invalid email format",
+    "Age must be greater than 0"
+  ]
+}
+```
 
-- Validation only at edge; internal service calls still need trust boundaries.
-- Overly leaky validation messages aid attackers (user enumeration).
-- Divergence between OpenAPI spec and runtime validation rules.
+### Common validation types
 
-### References
+| # | Type | Rule |
+|---|------|------|
+| 1 | **Required field** | Field must be present |
+| 2 | **Length** | String length within min/max |
+| 3 | **Format** | Email, phone, date, URL, etc. |
+| 4 | **Range** | Numeric value within bounds |
+| 5 | **Pattern** | Matches regex (e.g. digits only) |
+| 6 | **Custom** | Business rules (unique username, etc.) |
 
-*(No curated references for this sub-topic in `_topics.json`.)*
+#### 1. Required field validation
+
+```json
+{ "email": "john@test.com" }
+```
+
+Error: **Name is required.**
+
+#### 2. Length validation
+
+Username: min 3, max 20.
+
+```json
+{ "username": "ab" }
+```
+
+Error: **Username must contain at least 3 characters.**
+
+#### 3. Format validation
+
+```json
+{ "email": "invalid-email" }
+```
+
+Error: **Invalid email format.**
+
+#### 4. Range validation
+
+Age: min 18, max 60.
+
+```json
+{ "age": 10 }
+```
+
+Error: **Age must be between 18 and 60.**
+
+#### 5. Pattern validation
+
+PIN: digits only.
+
+```json
+{ "pinCode": "ABC123" }
+```
+
+Error: **PIN Code must contain only numbers.**
+
+#### 6. Custom validation
+
+Business-specific rules:
+
+- Username must be unique
+- Email must not already exist
+- Account balance cannot be negative
+
+Runs after syntactic validation — often requires a database or domain service lookup.
+
+### Request validation flow
+
+```text
+Client request → REST API → validate request data
+  ├─ failed  → return error response
+  └─ success → process request → store data → success response
+```
+
+```mermaid
+flowchart TB
+    C[Client request] --> API[REST API]
+    API --> V{Validate}
+    V -->|Failed| E[Error response]
+    V -->|Success| P[Process request]
+    P --> S[Store data]
+    S --> OK[Success response]
+```
+
+Validate at the **API boundary** before business logic — fail fast with clear errors.
+
+### Validation for query parameters
+
+List APIs ([§7.9 Pagination](#79-pagination), [§7.10 Filtering](#710-filtering)):
+
+```http
+GET /users?page=-1
+```
+
+Error: **Page number must be greater than 0.**
+
+```http
+GET /users?size=500
+```
+
+Error: **Maximum page size exceeded.**
+
+### Validation for path variables
+
+```http
+GET /users/abc
+```
+
+Expected: `GET /users/101`
+
+Error: **User ID must be numeric.**
+
+### Validation for request body
+
+```http
+POST /users
+```
+
+```json
+{ "name": "", "email": "invalid" }
+```
+
+Errors:
+
+- Name is required
+- Invalid email format
+
+### Standard error response
+
+```json
+{
+  "timestamp": "2026-06-25T10:30:00",
+  "status": 400,
+  "error": "Bad Request",
+  "message": "Validation Failed",
+  "errors": [
+    "Name is required",
+    "Invalid email format"
+  ]
+}
+```
+
+Use a **consistent error envelope** across all endpoints. Avoid leaking internal details (stack traces, SQL) — see [§7.16 API Security](#716-api-security).
+
+### HTTP status codes used
+
+| Code | When |
+|------|------|
+| **400 Bad Request** | Malformed request or invalid data (common default) |
+| **422 Unprocessable Entity** | Syntax OK but semantic/validation rules fail (some APIs prefer this for body validation) |
+
+Pick one convention per API and document it in OpenAPI.
+
+### Request validation in Spring Boot
+
+Common Jakarta Bean Validation annotations:
+
+| Annotation | Purpose |
+|------------|---------|
+| `@NotNull` | Field cannot be null |
+| `@NotBlank` | Cannot be null or empty/whitespace |
+| `@Size` | Min/max length |
+| `@Email` | Valid email format |
+| `@Min` / `@Max` | Numeric bounds |
+| `@Pattern` | Regex match |
+
+Example rules for:
+
+```json
+{ "name": "John", "email": "john@test.com", "age": 25 }
+```
+
+| Field | Rules |
+|-------|-------|
+| `name` | Required, minimum 3 characters |
+| `email` | Required, valid email format |
+| `age` | Must be greater than 18 |
+
+Result: **validation passed** → handler runs.
+
+Other stacks: Pydantic (Python), JSON Schema middleware, framework validators tied to OpenAPI `requestBody` schemas.
+
+### Best practices
+
+1. Validate **all** incoming requests (body, query, path, headers where relevant)
+2. Return clear, field-level error messages
+3. Validate at the API boundary
+4. Use standard HTTP status codes consistently
+5. Avoid exposing internal implementation details in errors
+6. Keep validation rules in sync with [§7.12 OpenAPI](#712-openapi)
+7. Reject unknown fields (fail-closed) for public APIs when appropriate
+
+### Summary
+
+```text
+Request Validation = check requests before processing; reject invalid data early
+Types: required, length, format, range, pattern, custom (business rules)
+Spring: @NotNull, @NotBlank, @Size, @Email, @Min, @Max, @Pattern
+Benefits: data quality, security, fewer errors, consistent API behavior
+```
+
+**Goal:** Never let bad input reach business logic or the database — [§7.1 REST](#71-rest).
 
 ---
 
 
 ## 7.15 Contract Testing
 
+### What is contract testing?
 
-### What is it?
+**Contract testing** verifies that communication between two services follows an **agreed contract**.
 
-**Contract testing** verifies consumer and provider agree on API shape and behavior without full end-to-end tests - consumer-driven contracts (Pact) or schema validation against OpenAPI.
+The contract defines:
 
-### Why it matters
+- Request structure
+- Response structure
+- Data types
+- Required fields
+- Status codes
 
-Microservices break when provider changes response without notice; contract tests catch incompatibilities in CI before deploy.
+It ensures API providers and consumers can communicate correctly **without breaking integrations** — often without spinning up the full system.
 
-### How it works
+Contracts are often expressed as [§7.12 OpenAPI](#712-openapi) specs or consumer-driven pact files.
 
-**Pact (consumer-driven):**
+### Why contract testing is needed
 
-1. Consumer test defines expected request/response mock (pact file).
-2. Pact file published to broker.
-3. Provider CI verifies it can satisfy all consumer pacts.
-4. Breaking change fails provider build before production.
+1. Prevent integration failures
+2. Detect breaking API changes early
+3. Ensure compatibility between services
+4. Reduce end-to-end testing dependency
+5. Improve confidence during deployments
+6. Support independent service development
 
-### Diagram
+Breaking field renames (`id` → `userId`) are caught in CI before deploy — complements [§7.8 API Versioning](#78-api-versioning).
 
-```mermaid
-flowchart LR
-    Consumer --> Pact[Pact File]
-    Pact --> Broker[Pact Broker]
-    Broker --> Provider[Provider Verify]
+### What is a contract?
+
+A **contract** is an agreement between **API consumer** and **API provider**.
+
+```http
+GET /users/101
 ```
 
-### Key details
+Expected response:
 
-- Consumer-driven: consumers define needs; avoids gold-plated provider APIs.
-- OpenAPI diff: provider spec vs consumer expectations.
-- Not replacement for E2E - tests contract slice only.
+```json
+{
+  "id": 101,
+  "name": "John",
+  "email": "john@test.com"
+}
+```
 
-### When to use
+The consumer expects `id`, `name`, and `email`. If the provider changes this structure without notice, the contract is broken.
 
-- Many microservices with independent deploy cycles.
-- Public APIs with external consumers publishing pacts.
-- Preventing "works on my machine" integration failures.
+### Problem without contract testing
 
-### Trade-offs / Pitfalls
+**Provider (old):**
 
-- Pact maintenance overhead for large consumer counts.
-- Contracts don't test latency, auth integration, or side effects.
-- False confidence if provider verifies against stale pacts.
+```json
+{ "id": 101, "name": "John" }
+```
 
-### References
+**Provider (new — breaking):**
 
-*(No curated references for this sub-topic in `_topics.json`.)*
+```json
+{ "userId": 101, "fullName": "John" }
+```
+
+Consumer still expects `id` and `name` → **runtime failure** in production.
+
+### Contract testing solution
+
+Before deployment:
+
+1. Verify provider follows the contract
+2. Verify consumer expectations
+3. Detect breaking changes
+4. Prevent production failures
+
+This is **not** [§7.14 Request Validation](#714-request-validation) — contracts test **agreed shapes between services**, not whether a single request field is well-formed.
+
+### Participants
+
+| Role | Description | Example |
+|------|-------------|---------|
+| **Consumer** | Application that **calls** an API | Web app, mobile app, microservice |
+| **Provider** | Application that **exposes** the API | User Service exposing `GET /users/{id}` |
+
+Example: **Order Service** (consumer) calls **User Service** (provider).
+
+### Consumer-driven contract testing
+
+Most common approach:
+
+```text
+Consumer defines expectations → provider verifies expectations are met
+```
+
+#### Example contract
+
+Consumer expectation:
+
+```http
+GET /users/101
+```
+
+Expected: status `200`
+
+```json
+{ "id": 101, "name": "John" }
+```
+
+The contract is generated from these expectations.
+
+#### Contract verification
+
+Provider runs verification tests and checks:
+
+- Endpoint exists
+- Status code matches
+- Required fields exist
+- Data types match
+
+**All pass** → contract verified. **Any fail** → provider build fails before release.
+
+### Contract testing flow
+
+```text
+Consumer → create contract → publish contract
+→ provider downloads contract → verify API against contract → pass / fail
+```
+
+```mermaid
+flowchart TB
+    C[Consumer] --> CC[Create contract]
+    CC --> Pub[Publish / store contract]
+    Pub --> P[Provider]
+    P --> V[Verify API against contract]
+    V --> R{Result}
+    R -->|Pass| D[Deploy safely]
+    R -->|Fail| F[Block release]
+```
+
+### What contract testing validates
+
+1. Endpoint URL
+2. HTTP method
+3. Request headers
+4. Query parameters
+5. Path variables
+6. Request body
+7. Response body
+8. Status codes
+9. Data types
+
+#### Example validation
+
+Contract schema:
+
+```json
+{ "id": "number", "name": "string" }
+```
+
+Valid — **PASS:**
+
+```json
+{ "id": 101, "name": "John" }
+```
+
+Invalid — **FAIL** (`id` must be numeric):
+
+```json
+{ "id": "ABC", "name": "John" }
+```
+
+### Contract testing vs integration testing
+
+| | Contract testing | Integration testing |
+|---|------------------|---------------------|
+| **Focus** | API agreement between consumer and provider | Full system interaction |
+| **Speed** | Fast | Slower |
+| **Environment** | No full stack required | Requires dependent systems running |
+| **Scope** | Communication contract | Broader end-to-end behavior |
+
+Use both: contracts for fast compatibility gates; integration/E2E for full flows (auth, latency, side effects).
+
+### Contract testing in microservices
+
+```text
+Order Service → User Service
+```
+
+Order Service expects `{ "id": 1, "name": "John" }`. Contract tests ensure User Service keeps honoring that shape across independent deploys.
+
+### Popular contract testing tools
+
+| Tool | Notes |
+|------|-------|
+| **Pact** | Consumer-driven; multi-language; pact broker |
+| **Spring Cloud Contract** | Spring Boot — contract definition, stubs, verification |
+| **Hoverfly** | Service virtualization / simulation |
+| **Dredd** | Validates API implementation against OpenAPI |
+
+#### Pact (consumer-driven)
+
+1. Consumer test defines expected request/response → pact file
+2. Pact published to broker
+3. Provider CI verifies it satisfies all consumer pacts
+4. Breaking change fails provider build
+
+#### Spring Cloud Contract
+
+Used in Spring Boot: define contracts (Groovy/YAML), generate stubs for consumers, verify provider in CI.
+
+OpenAPI-based alternative: diff provider spec against previous version or consumer expectations (oasdiff in CI).
+
+### Benefits of contract testing
+
+1. Detects breaking changes early
+2. Improves API reliability
+3. Reduces integration issues
+4. Faster feedback than full E2E
+5. Supports independent deployments
+6. Improves release confidence
+
+### Real flow
+
+```text
+Consumer defines expectations → generate contract → store contract
+→ provider verification → pass / fail → deploy safely
+```
+
+### Best practices
+
+1. Keep contracts small and focused
+2. Validate **required** fields; allow provider to add optional fields
+3. Automate contract verification in CI/CD
+4. Version contracts when APIs version ([§7.8](#78-api-versioning))
+5. Avoid testing business logic inside contracts — test **communication shape** only
+6. Keep pacts fresh; stale contracts give false confidence
+
+### Summary
+
+```text
+Contract Testing = verify consumer and provider agree on API shape
+Roles: consumer (caller), provider (exposer), contract, verification
+Tools: Pact, Spring Cloud Contract, Hoverfly, Dredd
+Benefits: early breaking-change detection, reliable integrations, safer deploys
+```
+
+**Goal:** Catch integration breaks in CI, not in production — [§7.1 REST](#71-rest).
 
 ---
 
 
 ## 7.16 API Security
 
+### What is API security?
 
-### What is it?
+**API security** is the practice of protecting [REST](#71-rest) APIs from unauthorized access, data breaches, attacks, and misuse.
 
-**API security** encompasses authentication (who), authorization (what), transport encryption, input sanitization, rate limiting, and audit logging for API endpoints.
+It ensures only authorized users and applications can access API resources while maintaining **confidentiality**, **integrity**, and **availability** (CIA).
 
-### Why it matters
+### Why API security is important
 
-APIs are the primary attack surface - OWASP API Security Top 10 (BOLA, broken auth, unbounded consumption) targets API-specific failures.
+1. Protect sensitive data
+2. Prevent unauthorized access
+3. Secure communication
+4. Prevent cyber attacks
+5. Maintain data integrity
+6. Meet compliance requirements
 
-### How it works
+APIs are a primary attack surface — design security from day one, not as an afterthought.
 
-1. **TLS 1.2+** for all traffic; mTLS for service-to-service.
-2. **OAuth2/OIDC + JWT** for user delegation; API keys for partners.
-3. **Scope/role checks** per endpoint (RBAC/ABAC).
-4. Validate object ownership (prevent BOLA/IDOR).
-5. Rate limit, WAF, audit sensitive operations.
+### Common security threats
 
-### Diagram
+| # | Threat |
+|---|--------|
+| 1 | Unauthorized access |
+| 2 | Data exposure |
+| 3 | SQL injection |
+| 4 | Cross-site scripting (XSS) |
+| 5 | Brute force attacks |
+| 6 | Denial of service (DoS) |
+| 7 | Credential theft |
+| 8 | Man-in-the-middle attacks |
+
+### Authentication vs authorization
+
+| | Authentication | Authorization |
+|---|------------------|---------------|
+| **Question** | Who are you? | What are you allowed to do? |
+| **Purpose** | Verify identity | Determine permissions |
+| **Examples** | Username/password, JWT, OAuth2 login | Admin vs user role, read vs write |
+
+Both are required: authenticating a user does not mean they can access every resource (prevent BOLA/IDOR — check object ownership).
+
+### Secure communication using HTTPS
+
+| | HTTP | HTTPS |
+|---|------|-------|
+| **Transport** | Plain text | Encrypted (SSL/TLS) |
+| **Risk** | Interception, tampering | Mitigated |
+
+```text
+https://api.example.com/users
+```
+
+Always terminate TLS at the [§7.5 API Gateway](#75-api-gateway) or load balancer. Use **mTLS** for service-to-service where appropriate.
+
+### API keys
+
+Unique identifier to authenticate API requests:
+
+```http
+GET /users
+X-API-KEY: abc123xyz
+```
+
+| Advantages | Limitations |
+|------------|-------------|
+| Simple to implement | Limited security if leaked |
+| Easy for partners/scripts | Rotate and store in secret managers — never in repos |
+
+Document key usage in [§7.12 OpenAPI](#712-openapi) `securitySchemes`.
+
+### JWT (JSON Web Token)
+
+Token-based authentication:
+
+1. User logs in
+2. Server generates token
+3. Client stores token
+4. Client sends token with requests
+
+```http
+Authorization: Bearer <token>
+```
+
+Benefits: stateless, scalable, widely used.
+
+**Token expiration:** e.g. 30 minutes — after expiry, re-authenticate. Reduces risk if a token is stolen. Avoid long-lived JWTs in `localStorage` (XSS risk); prefer short-lived tokens + refresh flow or HttpOnly cookies.
+
+### OAuth 2.0
+
+Authorization framework — apps access resources **on behalf of users** without sharing passwords.
+
+Examples: Login with Google, GitHub, Facebook.
+
+Benefits: secure delegation, industry standard, third-party app support.
+
+Often paired with OpenID Connect (OIDC) for identity. Define flows in OpenAPI security schemes.
+
+### Role-based access control (RBAC)
+
+Access granted by **role**:
+
+| Role | Permissions (example) |
+|------|------------------------|
+| **ADMIN** | Create, delete, update any user |
+| **USER** | View profile, update own profile |
+
+Enforce at every endpoint after authentication — authorization is not optional.
+
+### Input validation
+
+Validate all incoming data ([§7.14 Request Validation](#714-request-validation)):
+
+- Required fields
+- Data types
+- Length limits
+- Allowed values
+
+Benefits: prevent invalid data, reduce injection and abuse risks.
+
+### SQL injection prevention
+
+Malicious SQL inserted via input fields.
+
+**Unsafe:** string concatenation in queries.
+
+**Safe:** parameterized queries / prepared statements.
+
+Never trust client input — validate at the boundary and use ORM/query APIs that parameterize by default.
+
+### Rate limiting
+
+Brief: cap requests per client → `429`. Detail: [§7.18](#718-rate-limiting) (not [§7.19 throttling](#719-throttling)).
+
+### CORS (Cross-Origin Resource Sharing)
+
+Controls which **browser origins** may call the API.
+
+```text
+Allowed: https://myapp.com
+Blocked: https://unknown-site.com
+```
+
+Prevents unauthorized browser-based access from arbitrary domains. Server-to-server calls are not constrained by CORS — still require auth.
+
+### Secure headers
+
+Common HTTP security headers:
+
+| Header | Purpose |
+|--------|---------|
+| `Content-Security-Policy` | Restrict script/resource sources |
+| `X-Frame-Options` | Clickjacking protection |
+| `X-Content-Type-Options` | MIME sniffing protection |
+| `Strict-Transport-Security` | Force HTTPS |
+
+### Error handling
+
+Do not expose sensitive internals in error responses.
+
+**Bad:**
+
+```json
+{ "error": "Database password incorrect" }
+```
+
+**Good:**
+
+```json
+{ "error": "Internal Server Error" }
+```
+
+Align with [§7.14](#714-request-validation) validation errors — helpful for clients on `400`, generic on `500`.
+
+### Logging and monitoring
+
+Track:
+
+- Login attempts
+- Failed requests
+- Security violations
+- Suspicious activity
+
+Benefits: early threat detection, audit trail, easier troubleshooting. Avoid logging secrets or full tokens.
+
+### API security flow
+
+```text
+Client request → HTTPS → authentication → authorization
+→ input validation → business processing → response
+```
 
 ```mermaid
 flowchart TB
-    Client --> TLS[TLS]
-    TLS --> Auth[JWT Validate]
+    C[Client request] --> TLS[HTTPS / TLS]
+    TLS --> Auth[Authentication]
     Auth --> AuthZ[Authorization]
-    AuthZ --> API[Handler]
+    AuthZ --> Val[Input validation]
+    Val --> Biz[Business processing]
+    Biz --> R[Response]
 ```
 
-### Key details
+### Security best practices
 
-| Threat | Mitigation |
-|--------|------------|
-| BOLA | Check resource ownership |
-| Broken auth | Short-lived tokens, rotation |
-| Injection | Parameterized queries, validation |
-| Excessive data | Field-level authz |
+1. Always use HTTPS
+2. Implement authentication
+3. Implement authorization (per endpoint and per resource)
+4. Validate inputs ([§7.14](#714-request-validation))
+5. Use JWT or OAuth2 appropriately
+6. Apply [rate limiting](#718-rate-limiting)
+7. Use secure headers
+8. Avoid sensitive error messages
+9. Monitor API activity
+10. Rotate secrets and API keys regularly
 
-### When to use
+### Common HTTP status codes
 
-Always - from design phase, not bolted on after launch.
+| Code | Meaning |
+|------|---------|
+| **200 OK** | Request successful |
+| **401 Unauthorized** | Authentication required or failed |
+| **403 Forbidden** | Authenticated but access denied |
+| **429 Too Many Requests** | Rate limit exceeded |
 
-### Trade-offs / Pitfalls
+### Summary
 
-- JWT in localStorage -> XSS theft; prefer HttpOnly cookies or short-lived tokens.
-- API keys in repos - use secret managers.
-- Security theater: auth without authorization checks per object.
+```text
+API Security = protect APIs from unauthorized access and attacks
+Mechanisms: HTTPS, API keys, JWT, OAuth2, RBAC, validation, rate limiting, CORS, headers
+Benefits: secure communication, data protection, controlled access, attack prevention
+```
 
-### References
-
-*(No curated references for this sub-topic in `_topics.json`.)*
+**Goal:** Confidentiality, integrity, and availability for every [REST](#71-rest) endpoint.
 
 ---
 
 
 ## 7.17 Webhooks
 
+### What are webhooks?
 
-### What is it?
+A **webhook** is a mechanism that lets one application automatically send **real-time** data or event notifications to another when a specific event occurs.
 
-**Webhooks** are HTTP callbacks: when an event occurs, the API **POSTs** a payload to a subscriber-configured URL - inverse of polling.
+Instead of repeatedly asking an API for updates (**polling**), the server **pushes** information to a predefined URL via HTTP — typically `POST`.
 
-### Why it matters
+Inverse of normal [REST](#71-rest) calls: the **provider initiates** communication when an event happens.
 
-Real-time integrations (Stripe payments, GitHub pushes) without client polling overhead; standard pattern for SaaS extensibility.
+### Why webhooks are needed
 
-### How it works
+1. Real-time notifications
+2. Reduce unnecessary API calls
+3. Faster event processing
+4. Better system integration
+5. Lower network overhead
 
-1. Subscriber registers URL + secret via API.
-2. Event occurs (payment succeeded).
-3. Provider signs payload (HMAC-SHA256 with secret).
-4. POST to subscriber URL with retry backoff on failure.
-5. Subscriber verifies signature, returns 2xx quickly, processes async.
+### Webhook vs polling
 
-### Diagram
+| | Polling | Webhook |
+|---|---------|---------|
+| **Pattern** | Client repeatedly asks: "Any updates?" | Server pushes when event occurs |
+| **Example** | `GET /orders/status` every 30 seconds | `POST /webhook/orders` on order created |
+| **Downsides** | Many wasted requests, server load, delayed updates | Subscriber must expose a reliable endpoint |
+| **Upsides** | Simple client logic | Real-time, fewer calls, better performance |
+
+### Webhook example
+
+Customer pays → **Payment Successful** event → payment system sends:
+
+```http
+POST https://myapp.com/webhook/payment
+```
+
+```json
+{
+  "paymentId": "P1001",
+  "status": "SUCCESS",
+  "amount": 500
+}
+```
+
+Receiving app processes the event immediately.
+
+### How webhooks work
+
+1. **Consumer registers** webhook URL (e.g. `https://myapp.com/webhook/orders`)
+2. **Provider stores** the URL
+3. **Event occurs** (e.g. order created)
+4. **Provider sends** HTTP `POST` with event payload
+5. **Consumer receives** and processes data
+
+### Webhook flow
+
+```text
+Consumer registers URL → provider stores URL → event occurs
+→ provider POSTs to webhook endpoint → consumer processes event
+```
 
 ```mermaid
 sequenceDiagram
-    participant P as Provider
-    participant S as Subscriber
-    P->>S: POST event + signature
-    S-->>P: 200 OK
-    S->>S: async process
+    participant C as Consumer app
+    participant P as Provider app
+    participant W as Webhook endpoint
+    C->>P: Register webhook URL
+    Note over P: Event occurs
+    P->>W: POST event payload
+    W-->>P: 200 OK / 202 Accepted
+    W->>W: Process async
 ```
 
-### Key details
+Return **2xx quickly**, then process asynchronously — providers time out slow handlers and retry.
 
-- Idempotent processing by `event_id`.
-- Exponential retry for days; DLQ for dead endpoints.
-- Challenge verification on URL registration (echo token).
+### Common webhook events
 
-### When to use
+| Domain | Events |
+|--------|--------|
+| **E-commerce** | Order created, shipped, payment successful |
+| **User management** | User created/updated, password changed |
+| **Messaging** | Message delivered, read |
+| **Subscriptions** | Created, renewed, cancelled |
 
-- Push notifications to partner systems.
-- Event-driven integrations without message bus access.
+### Webhook request example
 
-### Trade-offs / Pitfalls
+```http
+POST /webhook/orders
+Content-Type: application/json
+```
 
-- Subscriber downtime -> retry queues backlog at provider.
-- SSRF risk if provider fetches user-supplied URLs - validate allowlists.
-- Ordering not guaranteed - use sequence numbers.
+```json
+{
+  "event": "ORDER_CREATED",
+  "orderId": 1001,
+  "customerId": 501
+}
+```
 
-### References
+Include a stable **`event_id`** for deduplication ([§7.20 Idempotency](#720-idempotency), [§7.21 Idempotency Keys](#721-idempotency-keys)).
 
-*(No curated references for this sub-topic in `_topics.json`.)*
+### Webhook response
+
+Typically:
+
+- `200 OK` or `202 Accepted`
+
+```json
+{ "message": "Webhook Received" }
+```
+
+Acknowledge receipt before heavy processing finishes.
+
+### Webhook retry mechanism
+
+If delivery fails, the provider **retries** (often with exponential backoff):
+
+```text
+Attempt 1 → failed → Attempt 2 → failed → Attempt 3 → success
+```
+
+Benefits: improved reliability, reduced event loss. Dead endpoints after max retries → DLQ for manual replay.
+
+### Webhook security
+
+Webhooks must be secured — anyone can send HTTP requests to a public URL. See [§7.16 API Security](#716-api-security).
+
+| Method | How |
+|--------|-----|
+| **Secret token** | Provider sends `X-Webhook-Token`; consumer verifies |
+| **Signature validation** | HMAC over payload → `X-Signature`; consumer recalculates |
+| **HTTPS** | Encrypt data in transit |
+| **IP whitelisting** | Allow only provider IP ranges (fragile alone — combine with signatures) |
+
+#### Secret token validation
+
+```http
+X-Webhook-Token: secret123
+```
+
+Invalid token → reject request.
+
+#### Signature validation
+
+```http
+X-Signature: abcxyz123
+```
+
+Provider signs payload + secret; consumer verifies — prevents tampering and confirms sender.
+
+#### HTTPS
+
+Always use `https://myapp.com/webhook/orders` — never plain HTTP for production webhooks.
+
+**Registration:** challenge/echo verification when subscribing (provider POSTs challenge token; subscriber must echo it back) to prove URL ownership.
+
+### Idempotency in webhooks
+
+The same event may be delivered **more than once** (retries). Process by unique `event_id` so duplicate **Order Created** webhooks create only one order.
+
+Details: [§7.20](#720-idempotency) / [§7.21](#721-idempotency-keys).
+
+### Webhook challenges
+
+1. Delivery failures (subscriber down)
+2. Duplicate events
+3. Network issues
+4. Security (forged requests, SSRF on registration if provider fetches user URLs)
+5. Event ordering not guaranteed — use sequence numbers or timestamps
+
+### Webhook best practices
+
+1. Use HTTPS
+2. Verify signatures or shared secrets
+3. Implement provider retries + subscriber idempotency
+4. Log webhook events for audit and replay
+5. Return responses quickly; process async
+6. Monitor failed deliveries
+7. Validate subscriber URLs on registration (prevent SSRF)
+
+### Webhooks vs REST API requests
+
+| | REST API | Webhook |
+|---|----------|---------|
+| **Who initiates** | Client | Server (provider) |
+| **When** | On demand | When event occurs |
+| **Example** | `GET /orders/1001` | `POST /webhook/orders` after ship event |
+
+### Real-world examples
+
+**Payment gateway:**
+
+```text
+Payment success → webhook sent → order service updates status
+```
+
+**E-commerce:**
+
+```text
+Order shipped → webhook sent → customer notification service
+```
+
+(Stripe, GitHub, Shopify, and similar SaaS platforms use this pattern extensively.)
+
+### Summary
+
+```text
+Webhooks = server-push event notifications via HTTP POST (event-driven)
+vs polling: real-time, fewer calls, lower overhead
+Security: HTTPS, secret tokens, signature verification
+Handle: retries, idempotency, fast 2xx, async processing
+```
+
+**Goal:** Real-time integrations without polling — [§7.1 REST](#71-rest) in reverse.
 
 ---
 
 
 ## 7.18 Rate Limiting
 
+### What is rate limiting?
 
-### What is it?
+A **rate limiter** controls how much traffic a client or service may send over a time window. It caps the number of [REST](#71-rest) API requests allowed in that period; when the threshold is exceeded, **extra calls are denied** (typically HTTP `429 Too Many Requests`).
 
-**Rate limiting** controls how much traffic a client or service may send over a time window. It caps the number of requests allowed per user, IP, API key, or tenant; when the threshold is exceeded, extra requests are **rejected** (typically HTTP `429 Too Many Requests`) or **queued/throttled**.
+Example: **100 requests per minute** — the 101st request is rejected.
 
-Rate limiting can live at different layers:
-- **Client-side** - SDK backoff (cooperative, not security)
-- **Server-side** - inside each app instance (weak in clusters unless shared state)
-- **Middleware / API gateway** - recommended: one enforcement point before backends (Kong, Envoy, nginx, AWS API Gateway, custom Spring filter)
+Part of [§7.16 API Security](#716-api-security). Commonly enforced at [§7.5 API Gateway](#75-api-gateway) middleware before backends.
 
-### Why it matters
+### Why rate limiting is needed
 
-- **DoS and abuse protection** - bots and misbehaving clients cannot exhaust CPU, DB connections, or memory
-- **Fair multi-tenancy** - one noisy neighbor cannot starve others on shared infrastructure
-- **Cost control** - expensive endpoints (search, ML inference) stay within budget
-- **SLA tiers** - free vs paid plans get different quotas (`100 req/min` vs `10,000 req/min`)
-- **Brute-force mitigation** - login and OTP endpoints get strict per-IP limits
+1. Prevent API abuse and **DoS resource starvation**
+2. Protect server resources — filter excessive requests from bots or misbehavior
+3. Ensure **fair usage** across tenants
+4. Improve system stability; avoid overburdened servers
+5. Control infrastructure costs — fewer servers needed when excess traffic is capped
+6. Allocate capacity to **high-priority APIs** and paid tiers
 
-### How it works
+**Real-world:** without limits, one client at 10,000 req/min overloads the system; with a 100 req/min cap per client, traffic stays stable for everyone.
 
-**Placement in request path:**
+### How rate limiting works
+
+```text
+Request received → check count → within limit?
+  ├─ yes → process request
+  └─ no  → reject (429)
+```
+
+```mermaid
+flowchart TB
+    R[Request received] --> C{Within limit?}
+    C -->|Yes| OK[Process request]
+    C -->|No| X[Reject — HTTP 429]
+```
+
+Enforce **before** expensive handler work — not after DB queries.
+
+### Where to enforce
+
+| Layer | Notes |
+|-------|-------|
+| **Client-side** | SDK backoff — cooperative only, not a security control |
+| **Server-side** | Inside each app instance — weak in clusters unless shared state |
+| **Middleware / gateway** | **Recommended** — one enforcement point (Kong, Envoy, NGINX, AWS API Gateway, Spring filter) |
 
 ```mermaid
 flowchart LR
-    Client --> GW[API Gateway / Middleware]
-    GW --> RL{Rate limit check}
-    RL -->|allowed| API[Backend services]
-    RL -->|denied| R429[429 + Retry-After]
+    Client --> MW[Rate limiter middleware / gateway]
+    MW -->|allowed| API[Backend services]
+    MW -->|denied| R429[429 + Retry-After]
 ```
 
-**1. Token bucket**
+### Common limits and HTTP response
 
-- Bucket has capacity **b** (max tokens) and refill rate **r** tokens/second
-- Each request consumes **1 token**; if tokens available -> allow; else -> reject
-- Tokens stop refilling when bucket is full (overflow discarded)
-- **Per-client bucket** - typically one bucket per API key, user ID, or IP + endpoint
+| Example limit |
+|---------------|
+| 100 requests / minute |
+| 500 requests / hour |
+| 1,000 requests / day |
+| 10 login attempts / minute |
 
-Example: `b=10`, `r=2/sec` -> burst of 10 requests instantly, then steady 2/sec.
+When exceeded:
 
-**2. Leaky bucket**
-
-- Requests enter a **FIFO queue** with max size **b**
-- Processor drains queue at **fixed outflow rate** (e.g. 5 req/sec)
-- Queue full -> drop new request
-- Output is smooth (good for protecting downstream with fixed capacity); responses may feel async/delayed
-
-**3. Fixed window counter**
-
-- Timeline split into windows (e.g. 1 minute); counter per window per client
-- Each request increments counter; if counter > limit -> reject until window resets
-- **Edge burst problem:** limit 3/min -> 3 requests at `2:00:59` + 3 at `2:01:00` = **6 in 2 seconds** across window boundary
-
-**4. Sliding window log**
-
-- Store **timestamp of every request** in the lookback window (Redis sorted set is common)
-- On new request: remove timestamps older than `now - window`; count remaining; if count < limit -> allow and add timestamp
-- Most accurate; higher memory (stores every request time even for rejected attempts in some designs)
-
-**5. Sliding window counter (hybrid - production favorite)**
-
-Combines fixed windows with smoothing:
-
-```
-weighted_count = (prev_window_count * (1 - overlap_fraction)) + current_window_count
+```http
+HTTP/1.1 429 Too Many Requests
+Retry-After: 60
 ```
 
-If `weighted_count > limit` -> reject.
+```json
+{
+  "error": "Rate Limit Exceeded",
+  "message": "Try again later"
+}
+```
 
-Example: limit **4 req/min**. Previous window had 4 requests; current window (25% elapsed) has 2.  
-`weighted = 4 * (1 - 0.25) + 2 = 5` -> **reject** even though neither window alone exceeded 4.
-
-**Distributed implementation with Redis (atomic):**
-
-For each client key `rate:{userId}`:
-
-1. `ZREMRANGEBYSCORE` - remove entries older than `now - windowMs`
-2. `ZADD` - add current timestamp as score and member
-3. `EXPIRE` - TTL = window size (cleanup)
-4. `ZRANGE 0 -1` - count entries in window
-5. Wrap steps 1-4 in **`MULTI`/`EXEC`** so no race between app instances
-
-Return `429` when count > `maxRequests`; include headers:
-
-| Header | Purpose |
+| Header | Meaning |
 |--------|---------|
 | `X-RateLimit-Limit` | Max requests in window |
-| `X-RateLimit-Remaining` | Tokens/requests left |
+| `X-RateLimit-Remaining` | Requests left |
 | `X-RateLimit-Reset` | Unix time when window resets |
-| `Retry-After` | Seconds client should wait |
 
-Pseudo-flow:
+Document limits in [§7.12 OpenAPI](#712-openapi).
+
+### Rate limiting algorithms
+
+| Algorithm | Burst behavior | Memory | Best for |
+|-----------|----------------|--------|----------|
+| **Token bucket** | Allows bursts up to bucket size | O(1) per client | Public APIs, short bursts |
+| **Leaky bucket** | Smooth fixed outflow | O(queue size) | Fixed-capacity downstream |
+| **Fixed window** | Spikes at window edges | O(1) | Simple internal limits |
+| **Sliding window log** | Accurate | O(requests in window) | Strict per-minute limits |
+| **Sliding window counter** | Smooth, approximate | O(1)–O(2) windows | **High-scale production APIs** |
+
+#### 1. Token bucket
+
+Bucket with capacity **b**; tokens refill at rate **r** tokens/sec. When full, overflow is discarded. Each request consumes **1 token** — enough tokens → process; else → drop.
+
+Typically **one bucket per client identity** (API key, user ID) **per endpoint**.
+
+| Pros | Cons |
+|------|------|
+| Easy to implement; memory efficient | Two tunable parameters: bucket size **b**, refill rate **r** |
+| Allows short traffic bursts while tokens remain | |
+
+Example: `b=4`, `r=1/sec` → burst of 4, then 1 req/sec steady.
+
+#### 2. Leaky bucket
+
+Similar idea, but requests sit in a **FIFO queue** and drain at a **fixed outflow rate**. Queue full → drop new request.
+
+| Pros | Cons |
+|------|------|
+| Memory efficient with bounded queue | Old queued requests can starve recent ones under surge |
+| Constant processing rate | Responses feel delayed (async queue) |
+| | Tune queue size and outflow rate |
+
+#### 3. Fixed window counter
+
+Timeline split into fixed windows; counter per window per client. Over limit → reject until window resets.
+
+Example: 3 requests/minute — requests 1–3 allowed; 4th dropped; counter resets at next minute.
+
+**Edge burst problem:** 3 requests at `2:00:59` + 3 at `2:01:00` = **6 requests in ~2 seconds** across the boundary — twice the intended rate.
+
+| Pros | Cons |
+|------|------|
+| Memory efficient; easy to understand | Boundary spikes (see above) |
+
+#### 4. Sliding window log
+
+Keep a **log of request timestamps** per client (Redis sorted sets are common). On each request: remove timestamps older than `now - window`, add current time, reject if log size > limit.
+
+More accurate than fixed window — boundary is **dynamic**, not aligned to clock minutes.
+
+| Pros | Cons |
+|------|------|
+| Precise rate over rolling window | Higher memory; rejected requests may still store timestamps |
+
+Example (limit 2/min): requests at `1:00:01`, `1:00:30` allowed (size 2); `1:00:50` rejected (size 3); at `1:01:40` outdated entries removed, request allowed again.
+
+#### 5. Sliding window counter (rolling rate limiter)
+
+Hybrid of fixed window + sliding log — smooths bursts by **weighting the previous window**:
+
+```text
+weighted_count = (prev_window_count × (1 - overlap_fraction)) + current_window_count
+```
+
+If `weighted_count > limit` → reject.
+
+Example: limit **4 req/min**. Previous window: 4 requests; current window 25% elapsed with 2 requests.  
+`weighted = 4 × (1 - 0.25) + 2 = 5` → **reject** even though neither window alone exceeded 4.
+
+| Pros | Cons |
+|------|------|
+| Smooths spikes; O(1)-ish per client | Less strict for very small time units |
+
+**Production favorite** at scale, often backed by Redis.
+
+### Distributed rate limiting (Redis)
+
+Per-pod counters multiply effective quota by replica count in Kubernetes/ASG. Use a **shared store** with **atomic** operations.
+
+For key `rate:{userId}` on each request (sliding window log pattern):
+
+1. `ZREMRANGEBYSCORE` — remove timestamps older than `now - windowMs`
+2. `ZADD` — add current timestamp (score = time)
+3. `EXPIRE` — TTL = window size (cleanup)
+4. `ZRANGE 0 -1` — count entries in window
+5. Wrap in **`MULTI` / `EXEC`** — no race between app instances
 
 ```text
 allowed = redis.transaction {
@@ -1399,405 +3856,620 @@ allowed = redis.transaction {
 }
 ```
 
-### Key details
+**Spring Boot example:**
 
-| Algorithm | Burst behavior | Memory | Distributed-friendly | Best for |
-|-----------|----------------|--------|-------------------|----------|
-| Token bucket | Allows bursts up to bucket size | O(1) per client | Yes (Redis INCR + TTL) | Public APIs, Stripe-style quotas |
-| Leaky bucket | Smooth constant outflow | O(queue size) | Harder (needs queue) | Protecting fixed-capacity workers |
-| Fixed window | Boundary spikes | O(1) | Yes (INCR + key per window) | Simple internal limits |
-| Sliding window log | Accurate | O(requests in window) | Yes (Redis ZSET) | Strict per-minute limits |
-| Sliding window counter | Smooth, approximate | O(1)-O(2) windows | Yes | **High-scale production APIs** |
+```java
+@Component
+public class RedisRateLimiter {
 
-- **Identity for limiting:** prefer API key or user ID over raw IP (corporate NAT shares one IP)
-- **Granularity:** global limit + per-endpoint limit (e.g. `1000/min` overall, `10/min` on `/search`)
-- **Fail-open vs fail-closed:** if Redis down, allow traffic (availability) or deny (safety) - product decision
-- **429 body:** return structured JSON with `retryAfter` so clients back off correctly
+    private final RedisTemplate<String, String> redisTemplate;
 
-### Production rules
+    public RedisRateLimiter(RedisTemplate<String, String> redisTemplate) {
+        this.redisTemplate = redisTemplate;
+    }
 
-| Rule | Rationale |
-|------|-----------|
-| **Shared store for distributed limits** | Per-pod counters multiply effective quota by replica count in K8s/ASG |
-| **Identity hierarchy** | Authenticated user/API key > tenant > IP; IP-only limits punish corporate NAT |
-| **Tiered quotas in product** | Free/pro/enterprise limits encoded in API key metadata — not hardcoded per route |
-| **Endpoint-specific limits** | Global cap + strict cap on expensive paths (`/search`, `/export`, login) |
-| **Return standard headers** | `X-RateLimit-*` + `Retry-After` on 429 — clients and SDKs depend on them |
-| **Document limits in OpenAPI** | Partners plan integrations; surprise 429s break batch jobs |
-| **Fail-open vs fail-closed** | Document policy: Redis down → allow (availability) or deny (abuse protection) |
-| **Monitor limit hits** | Metric `rate_limit_exceeded_total{client_tier, endpoint}` — detects abuse and mis-tuned tiers |
-| **Separate burst from sustained** | Token bucket for UX (allow short bursts); sliding window for hard monthly quotas |
-| **Coordinate with idempotency** | 429 retries must reuse same `Idempotency-Key` on mutating POSTs |
+    public boolean isAllowed(String key, int maxRequests, long slidingWindowInMs) {
+        String redisKey = "rate:" + key;
+        long currentTime = Instant.now().toEpochMilli();
+        long windowStartTime = currentTime - slidingWindowInMs;
 
-**Gateway vs service limits:** enforce coarse quotas at gateway (per API key); fine-grained business limits in service (per resource, per operation cost). Both layers should return consistent 429 shape.
+        return Boolean.TRUE.equals(redisTemplate.execute(new SessionCallback<Boolean>() {
+            @Override
+            public Boolean execute(RedisOperations operations) {
+                operations.multi();
+                operations.opsForZSet().removeRangeByScore(redisKey, 0, windowStartTime);
+                operations.opsForZSet().add(redisKey, String.valueOf(currentTime), currentTime);
+                operations.expire(redisKey, Duration.ofMillis(slidingWindowInMs));
+                operations.opsForZSet().range(redisKey, 0, -1);
+                List<Object> results = operations.exec();
+                Set<String> timestamps = (Set<String>) results.get(3);
+                return timestamps.size() <= maxRequests;
+            }
+        }));
+    }
+}
+```
 
-### When to use
+```java
+@GetMapping("/api/data")
+public ResponseEntity<String> getData(@RequestHeader("user-id") String userId) {
+    if (rateLimiter.isAllowed(userId, 5, 60_000)) {
+        return ResponseEntity.ok("Request allowed.");
+    }
+    return ResponseEntity.status(429).body("Rate limit exceeded.");
+}
+```
 
-- All **public and partner APIs**
-- Login, password reset, OTP (anti brute-force)
-- Expensive operations: GraphQL complexity limits, search, file upload
-- Internal microservices calling shared DB or third-party APIs with quotas
+**Walkthrough (limit 2/min):** `1:00:01` → size 1, allowed. `1:01:40` → remove before `1:00:40`, size 1, allowed. `1:01:50` → size 2, allowed. Next request → size 3, **rejected**.
 
-### Trade-offs / Pitfalls
+**Identity:** prefer API key or user ID over IP (corporate NAT). **Granularity:** global limit + stricter cap on expensive paths (`/search`, login). **Fail-open vs fail-closed** when Redis is down — document the product choice.
 
-| Pitfall | Symptom | Mitigation |
-|---------|---------|------------|
-| **Per-instance counters** | Effective limit = N × configured limit across N pods | Redis/DynamoDB atomic counters; gateway-level enforcement |
-| **Shared NAT / corporate IP** | Entire office blocked by per-IP limit | Prefer API key or user ID; soften IP limits for authenticated traffic |
-| **Fixed window boundary burst** | 2× traffic spike at window rollover | Sliding window counter or token bucket |
-| **429 without `Retry-After`** | Clients retry immediately, amplifying load | Always set `Retry-After`; document backoff in API guide |
-| **Leaky bucket starvation** | New requests dropped while old ones drain slowly | Cap queue depth; combine with hard reject at gateway |
-| **Rate limit vs throttle confusion** | Queued requests timeout anyway | Rate limit = reject; throttle = delay — pick per SLA tier |
-| **Limiting after expensive work** | DB queried before limit check | Enforce at gateway/middleware before handler |
-| **Uneven shard hot keys** | One Redis key for global limit becomes bottleneck | Shard counter keys; local token bucket + global sync for extreme scale |
+### Rate limiting based on
 
-### References
+Limits tracked per: user ID, API key, IP address, access token, or OAuth client — separately per identity.
 
-- [Rate Limiting - Hareram Singh (algorithms + Redis sliding window)](https://medium.com/@hareramcse/rate-limiting-cc6702fed0ed)
+### Rate limiting in microservices
+
+```mermaid
+flowchart TB
+    C[Client] --> GW[API Gateway]
+    GW --> RL{Rate limit}
+    RL -->|Exceeded| E429[429]
+    RL -->|OK| MS[Microservice]
+```
+
+Coarse quotas at gateway; optional per-endpoint limits in services.
+
+### Rate limiting vs throttling
+
+| | Rate limiting (this section) | [Throttling §7.19](#719-throttling) |
+|---|------------------------------|-------------------------------------|
+| **Behavior** | Reject excess (`429`) | Slow or queue under overload |
+| **Focus** | Per-client quota | System protection |
+
+Use both at the gateway.
+
+### Best practices
+
+1. Define reasonable tiered limits (free vs paid)
+2. Return **429** with `Retry-After` and `X-RateLimit-*` headers
+3. Enforce at gateway with **shared distributed state**
+4. Monitor `rate_limit_exceeded` metrics by client tier and endpoint
+5. Use sliding window counter or token bucket to avoid fixed-window boundary spikes
+6. On mutating `POST`s, retries after `429` must reuse the same idempotency key — [§7.21](#721-idempotency-keys)
+
+### Summary
+
+```text
+Rate Limiting = cap client traffic per window; deny excess with 429
+Algorithms: token bucket, leaky bucket, fixed window, sliding window log/counter
+Distributed: Redis ZSET + MULTI/EXEC; enforce at gateway middleware
+Benefits: DoS protection, fair usage, stability, cost control
+```
+
+**Goal:** Fair, stable APIs under load — [§7.1 REST](#71-rest).
 
 ---
 
 
 ## 7.19 Throttling
 
+### What is throttling?
 
-### What is it?
+**Throttling** controls the **rate at which requests are processed** when traffic becomes too high.
 
-**Throttling** slows or queues requests when load exceeds capacity - graceful degradation vs hard reject (rate limit). May delay responses or shed low-priority traffic.
+Instead of immediately rejecting every excess request, throttling may:
 
-### Why it matters
+- Slow down request processing
+- Delay responses
+- Queue requests
+- Limit throughput
 
-Keeps system alive under overload - returns slower responses instead of cascading failures and OOM crashes.
+Goal: protect the system from overload while **maintaining availability** — graceful degradation vs hard reject ([§7.18 Rate Limiting](#718-rate-limiting)).
 
-### How it works
+### Why throttling is needed
 
-1. Monitor queue depth, CPU, or error rate.
-2. When threshold exceeded, apply delay or priority queue.
-3. Premium tenants bypass or get dedicated capacity.
-4. Combine with autoscaling when delay insufficient.
-5. Communicate degraded mode via headers/monitoring.
+1. Prevent server overload
+2. Maintain system stability
+3. Ensure fair resource usage
+4. Handle traffic spikes
+5. Improve application availability
+6. Protect backend services
 
-### Diagram
+### Real-world example
 
-```mermaid
-flowchart LR
-    Load[High Load] --> Queue[Request Queue]
-    Queue --> Delay[Added latency]
-    Delay --> API[Stable throughput]
+**Normal:** 100 req/s, server capacity 500 req/s → all processed normally.
+
+**Spike:** 5,000 req/s
+
+| Without throttling | With throttling |
+|--------------------|-----------------|
+| Server crash, slow responses, resource exhaustion | Controlled processing rate; system stays stable |
+
+### How throttling works
+
+```text
+Client requests → API gateway / server → traffic threshold check
+  ├─ normal traffic → process normally
+  └─ high traffic   → slow down / delay / queue → controlled processing
 ```
 
-### Key details
+```mermaid
+flowchart TB
+    C[Client requests] --> GW[API gateway / server]
+    GW --> T{Traffic level?}
+    T -->|Normal| OK[Process normally]
+    T -->|High| TH[Slow / delay / queue]
+    TH --> CP[Controlled processing]
+```
 
-- Throttling = backpressure at API layer.
-- Adaptive concurrency (AIMD) in load balancers.
-- Different from rate limit: system protection vs per-client quota.
+### Throttling example
 
-### When to use
+Allowed processing rate: **100 requests/second**  
+Incoming: **1,000 requests/second**
 
-- Sudden traffic spikes beyond provisioned capacity.
-- Protecting shared databases during incidents.
-- Tiered SLA: throttle free tier before paid.
+Result: ~100 processed per second; remainder **delayed**, **queued**, or **rejected** depending on implementation (leaky bucket behaves like throttling — see [§7.18](#718-rate-limiting)).
 
-### Trade-offs / Pitfalls
+### Common throttling techniques
 
-- Queues increase tail latency - clients may timeout anyway.
-- Without autoscaling, throttling masks capacity debt.
-- User frustration if throttling opaque - return meaningful status.
+| # | Technique | Behavior |
+|---|-----------|----------|
+| 1 | **Request delaying** | Intentionally increase latency under load |
+| 2 | **Request queuing** | Buffer in FIFO queue; drain at fixed rate |
+| 3 | **Bandwidth limiting** | Cap data transfer (e.g. 10 MB/s) |
+| 4 | **Connection limiting** | Cap concurrent connections (e.g. 100) |
+| 5 | **Dynamic throttling** | Adjust limits from live metrics (CPU, queue depth) |
 
-### References
+#### 1. Request delaying
 
-*(No curated references for this sub-topic in `_topics.json`.)*
+Under heavy load, responses slow intentionally.
+
+```text
+Normal: 100 ms response
+Heavy load: 500 ms response
+```
+
+Reduces pressure while keeping the service up.
+
+#### 2. Request queuing
+
+Requests enter a queue (e.g. capacity 100) and are processed gradually — similar to the **leaky bucket** pattern in [§7.18](#718-rate-limiting).
+
+Benefits: fewer dropped requests; smoother traffic. Risk: tail latency and client timeouts if the queue grows.
+
+#### 3. Bandwidth limiting
+
+Caps bytes transferred per second — prevents network congestion and protects shared infrastructure.
+
+#### 4. Connection limiting
+
+Caps active connections (e.g. 100 concurrent). Additional connections **wait** or are **rejected**.
+
+#### 5. Dynamic throttling
+
+Limits adapt to current load:
+
+```text
+CPU 30%  → allow ~1000 req/s
+CPU 90%  → throttle to ~200 req/s
+```
+
+Also used: adaptive concurrency (AIMD) in load balancers; premium tenants may get dedicated capacity; combine with autoscaling when delay alone is insufficient.
+
+### Throttling vs rate limiting
+
+See [§7.18](#718-rate-limiting) for algorithms and distributed Redis patterns. **Throttling** (this section) = processing-speed control when **aggregate** load is high; rate limiting = per-client request caps.
+
+Use **both** at the gateway.
+
+### Where throttling is implemented
+
+| Layer | Examples |
+|-------|----------|
+| API gateway | AWS API Gateway, Kong, Apigee, Azure API Management |
+| Load balancer / reverse proxy | NGINX, Envoy |
+| Application layer | In-process queues, semaphores |
+| Cloud platforms | Managed traffic shaping |
+
+See [§7.5 API Gateway](#75-api-gateway).
+
+### Throttling in microservices
+
+```mermaid
+flowchart TB
+    C[Client] --> GW[API Gateway]
+    GW --> M[Traffic monitoring]
+    M -->|High traffic| TH[Apply throttling]
+    M -->|OK| F[Forward requests]
+    TH --> F
+    F --> MS[Microservice]
+```
+
+### HTTP status codes
+
+| Code | When |
+|------|------|
+| **429 Too Many Requests** | Threshold exceeded (also used by rate limiting) |
+| **503 Service Unavailable** | Server cannot accept more work; retry later |
+
+Return meaningful bodies and `Retry-After` where applicable — opaque throttling frustrates clients.
+
+### Benefits of throttling
+
+1. Prevents system crashes
+2. Improves stability under spikes
+3. Protects backend services and shared databases
+4. Better resource utilization
+5. Maintains service availability (degraded but up)
+
+### Challenges of throttling
+
+1. Increased response time and tail latency
+2. Queue management complexity
+3. User experience impact if delays are unbounded
+4. Threshold tuning difficulty
+5. Queues may mask capacity debt without autoscaling
+
+### Best practices
+
+1. **Combine** throttling with [rate limiting](#718-rate-limiting)
+2. Monitor traffic patterns and queue depth
+3. Enforce at API gateway where possible
+4. Configure realistic thresholds per tier
+5. Provide clear error responses (`429`, `503`, `Retry-After`)
+6. Prefer **dynamic throttling** when load is unpredictable
+7. Protect critical services and paid tiers first
+
+### Summary
+
+```text
+Throttling = control processing speed under high load (delay, queue, limit throughput)
+vs Rate Limiting = cap how many requests a client may send (reject excess)
+Techniques: delaying, queuing, bandwidth/connection limits, dynamic throttling
+Benefits: stability, spike handling, backend protection, availability
+```
+
+**Goal:** Stay available under overload — complement [§7.18](#718-rate-limiting), don't confuse the two.
 
 ---
 
 
 ## 7.20 Idempotency
 
+> **Implementation:** unsafe `POST` retries use [§7.21 Idempotency Keys](#721-idempotency-keys).
 
-### What is it?
+### What is idempotency?
 
-An operation is **idempotent** if executing it **once or many times** produces the **same system state** and the client can treat duplicate responses equivalently. In distributed APIs, idempotency is what makes **safe retries** possible after network timeouts, gateway `504`s, and message redelivery.
+**Idempotency** means performing the same operation **multiple times** produces the **same result** as performing it once.
 
-**Natural HTTP idempotency:**
+In [REST](#71-rest) APIs, if the same request is sent repeatedly, server state should be **unchanged after the first successful execution** (or reach the same final state).
+
+### Why idempotency is important
+
+1. Prevent duplicate operations
+2. Handle network retries safely
+3. Improve API reliability
+4. Support fault tolerance
+5. Prevent duplicate payments/orders
+6. Ensure consistent system state
+
+### Simple example
+
+```http
+PUT /users/101
+```
+
+```json
+{ "email": "john@test.com" }
+```
+
+Send once → email updated. Send 10 times → email remains `john@test.com`. **Same final state** — idempotent.
+
+### Idempotent vs non-idempotent
+
+| | Idempotent | Non-idempotent |
+|---|------------|----------------|
+| **Behavior** | Repeated requests → same final result | Repeated requests → different results |
+| **Methods** | `GET`, `PUT`, `DELETE`, `HEAD`, `OPTIONS` | `POST` (usually) |
+
+### HTTP methods and idempotency
 
 | Method | Idempotent? | Notes |
 |--------|-------------|-------|
-| `GET`, `HEAD`, `OPTIONS` | Yes | Safe reads |
+| `GET` | Yes | Read-only; state unchanged |
 | `PUT` | Yes | Same body → same resource state |
-| `DELETE` | Yes | Second delete → `404` or `204` (both acceptable) |
-| `PATCH` | Depends | Design patch to be repeatable |
-| `POST` | **No** | Creates new resource each call unless you add idempotency |
+| `DELETE` | Yes | 2nd delete → already gone (`404`/`204` OK) |
+| `HEAD`, `OPTIONS` | Yes | Safe metadata reads |
+| `POST` | **Usually no** | Creates new resource each call |
+| `PATCH` | **Depends** | Replace field = yes; increment = no |
 
-### Why it matters
+#### GET
 
-Clients **cannot distinguish** "request failed" from "request succeeded but response lost":
+```http
+GET /users/101
+```
+
+Repeated calls return the same data; server state does not change.
+
+#### PUT
+
+```http
+PUT /users/101
+{ "name": "John" }
+```
+
+1st request → name is John. 10th request → name still John.
+
+#### DELETE
+
+```http
+DELETE /users/101
+```
+
+1st request → user deleted. 2nd request → already deleted; no additional change.
+
+#### POST (non-idempotent)
+
+```http
+POST /orders
+{ "product": "Laptop" }
+```
+
+| Request | Result |
+|---------|--------|
+| 1st | Order ID 1001 |
+| 2nd | Order ID 1002 |
+| 3rd | Order ID 1003 |
+
+Each call creates a **new** resource.
+
+#### PATCH (depends)
+
+Idempotent replace:
+
+```http
+PATCH /users/101
+{ "name": "John" }
+```
+
+Non-idempotent increment:
+
+```http
+PATCH /counter
+{ "increment": 1 }
+```
+
+1st → count 1, 2nd → count 2, 3rd → count 3.
+
+### Network retry problem
+
+```text
+Client POST /payments → payment processed → response lost (network)
+→ client retries POST /payments → payment processed again
+→ duplicate payment
+```
+
+`POST` is unsafe to retry without extra machinery. Solution: [§7.21 Idempotency Keys](#721-idempotency-keys).
 
 ```mermaid
 sequenceDiagram
     participant C as Client
     participant API as API
-    C->>API: POST /charges (payment)
+    C->>API: POST /payments
     Note over API: Payment succeeds
-    Note over C,API: Network drops response
-    C->>API: RETRY POST /charges
-    Note over API: Without idempotency -> DOUBLE CHARGE
+    Note over C,API: Response lost
+    C->>API: Retry POST
+    Note over API: Without key → duplicate charge
 ```
 
-Without idempotency: duplicate orders, double charges, repeated emails, inventory oversell.
+### Where idempotency matters
 
-### How it works
+1. Payment APIs
+2. Order APIs
+3. Banking systems
+4. Financial transactions
+5. Booking systems
+6. [Webhook](#717-webhooks) processing (at-least-once delivery)
 
-**Pattern 1 — Natural idempotency (PUT/DELETE)**
+### Benefits and challenges
 
-```http
-PUT /accounts/acc_42/balance
-Content-Type: application/json
+**Benefits:** prevents duplicates, safe retries, reliability, fault tolerance, consistent data.
 
-{ "balance": 1000 }
-```
+**Challenges:** storage for keys, expiration management, duplicate-detection logic, implementation complexity — handled in [§7.21](#721-idempotency-keys).
 
-Retrying the same `PUT` overwrites with identical state — safe.
+### Best practices
 
-**Pattern 2 — Business idempotency key (POST)**
+1. Rely on natural idempotency for `GET` / `PUT` / `DELETE`
+2. Use **idempotency keys** for critical `POST` APIs
+3. Design `PATCH` to be repeatable when possible
+4. Document retry policy (`5xx`/`429` → retry with same key)
+5. Never perform side effects on `GET`
 
-Client supplies unique key per logical operation; server deduplicates:
+### Real-world flow (with idempotency key)
 
 ```text
-1. Client generates key once per user action (UUID v4)
-2. POST /orders with Idempotency-Key: 7f3a-...
-3. Server atomically: INSERT idempotency_record OR return cached response
-4. On timeout, client retries SAME key → same outcome
+Customer clicks Pay → POST /payments → payment processed
+→ network failure → client retries with same Idempotency-Key
+→ previous response returned → no duplicate payment
 ```
 
-**Pattern 3 — Database unique constraint**
+Details: [§7.21](#721-idempotency-keys).
 
-```sql
-CREATE UNIQUE INDEX idx_payments_external_id ON payments(external_id);
--- Retry INSERT with same external_id → conflict → return existing row
+### Summary
+
+```text
+Idempotency = same request many times → same final result
+GET/PUT/DELETE: naturally idempotent; POST: usually not; PATCH: depends
+POST retries need Idempotency-Key for payments, orders, bookings
 ```
 
-**Pattern 4 — Message consumer dedup**
-
-At-least-once delivery (Kafka, SQS) requires consumers to check `message_id` before processing side effects.
-
-**Server-side state machine:**
-
-```mermaid
-stateDiagram-v2
-    [*] --> CheckKey: POST arrives
-    CheckKey --> Processing: key not seen
-    CheckKey --> ReplayCached: key seen (completed)
-    CheckKey --> WaitOrConflict: key seen (in-flight)
-    Processing --> StoreResult: success
-    StoreResult --> [*]: return response
-    ReplayCached --> [*]: return stored response
-    WaitOrConflict --> [*]: 409 or poll
-```
-
-**Idempotency record contents:**
-
-| Field | Purpose |
-|-------|---------|
-| `idempotency_key` | Client-supplied unique token |
-| `request_hash` | Detect same key + different body → `409 Conflict` |
-| `status` | `processing` / `completed` / `failed` |
-| `response_code` | HTTP status to replay faithfully |
-| `response_body` | Serialized response for replay |
-| `created_at` / `expires_at` | TTL (Stripe: 24 hours) |
-
-### Key details
-
-- **Scope:** key unique per **account/tenant** — `user_42 + key` prevents cross-tenant collision
-- **Concurrency:** use DB unique constraint or Redis `SETNX` to win exactly one processor
-- **Side effects beyond DB:** email/SMS need outbox pattern + dedup by `event_id`
-- **Failed operations:** decide if failed attempt allows retry with same key (Stripe: yes, returns same error)
-- **Time window:** 24h–72h typical; after expiry, same key may create new resource
-
-### Production rules
-
-| Rule | Rationale |
-|------|-----------|
-| **Idempotency record before side effect** | Write `processing` to durable store atomically, then execute — prevents double-charge on crash between payment and record |
-| **Scope keys per tenant** | `(account_id, idempotency_key)` unique — global keys allow cross-tenant collision |
-| **Store full response for replay** | Same HTTP status + body on retry — clients parse `201` vs `200` inconsistently otherwise |
-| **Hash request body on POST** | Same key + different body → `409 Conflict` — catches client bugs early |
-| **TTL + archival** | 24–72h hot storage; purge or archive to cold store — unbounded growth is costly |
-| **Outbox for async side effects** | Email/webhook/events deduped by `event_id` — DB idempotency alone doesn't cover async |
-| **At-least-once consumers** | Kafka/SQS handlers check processed-message table before side effects |
-| **Document retry policy** | API spec: retry on `5xx`/`429` with same key; do not retry `4xx` except `409` backoff |
-| **Monitor duplicate detection rate** | Spike in cache hits = client retry storm or network instability |
-| **Saga steps individually idempotent** | Partial failure in multi-step flow — each compensating action must be safe to retry |
-
-### When to use
-
-- Payment, order creation, inventory reservation, subscription signup
-- Any `POST` over unreliable networks (mobile, cross-region)
-- Webhook handlers and queue consumers (at-least-once delivery)
-- Partner APIs where clients implement exponential backoff retries
-
-### Trade-offs / Pitfalls
-
-| Pitfall | Symptom | Mitigation |
-|---------|---------|------------|
-| **Storage growth** | Idempotency table TB-scale | TTL, partition by date, archive completed keys |
-| **Concurrent duplicate race** | Double charge on simultaneous retries | `INSERT ... ON CONFLICT`, Redis `SETNX`, or row-level lock |
-| **Status code mismatch on replay** | Client treats replay as new resource | Store and replay exact status + headers + body |
-| **Partial failure** | Payment OK, order DB fails — inconsistent state | Saga with idempotent steps + outbox |
-| **Side-effecting GET** | Retry creates duplicate export/email | Never mutate on GET; use POST with idempotency key |
-| **Key scoped too narrowly** | Same user action, different keys → duplicates | SDK generates one key per user gesture, not per HTTP attempt |
-| **Expired key reuse** | Customer charged twice days later | Document TTL; return clear error if key expired |
-| **In-flight forever** | Key stuck `processing` after worker crash | Timeout + cleanup job; allow retry after TTL |
-
-### References
-
-- [Stripe idempotency documentation](https://docs.stripe.com/api/idempotent_requests)
-- [RFC 9110 — HTTP method properties](https://www.rfc-editor.org/rfc/rfc9110#name-method-properties)
+**Goal:** Safe retries over unreliable networks — [§7.1 REST](#71-rest).
 
 ---
 
 
 ## 7.21 Idempotency Keys
 
+> **Concept:** HTTP method idempotency rules are in [§7.20 Idempotency](#720-idempotency).
 
-### What is it?
+### What is an idempotency key?
 
-An **idempotency key** is a client-generated unique token (typically **UUID v4**) sent in a header on mutating requests — most commonly `Idempotency-Key` — so the server recognizes retries and returns the **original result** without re-executing side effects.
+An **idempotency key** is a client-generated unique token sent in a header so the server recognizes retries and returns the **original result** without re-executing side effects.
 
-The **Stripe pattern** is the industry reference implementation for payment APIs.
+Makes unsafe-to-retry `POST` operations safe — see [§7.20 Idempotency](#720-idempotency) for HTTP method behavior.
 
-### Why it matters
-
-The canonical retry scenario:
-
-```text
-Client POST /v1/charges → server processes → response lost (504 Gateway Timeout)
-Client MUST retry with SAME Idempotency-Key
-Server MUST NOT charge twice
+```http
+POST /payments
+Idempotency-Key: abc123xyz
 ```
 
-Without keys, `POST` is unsafe to retry — clients either duplicate operations or fail open on errors.
+Industry reference: Stripe `Idempotency-Key` header pattern.
 
-### How it works — Stripe pattern
+### How idempotency keys work
 
-**Client rules:**
+```text
+Request received → check idempotency key
+  ├─ new key      → process request → store result → return response
+  └─ existing key → return stored response (no re-processing)
+```
 
-1. Generate **one UUID per logical user action** (button click), not per HTTP attempt
-2. Send on every attempt including retries:
+```mermaid
+flowchart TB
+    R[Request received] --> K{Idempotency key?}
+    K -->|New| P[Process request]
+    P --> S[Store result]
+    S --> OK[Return response]
+    K -->|Existing| C[Return stored response]
+```
+
+**Request 1:**
+
+```http
+POST /payments
+Idempotency-Key: abc123xyz
+```
+
+Payment processed; response stored.
+
+**Request 2 (retry, same key):** server detects duplicate key → returns previous response → **no new payment**.
+
+### Payment example
+
+```http
+POST /payments
+Idempotency-Key: PAY-10001
+```
+
+```json
+{ "amount": 500 }
+```
+
+**First response:**
+
+```json
+{ "paymentId": "P101", "status": "SUCCESS" }
+```
+
+**Retry with same key** → same `paymentId` and `status` — no duplicate charge.
+
+### Client rules
+
+1. Generate **one unique key per logical user action** (button click) — UUID v4 recommended
+2. Send the **same key** on every retry of that action
+3. Retry on `5xx`, `429`, timeouts — reuse key ([§7.18](#718-rate-limiting))
+4. On `409 Conflict` (same key, different body) — fix client bug; do not blindly retry
 
 ```http
 POST /v1/payment_intents
-Authorization: Bearer sk_live_...
 Idempotency-Key: 7f3a8b2c-4e1d-4a9f-b3c2-1d8e9f0a2b3c
 Content-Type: application/json
 
-{ "amount": 4999, "currency": "usd", "customer": "cus_123" }
+{ "amount": 4999, "currency": "usd" }
 ```
 
-3. On `409 Conflict` (same key, different body) — fix client bug, do not retry blindly
-4. On `429` / `503` — backoff and retry **same key**
+### Server behavior
 
-**Server rules (Stripe-compatible):**
+| Scenario | Action |
+|----------|--------|
+| New key | Process; store status + full response |
+| Known key, same body | Replay cached response (same HTTP status + body) |
+| Known key, **different** body | `409 Conflict` |
+| Known key, still `processing` | Wait, `409`, or block until complete |
+| Key expired (e.g. >24h) | Treat as new request |
+
+**Idempotency record** (typical fields):
+
+| Field | Purpose |
+|-------|---------|
+| `idempotency_key` | Client token |
+| `account_id` | Scope per tenant — `(account_id, key)` unique |
+| `request_hash` | Same key + different body → `409` |
+| `status` | `processing` / `completed` / `failed` |
+| `response_code`, `response_body` | Exact replay |
+| `expires_at` | TTL (24–72h typical) |
+
+**Atomic claim before side effects:**
+
+```sql
+INSERT INTO idempotency_keys (key, account_id, request_hash, status)
+VALUES ($1, $2, $3, 'processing')
+ON CONFLICT (key, account_id) DO NOTHING
+RETURNING id;
+-- No row returned → lookup existing and replay or 409
+```
+
+Redis alternative: `SET idem:{account}:{key} processing NX EX 86400` — only the winner processes.
+
+Write the `processing` record **before** charging/creating — prevents double execution on crash between payment and store.
+
+### Real-world flow
 
 ```mermaid
 sequenceDiagram
     participant C as Client
     participant API as API
-    participant DB as Idempotency Store
-
-    C->>API: POST Idempotency-Key: uuid-1 (attempt 1)
-    API->>DB: INSERT key=uuid-1, status=processing
+    participant DB as Idempotency store
+    C->>API: POST Idempotency-Key: PAY-10001
+    API->>DB: INSERT key, status=processing
     API->>API: Execute payment
-    API->>DB: UPDATE status=completed, store response
-    Note over C,API: Response lost - client retries
-    C->>API: POST Idempotency-Key: uuid-1 (attempt 2)
-    API->>DB: SELECT key=uuid-1
+    API->>DB: UPDATE completed, store response
+    Note over C,API: Network failure
+    C->>API: Retry same key
+    API->>DB: SELECT key
     DB-->>API: completed + cached response
-    API-->>C: 200 same body (no re-charge)
+    API-->>C: Same body — no re-charge
 ```
 
-| Scenario | Server behavior |
-|----------|-----------------|
-| New key | Process request; store result |
-| Known key, same request body | Return cached response (same HTTP status + body) |
-| Known key, **different** body | `409 Conflict` — client misconfiguration |
-| Known key, still `processing` | `409` or block until complete (Stripe waits) |
-| Key expired (>24h) | Treat as new request |
+### Best practices
 
-**Implementation sketch (atomic claim):**
+1. Require keys on critical `POST` endpoints (payments, orders)
+2. Store request results with TTL; purge expired keys
+3. Validate payload hash against key (`409` on mismatch)
+4. Scope keys per authenticated account/tenant
+5. Replay **exact** status code and body on retry
+6. Document `Idempotency-Key` in [§7.12 OpenAPI](#712-openapi)
+7. Webhook/queue consumers: dedup by `event_id` — [§7.17](#717-webhooks)
 
-```sql
--- PostgreSQL example
-INSERT INTO idempotency_keys (key, account_id, request_hash, status)
-VALUES ($1, $2, $3, 'processing')
-ON CONFLICT (key, account_id) DO NOTHING
-RETURNING id;
+### Challenges
 
--- If no row returned → lookup existing and replay or 409
-```
+| Challenge | Mitigation |
+|-----------|------------|
+| Storage growth | TTL + partition by date |
+| Concurrent duplicate race | `ON CONFLICT`, Redis `SETNX`, serialize on key |
+| Stuck `processing` after crash | Timeout + sweeper job |
+| Async side effects (email, webhook) | Outbox + dedup by `event_id` |
+| Header stripped by gateway | Allowlist `Idempotency-Key` in [§7.5 Gateway](#75-api-gateway) |
 
-Redis alternative: `SET idem:{account}:{key} processing NX EX 86400` — only winner processes.
-
-**Request hash for conflict detection:**
+### Summary
 
 ```text
-hash = SHA256(method + path + canonical_json_body)
-same key + different hash → 409 Conflict
+Idempotency-Key = client token so POST retries return the first result
+Header: Idempotency-Key (UUID per user action)
+Server: claim key → process → store response → replay on duplicate key
+Essential for payments, orders, and any retry-safe POST
 ```
 
-### Key details
-
-| Topic | Recommendation |
-|-------|----------------|
-| Header name | `Idempotency-Key` (Stripe); also seen: `X-Idempotency-Key` |
-| Key format | UUID v4 — unguessable, no sequential IDs |
-| Retention | 24h (Stripe default); document in API spec |
-| Response replay | Store **exact** status code + headers + body |
-| Scope | Per authenticated account/tenant |
-| GET/PUT | Usually unnecessary — methods already idempotent |
-
-**Interview one-liner:** "Idempotency keys turn unsafe `POST` retries into safe at-least-once delivery, same as message dedup in event systems."
-
-### Production rules
-
-| Rule | Rationale |
-|------|-----------|
-| **Require header on mutating endpoints** | Return `400` if missing on `POST` payment/order — forces client correctness |
-| **UUID v4 only** | Unguessable; reject malformed or sequential keys |
-| **One key per user action** | Button click → one key; HTTP retry reuses it — document in SDK |
-| **24h minimum retention** | Stripe default; shorter risks duplicate on delayed client retry |
-| **409 for key + body mismatch** | Never silently process different payload under same key |
-| **Block or poll in-flight** | Second request while `processing` → wait or `409` — never parallel duplicate work |
-| **Include key in audit logs** | Support correlates duplicate-charge tickets to retry attempts |
-| **OpenAPI documents header** | `Idempotency-Key` in spec with retry semantics — partner integrations depend on it |
-| **Load test with retries** | Chaos: kill connection after server processes — verify no duplicate side effects |
-| **Gateway passes header through** | Strip nothing; some gateways drop unknown headers by default |
-
-**SDK pattern:** accept optional `idempotencyKey` parameter; if omitted, generate once per `createCharge()` call object, not per `execute()` retry loop.
-
-### When to use
-
-- Payment and money movement APIs (mandatory)
-- Order/subscription/resource creation where duplicate is unacceptable
-- Any partner API documenting retry-on-`5xx` behavior
-- Internal microservices with retry policies on mutating calls
-
-### Trade-offs / Pitfalls
-
-| Pitfall | Symptom | Mitigation |
-|---------|---------|------------|
-| **New key per retry** | Duplicate charges despite "retry logic" | SDK binds key to operation object; lint client integrations |
-| **Record after side effect** | Crash between payment and store → retry doubles | Atomic claim before work; outbox in same transaction |
-| **Stuck `processing`** | Key blocked forever after worker OOM | TTL on processing state; sweeper job |
-| **Parallel same-key requests** | Race creates duplicate resources | Serialize on key; `409` or queue second request |
-| **Keys in logs/traces** | Security audit finding | Redact in log pipeline; treat as sensitive |
-| **Different response shape on replay** | Client JSON parser breaks | Byte-identical stored response body |
-| **Header stripped by proxy** | Idempotency silently disabled | Allowlist header in gateway; integration test end-to-end |
-| **Cross-region key store lag** | Duplicate in active-active | Strong consistency store or route sticky to primary region |
-
-### References
-
-- [Stripe — Idempotent requests](https://docs.stripe.com/api/idempotent_requests)
-- [PayPal idempotency header](https://developer.paypal.com/api/rest/reference/info-standards/#idempotency)
+**Goal:** Turn unsafe `POST` retries into at-most-once side effects — [§7.20 Idempotency](#720-idempotency).
 
 ---
 
