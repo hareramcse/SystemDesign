@@ -8,33 +8,100 @@
 
 ## Overview
 
-**Microservices** decompose an application into independently deployable services aligned to business capabilities - each owning its data, scaling on its own cadence, and communicating over networks (HTTP, gRPC, events). The alternative spectrum runs from **monoliths** (single deployable) through **modular monoliths** (logical modules, physical unity) to fine-grained services.
+Applications evolve along an **architecture spectrum**: **[monolith](#81-monolith)** → **[modular monolith](#82-modular-monolith)** → **[microservices](#83-microservices)**. Microservices split the system into independently deployable services with **service-owned data**, communicating over the network (REST, gRPC, events).
 
-Success requires more than splitting code: **service discovery**, **resilience patterns** (circuit breaker, bulkhead, retry), **distributed workflows** (saga), and **observability** become mandatory. **Domain-Driven Design (DDD)** and architectural styles (hexagonal, clean, onion) guide boundaries so services don't become distributed balls of mud.
+Success at the distributed end requires more than splitting code: **discovery**, **resilience** (circuit breaker, bulkhead, retry), **sagas**, and **observability** — covered in later sections. **DDD** and bounded contexts guide where to draw boundaries.
 
-This chapter covers when to split, how services find each other, mesh-based infrastructure, failure containment, saga orchestration vs choreography, migration patterns (strangler, BFF), and structural architectures for maintainable service code.
+### Architecture spectrum
+
+```mermaid
+flowchart LR
+    M[Monolith] --> MM[Modular Monolith]
+    MM --> MS[Microservices]
+```
+
+Many teams start monolith → modular monolith as complexity grows → microservices only when scale, teams, and ops maturity justify the cost.
+
+### Comparison
+
+| Feature | [Monolith](#81-monolith) | [Modular monolith](#82-modular-monolith) | [Microservices](#83-microservices) |
+|---------|--------------------------|------------------------------------------|-------------------------------------|
+| **Deployment unit** | Single | Single | Multiple |
+| **Code organization** | Low | High | Very high |
+| **Scalability** | Whole app | Whole app | Per service |
+| **Complexity** | Low | Medium | High |
+| **Database** | Shared | Shared (often) | Service-owned |
+| **Communication** | Method call | Method call / module API | Network (REST, gRPC, events) |
+| **Technology flexibility** | Low | Low | High |
+| **Fault isolation** | Low | Low | High |
+| **Operational cost** | Low | Low | High |
+| **Development speed** | Fast | Fast | Moderate |
+| **Maintenance** | Hard at scale | Easier | Easier per service |
+
+### When to use
+
+| Style | Fit |
+|-------|-----|
+| **Monolith** | Small apps, startups, small teams, simple requirements |
+| **Modular monolith** | Medium/large apps, clear module boundaries, growing teams, possible future split |
+| **Microservices** | Large scale, multiple teams, high scalability, frequent independent deploys, complex domains |
+
+Migration path: [§8.4 Strangler Pattern](#84-strangler-pattern).
+
+```mermaid
+flowchart TB
+    Client --> BFF[BFF §8.5]
+    BFF --> S1[Order Service]
+    BFF --> S2[User Service]
+    S1 --> Bus[Event bus]
+    S2 --> Bus
+    Mesh[Service mesh §8.14] -.-> S1
+    Mesh -.-> S2
+```
 
 ---
 
 ## Sub-topics
+
+### Architecture spectrum
 
 | # | Sub-topic | Status |
 |---|-----------|--------|
 | 8.1 | [Monolith](#81-monolith) | Done |
 | 8.2 | [Modular Monolith](#82-modular-monolith) | Done |
 | 8.3 | [Microservices](#83-microservices) | Done |
+
+### Migration & client patterns
+
+| # | Sub-topic | Status |
+|---|-----------|--------|
 | 8.4 | [Strangler Pattern](#84-strangler-pattern) | Done |
 | 8.5 | [BFF Pattern](#85-bff-pattern) | Done |
+
+### Domain & structure
+
+| # | Sub-topic | Status |
+|---|-----------|--------|
 | 8.6 | [DDD](#86-ddd) | Done |
 | 8.7 | [Bounded Context](#87-bounded-context) | Done |
 | 8.8 | [Hexagonal Architecture](#88-hexagonal-architecture) | Done |
 | 8.9 | [Clean Architecture](#89-clean-architecture) | Done |
 | 8.10 | [Onion Architecture](#810-onion-architecture) | Done |
 | 8.11 | [Dependency Injection](#811-dependency-injection) | Done |
+
+### Discovery & mesh
+
+| # | Sub-topic | Status |
+|---|-----------|--------|
 | 8.12 | [Service Registry](#812-service-registry) | Done |
 | 8.13 | [Service Discovery](#813-service-discovery) | Done |
 | 8.14 | [Service Mesh](#814-service-mesh) | Done |
 | 8.15 | [Sidecar Pattern](#815-sidecar-pattern) | Done |
+
+### Resilience & distributed workflows
+
+| # | Sub-topic | Status |
+|---|-----------|--------|
 | 8.16 | [Circuit Breaker](#816-circuit-breaker) | Done |
 | 8.17 | [Retry Pattern](#817-retry-pattern) | Done |
 | 8.18 | [Bulkhead Pattern](#818-bulkhead-pattern) | Done |
@@ -42,371 +109,459 @@ This chapter covers when to split, how services find each other, mesh-based infr
 | 8.20 | [Choreography](#820-choreography) | Done |
 | 8.21 | [Orchestration](#821-orchestration) | Done |
 
-
-
-
-
-```mermaid
-flowchart TB
-    Client --> BFF[BFF]
-    BFF --> S1[Order Service]
-    BFF --> S2[User Service]
-    S1 --> Bus[Event Bus]
-    S2 --> Bus
-    Mesh[Service Mesh] -.-> S1
-    Mesh -.-> S2
-```
-
----
-
-
 ---
 
 ## 8.1 Monolith
 
+> **Spectrum:** compare [Monolith vs Modular Monolith vs Microservices](#comparison) in the chapter intro.
 
-### What is it?
+### What is a monolith?
 
-A **monolith** is a single deployable unit containing all application functionality - one codebase, one process (or clustered replicas of the same binary), typically one shared database.
+A **monolith** is an application where all components — UI, business logic, database access, and services — are packaged and deployed as a **single unit**.
 
-### Why it matters
+### Architecture
 
-Simplest operational model: one build, one deploy, in-process calls, ACID transactions across modules. Most products should start here.
-
-### How it works
-
-1. All features compile into one artifact (JAR, binary).
-2. Modules call each other via function invocations.
-3. Shared database with foreign keys across domains.
-4. Scale by running multiple instances behind load balancer.
-5. Deploy entire unit on every release.
-
-### Diagram
+```text
++-------------------------+
+|       Application       |
+|-------------------------|
+| UI Layer                |
+| Business Logic Layer    |
+| Data Access Layer       |
++-------------------------+
+            |
+            v
+       Database
+```
 
 ```mermaid
 flowchart TB
-    LB[Load Balancer] --> M1[Monolith Instance]
-    LB --> M2[Monolith Instance]
-    M1 --> DB[(Shared Database)]
-    M2 --> DB
+    subgraph App[Single application]
+        UI[UI layer]
+        BL[Business logic]
+        DA[Data access]
+    end
+    App --> DB[(Database)]
 ```
 
-### Key details
+### Characteristics
 
-| Advantage | Limitation |
-|-----------|------------|
-| Simple debugging | Scale all or nothing |
-| ACID transactions | Deploy coupling |
-| Low latency calls | Technology lock-in |
-| Easy local dev | Blast radius on failure |
+- Single codebase
+- Single deployment unit
+- Usually shares one database
+- All modules run in the same process
 
-### When to use
+### Advantages
 
-- New products and startups proving product-market fit.
-- Small teams (< 10 engineers) without clear domain splits.
-- Low operational maturity - avoid microservices tax.
+1. Simple development and deployment
+2. Easy debugging (in-process calls, single stack trace)
+3. Lower operational complexity
+4. Faster communication between components (method calls, no network)
 
-### Trade-offs / Pitfalls
+### Disadvantages
 
-- Codebase grows -> compile times, cognitive load, "big ball of mud".
-- One slow module can starve threads for entire app.
-- Premature microservice split is worse than disciplined monolith.
+1. Difficult to scale individual features — scale the **whole** app
+2. Large codebase becomes hard to maintain
+3. Every deployment affects the entire application
+4. Technology stack is usually fixed for the whole system
 
-### References
+### Example
 
-*(No curated references for this sub-topic in `_topics.json`.)*
+**E-commerce application** in one deployable:
+
+- User management
+- Product catalog
+- Order management
+- Payment processing
+
+All packaged and deployed together.
+
+### Summary
+
+```text
+Monolith = one codebase, one deploy, shared DB, in-process communication
+Best for: startups, small teams, simple domains
+Evolution: → modular monolith (§8.2) when boundaries matter
+```
+
+**Goal:** Default starting point — simplest ops until complexity forces change.
 
 ---
 
 
 ## 8.2 Modular Monolith
 
+> **Spectrum:** [Comparison table](#comparison) · next step toward [§8.3 Microservices](#83-microservices).
 
-### What is it?
+### What is a modular monolith?
 
-A **modular monolith** keeps one deployable but enforces **strict module boundaries** - packages with explicit APIs, no cross-module DB access, potential to extract modules into services later.
+A **modular monolith** is a monolithic application divided into **well-defined independent modules**, but still deployed as a **single application**.
 
-### Why it matters
+### Architecture
 
-Best of both worlds for many teams: monolith ops simplicity with microservice-ready boundaries when scale or org structure demands split.
-
-### How it works
-
-1. Divide codebase into modules by bounded context (orders, billing).
-2. Modules communicate only through public interfaces (Java modules, packages).
-3. Each module owns its tables; no foreign keys across module schemas.
-4. Integration events for cross-module async needs.
-5. Extract hottest module to service when metrics justify.
-
-### Diagram
+```text
++-----------------------------------+
+|          Application              |
+|-----------------------------------|
+| User Module                       |
+| Product Module                    |
+| Order Module                      |
+| Payment Module                    |
++-----------------------------------+
+                 |
+                 v
+             Database
+```
 
 ```mermaid
 flowchart TB
-    subgraph Monolith
-        M1[Orders Module]
-        M2[Billing Module]
-        M3[Users Module]
+    subgraph App[Single deployable]
+        UM[User module]
+        PM[Product module]
+        OM[Order module]
+        PayM[Payment module]
     end
-    M1 -->|events| M2
-    M1 --> DB1[(Orders Schema)]
-    M2 --> DB2[(Billing Schema)]
+    App --> DB[(Database)]
 ```
 
-### Key details
+Modules communicate through **interfaces** or **events** — not by reaching into each other's internals.
 
-- Spring Modulith, Gradle modules, ArchUnit tests enforce boundaries.
-- Cheaper than microservices; rehearsal for eventual extraction.
-- Shared runtime still means correlated failures.
+### Characteristics
 
-### When to use
+- Single deployment unit
+- Clear module boundaries
+- Modules communicate through interfaces
+- Shared runtime and often shared database
 
-- Growing monolith with clear domains but not ready for distributed ops.
-- Team wants to defer microservices until extraction trigger clear.
+### Advantages
 
-### Trade-offs / Pitfalls
+1. Better maintainability than a flat monolith
+2. Easier code organization by domain
+3. Simpler deployment than microservices
+4. Can evolve into microservices later ([§8.4 Strangler](#84-strangler-pattern))
 
-- Boundaries erode without tooling enforcement - becomes "folders monolith".
-- Still single scaling unit; can't scale billing independently yet.
-- Extraction requires finishing modularization debt first.
+### Disadvantages
 
-### References
+1. Entire application still deployed together
+2. Shared resources may create dependencies
+3. Independent scaling of one module is not possible
 
-*(No curated references for this sub-topic in `_topics.json`.)*
+### Best practices
+
+1. Enforce **strict module boundaries** (package rules, ArchUnit, Spring Modulith)
+2. Avoid direct access between module **internals**
+3. Use interfaces or domain events for cross-module communication
+4. Each module owns its tables — avoid cross-module foreign keys where possible
+
+### Example
+
+**Banking application** — one deployable:
+
+- Customer module
+- Account module
+- Loan module
+- Transaction module
+
+### Summary
+
+```text
+Modular Monolith = one deploy, many bounded modules with strict interfaces
+Best for: growing teams, medium/large apps, future extraction path
+Evolution: → microservices (§8.3) when independent scale/deploy is required
+```
+
+**Goal:** Monolith simplicity with microservice-ready boundaries.
 
 ---
 
 
 ## 8.3 Microservices
 
+> **Spectrum:** [When to use](#when-to-use) · boundaries via [§8.6 DDD](#86-ddd) / [§8.7 Bounded Context](#87-bounded-context) · migrate via [§8.4 Strangler](#84-strangler-pattern).
 
-### What is it?
+### What are microservices?
 
-**Microservices** are independently **deployable** services, each aligned to a **business capability** (or bounded context), owning **private data**, communicating over the network via well-defined APIs or events, and scaling on independent cadences.
+**Microservices** architecture divides an application into multiple **small, independently deployable services**. Each service owns a specific **business capability** and typically its own database.
 
-"Micro" refers to **scope of responsibility**, not lines of code — a service can be 10K LOC if the boundary is right.
+### Architecture
 
-### Why it matters
-
-- **Team autonomy:** Conway's Law — service boundaries mirror team boundaries; independent release trains
-- **Independent scaling:** scale search 10× without scaling billing
-- **Technology fit:** pick Postgres for orders, Elasticsearch for search, Go for stream processor
-- **Fault isolation:** blast radius contained — one bad deploy doesn't take down entire platform
-- **Interview trap:** microservices solve **organizational and scaling** problems, not "clean code" problems
-
-### How it works — when to split (decision framework)
-
-**Start monolith or modular monolith.** Split when you have **concrete triggers**, not hypothetical future scale:
-
-| Trigger | Signal | Example split |
-|---------|--------|---------------|
-| **Team scale** | >8–10 engineers stepping on same codebase | Orders team vs Catalog team |
-| **Deploy coupling** | One team's change blocks everyone's release | Extract notifications service |
-| **Scaling mismatch** | One module needs 50× traffic, rest needs 2× | Extract read-heavy search |
-| **Availability isolation** | Non-critical feature takes down critical path | Isolate recommendations |
-| **Regulatory boundary** | PCI/PII scope reduction | Extract payments vault service |
-| **Different SLAs** | 99.99% core vs 99% analytics | Separate analytics pipeline |
-
-```mermaid
-flowchart TB
-    subgraph Triggers['Split triggers']
-        T1[Team autonomy]
-        T2[Independent scale]
-        T3[Fault isolation]
-        T4[Compliance scope]
-    end
-    Triggers --> Q{All triggers weak?}
-    Q -->|yes| Mono[Stay monolith / modular monolith]
-    Q -->|no| Split[Extract service]
-    Split --> BC[Validate bounded context]
+```text
++------------+     +------------+     +------------+
+| User       |     | Order      |     | Payment    |
+| Service    |<--->| Service    |<--->| Service    |
++------------+     +------------+     +------------+
+      |                  |                   |
+      v                  v                   v
+ User DB            Order DB          Payment DB
 ```
-
-**When NOT to split (anti-patterns):**
-
-- "We might need to scale someday" — premature distribution
-- Splitting by **technical layer** (DAO service, validation service) — nano-services
-- No platform maturity (no CI/CD per service, no tracing, no discovery)
-- Team too small to own N deployables + N databases
-
-**Service boundary rules (DDD-aligned):**
-
-1. **Bounded context = service candidate** — one ubiquitous language per service
-2. **Database per service** — no shared tables across services; integrate via API/events
-3. **High cohesion inside, loose coupling outside** — changes to order rules stay in Order service
-4. **Avoid chatty sync chains** — deep A→B→C→D call graphs are a design smell
-5. **Conway alignment** — if two teams own one service, expect friction
 
 ```mermaid
 flowchart LR
-    subgraph Order Context
-        OS[Order Service]
-        ODB[(Orders DB)]
-    end
-    subgraph Inventory Context
-        IS[Inventory Service]
-        IDB[(Inventory DB)]
-    end
-    subgraph Payment Context
-        PS[Payment Service]
-        PDB[(Payments DB)]
-    end
-    OS -->|ReserveStock command / event| IS
-    OS -->|Charge command / event| PS
+    US[User service] <-->|REST / gRPC / events| OS[Order service]
+    OS <-->|REST / gRPC / events| PS[Payment service]
+    US --> UDB[(User DB)]
+    OS --> ODB[(Order DB)]
+    PS --> PDB[(Payment DB)]
 ```
 
-**Integration styles:**
+API styles: [Ch.7 API Design](../07-api-design/README.md). Async integration: [Ch.6 Messaging](../06-messaging-and-events/README.md).
 
-| Style | Coupling | Consistency | Use when |
-|-------|----------|-------------|----------|
-| Sync REST/gRPC | Tight (runtime dependency) | Strong per call | Query, immediate validation |
-| Async events | Loose | Eventual | Notify, audit, analytics |
-| Saga | Orchestrated/choreographed | Eventual across steps | Multi-service transactions |
+### Characteristics
 
-**Operational prerequisites (microservices tax):**
+- Multiple independent services
+- Independent deployment per service
+- Each service owns its database (**database per service**)
+- Communication via REST, GraphQL, gRPC, Kafka, etc.
 
-- CI/CD per service, container orchestration (K8s)
-- Service discovery, API gateway, centralized config
-- Distributed tracing, structured logging, correlation IDs
-- Resilience: circuit breaker, retry, bulkhead, timeouts
-- Contract testing, API versioning discipline
+### Advantages
 
-### Key details
+1. Independent scaling per service
+2. Independent deployment — teams release on their own cadence
+3. Better fault isolation
+4. Teams can work independently (Conway's Law)
+5. Technology flexibility per service
 
-| Principle | Implication |
-|-----------|-------------|
-| Conway's Law | Org chart influences architecture — design teams and services together |
-| No distributed monolith | Independent deploys but sync-coupled everywhere = worst of both worlds |
-| Data ownership | Each service owns its schema; others access only via API |
-| Evolution | Modular monolith → strangler extraction (see 8.4) |
-| Size heuristic | "Two pizza team" can own 1–3 services, not 30 |
+### Disadvantages
 
-**Interview answer template:** "I'd start modular monolith. Split when team size, scaling, or fault isolation forces it. Boundaries follow DDD bounded contexts with database-per-service. Cross-cutting workflows use sagas, not 2PC."
+1. Complex deployment and monitoring
+2. Network latency on every cross-service call
+3. Distributed transactions are difficult — use [§8.19 Saga](#819-saga-pattern), not 2PC
+4. More infrastructure (discovery, mesh, gateway, tracing)
+5. Increased operational cost
 
-#### Production operating rules
+### Example
 
-| Rule | Rationale |
-|------|-----------|
-| **One team owns one service (max 2–3)** | Shared ownership → nobody on-call; deploy coupling returns |
-| **Database per service — no exceptions** | Shared DB = distributed monolith; schema changes block all consumers |
-| **Every sync call has timeout + breaker** | Default HTTP client timeouts are often infinite |
-| **Correlation ID on every hop** | `trace_id` / `X-Request-ID` — non-negotiable for debugging |
-| **Contract tests in CI** | Consumer-driven contracts catch breaking API changes before deploy |
-| **Version APIs; avoid breaking changes** | `/v2` or expand-contract; never silent field removal |
-| **Define SLO per service** | Availability and latency owned by service team, not platform alone |
-| **No shared libraries with domain logic** | Shared DTO jar couples deploys — share schemas (Protobuf/OpenAPI), not business rules |
-| **Prefer events over sync chains > 2 hops** | Deep call graphs compound tail latency and failure probability |
-| **Platform team owns mesh/gateway/discovery** | Product teams own business services, not Envoy config per app |
+**E-commerce platform:**
 
-**Service ownership matrix (example):**
+| Service | Responsibility |
+|---------|----------------|
+| User service | Accounts, profiles |
+| Product service | Catalog |
+| Inventory service | Stock |
+| Order service | Orders |
+| Payment service | Payments |
+| Notification service | Email/SMS |
 
-| Service | Team | SLO | On-call | Data store |
-|---------|------|-----|---------|------------|
-| Orders | Checkout | 99.95% / p99 300ms | `@checkout-oncall` | PostgreSQL |
-| Search | Discovery | 99.9% / p99 500ms | `@search-oncall` | Elasticsearch |
-| Notifications | Platform | 99.5% / async 5min | `@platform-oncall` | DynamoDB |
+Each can be developed, deployed, and scaled independently. Client aggregation: [§8.5 BFF](#85-bff-pattern) · [Ch.7 API Gateway](../07-api-design/README.md#75-api-gateway).
 
-**Anti-patterns in production:**
+### Operational prerequisites
+
+Before splitting, invest in:
+
+- CI/CD per service, containers / Kubernetes
+- [Service discovery](#812-service-registry) and API gateway
+- Distributed tracing and structured logging
+- Resilience: [§8.16 Circuit Breaker](#816-circuit-breaker), [§8.17 Retry](#817-retry-pattern), [§8.18 Bulkhead](#818-bulkhead-pattern)
+- Contract testing and API versioning ([Ch.7](../07-api-design/README.md))
+
+### When not to split prematurely
+
+- Small team with no scaling or deploy-coupling pain yet
+- Splitting by **technical layer** (validation service, DAO service) — prefer business capabilities
+- No platform maturity for observability and discovery
+
+Stay on [§8.1 Monolith](#81-monolith) or [§8.2 Modular Monolith](#82-modular-monolith) until triggers are real.
+
+### Summary
 
 ```text
-❌ "User service" called synchronously by 14 other services
-❌ Shared `users` table read via JDBC from 3 codebases
-❌ 200-line BFF with business rules that belong in domain services
-❌ Deploying all 40 services because one shared library changed
-✅ Events for cross-context updates; sync only for read paths needing freshness
+Microservices = independent services, service-owned DB, network communication
+Best for: large scale, multiple teams, independent deploy/scale needs
+Cost: distributed ops complexity — sagas, discovery, resilience, observability
 ```
 
-#### Runtime choice — Quarkus vs Spring Boot
-
-For **Kubernetes (K8s)** microservices at high **requests per second (RPS)**, **Quarkus** often wins on **startup time** and **memory** vs Spring Boot — useful when **Horizontal Pod Autoscaler (HPA)** must scale quickly.
-
-| | Spring Boot | Quarkus (native) |
-|---|-------------|------------------|
-| Startup | ~2–3 s | ~50–300 ms |
-| Memory | 300–500 MB | 40–80 MB |
-| Fit | Existing Spring estate | New K8s services, edge APIs |
-
-**Ahead-of-time (AOT) compilation** and smaller heap reduce garbage collection (GC) pressure. Stay on Spring when migration cost outweighs autoscaling gains.
-
-### When to use
-
-- Multiple teams (typically 3+) needing independent release cycles
-- Proven scaling or availability needs differ sharply by domain
-- Mature DevOps: K8s, observability, platform engineering in place
-- Organization willing to pay distributed systems complexity tax
-
-### Trade-offs / Pitfalls
-
-| Pitfall | Symptom | Mitigation |
-|---------|---------|------------|
-| **Distributed monolith** | Must deploy 5 services together | Events + async; loosen sync coupling |
-| **Shared database** | Schema migration blocks 3 teams | Database-per-service; CDC for reads |
-| **Nano-services** | 200 deployables, 3 engineers | Merge services; bounded context too small |
-| **Chatty sync chains** | p99 2s; one slow hop kills UX | BFF aggregation; cache; denormalize |
-| **No distributed tracing** | "Which service failed?" takes hours | OpenTelemetry from day one |
-| **Missing contract tests** | Staging green, prod broken | Pact / schema registry in CI |
-| **Platform immaturity** | Teams build own discovery/retry | Invest in platform before split #5 |
-| **Wrong boundary (layer split)** | "Validation service" + "DAO service" | Split by business capability (DDD) |
-| **Saga without compensation** | Stuck orders in `PENDING` forever | Compensating actions + timeout alerts |
-| **Org/service mismatch** | Two teams, one repo, one deploy | Conway alignment or merge services |
-| **Latency tax ignored** | "We'll just add another hop" | Budget latency per user journey |
-| **Shared domain library** | Library change = 30-service deploy | OpenAPI/Protobuf contracts only |
-
-### References
-
-- [Martin Fowler — Microservices](https://martinfowler.com/articles/microservices.html)
-- [Sam Newman — Building Microservices](https://samnewman.io/books/building_microservices_2nd_edition/)
+**Goal:** Team autonomy and per-domain scale — not “micro” for its own sake.
 
 ---
 
 
 ## 8.4 Strangler Pattern
 
+> **Migration path:** [Monolith → Microservices](#architecture-spectrum) evolution in the chapter intro. Router: [Ch.7 API Gateway](../07-api-design/README.md#75-api-gateway).
 
-### What is it?
+### What is the strangler pattern?
 
-The **strangler fig pattern** incrementally replaces a legacy monolith by routing slices of traffic to new microservices - growing new system around old until monolith can be decommissioned.
+The **Strangler pattern** is a migration strategy used to **gradually** transform a monolithic application into a new architecture (typically [microservices](#83-microservices)) **without rewriting the entire system at once**.
 
-### Why it matters
+The name comes from the **strangler fig** tree, which grows around an existing tree and gradually replaces it.
 
-Low-risk migration path vs big-bang rewrite; delivers value incrementally while legacy still runs.
+### Purpose
+
+1. Modernize legacy applications
+2. Reduce migration risk
+3. Enable gradual transition
+4. Avoid **big bang** rewrites
+5. Allow continuous business operations during migration
+
+Ideal follow-on from a [§8.2 modular monolith](#82-modular-monolith) where module boundaries are already clear.
 
 ### How it works
 
-1. Place facade/proxy (API gateway) in front of monolith.
-2. Implement new service for one feature (e.g., notifications).
-3. Gateway routes `/notifications/*` to new service; rest to monolith.
-4. Repeat feature by feature; extract data via CDC or dual-write.
-5. Retire monolith modules when traffic and data fully migrated.
+#### Step 1 — Monolith handles everything
 
-### Diagram
-
-```mermaid
-flowchart LR
-    Client --> GW[Gateway]
-    GW -->|new paths| MS[New Microservice]
-    GW -->|legacy paths| Mono[Monolith]
+```text
+Client → Monolith
 ```
 
-### Key details
+```mermaid
+flowchart TB
+    C[Client] --> M[Monolith]
+```
 
-- Anti-corruption layer translates between old and new models.
-- Data sync hardest part - CDC, strangler data pump, or temporary dual-write.
-- Feature flags control routing percentage for canary extraction.
+#### Step 2 — Extract first service
+
+```text
+Client → Gateway → Monolith
+                → New service
+```
+
+Some requests hit the new service; the rest stay on the monolith.
+
+#### Step 3 — More functionality moves
+
+```text
+Client → Gateway → User service
+                → Order service
+                → Payment service
+                → Monolith (shrinking)
+```
+
+The monolith becomes smaller over time.
+
+#### Step 4 — Monolith retired
+
+```text
+Client → Gateway → User / Order / Payment services
+```
+
+All traffic on new services; legacy monolith decommissioned.
+
+```mermaid
+flowchart TB
+    C[Client] --> GW[API Gateway]
+    GW --> US[User service]
+    GW --> OS[Order service]
+    GW --> PS[Payment service]
+```
+
+### Key components
+
+| # | Component | Role |
+|---|-----------|------|
+| 1 | **Legacy system** | Existing monolith — continues serving unmigrated requests |
+| 2 | **New services** | Extracted microservices for migrated capabilities |
+| 3 | **Router / API gateway** | Routes each request to monolith **or** new service |
+| 4 | **Data migration strategy** | Sync or cut over data; keep old and new consistent during transition |
+
+Use an **anti-corruption layer** when legacy and new domain models differ — translate at the boundary, don't leak monolith schemas into new services.
+
+### Request flow example
+
+**Before migration:**
+
+```text
+Client → Monolith → Database
+```
+
+**After migrating user management:**
+
+```text
+Client → API Gateway
+           ├─→ User service     (GET/POST /users)
+           └─→ Monolith         (GET /orders, POST /payments, …)
+```
+
+User-related paths go to **User service**; everything else stays on the monolith until extracted.
+
+### Migration steps
+
+1. **Identify a module** to extract (e.g. user management)
+2. **Create** the new service
+3. **Redirect traffic** at the gateway
+4. **Validate** functionality (contract tests — [Ch.7 §7.15](../07-api-design/README.md#715-contract-testing))
+5. **Migrate data** if required (CDC, dual-write, or one-time backfill)
+6. **Remove** old code from the monolith
+7. **Repeat** for other modules
+
+### Example — e-commerce monolith
+
+**Legacy monolith modules:**
+
+```text
+User management · Product catalog · Order processing
+Payment processing · Notification system
+```
+
+| Phase | Extract |
+|-------|---------|
+| 1 | User service |
+| 2 | Product service |
+| 3 | Order service |
+| 4 | Payment service |
+| 5 | Retire monolith |
+
+### Real-world timeline (example)
+
+| Month | Milestone |
+|-------|-----------|
+| 1 | User service extracted |
+| 3 | Order service extracted |
+| 5 | Payment service extracted |
+| 7 | Notification service extracted |
+| 9 | Monolith retired |
+
+### Advantages
+
+1. **Low risk** — small incremental changes, easier rollback
+2. **Continuous delivery** — no long system downtime
+3. **Faster feedback** — learn from each step
+4. **Reduced business impact** — existing features keep running
+5. **Better testing** — validate service by service
+
+### Disadvantages
+
+1. **Temporary complexity** — monolith and microservices coexist
+2. **Data synchronization** — keeping old and new systems consistent
+3. **Routing complexity** — gateway rules grow with each extraction
+4. **Longer duration** — full migration may take months or years
 
 ### When to use
 
-- Large legacy system unmaintainable but business cannot stop.
-- Gradual modernization with measurable milestones.
-- Team learning microservices while shipping features.
+- Migrating a legacy [monolith](#81-monolith)
+- Building [microservices](#83-microservices) gradually
+- Large rewrite is too risky
+- Business cannot tolerate downtime
+- Incremental modernization is required
 
-### Trade-offs / Pitfalls
+### When not to use
 
-- Long transition period maintaining two systems.
-- Data inconsistency during dual-running phase.
-- "Strangler" never finishes if scope creep adds features to monolith.
+- Application is very small — [monolith](#81-monolith) is enough
+- Complete rewrite is genuinely easier and low risk
+- Legacy system is near retirement anyway
+- Migration cost exceeds business value
 
-### References
+### Strangler pattern vs big bang migration
 
-*(No curated references for this sub-topic in `_topics.json`.)*
+| Feature | Strangler pattern | Big bang rewrite |
+|---------|-------------------|------------------|
+| **Risk** | Low | High |
+| **Downtime** | Minimal | High |
+| **Deployment** | Incremental | One-time |
+| **Rollback** | Easy | Difficult |
+| **Business continuity** | Excellent | Risky |
+| **Migration duration** | Longer | Shorter |
+| **Failure impact** | Small per step | Large |
+
+### Summary
+
+```text
+Strangler = gradually replace legacy with new services while old system still runs
+Flow: monolith → extract User → Order → Payment → retire monolith
+Gateway routes traffic; data sync is the hardest part
+Safest common path from monolith to microservices
+```
+
+**Goal:** Modernize without stopping the business — [§8.3 Microservices](#83-microservices).
 
 ---
 
