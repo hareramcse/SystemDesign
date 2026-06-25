@@ -1,133 +1,32 @@
 ﻿# 9. Observability
 
-> Status: **Documented**
-
 [<- Back to master index](../README.md)
 
 ---
 
 ## Overview
 
-**Observability** is the ability to understand internal system state from external outputs: **[logs](#91-logging)**, **[metrics](#93-metrics)**, and **[traces](#95-distributed-tracing)**. **[Monitoring](#94-monitoring)** continuously watches health; **[SLI / SLO / SLA](#98-sli)** define and guarantee reliability; **[alerting](#912-alerting)**, **[dashboards](#913-dashboards)**, **[health checks](#914-health-checks)**, and **[synthetic monitoring](#915-synthetic-monitoring)** put it into practice.
+**Observability** is understanding system state from **logs**, **metrics**, and **traces**, plus **monitoring**, **alerting**, **dashboards**, **health checks**, and **synthetic monitoring**. **SLI / SLO / SLA** and **error budgets** define reliability targets.
 
-Production systems need structured logging, correlation across services, vendor-neutral instrumentation ([OpenTelemetry](#96-opentelemetry)), and proactive checks before users report issues.
-
-### Three pillars
-
-```mermaid
-flowchart TB
-    O[Observability]
-    O --> L[Logs §9.1–9.2]
-    O --> M[Metrics §9.3]
-    O --> T[Traces §9.5–9.6]
-```
-
-| Pillar | Answers | Example |
-|--------|---------|---------|
-| **Logs** [§9.1](#91-logging) | What happened? | `Payment gateway timeout` |
-| **Metrics** [§9.3](#93-metrics) | How much / how often? | Error rate = 2%, P99 = 800 ms |
-| **Traces** [§9.5](#95-distributed-tracing) | Where in the path? | Order → payment → DB (spans) |
-
-Add **[correlation IDs](#97-correlation-ids)** (and trace IDs) to tie all three signals to one request.
-
-### Investigation flow
-
-When something breaks, teams typically move through:
-
-```text
-Metrics (detect spike) → alert → dashboard → traces (find slow span) → logs (root cause)
-```
-
-**Example:** latency spike in metrics → trace shows slow payment span → log shows database timeout.
-
-### Learning path
-
-```mermaid
-flowchart LR
-    subgraph signals [§9.1–9.7 Signals]
-        LOG[Logging] --> STRUCT[Structured]
-        MET[Metrics] --> MON[Monitoring]
-        TRACE[Tracing] --> OTEL[OpenTelemetry]
-        CORR[Correlation IDs]
-    end
-    subgraph reliability [§9.8–9.11 Reliability]
-        SLI[SLI] --> SLO[SLO] --> EB[Error Budget]
-        SLO --> SLA[SLA]
-    end
-    subgraph ops [§9.12–9.15 Operations]
-        ALT[Alerting] --> DASH[Dashboards]
-        HC[Health Checks]
-        SYN[Synthetic]
-    end
-    signals --> reliability --> ops
-```
-
-Read order: pillars (9.1–9.6) → correlate requests (9.7) → reliability targets (9.8–9.11) → operational layers (9.12–9.15).
-
-### Reliability chain
-
-```mermaid
-flowchart LR
-    M[Metrics] --> SLI[SLI §9.8]
-    SLI --> SLO[SLO §9.9]
-    SLO --> EB[Error Budget §9.11]
-    SLO --> SLA[SLA §9.10]
-```
-
-| Concept | Role | Example |
-|---------|------|---------|
-| **SLI** | Measured performance | Availability = 99.95% |
-| **SLO** | Internal target | Availability ≥ 99.90% |
-| **Error budget** | Allowed failure | 0.1% (100% − SLO) |
-| **SLA** | Customer contract | Availability ≥ 99.50% |
-
-Keep **SLA below SLO** so internal targets breach before customer commitments ([§9.10](#910-sla)).
-
-**E-commerce example (canonical):** SLI availability 99.96% · avg response 180 ms · error rate 0.05% → SLO ≥ 99.9%, 95% requests < 500 ms, error < 1% → SLA ≥ 99.5% with compensation on breach. Per-section detail: [§9.8–§9.10](#98-sli).
-
-### Monitoring vs observability
-
-| | Monitoring [§9.4](#94-monitoring) | Observability |
-|---|-----------------------------------|---------------|
-| **Tells you** | When something is wrong | Why it is wrong |
-| **Example** | CPU > 90% | Trace + logs show slow DB query |
-
-Monitoring is a **subset** of observability — thresholds and health checks on top of the three pillars.
+Sections are in order **9.1 → 9.15**.
 
 ---
 
-## Section index
-
-### Logs & context
+## Sub-topics
 
 | # | Sub-topic |
 |---|-----------|
 | 9.1 | [Logging](#91-logging) |
 | 9.2 | [Structured Logging](#92-structured-logging) |
-| 9.7 | [Correlation IDs](#97-correlation-ids) |
-
-### Metrics, monitoring & traces
-
-| # | Sub-topic |
-|---|-----------|
 | 9.3 | [Metrics](#93-metrics) |
 | 9.4 | [Monitoring](#94-monitoring) |
 | 9.5 | [Distributed Tracing](#95-distributed-tracing) |
 | 9.6 | [OpenTelemetry](#96-opentelemetry) |
-
-### Reliability (SLI → SLO → SLA)
-
-| # | Sub-topic |
-|---|-----------|
+| 9.7 | [Correlation IDs](#97-correlation-ids) |
 | 9.8 | [SLI](#98-sli) |
 | 9.9 | [SLO](#99-slo) |
 | 9.10 | [SLA](#910-sla) |
 | 9.11 | [Error Budgets](#911-error-budgets) |
-
-### Operations
-
-| # | Sub-topic |
-|---|-----------|
 | 9.12 | [Alerting](#912-alerting) |
 | 9.13 | [Dashboards](#913-dashboards) |
 | 9.14 | [Health Checks](#914-health-checks) |
@@ -150,7 +49,20 @@ Logs help answer:
 - Where did it happen?
 - Why did it happen?
 
-Logging is one of the **three pillars of observability** — see [Overview → Three pillars](#three-pillars).
+Logging is one of the **three pillars of observability**:
+
+1. **Logs** — this section
+2. **Metrics** — [§9.3](#93-metrics)
+3. **Traces** — [§9.5](#95-distributed-tracing)
+
+```text
+                Observability
+                       |
+       +---------------+---------------+
+       v               v               v
+     Logs           Metrics          Traces
+  What happened?  How much/how often?  Where in the path?
+```
 
 ### Why logging is important
 
@@ -266,7 +178,13 @@ Avoid:
 
 ### Logs vs metrics vs traces
 
-Full comparison: [Overview → Three pillars](#three-pillars) and [Investigation flow](#investigation-flow). Metrics and traces: [§9.3](#93-metrics), [§9.5](#95-distributed-tracing).
+| | Logs | Metrics [§9.3](#93-metrics) | Traces [§9.5](#95-distributed-tracing) |
+|---|------|----------------------------|----------------------------------------|
+| **What** | Detailed event records | Numerical measurements | Request journey across services |
+| **Example** | Order created successfully | CPU usage = 70% | Client → order → payment → inventory |
+| **Question** | What happened? | How much / how often? | Where did time go? |
+
+Together they provide complete visibility into distributed systems.
 
 ### Summary
 
@@ -401,7 +319,11 @@ Metrics answer:
 - How many errors occurred?
 - Is the system healthy?
 
-Metrics are one of the **three pillars of observability** — see [Overview](#three-pillars).
+Metrics are one of the **three pillars of observability**:
+
+1. [Logs](#91-logging) — what happened?
+2. **Metrics** — this section — how much / how often?
+3. [Traces](#95-distributed-tracing) — where in the path?
 
 ### Why metrics are important
 
@@ -538,18 +460,38 @@ Metric `http_requests_total` — GET endpoint has recorded 500 requests (counter
 
 Exports to Prometheus, Datadog, CloudWatch, etc.
 
-### Alerting from metrics
+### Alerting using metrics
 
-Example thresholds and burn-rate preference: [§9.12 Alerting](#912-alerting).
+Example rules (see [§9.12 Alerting](#912-alerting)):
 
-### Metrics vs logs / traces
+| Rule | Threshold |
+|------|-----------|
+| CPU | > 90% |
+| Memory | > 85% |
+| Error rate | > 5% |
+| Response time | > 2 s |
 
-| | Metrics | Logs | Traces |
-|---|---------|------|--------|
-| **Scope** | Aggregates | Events | One request |
-| **Answers** | How much? | What happened? | Where? |
+```text
+Metric → threshold breached → alert → email / Slack / PagerDuty
+```
 
-Hub: [Three pillars](#three-pillars) · [Investigation flow](#investigation-flow).
+Prefer **SLO burn-rate** alerts over static CPU thresholds when user-facing SLIs exist.
+
+### Metrics vs logs
+
+| | Metrics | Logs [§9.1](#91-logging) |
+|---|---------|--------------------------|
+| **Data** | Numerical values | Detailed events |
+| **Example** | CPU = 80% | Database connection timeout |
+| **Answers** | How much? How often? | What happened? |
+
+### Metrics vs traces
+
+| | Metrics | Traces [§9.5](#95-distributed-tracing) |
+|---|---------|----------------------------------------|
+| **Scope** | System-wide aggregates | Single request journey |
+| **Example** | Response time P99 = 250 ms | Order → payment → inventory |
+| **Answers** | Is there a problem? | Where is the problem? |
 
 ### Summary
 
@@ -574,7 +516,18 @@ It helps teams **detect issues before users are affected**.
 
 ### Monitoring vs observability
 
-Canonical comparison: [Overview → Monitoring vs observability](#monitoring-vs-observability). Monitoring focuses on thresholds, health checks, and continuous health — observability adds logs, metrics, and traces to explain **why**.
+| | Monitoring | Observability |
+|---|------------|---------------|
+| **Tells you** | When something is wrong | Why it is wrong |
+| **Example** | CPU usage > 90% | High CPU caused by slow database queries |
+
+```text
+Observability
+      |
+      +---- Monitoring (subset)
+```
+
+Observability uses **logs**, **metrics**, and **traces** together; monitoring focuses on ongoing health checks and thresholds.
 
 ### Why monitoring is important
 
@@ -592,15 +545,58 @@ Canonical comparison: [Overview → Monitoring vs observability](#monitoring-vs-
 Application / server → collect data → store data → dashboard → alerts
 ```
 
-### Monitoring domains
+### What is monitored?
 
-| Domain | What to watch | Detail |
-|--------|---------------|--------|
-| **Infrastructure** | CPU, memory, disk, network | [§9.13 Dashboards](#913-dashboards) |
-| **Application** | Requests, latency, errors, sessions | [§9.3 Golden signals](#93-metrics) |
-| **Database** | Query time, connections, deadlocks | [§9.13](#913-dashboards) |
-| **Network** | Latency, packet loss, bandwidth | [§9.13](#913-dashboards) |
-| **Business** | Orders, revenue, payment success | [§9.13](#913-dashboards) |
+1. Infrastructure
+2. Applications
+3. Databases
+4. Networks
+5. Business processes
+
+### Infrastructure monitoring
+
+Tracks server and hardware resources.
+
+| Examples | Alert example |
+|----------|---------------|
+| CPU, memory, disk, network | CPU usage = 95% → high CPU utilization |
+
+### Application monitoring
+
+Tracks application performance — see also [§9.3 Metrics](#93-metrics) golden signals.
+
+| Examples | Alert example |
+|----------|---------------|
+| Request count, response time, error rate, active sessions | Response time = 3 s → threshold exceeded |
+
+### Database monitoring
+
+| Examples | Alert example |
+|----------|---------------|
+| Query execution time, connection count, deadlocks, slow queries | Slow query > 5 s |
+
+### Network monitoring
+
+| Examples | Alert example |
+|----------|---------------|
+| Latency, packet loss, bandwidth, network errors | Packet loss = 10% |
+
+### Business monitoring
+
+Tracks business KPIs.
+
+| Examples | Alert example |
+|----------|---------------|
+| Orders per minute, revenue, registrations, payment success rate | Payment success rate = 99% |
+
+### Types of monitoring
+
+1. Infrastructure monitoring
+2. Application monitoring
+3. Network monitoring
+4. Database monitoring
+5. Cloud monitoring
+6. Business monitoring
 
 ### White box vs black box
 
@@ -612,7 +608,24 @@ Application / server → collect data → store data → dashboard → alerts
 
 ### Synthetic monitoring
 
-Proactive automated tests simulating user journeys — detail: [§9.15 Synthetic Monitoring](#915-synthetic-monitoring). **RUM vs synthetic:** [§9.15](#915-synthetic-monitoring).
+Automated periodic tests that simulate user behavior — detail: [§9.15 Synthetic Monitoring](#915-synthetic-monitoring).
+
+```text
+Every 5 minutes: login → search product → place order
+```
+
+Detects issues before real users hit them.
+
+### Real user monitoring (RUM)
+
+Measures **actual** user experience:
+
+- Page load time
+- Browser performance
+- User interactions
+- Geographic performance
+
+Example: average page load time = 2 s. **RUM vs synthetic:** [§9.15](#915-synthetic-monitoring).
 
 ### Monitoring metrics examples
 
@@ -628,13 +641,45 @@ Proactive automated tests simulating user journeys — detail: [§9.15 Synthetic
 
 Visual representation of system health — detail: [§9.13 Dashboards](#913-dashboards).
 
+```text
++-------------------------+
+| CPU Usage       65%     |
++-------------------------+
+| Memory Usage    70%     |
++-------------------------+
+| Error Rate      1%      |
++-------------------------+
+```
+
+Common widgets: CPU/memory graphs, error rate, request count, latency.
+
 ### Alerting
 
-Notify teams when monitored conditions require action — detail: [§9.12 Alerting](#912-alerting).
+Notify teams when thresholds are exceeded — detail: [§9.12 Alerting](#912-alerting).
+
+| Example rule |
+|--------------|
+| CPU > 90% |
+| Memory > 85% |
+| Error rate > 5% |
+| Disk usage > 90% |
+
+**Alert lifecycle:**
+
+```text
+Metric collected → threshold exceeded → alert triggered → notification → issue resolved
+```
+
+**Alert channels:** email, SMS, Slack, Microsoft Teams, PagerDuty, Opsgenie.
 
 ### Monitoring tools
 
-Collection: [§9.3](#93-metrics) · Visualization: [§9.13](#913-dashboards) · APM: Datadog, Dynatrace, New Relic, AppDynamics.
+| Category | Tools |
+|----------|-------|
+| **Metrics** | Prometheus, OpenTelemetry, Micrometer — [§9.3](#93-metrics) |
+| **Visualization** | Grafana, Kibana |
+| **Cloud** | Amazon CloudWatch, Azure Monitor, Google Cloud Monitoring |
+| **APM** | Dynatrace, New Relic, AppDynamics, Datadog |
 
 ### Monitoring in microservices
 
@@ -646,25 +691,61 @@ Collection: [§9.3](#93-metrics) · Visualization: [§9.13](#913-dashboards) · 
 
 ### Health checks
 
-Determine whether a service is alive and can handle traffic — detail: [§9.14 Health Checks](#914-health-checks).
+Determine whether an application can serve traffic — detail: [§9.14 Health Checks](#914-health-checks).
+
+```json
+GET /health → { "status": "UP" }
+```
+
+| Type | Question |
+|------|----------|
+| **Liveness** | Is the application running? |
+| **Readiness** | Can it accept traffic? |
 
 ### Best practices
 
-1. Monitor critical business functions across domains
-2. Cover infrastructure and application together
-3. Use centralized monitoring
-4. Monitor trends for capacity planning
-5. Regularly review thresholds and coverage
-6. Wire into [alerting](#912-alerting), [dashboards](#913-dashboards), and [health checks](#914-health-checks)
+1. Monitor critical business functions
+2. Define meaningful, actionable alerts
+3. Avoid alert fatigue
+4. Create [dashboards](#913-dashboards)
+5. Monitor trends over time
+6. Monitor infrastructure and application together
+7. Use centralized monitoring
+8. Automate alerting
+9. Regularly review thresholds
+10. Integrate with incident management
 
-### Monitoring vs logging / tracing
+### Monitoring vs logging
 
-| | Monitoring | [Logging](#91-logging) | [Tracing](#95-distributed-tracing) |
-|---|------------|------------------------|-------------------------------------|
-| **Shows** | Health via metrics | Detailed events | Request path |
-| **Answers** | Is there a problem? | What happened? | Where is the delay? |
+| | Monitoring | Logging [§9.1](#91-logging) |
+|---|------------|------------------------------|
+| **Shows** | System health via metrics | Detailed events |
+| **Example** | CPU = 80% | Database connection failed |
+| **Answers** | Is there a problem? | What happened? |
 
-Signal comparison hub: [Investigation flow](#investigation-flow).
+### Monitoring vs tracing
+
+| | Monitoring | Tracing [§9.5](#95-distributed-tracing) |
+|---|------------|----------------------------------------|
+| **Shows** | Overall system health | Request flow through services |
+| **Example** | Elevated P99 latency | Client → order → payment → DB |
+| **Use** | Detect degradation | Find where delays occur |
+
+### Monitoring and observability
+
+```text
+                Observability
+                       |
+       +---------------+---------------+
+       v               v               v
+     Logs           Metrics          Traces
+          \           |           /
+           \          |          /
+            \         |         /
+                 Monitoring
+```
+
+Monitoring uses logs, metrics, and traces to continuously track system health.
 
 ### Summary
 
@@ -691,7 +772,11 @@ It helps answer:
 - Which service failed?
 - Where are the bottlenecks?
 
-Tracing is one of the **three pillars of observability** — see [Overview](#three-pillars).
+Tracing is one of the **three pillars of observability**:
+
+1. [Logs](#91-logging) — what happened?
+2. [Metrics](#93-metrics) — how much / how often?
+3. **Traces** — this section — where in the path?
 
 ### Why distributed tracing is needed
 
@@ -845,14 +930,23 @@ Trace shows:
 - Failed service
 - Execution path before stop
 
-### Tracing vs logging / metrics
+### Tracing vs logging
 
-| | Traces | Logs | Metrics |
-|---|--------|------|---------|
-| **Focus** | Request path | Events | Aggregates |
-| **Answers** | Where / how long? | What happened? | Is there a spike? |
+| | Logging [§9.1](#91-logging) | Tracing |
+|---|------------------------------|---------|
+| **Shows** | Individual events | Complete request journey |
+| **Example** | Payment started / completed | Client → order → payment → inventory |
+| **Answers** | What happened? | Where did it happen? |
 
-Correlate traces and logs via `traceId` — [§9.7](#97-correlation-ids). Hub: [Investigation flow](#investigation-flow).
+Correlate with shared `traceId` in log fields — [§9.7](#97-correlation-ids).
+
+### Tracing vs metrics
+
+| | Metrics [§9.3](#93-metrics) | Tracing |
+|---|----------------------------|---------|
+| **Shows** | Aggregated measurements | Single request path |
+| **Example** | Avg response time = 200 ms | Request #123 took 4 s |
+| **Answers** | Is there a problem? | Which request and where? |
 
 ### Distributed tracing components
 
@@ -925,13 +1019,15 @@ Benefits: lower storage, cost, and collector load. Use **tail sampling** to alwa
 
 ### Logs + metrics + traces together
 
-See [Investigation flow](#investigation-flow) in the chapter overview:
-
 ```text
+User places order
+
 Trace:   order → payment → inventory (path + per-span timing)
 Metrics: response time = 4 s (aggregate spike)
-Logs:    payment gateway timeout (exact error)
+Logs:    payment gateway timeout (exact error message)
 ```
+
+Together: complete visibility.
 
 ### Summary
 
@@ -1219,21 +1315,36 @@ Also called: **request ID**, **correlation ID**, **transaction ID**.
 
 ### Why correlation IDs are needed
 
-One user request crosses many services — each emits logs. Without a shared ID, interleaved logs from requests A, B, C are impossible to untangle:
+```text
+Client → order service
+              ├─ payment service
+              ├─ inventory service
+              └─ notification service
+```
+
+One user request produces logs in many services.
+
+**Without correlation ID** — mixed logs from requests A, B, C:
 
 ```text
-10:00:01 Order created        (request A?)
-10:00:02 Payment started      (request A or B?)
-10:00:02 Order created        (request B?)
+10:00:01 Order created
+10:00:02 Payment started
+10:00:02 Order created
 10:00:03 Inventory updated
 10:00:04 Payment completed
 ```
 
-**Solution:** generate a unique ID at the edge and attach it to **every** log entry (and trace):
+Which payment belongs to which order?
+
+### Solution
+
+Generate a unique ID when the request enters the system:
 
 ```text
 Correlation ID: 8f34a1bc-1234-5678-abcd-123456789xyz
 ```
+
+Attach it to **every** log entry.
 
 ### Request flow
 
@@ -1518,7 +1629,7 @@ SLIs are computed continuously from time-series [metrics](#93-metrics).
 Metrics → SLI (measure) → SLO (target) → SLA (customer commitment)
 ```
 
-**Observability check** (e-commerce values in [Overview](#reliability-chain)):
+**Observability example:**
 
 | | Value | Status |
 |---|-------|--------|
@@ -1573,7 +1684,12 @@ Error budget = 100% − SLO   (e.g. SLO 99.9% → budget 0.1%)
 
 ### Why SLO is usually stricter than SLA
 
-Internal targets should be **stricter** than customer commitments — a safety margin so SLO breaches before SLA. Detail: [§9.10](#910-sla).
+```text
+SLO = 99.9%    (internal)
+SLA = 99.5%    (customer)
+```
+
+Safety margin: if performance drops to 99.7%, **SLO is violated** but **SLA is still satisfied** — protects customer commitments. See [§9.10](#910-sla).
 
 ### Alerting based on SLO
 
@@ -1608,7 +1724,12 @@ Detail: [§9.12 Alerting](#912-alerting) · SLO burn-rate alerts.
 | 99.99% (four nines) | ~52.56 minutes |
 | 99.999% (five nines) | ~5.26 minutes |
 
-Canonical **e-commerce** SLI/SLO values: [Overview → Reliability chain](#reliability-chain).
+### Real-world example — e-commerce
+
+| | Values |
+|---|--------|
+| **SLI** | Availability 99.96% · avg response 180 ms · error rate 0.05% |
+| **SLO** | Availability ≥ 99.9% · 95% requests < 500 ms · error rate < 1% |
 
 ### Best practices
 
@@ -1678,10 +1799,19 @@ If violated → 10% service credit
 | **SLA** [this section] | Customer promise | Availability ≥ 99.50% |
 
 ```text
-Easy formula:  SLI = measure  |  SLO = goal  |  SLA = promise
+Easy formula:
+  SLI = measure
+  SLO = goal
+  SLA = promise
 ```
 
-Full chain diagram and example: [§9.8](#98-sli) · [Overview → Reliability chain](#reliability-chain).
+### Relationship diagram
+
+```text
+Actual performance  →  SLI = 99.95%
+Internal target     →  SLO = 99.90%
+Customer contract   →  SLA = 99.50%
+```
 
 ### Why SLO is stricter than SLA (safety margin)
 
@@ -1691,6 +1821,22 @@ Full chain diagram and example: [§9.8](#98-sli) · [Overview → Reliability ch
 | SLA | 99.5% (customer) |
 
 Buffer so minor dips violate **SLO first** — e.g. performance drops to 99.7%: SLO violated, SLA still satisfied — time to fix before **contract breach**.
+
+### Real-world example — e-commerce
+
+| | |
+|---|---|
+| **SLI** | Availability 99.96% · response 180 ms · error rate 0.05% |
+| **SLO** | ≥ 99.9% · 95% < 500 ms · error < 1% |
+| **SLA** | ≥ 99.5% — violation → customer compensation |
+
+### Observability check
+
+```text
+SLI: 99.92%  →  measured
+SLO: ≥ 99.90% →  PASS
+SLA: ≥ 99.50% →  PASS
+```
 
 ### Best practices
 
@@ -1909,10 +2055,11 @@ When error rate **exceeds** error budget, the SLO is at risk or violated.
 ### Relationship summary
 
 ```text
-SLI (measured) → SLO (target) → error budget (allowed failure) → SLA (contract)
+SLI (measured)     →  availability = 99.92%
+SLO (target)       →  99.9%
+Error budget       →  0.1% allowed failure
+SLA (contract)     →  99.5%  [§9.10]
 ```
-
-See [Overview → Reliability chain](#reliability-chain).
 
 ### Summary
 
@@ -2156,7 +2303,11 @@ Detail: [§9.11 Error Budgets](#911-error-budgets).
 Metrics → monitoring → alerting → incident response
 ```
 
-During investigation, combine all three pillars — [Investigation flow](#investigation-flow).
+| Signal | Role in investigation |
+|--------|----------------------|
+| **[Logs](#91-logging)** | Explain what happened |
+| **[Metrics](#93-metrics)** | Detect abnormal behavior |
+| **[Traces](#95-distributed-tracing)** | Identify where the issue occurred |
 
 ### Real production example — payment service
 
@@ -2216,7 +2367,14 @@ Teams use dashboards to see at a glance:
 
 ### Dashboard in observability
 
-Unified view of logs, metrics, traces, alerts, and SLO status — see [Overview → Three pillars](#three-pillars).
+```text
+Observability
+  ├── Logs [§9.1]
+  ├── Metrics [§9.3]
+  └── Traces [§9.5]
+           ↓
+      Dashboard  (unified view)
+```
 
 ### Dashboard workflow
 
@@ -2677,7 +2835,13 @@ Notify via email, Slack, PagerDuty — see [§9.12](#912-alerting).
 
 ### Health checks in observability
 
-Fourth operational signal alongside the [three pillars](#three-pillars) — immediate **availability** visibility; complements [metrics](#93-metrics) and [synthetic tests](#915-synthetic-monitoring).
+```text
+Observability
+  ├── logs
+  ├── metrics
+  ├── traces
+  └── health checks  →  immediate service availability visibility
+```
 
 ### Real production example — order service
 
