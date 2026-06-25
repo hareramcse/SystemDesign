@@ -95,14 +95,10 @@ Request 3 = 5ms   (Cache Hit)
 **Cache Miss:** Requested data not found in cache. Response time depends on database.
 
 ```mermaid
-flowchart TB
-    Client[Client] --> App[Application]
-    App --> Lookup{In cache?}
-    Lookup -->|Hit| Return[Return cached data]
-    Lookup -->|Miss| DB[(Database)]
-    DB --> Store[Store in cache]
-    Store --> Return
-    Return --> Client
+flowchart LR
+    Client[Client] --> App[Application] --> Lookup{In cache?}
+    Lookup -->|Hit| Return[Return cached data] --> Client
+    Lookup -->|Miss| DB[(Database)] --> Store[Store in cache] --> Return
 ```
 
 **Formula:**
@@ -130,13 +126,8 @@ E) Database Cache
 F) CPU Cache
 
 ```mermaid
-flowchart TB
-    User[User] --> Browser[Browser Cache]
-    Browser --> CDN[CDN Cache]
-    CDN --> App[Application Cache]
-    App --> Dist[Distributed Cache]
-    Dist --> DBC[(Database Cache / Page Cache)]
-    DBC --> Disk[(Disk)]
+flowchart LR
+    User[User] --> Browser[Browser Cache] --> CDN[CDN Cache] --> App[Application Cache] --> Dist[Distributed Cache] --> DBC[(Database Cache)] --> Disk[(Disk)]
 ```
 
 ### In-memory cache
@@ -164,12 +155,12 @@ Data stored in RAM.
 When cache becomes full, some data must be removed.
 
 ```mermaid
-flowchart TB
-    Full[Cache full — new entry arrives] --> Policy{Eviction policy}
-    Policy --> LRU[LRU — least recently used]
-    Policy --> LFU[LFU — least frequently used]
-    Policy --> FIFO[FIFO — oldest entry]
-    Policy --> TTL[TTL — expired entries first]
+flowchart LR
+    Full[Cache full] --> Policy{Eviction policy}
+    Policy --> LRU[LRU]
+    Policy --> LFU[LFU]
+    Policy --> FIFO[FIFO]
+    Policy --> TTL[TTL]
 ```
 
 #### A) LRU (Least Recently Used)
@@ -253,22 +244,11 @@ Most commonly used strategy.
 5. Return response
 
 ```mermaid
-sequenceDiagram
-    participant Client
-    participant App as Application
-    participant Cache
-    participant DB as Database
-    Client->>App: Request
-    App->>Cache: GET key
-    alt Cache hit
-        Cache-->>App: value
-    else Cache miss
-        Cache-->>App: miss
-        App->>DB: Query
-        DB-->>App: row
-        App->>Cache: SET key
-    end
-    App-->>Client: Response
+flowchart LR
+    Client[Client] --> App[Application] --> Cache[Cache]
+    Cache -->|hit| App
+    Cache -->|miss| DB[(Database)] --> Cache
+    App --> Client
 ```
 
 **Advantages:**
@@ -294,21 +274,8 @@ sequenceDiagram
 Cache itself talks to database. Application never accesses DB directly.
 
 ```mermaid
-sequenceDiagram
-    participant Client
-    participant App as Application
-    participant Cache
-    participant DB as Database
-    Client->>App: Request
-    App->>Cache: GET key
-    Cache->>Cache: Lookup
-    opt Cache miss
-        Cache->>DB: Load data
-        DB-->>Cache: row
-        Cache->>Cache: Store entry
-    end
-    Cache-->>App: value
-    App-->>Client: Response
+flowchart LR
+    Client[Client] --> App[Application] --> Cache[Cache] --> DB[(Database)]
 ```
 
 **Advantages:**
@@ -327,15 +294,8 @@ sequenceDiagram
 Both cache and DB updated together on every write.
 
 ```mermaid
-sequenceDiagram
-    participant App as Application
-    participant Cache
-    participant DB as Database
-    App->>Cache: Update user name
-    Cache->>DB: UPDATE
-    DB-->>Cache: OK
-    Cache->>Cache: Store entry
-    Cache-->>App: OK
+flowchart LR
+    App[Application] --> Cache[Cache] --> DB[(Database)]
 ```
 
 **Advantages:**
@@ -354,17 +314,9 @@ sequenceDiagram
 Data first written to cache. Database updated later asynchronously.
 
 ```mermaid
-sequenceDiagram
-    participant App as Application
-    participant Cache
-    participant Worker as Background Worker
-    participant DB as Database
-    App->>Cache: Write
-    Cache-->>App: OK (immediate)
-    Note over Cache,Worker: Async flush
-    Cache->>Worker: Dirty entry
-    Worker->>DB: Batch write
-    DB-->>Worker: OK
+flowchart LR
+    App[Application] --> Cache[Cache] -->|OK| App
+    Cache -->|async| Worker[Background Worker] --> DB[(Database)]
 ```
 
 **Advantages:**
@@ -388,19 +340,10 @@ sequenceDiagram
 Write directly to database. Cache updated only when read occurs.
 
 ```mermaid
-sequenceDiagram
-    participant App as Application
-    participant Cache
-    participant DB as Database
-    Note over App,DB: Write path
-    App->>DB: Write
-    DB-->>App: OK
-    Note over App,Cache: Read path (later)
-    App->>Cache: GET key
-    Cache-->>App: miss
-    App->>DB: Read
-    DB-->>App: value
-    App->>Cache: SET key
+flowchart LR
+    App[Application] -->|write| DB[(Database)]
+    App -->|read later| Cache[Cache] -->|miss| DB
+    DB --> Cache
 ```
 
 **Advantages:**
@@ -454,7 +397,7 @@ flowchart LR
 Separate cache cluster shared by all services.
 
 ```mermaid
-flowchart TB
+flowchart LR
     App1[App 1] --> Redis[(Redis Cluster)]
     App2[App 2] --> Redis
     App3[App 3] --> Redis
@@ -499,12 +442,8 @@ flowchart TB
 Combination of local cache and distributed cache.
 
 ```mermaid
-flowchart TB
-    App[Application] --> L1[Near Cache - Local]
-    L1 -->|miss| L2[Distributed Cache]
-    L2 -->|miss| DB[(Database)]
-    L2 -->|hit| L1
-    DB --> L2
+flowchart LR
+    App[Application] --> L1[Near Cache] --> L2[Distributed Cache] --> DB[(Database)]
 ```
 
 **Advantages:**
@@ -522,10 +461,8 @@ flowchart TB
 L1 Cache = Local Cache · L2 Cache = Distributed Cache · L3 Cache = Database
 
 ```mermaid
-flowchart TB
-    App[Application] --> L1["L1 — Caffeine (local)"]
-    L1 --> L2["L2 — Redis (distributed)"]
-    L2 --> L3["L3 — Database"]
+flowchart LR
+    App[Application] --> L1["L1 Caffeine"] --> L2["L2 Redis"] --> L3["L3 Database"]
 ```
 
 **Benefits:**
@@ -605,13 +542,11 @@ flowchart LR
 Requests for non-existing data continuously hit DB (e.g. User ID `99999999` not present — every request: cache miss → database).
 
 ```mermaid
-flowchart TB
-    Req[Request invalid key] --> Cache{Cache lookup}
-    Cache -->|miss| DB[(Database)]
-    DB -->|not found| Empty[Nothing cached]
-    Empty --> Req
-    Cache -.->|defense| Bloom[Bloom filter / cache null]
-    Bloom -->|definitely absent| Reject[Return 404 — skip DB]
+flowchart LR
+    Req[Invalid key] --> Cache{Lookup}
+    Cache -->|miss| DB[(Database)] -->|not found| Loop[Repeat — no entry cached]
+    Loop -.-> Req
+    Cache -->|defense| Bloom[Bloom filter / cache null] -->|absent| Reject[404 — skip DB]
 ```
 
 **Solution:**
@@ -626,13 +561,8 @@ flowchart TB
 Many cache entries expire together (e.g. 100,000 keys with TTL = 1 hour all expire at once → traffic hits DB at once).
 
 ```mermaid
-flowchart TB
-    Expire[Mass TTL expiry] --> Empty[Large portion of cache empty]
-    Empty --> Miss[High miss rate]
-    Miss --> Flood[DB QPS spike]
-    Flood --> Slow[DB latency rises]
-    Slow --> Timeout[Timeouts and retries]
-    Timeout --> Flood
+flowchart LR
+    Expire[Mass TTL expiry] --> Empty[Cache empty] --> Miss[High miss rate] --> Flood[DB QPS spike] --> Slow[Latency rises] --> Timeout[Retries] --> Flood
 ```
 
 **Solutions:**
@@ -666,10 +596,8 @@ A highly popular key expires.
 **Example:** Product `iPhone` — millions of users request it. Key expires → all requests hit DB simultaneously → database overload.
 
 ```mermaid
-flowchart TB
-    Expire[Hot key TTL expires] --> Flood[Millions of concurrent requests]
-    Flood --> Miss[All cache misses]
-    Miss --> DB[(Database overload)]
+flowchart LR
+    Expire[Hot key expires] --> Flood[Concurrent requests] --> Miss[All misses] --> DB[(Database overload)]
 ```
 
 **Solutions:**
@@ -683,18 +611,10 @@ flowchart TB
 Multiple threads regenerate same cache value when a key expires (e.g. 1000 requests all hit database).
 
 ```mermaid
-sequenceDiagram
-    participant R1 as Request 1
-    participant RN as Request N
-    participant Cache
-    participant DB as Database
-    Note over Cache: Key expired
-    R1->>Cache: GET key
-    RN->>Cache: GET key
-    Cache-->>R1: miss
-    Cache-->>RN: miss
-    R1->>DB: SELECT
-    RN->>DB: SELECT (× N)
+flowchart LR
+    R1[Request 1] --> Cache[Cache]
+    RN[Request N] --> Cache
+    Cache -->|miss × N| DB[(Database)]
 ```
 
 **Solutions:**
@@ -704,21 +624,10 @@ sequenceDiagram
 - Single Flight Pattern
 
 ```mermaid
-sequenceDiagram
-    participant R1 as Request 1
-    participant RN as Request N
-    participant Cache
-    participant Lock
-    participant DB as Database
-    R1->>Cache: GET — miss
-    R1->>Lock: Acquire lock
-    RN->>Cache: GET — miss
-    RN->>Lock: Wait
-    R1->>DB: SELECT (one query)
-    DB-->>R1: value
-    R1->>Cache: SET
-    R1->>Lock: Release
-    Cache-->>RN: hit
+flowchart LR
+    R1[Request 1] -->|acquire lock| Lock[Lock] --> DB[(Database)] --> Cache[Cache SET]
+    RN[Request N] -->|wait| Lock
+    Cache --> RN
 ```
 
 ---
