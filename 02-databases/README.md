@@ -30,50 +30,7 @@
 | 2.20 | [ACID/BASE Properties](#220-acidbase-properties) | Done |
 | 2.21 | [SQL Tuning](#221-sql-tuning) | Done |
 
-
 ---
-
-This chapter covers **relational internals**, **storage and recovery**, **NoSQL and specialized databases**, **consistency** (ACID/BASE), and **SQL tuning** — the concepts behind how databases store data, execute queries, and scale.
-
-```mermaid
-flowchart LR
-  subgraph core [Relational core]
-    direction TB
-    A[2.1 Normalization]
-    B[2.2 Indexing]
-    C[2.3 B+ Tree]
-    D[2.4 Query Planner]
-    E[2.5 Views]
-    F[2.6 Isolation]
-    G[2.7 MVCC]
-  end
-  subgraph storage [Storage and recovery]
-    direction TB
-    H[2.8 WAL and Logs]
-    I[2.9 LSM Tree]
-    J[2.10 Page Cache]
-    K[2.11 Vacuum]
-  end
-  subgraph nosql [NoSQL stores]
-    direction TB
-    L[2.12 to 2.19]
-  end
-  subgraph ops [Consistency and tuning]
-    direction TB
-    M[2.20 ACID and BASE]
-    N[2.21 SQL Tuning]
-  end
-  core --> storage
-  storage --> nosql
-  nosql --> ops
-```
-
----
-
-> **Part I — Relational foundations** · §2.1–§2.7
-
----
-
 
 ## 2.1 Normalization & Denormalization
 
@@ -2059,15 +2016,6 @@ Data physically stored.
 
 ---
 
-### Key idea
-
-| | View | Materialized view |
-|---|------|-------------------|
-| What it is | A **saved SQL query** (virtual table) | A **saved SQL query result** (physical table-like structure that must be refreshed to stay updated) |
-
----
-
-
 ## 2.6 Isolation Levels
 
 **Isolation** is one of the **ACID** properties.
@@ -2474,17 +2422,6 @@ PostgreSQL and InnoDB implement isolation using **MVCC** — transactions read *
 
 ---
 
-### Key idea
-
-Isolation levels define how much a transaction can see the changes made by other concurrent transactions.
-
-| | Higher isolation | Lower isolation |
-|---|------------------|-----------------|
-| Trade-off | More correctness, less concurrency | More concurrency, less consistency |
-
----
-
-
 ## 2.7 MVCC
 
 **MVCC** (Multi-Version Concurrency Control) is a concurrency control mechanism used by modern databases to allow multiple transactions to read and write data simultaneously without blocking each other unnecessarily.
@@ -2862,9 +2799,6 @@ This enables:
 
 ---
 
-> **Part II — Storage, logs, and recovery** · §2.8–§2.11
-
----
 
 ## 2.8 Redo/undo/bin Logs
 
@@ -3825,20 +3759,6 @@ Read
 
 ---
 
-### Key idea
-
-| Component | Role |
-|-----------|------|
-| **WAL** | Provides crash recovery |
-| **MemTable** | Stores recent writes in memory |
-| **SSTable** | Immutable sorted file on disk |
-| **Compaction** | Merges SSTables, removes duplicates and deleted records |
-
-**LSM tree:** A storage engine design that converts random writes into efficient sequential writes using WAL + MemTable + SSTables + Compaction.
-
----
-
-
 ## 2.10 Page Cache
 
 **Page cache** is a memory area used to store frequently accessed disk pages in RAM.
@@ -4239,15 +4159,6 @@ Often: **5% of data generates 95% of traffic** — caching that 5% provides huge
 
 ---
 
-### Key idea
-
-A **page cache** stores frequently accessed database pages in memory so that future queries can read data from RAM instead of performing expensive disk I/O.
-
-The effectiveness of a database often depends heavily on its **cache hit ratio** because RAM access is orders of magnitude faster than disk access.
-
----
-
-
 ## 2.11 Vacuum Process
 
 The **VACUUM** process is primarily associated with **PostgreSQL** and exists because of how **MVCC** works.
@@ -4587,8 +4498,6 @@ VACUUM is a PostgreSQL maintenance process that cleans up **dead tuples** create
 
 
 ---
-
-> **Part III — NoSQL and specialized databases** · §2.12–§2.19
 
 Different workloads need different data models. Use this map to pick where to read:
 
@@ -5036,15 +4945,6 @@ Return value: Shyam
 
 ---
 
-### Key idea
-
-A key-value store is a database that stores data as a **unique key mapped to a value**.
-
-It sacrifices joins, relationships, and complex queries in exchange for **simplicity**, **extremely fast lookups**, **high scalability**, and **excellent performance** for caching and high-traffic workloads.
-
----
-
-
 ## 2.13 Document Databases
 
 A **document database** is a type of NoSQL database that stores data as **documents** instead of rows and columns.
@@ -5455,15 +5355,6 @@ Avoid when:
 
 ---
 
-### Key idea
-
-A document database stores data as **self-contained documents** (usually JSON/BSON) rather than rows across multiple tables.
-
-It is designed to keep related data together, reduce joins, support flexible schemas, and scale easily while allowing the database to **query and index fields inside the document**.
-
----
-
-
 ## 2.14 Wide Column Databases
 
 A **wide column database** (also called a **column family database**) is a NoSQL database designed for:
@@ -5872,15 +5763,6 @@ Write → WAL → MemTable → SSTable → Compaction
 ```
 
 ---
-
-### Key idea
-
-A wide column database stores data as rows identified by a **partition key**, where each row can contain a **variable number of columns**.
-
-It is designed for distributed systems, massive scalability, high write throughput, and efficient storage of sparse or time-series data — typically using **LSM trees**, **SSTables**, and **replication** under the hood.
-
----
-
 
 ## 2.15 Graph Databases
 
@@ -6329,15 +6211,6 @@ Traversal: Ram -> Sita
 
 ---
 
-### Key idea
-
-A graph database stores data as **nodes** and **relationships (edges)**, making relationships a first-class concept rather than something reconstructed through joins.
-
-It is optimized for traversing connected data, finding patterns, discovering relationships, and executing multi-hop queries efficiently — ideal for social networks, recommendation systems, fraud detection, knowledge graphs, and network analysis.
-
----
-
-
 ## 2.16 Time Series Databases
 
 A **time series database (TSDB)** is a database specifically designed to store and query data that **changes over time**.
@@ -6764,15 +6637,6 @@ Retention:
 ```
 
 ---
-
-### Key idea
-
-A time series database is a specialized database for storing **timestamped data** efficiently.
-
-It is optimized for high-volume append-only writes, time-range queries, compression, retention policies, aggregation, and monitoring/telemetry workloads where **time is the primary dimension** of the data.
-
----
-
 
 ## 2.17 Search Databases
 
@@ -7243,15 +7107,6 @@ Return results
 
 ---
 
-### Key idea
-
-A search database is a specialized database optimized for **full-text search**, **relevance ranking**, **filtering**, **autocomplete**, and **document retrieval**.
-
-Its core data structure is the **inverted index**, which maps words to documents, allowing searches across billions of documents in milliseconds.
-
----
-
-
 ## 2.18 Vector Databases
 
 A **vector database** is a specialized database designed to store, index, and search **vectors (embeddings)**.
@@ -7656,15 +7511,6 @@ HNSW:    Similarity Lookup
 
 ---
 
-### Key idea
-
-A vector database stores **embeddings (vectors)** and is optimized for **similarity search** rather than exact lookup.
-
-Its primary purpose is to find data that is semantically similar to a query by using vector indexes such as **HNSW**, **IVF**, and **ANN** — making it a foundational component of modern AI systems, semantic search engines, RAG applications, and recommendation platforms.
-
----
-
-
 ## 2.19 Multi Model Databases
 
 A **multi-model database** is a database that supports **multiple database models** within a single database engine.
@@ -7997,21 +7843,6 @@ Many modern databases are gradually evolving toward **multi-model capabilities**
 
 ---
 
-### Key idea
-
-A multi-model database supports multiple data models (document, graph, key-value, relational, vector, etc.) within a **single system**.
-
-Its goal is to reduce the need for multiple specialized databases by allowing different types of data and query patterns to coexist under one storage and management platform.
-
----
-
-
----
-
-> **Part IV — Consistency and query tuning** · §2.20–§2.21
-
----
-
 ## 2.20 ACID/BASE Properties
 
 **ACID** and **BASE** are two different approaches for handling data consistency in databases.
@@ -8321,19 +8152,6 @@ Used for: Social Media, Caching, Analytics, Large Distributed Systems
 ```
 
 ---
-
-### Key idea
-
-**ACID** guarantees strong transactional correctness through atomicity, consistency, isolation, and durability.
-
-**BASE** accepts temporary inconsistency in exchange for higher availability and scalability through basically available, soft state, and eventual consistency.
-
-| | ACID answers | BASE answers |
-|---|--------------|--------------|
-| Core question | "Data must always be correct." | "System must always remain available, and data will become correct eventually." |
-
----
-
 
 ## 2.21 SQL Tuning
 
@@ -8736,14 +8554,6 @@ SELECT * FROM customer WHERE email = 'abc@test.com';
 | **Focus** | Optimize queries, indexes, joins | Memory settings, connection pools, disk configuration, cache settings, replication, partitioning |
 
 SQL tuning focuses specifically on **query performance**.
-
----
-
-### Key idea
-
-SQL tuning is the process of improving query execution efficiency by analyzing execution plans, reducing unnecessary work, using appropriate indexes, minimizing scans, optimizing joins, sorting, aggregation, and ensuring the optimizer chooses the most efficient execution strategy.
-
-**The most important principle:** Never tune a query without first understanding its execution plan.
 
 ---
 
