@@ -6,47 +6,9 @@
 
 ## Overview
 
-Security covers **identity** (authentication, OAuth, OIDC, JWT, sessions), **access control** (authorization, RBAC, ABAC), **data protection** (encryption at rest and in transit, KMS, secrets), **application defenses** (CSRF, XSS, SQL injection, SSRF, clickjacking), **perimeter** (DDoS, WAF), **Zero Trust**, and **audit logging**.
+System security protects users, data, and services across the full stack — from proving identity and controlling access, to encrypting sensitive information and defending against common attacks.
 
-Sections are in order **10.1 → 10.21**.
-
-**Topic groups:** identity (10.1–10.6) → access control (10.2, 10.7–10.8) → data protection (10.9–10.12) → app attacks & defenses (10.13–10.17) → perimeter (10.18–10.19) → Zero Trust & audit (10.20–10.21).
-
-```text
-                    +------------------+
-                    |      Client      |
-                    +--------+---------+
-                             |
-              +--------------+--------------+
-              |  Identity                   |
-              |  Auth · OAuth · JWT ·       |
-              |  Sessions                   |
-              +--------------+--------------+
-                             |
-              +--------------+--------------+
-              |  Access control             |
-              |  Authorization · RBAC · ABAC|
-              +--------------+--------------+
-                             |
-              +--------------+--------------+
-              |  Data protection            |
-              |  Encrypt · KMS · Secrets    |
-              +--------------+--------------+
-                             |
-              +--------------+--------------+
-              |  App defenses               |
-              |  CSRF · XSS · SQLi · SSRF   |
-              +--------------+--------------+
-                             |
-              +--------------+--------------+
-              |  Perimeter                  |
-              |  DDoS · WAF                 |
-              +--------------+--------------+
-                             |
-              +--------------+--------------+
-              |  Zero Trust · Audit logging |
-              +--------------+--------------+
-```
+Production designs layer these controls: authentication and authorization, encryption and secret management, protections against web vulnerabilities, perimeter defenses, and audit logging. **Zero Trust** treats every request as untrusted until verified, even inside the network.
 
 ---
 
