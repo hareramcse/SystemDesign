@@ -84,19 +84,7 @@ Authorization:  ✓ can delete users
 ### Authentication flow
 
 ```text
-User
-  |  login request
-  v
-Auth service
-  |  verify credentials
-  v
-Database
-  |  valid user?
-  v
-Auth service
-  |  generate token
-  v
-User
+User → login request → Auth service → verify credentials → Database → valid user? → Auth service → generate token → User
 ```
 
 ### Password-based authentication
@@ -281,26 +269,7 @@ Dedicated service for login.
 ### High-level authentication architecture
 
 ```text
-              +----------------+
-              |     Client     |
-              +--------+-------+
-                       |
-                       v
-              +----------------+
-              |  API Gateway   |
-              +--------+-------+
-                       |
-                       v
-              +----------------+
-              |  Auth Service  |
-              +--------+-------+
-                       |
-             +---------+---------+
-             |                   |
-             v                   v
-      +-------------+     +-------------+
-      |  User DB    |     | Token Store |
-      +-------------+     +-------------+
+Client → API Gateway → Auth Service → User DB + Token Store
 ```
 
 **After authentication:**
@@ -538,34 +507,7 @@ User → permission lookup → cache hit → allow or deny
 ### High-level authorization architecture
 
 ```text
-              +----------------+
-              |     Client     |
-              +--------+-------+
-                       |
-                       v
-              +----------------+
-              |  API Gateway   |
-              +--------+-------+
-                       |
-                       v
-              +----------------+
-              |  Auth Service  |
-              +--------+-------+
-                       |
-                       v
-              +----------------+
-              | Authorization  |
-              |    Service     |
-              +--------+-------+
-                       |
-             +---------+---------+
-             |                   |
-             v                   v
-      +-------------+     +-------------+
-      | Policy Store|     | User Store  |
-      +-------------+     +-------------+
-
-Decision: ALLOW or DENY
+Client → API Gateway → Auth Service → Authorization Service → Policy Store + User Store → ALLOW or DENY
 ```
 
 ### Summary
@@ -623,8 +565,7 @@ User → approves access → authorization server → issues token → applicati
 ### High-level flow
 
 ```text
-User → client application → authorization server → user approval
-     → authorization code → access token → resource server
+User → client application → authorization server → user approval → authorization code → access token → resource server
 ```
 
 ### Access token
@@ -670,8 +611,7 @@ Application requests: read:user
 Most common OAuth flow — web and mobile applications.
 
 ```text
-User → client → authorization server → user login → user consent
-     → authorization code → client exchanges code → access token
+User → client → authorization server → user login → user consent → authorization code → client exchanges code → access token
 ```
 
 ### Authorization code flow (steps)
@@ -706,8 +646,7 @@ Service-to-service communication — **no user** involved.
 ```text
 Order service → inventory service
 
-Service → client ID + client secret → authorization server
-       → access token → API access
+Service → client ID + client secret → authorization server → access token → API access
 ```
 
 **Used in:** microservices · backend integrations · scheduled jobs
@@ -715,8 +654,7 @@ Service → client ID + client secret → authorization server
 ### Client credentials flow
 
 ```text
-Service A → send client credentials → authorization server
-        → issue access token → call protected APIs
+Service A → send client credentials → authorization server → issue access token → call protected APIs
 ```
 
 ### Device authorization flow
@@ -724,8 +662,7 @@ Service A → send client credentials → authorization server
 For devices with limited input — smart TVs, gaming consoles, IoT.
 
 ```text
-Device displays code → user opens browser → logs in → approves device
-                   → access token issued
+Device displays code → user opens browser → logs in → approves device → access token issued
 ```
 
 ### Token validation
@@ -733,8 +670,7 @@ Device displays code → user opens browser → logs in → approves device
 When an API receives a token:
 
 ```text
-Request → extract token → validate signature → check expiry → check scopes
-       → allow or deny
+Request → extract token → validate signature → check expiry → check scopes → allow or deny
 ```
 
 ### Token introspection
@@ -742,8 +678,7 @@ Request → extract token → validate signature → check expiry → check scop
 Resource server asks the authorization server about token validity.
 
 ```text
-API → token → authorization server
-           → valid? expired? scopes? → response
+API → token → authorization server → valid? expired? scopes? → response
 ```
 
 Useful when tokens are **opaque** (not JWT).
@@ -808,10 +743,7 @@ Microservices validate: signature · expiry · scopes · claims
 ### Example complete flow
 
 ```text
-User → travel app → needs Google Calendar access
-     → redirect to authorization server → user login → grant permission
-     → authorization code → travel app backend → token exchange
-     → access token → Google Calendar API → calendar data returned
+User → travel app → Google Calendar access → auth server login → grant permission → auth code → backend token exchange → access token → Calendar API → data returned
 ```
 
 ### Summary
@@ -901,8 +833,7 @@ User → Google → identity verified → ID token issued
 ### High-level OIDC flow
 
 ```text
-User → application → identity provider → user login → authorization code
-     → ID token + access token → application
+User → application → identity provider → user login → authorization code → ID token + access token → application
 ```
 
 ### ID token
@@ -957,8 +888,7 @@ Authorization: Bearer access_token
 Most common OIDC flow.
 
 ```text
-User → application → identity provider → authentication → authorization code
-     → backend exchange → ID token + access token
+User → application → identity provider → authentication → authorization code → backend exchange → ID token + access token
 ```
 
 ### OIDC scopes
@@ -1056,8 +986,7 @@ Application → identity provider → authenticate user → ID token → user lo
 ### OIDC in microservices
 
 ```text
-User → frontend → identity provider → ID token + access token
-     → API gateway → microservices
+User → frontend → identity provider → ID token + access token → API gateway → microservices
 ```
 
 | Component | Typical token |
@@ -1082,29 +1011,7 @@ User → authentication → ID token + access token → application knows user i
 ### OIDC architecture
 
 ```text
-             +------------------+
-             |      User        |
-             +--------+---------+
-                      |
-                      v
-             +------------------+
-             |   Client App     |
-             +--------+---------+
-                      |
-                      v
-             +------------------+
-             | Identity Provider|
-             +--------+---------+
-                      |
-          +-----------+-----------+
-          |                       |
-          v                       v
-    +-----------+          +-----------+
-    | ID Token  |          |AccessToken|
-    +-----------+          +-----------+
-          |                       |
-          v                       v
-    User Identity         Protected APIs
+User → Client App → Identity Provider → ID Token (identity) + Access Token → Protected APIs
 ```
 
 ### Summary
@@ -1209,15 +1116,7 @@ If the payload changes → signature changes → token becomes **invalid**.
 ### Visual structure
 
 ```text
-Header { "alg":"HS256" }
-     +
-Payload { "userId":101 }
-     +
-Secret key
-     ↓
-Signature
-     ↓
-JWT = Header.Payload.Signature
+Header + Payload + Secret key → Signature → JWT = Header.Payload.Signature
 ```
 
 ### Claims
@@ -1285,8 +1184,7 @@ User login → validate credentials → create claims → generate signature →
 ### JWT authentication flow
 
 ```text
-User login → auth service → generate JWT → client stores JWT
-     → client sends JWT → server validates JWT → access granted
+User login → auth service → generate JWT → client stores JWT → client sends JWT → server validates → access granted
 ```
 
 ### JWT in API requests
@@ -1428,33 +1326,7 @@ Choice depends on security and application architecture.
 ### High-level JWT architecture
 
 ```text
-             +----------------+
-             |     Client     |
-             +--------+-------+
-                      | Login
-                      v
-             +----------------+
-             |  Auth Service  |
-             +--------+-------+
-                      | JWT
-                      v
-             +----------------+
-             |     Client     |
-             +--------+-------+
-                      | Bearer Token
-                      v
-             +----------------+
-             |  API Gateway   |
-             +--------+-------+
-                      |
-          +-----------+-----------+
-          |                       |
-          v                       v
-   +-------------+        +-------------+
-   | Order Svc   |        | Payment Svc |
-   +-------------+        +-------------+
-
-Each service validates JWT independently.
+Client → Auth Service (login) → JWT → Client → API Gateway (Bearer) → Order Svc + Payment Svc (each validates JWT)
 ```
 
 ### Summary
@@ -1529,8 +1401,7 @@ Client stores the session ID and sends it with every request.
 ### Session creation flow
 
 ```text
-User login → validate credentials → create session → generate session ID
-     → store session → return session ID
+User login → validate credentials → create session → generate session ID → store session → return session ID
 ```
 
 ### Session storage
@@ -1548,8 +1419,7 @@ Session ID → session data
 ### Session-based authentication flow
 
 ```text
-User login → server creates session → store session data → return session ID
-     → browser stores cookie → future requests → server finds session → access granted
+User login → server creates session → store session data → return session ID → browser stores cookie → future requests → server finds session → access granted
 ```
 
 ### Session cookie
@@ -1616,8 +1486,7 @@ No activity until 10:30 AM → session expires
 ### Logout flow
 
 ```text
-User clicks logout → delete session → invalidate session ID
-     → remove cookie → access denied
+User clicks logout → delete session → invalidate session ID → remove cookie → access denied
 ```
 
 ### Stateful nature of sessions
@@ -1659,13 +1528,7 @@ User A → all requests → Server A
 Store sessions in **shared storage** (e.g. Redis).
 
 ```text
-               +---------+
-               |  Redis  |
-               +---------+
-              /           \
-       +----------+   +----------+
-       | Server A |   | Server B |
-       +----------+   +----------+
+Server A + Server B → shared Redis session store
 ```
 
 Both servers access the same sessions.
@@ -1755,28 +1618,7 @@ Session validation is often handled centrally by the API gateway or auth service
 ### Session architecture
 
 ```text
-              +----------------+
-              |     Client     |
-              +--------+-------+
-                       | Cookie
-                       v
-              +----------------+
-              | Load Balancer  |
-              +--------+-------+
-                       |
-            +----------+----------+
-            |                     |
-            v                     v
-      +-------------+      +-------------+
-      |  Server A   |      |  Server B   |
-      +------+------+      +------+------+
-             \                    /
-              \                  /
-               v                v
-               +----------------+
-               | Session Store  |
-               |     Redis      |
-               +----------------+
+Client (cookie) → Load Balancer → Server A / Server B → shared Redis session store
 ```
 
 ### Summary
@@ -1935,27 +1777,7 @@ User → API gateway → order service → payment service
 ### RBAC architecture
 
 ```text
-              +----------------+
-              |     Client     |
-              +--------+-------+
-                       |
-                       v
-              +----------------+
-              |  API Gateway   |
-              +--------+-------+
-                       |
-                       v
-              +----------------+
-              | Authorization  |
-              |    Service     |
-              +--------+-------+
-                       |
-             +---------+---------+
-             |                   |
-             v                   v
-      +-------------+     +-------------+
-      | Role Store  |     | User Store  |
-      +-------------+     +-------------+
+Client → API Gateway → Authorization Service → Role Store + User Store
 ```
 
 ### RBAC vs ABAC
@@ -2093,9 +1915,7 @@ Decisions use runtime **environment** attributes:
 ### ABAC in microservices
 
 ```text
-User → API gateway → policy engine → microservice
-                           ↑
-                    attribute store
+User → API gateway → policy engine (attribute store) → microservice
 ```
 
 Authorization info travels via tokens (claims as attributes) or is looked up at decision time.
@@ -2118,29 +1938,7 @@ Application → authorization service → policy store → ALLOW or DENY
 ### ABAC architecture
 
 ```text
-              +----------------+
-              |     Client     |
-              +--------+-------+
-                       |
-                       v
-              +----------------+
-              |  API Gateway   |
-              +--------+-------+
-                       |
-                       v
-              +----------------+
-              | Authorization  |
-              |    Service     |
-              +--------+-------+
-                       |
-             +---------+---------+
-             |                   |
-             v                   v
-      +-------------+     +-------------+
-      | Policy Store|     | User Store  |
-      +-------------+     +-------------+
-
-Decision: ALLOW or DENY
+Client → API Gateway → Authorization Service → Policy Store + User Store → ALLOW or DENY
 ```
 
 ### RBAC vs ABAC
@@ -2419,32 +2217,7 @@ Encryption at rest is often a **mandatory** security control.
 ### High-level architecture
 
 ```text
-               +----------------+
-               |  Application   |
-               +--------+-------+
-                        |
-                        v
-               +----------------+
-               | Encryption     |
-               | Service / SDK  |
-               +--------+-------+
-                        |
-                        v
-               +----------------+
-               | Database / File|
-               | Storage        |
-               +--------+-------+
-                        |
-                        v
-               +----------------+
-               | Encrypted Data |
-               +----------------+
-                        |
-                        v
-               +----------------+
-               | Key Management |
-               | System / HSM   |
-               +----------------+
+Application → Encryption Service/SDK → Database/File Storage → Encrypted Data → KMS/HSM
 ```
 
 ### Summary
@@ -2560,13 +2333,7 @@ https://example.com  → encrypted communication
 Before secure communication begins, client and server perform a handshake.
 
 ```text
-Client                    Server
-   |                         |
-   |-------- Client Hello -->|
-   |<------- Server Hello ---|
-   |<------- Certificate ----|
-   |-------- Key Exchange -->|
-   |<==== Secure Channel ===>|
+Client Hello → Server Hello → Certificate → Key Exchange → Secure Channel
 ```
 
 **Purpose:** establish trust · negotiate cipher · exchange keys · create session key for bulk encryption
@@ -2664,8 +2431,7 @@ Shared session key → encrypt traffic → decrypt traffic
 ### TLS flow
 
 ```text
-Client → TLS handshake → certificate verification → session key creation
-     → secure channel → encrypted communication
+Client → TLS handshake → certificate verification → session key → secure channel → encrypted communication
 ```
 
 ### Data confidentiality
@@ -2761,30 +2527,7 @@ Certificate → expires → renew → deploy updated certificate
 ### High-level architecture
 
 ```text
-           +------------------+
-           |     Client       |
-           +--------+---------+
-                    |
-               HTTPS/TLS
-                    |
-                    v
-           +------------------+
-           | Load Balancer    |
-           +--------+---------+
-                    |
-          +---------+---------+
-          |                   |
-          v                   v
-   +-------------+     +-------------+
-   | Service A   |     | Service B   |
-   +------+------+     +------+------+
-          |                   |
-          |<---- mTLS ------->|
-          |                   |
-          v                   v
-   +-------------+     +-------------+
-   | Database    |     | Cache       |
-   +-------------+     +-------------+
+Client → HTTPS/TLS → Load Balancer → Service A ↔ mTLS ↔ Service B → Database + Cache
 ```
 
 All communication channels are encrypted during transmission.
@@ -2849,22 +2592,7 @@ Application → KMS → key operations
 ### High-level architecture
 
 ```text
-           +------------------+
-           |   Application    |
-           +--------+---------+
-                    |
-                    v
-           +------------------+
-           |       KMS        |
-           +--------+---------+
-                    |
-         +----------+----------+
-         |                     |
-         v                     v
-   +-------------+      +-------------+
-   | Encryption  |      | Key Store   |
-   | Operations  |      +-------------+
-   +-------------+
+Application → KMS → Encryption Operations + Key Store
 ```
 
 ### Key lifecycle
@@ -2928,15 +2656,13 @@ Data → encrypted using DEK → DEK encrypted using CMK → store data + encryp
 ### Envelope encryption flow
 
 ```text
-Application → request DEK → KMS generates DEK → encrypt data using DEK
-         → KMS encrypts DEK using CMK → store encrypted data + encrypted DEK
+Application → request DEK → KMS generates DEK → encrypt data → KMS encrypts DEK with CMK → store encrypted data + encrypted DEK
 ```
 
 ### Decryption flow
 
 ```text
-Application → read encrypted data → read encrypted DEK → send DEK to KMS
-         → KMS decrypts DEK → application decrypts data
+Application → read encrypted data + encrypted DEK → KMS decrypts DEK → application decrypts data
 ```
 
 ### Key rotation
@@ -3084,33 +2810,7 @@ Each service may have separate keys and permissions.
 ### High-level KMS architecture
 
 ```text
-                +----------------+
-                |  Application   |
-                +--------+-------+
-                         |
-                         v
-                +----------------+
-                |      KMS       |
-                +--------+-------+
-                         |
-          +--------------+--------------+
-          |                             |
-          v                             v
-  +---------------+           +---------------+
-  | Key Policies  |           | Audit Logs    |
-  +---------------+           +---------------+
-                         |
-                         v
-                +----------------+
-                | Master Keys    |
-                | (CMKs)         |
-                +--------+-------+
-                         |
-                         v
-                +----------------+
-                | HSM / Secure   |
-                | Key Storage    |
-                +----------------+
+Application → KMS → Key Policies + Audit Logs → CMKs → HSM/Secure Key Storage
 ```
 
 ### Summary
@@ -3186,19 +2886,7 @@ A secret is any sensitive piece of information used for authentication, authoriz
 ### High-level architecture
 
 ```text
-            +------------------+
-            |  Application     |
-            +--------+---------+
-                     |
-                     v
-            +------------------+
-            | Secret Manager   |
-            +--------+---------+
-                     |
-                     v
-            +------------------+
-            | Secret Store     |
-            +------------------+
+Application → Secret Manager → Secret Store
 ```
 
 ### Secret storage
@@ -3219,8 +2907,7 @@ A secret is any sensitive piece of information used for authentication, authoriz
 ### Secret retrieval flow
 
 ```text
-Application startup → authenticate → request secret → secret manager
-     → return secret → application uses secret
+Application startup → authenticate → request secret → secret manager → return secret → application uses secret
 ```
 
 ### Static secrets
@@ -3342,14 +3029,7 @@ KMS protects **keys**. Secret manager protects **credentials**.
 ### Secret management in microservices
 
 ```text
-                +------------------+
-                | Secret Manager   |
-                +--------+---------+
-                         |
-     +-------------------+-------------------+
-     |                   |                   |
-     v                   v                   v
- Order Svc          Payment Svc          User Svc
+Secret Manager → Order Svc + Payment Svc + User Svc (authorized secrets only)
 ```
 
 Each service retrieves only its authorized secrets.
@@ -3429,32 +3109,7 @@ Secrets often injected at runtime.
 ### High-level secret management architecture
 
 ```text
-                +----------------+
-                | Applications   |
-                +--------+-------+
-                         |
-                         v
-                +----------------+
-                | Secret Manager |
-                +--------+-------+
-                         |
-          +--------------+--------------+
-          |                             |
-          v                             v
-  +---------------+           +---------------+
-  | Access Policy |           | Audit Logs    |
-  +---------------+           +---------------+
-                         |
-                         v
-                +----------------+
-                | Secret Store   |
-                | (Encrypted)    |
-                +----------------+
-                         |
-                         v
-                +----------------+
-                | KMS / HSM      |
-                +----------------+
+Applications → Secret Manager → Access Policy + Audit Logs → Encrypted Secret Store → KMS/HSM
 ```
 
 ### Summary
@@ -3472,13 +3127,7 @@ Separate from KMS (keys vs credentials); least privilege, versioning, and audit 
 Common web application attacks and where defenses sit:
 
 ```text
-Browser request
-      |
-      +-- CSRF (forged state-changing request) --> CSRF token, SameSite cookie
-      +-- XSS (injected script) ----------------> encoding, CSP, HttpOnly
-      +-- SQLi (malicious SQL in input) --------> parameterized queries, WAF
-      +-- SSRF (server fetches attacker URL) ---> URL allowlist, block private IPs
-      +-- Clickjacking (hidden iframe click) ---> X-Frame-Options, CSP frame-ancestors
+CSRF → CSRF token / SameSite · XSS → encoding / CSP / HttpOnly · SQLi → parameterized queries / WAF · SSRF → URL allowlist · Clickjacking → X-Frame-Options / CSP frame-ancestors
 ```
 
 ### What is CSRF?
@@ -3591,8 +3240,7 @@ Main protection strategies:
 Each request includes a unique token.
 
 ```text
-User loads page → server generates CSRF token → token stored in form or header
-     → request sent with token → server validates token → allow or reject
+User loads page → server generates CSRF token → token in form/header → request with token → server validates → allow or reject
 ```
 
 **Example:**
@@ -3685,8 +3333,7 @@ Not typically an issue for:
 **Without protection:**
 
 ```text
-User browser → malicious site → (forged request) → bank website
-     → session cookie auto-attached → server executes request
+User browser → malicious site → forged request → bank website → session cookie attached → server executes request
 ```
 
 **With CSRF protection:**
@@ -3943,15 +3590,13 @@ Risks still exist with:
 ### High-level attack flow
 
 ```text
-Attacker → injects script → server stores or reflects input → user visits page
-      → browser executes script → attacker gains control/data access
+Attacker → injects script → server stores/reflects → user visits → browser executes → attacker gains access
 ```
 
 ### High-level defense architecture
 
 ```text
-User input → validation layer → sanitization layer → storage (DB)
-     → output encoding layer → browser rendering → CSP enforcement
+User input → validation → sanitization → storage → output encoding → browser rendering → CSP enforcement
 ```
 
 ### Best practices
@@ -4187,15 +3832,13 @@ bind(userInput)
 ### High-level attack flow
 
 ```text
-Attacker input → unsafe query construction → database executes malicious SQL
-     → data leakage / modification → system compromise
+Attacker input → unsafe query → database executes malicious SQL → data leak/modification → system compromise
 ```
 
 ### High-level defense architecture
 
 ```text
-User input → validation layer → parameterized query layer → application layer
-     → database (least privilege user) → WAF monitoring layer
+User input → validation → parameterized queries → application → database (least privilege) → WAF monitoring
 ```
 
 ### Best practices
@@ -4366,8 +4009,7 @@ If accessed → attacker steals cloud credentials.
 ### Redirect-based SSRF
 
 ```text
-Server fetches URL → URL redirects to internal service → server follows redirect
-     → internal access happens
+Server fetches URL → redirect to internal service → server follows redirect → internal access
 ```
 
 **Example:** `http://attacker.com` → redirects to `127.0.0.1`
@@ -4375,8 +4017,7 @@ Server fetches URL → URL redirects to internal service → server follows redi
 ### SSRF attack flow
 
 ```text
-Attacker → injects URL → application server → makes HTTP request
-     → internal/external service → response leaks sensitive data
+Attacker → injects URL → app server → HTTP request → internal/external service → sensitive data leaked
 ```
 
 ### Prevention techniques
@@ -4460,8 +4101,7 @@ Attacker input URL → server fetches URL → internal network access → sensit
 ### High-level defense architecture
 
 ```text
-User input URL → validation layer (whitelist) → URL parser & sanitizer
-     → network firewall rules → outbound request service → restricted network access
+User input URL → validation (whitelist) → URL parser → firewall rules → outbound service → restricted network
 ```
 
 ### Best practices
@@ -4659,15 +4299,13 @@ For sensitive actions:
 ### High-level attack flow
 
 ```text
-Attacker page → embedded target site (iframe) → fake UI overlay
-     → user clicks fake button → real action executed on target site
+Attacker page → iframe (target site) → fake overlay → user clicks → real action on target site
 ```
 
 ### High-level defense architecture
 
 ```text
-User browser → CSP / X-Frame-Options check → block iframe embedding
-     → prevent UI overlay attacks → only legitimate interaction allowed
+User browser → CSP / X-Frame-Options → block iframe embedding → prevent overlay attacks
 ```
 
 ### Best practices
@@ -4698,8 +4336,7 @@ UI attack — no script injection; different from XSS
 ### How DDoS works
 
 ```text
-Attacker controls botnet → thousands/millions of requests → target server
-     → resource exhaustion (CPU, memory, bandwidth) → service slowdown or crash
+Attacker controls botnet → massive requests → target server → resource exhaustion (CPU, memory, bandwidth) → service slowdown or crash
 ```
 
 ### Types of DDoS attacks
@@ -4741,8 +4378,7 @@ Target web application logic.
 ### High-level DDoS flow
 
 ```text
-Botnet devices → massive traffic flood → load balancer / firewall (overwhelmed)
-     → application server → database → system failure
+Botnet → traffic flood → load balancer / firewall (overwhelmed) → application server → database → system failure
 ```
 
 ### DDoS protection strategy
@@ -4900,8 +4536,7 @@ Used by cloud providers.
 ### High-level defense architecture
 
 ```text
-Internet traffic → CDN / edge network → DDoS protection layer
-     → WAF → load balancer → application servers → cache layer → database
+Internet traffic → CDN / edge → DDoS protection → WAF → load balancer → app servers → cache → database
 ```
 
 ### Defense principles
@@ -4961,8 +4596,7 @@ WAF acts as a reverse proxy or inline filter.
 **Request flow:**
 
 ```text
-Client request → WAF intercepts request → inspect headers / body / URL
-     → match security rules → allow / block / challenge → forward to application (if safe)
+Client request → WAF intercepts → inspect headers/body/URL → match rules → allow/block/challenge → forward if safe
 ```
 
 ### Types of WAF
@@ -5131,8 +4765,7 @@ WAF adds overhead:
 ### High-level architecture
 
 ```text
-Internet → CDN / edge WAF → WAF engine → load balancer → API gateway
-     → microservices → databases
+Internet → CDN / edge WAF → WAF engine → load balancer → API gateway → microservices → databases
 ```
 
 ### WAF benefits
@@ -5205,8 +4838,7 @@ System assumes attacker may already be inside.
 ### Zero Trust architecture
 
 ```text
-User / device → continuous authentication → policy engine → access decision
-     → application / service
+User/device → continuous authentication → policy engine → access decision → application/service
 ```
 
 ### Traditional vs Zero Trust
@@ -5319,8 +4951,7 @@ Access decisions consider:
 ### Zero Trust in microservices
 
 ```text
-Service A → must authenticate to service B → service B verifies identity + permissions
-     → access granted or denied
+Service A → authenticate to Service B → B verifies identity + permissions → access granted or denied
 ```
 
 **Tech used:** mTLS · service identity tokens · JWT with scopes
@@ -5376,10 +5007,7 @@ Everything is logged:
 ### High-level architecture
 
 ```text
-User / device → identity provider (auth) → policy engine
-     → policy enforcement point (API gateway) → microservices → data layer (DB / cache)
-
-Every step is verified and monitored.
+User/device → identity provider (auth) → policy engine → PEP (API gateway) → microservices → data layer — verified and monitored at each step
 ```
 
 ### Summary
@@ -5471,8 +5099,7 @@ Typical audit log entry includes:
 ### Audit log flow
 
 ```text
-User action → application service → audit logging layer → audit log store
-     → monitoring / SIEM system
+User action → application → audit logging layer → audit log store → monitoring / SIEM
 ```
 
 ### Audit log storage
@@ -5511,10 +5138,7 @@ All services → central audit system
 **Microservices setup:**
 
 ```text
-Service A → audit stream
-Service B → audit stream
-Service C → audit stream
-     → all collected into central log platform
+Service A → audit stream · Service B → audit stream · Service C → audit stream → central log platform
 ```
 
 ### Structured logging
@@ -5581,8 +5205,7 @@ Users cannot modify logs.
 ### Audit log pipeline
 
 ```text
-Application → log collector → stream processing (Kafka / queue)
-     → log storage (Elastic / DB / data lake) → SIEM / monitoring dashboard
+Application → log collector → stream (Kafka/queue) → log storage → SIEM / dashboard
 ```
 
 ### Use in incident response
@@ -5606,9 +5229,7 @@ Audit logging supports:
 ### High-level architecture
 
 ```text
-User / service → application layer → audit logging middleware
-     → event queue (Kafka / PubSub) → central audit store
-     → SIEM / analytics / monitoring → alerting system
+User/service → application → audit middleware → event queue (Kafka/PubSub) → central audit store → SIEM / monitoring → alerting
 ```
 
 ### Key principles
