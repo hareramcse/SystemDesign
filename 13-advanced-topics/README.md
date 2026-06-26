@@ -134,13 +134,19 @@ Use the fruit walkthrough below for a worked bitmap — after `"Apple"` and `"Ba
 
 ```mermaid
 flowchart LR
-    Item[Key] --> Hash[k hash functions]
-    Hash --> Bits[Bit positions in array]
-    Bits --> Insert[Insert: set bits to 1]
-    Bits --> Check[Lookup: check bits]
-    Check --> Any0{Any bit = 0?}
-    Any0 -->|Yes| DefNot[Definitely not present]
-    Any0 -->|No| Maybe[Possibly present — verify store]
+    subgraph ins["Insert path"]
+        direction LR
+        I1[Key] --> I2[Hash k positions]
+        I2 --> I3[Set k bits to 1]
+    end
+    subgraph lk["Lookup path"]
+        direction LR
+        L1[Key] --> L2[Hash k positions]
+        L2 --> L3{Any bit is 0?}
+        L3 -->|yes| L4[Definitely not present]
+        L3 -->|no| L5[Maybe present - verify store]
+    end
+    ins ~~~ lk
 ```
 
 | Operation | Complexity | Notes |
@@ -354,13 +360,13 @@ GET /products/{id}
 ```mermaid
 flowchart LR
     Req[Request product_id K] --> Bloom{BF.EXISTS K?}
-    Bloom -->|No| R404[404 — skip cache and DB]
+    Bloom -->|No| R404[404 - skip cache and DB]
     Bloom -->|Yes| Cache{Redis cache hit?}
     Cache -->|Yes| OK[Return cached product]
     Cache -->|No| DB[Query Postgres]
     DB --> Found{Row exists?}
     Found -->|Yes| Fill[Fill cache + return]
-    Found -->|No| FP[404 — rare false positive]
+    Found -->|No| FP[404 - rare false positive]
 ```
 
 **Outcome:** Invalid-ID traffic drops from **100% DB hits** to **~0%** (definite rejects) plus ~**1%** false-positive DB reads on the remainder. DB connection pool pressure and p99 latency stabilize under scan attacks; memory stays ~1.2 MB vs tens of GB for a full key set.
@@ -515,12 +521,15 @@ E ≈ α_m × m² / Σ(2^−M[i])
 
 ```mermaid
 flowchart LR
-    E[element] --> H[64-bit hash]
-    H --> Idx[first p bits → register index]
-    H --> Rho[remaining bits → ρ value]
-    Idx --> Reg[register M i]
-    Rho --> Update["M[i] = max(M[i], ρ)"]
-    Update --> Est[harmonic mean → estimate]
+    subgraph add["Add element"]
+        direction LR
+        E[element] --> H[64-bit hash]
+        H --> Idx[first p bits to register]
+        H --> Rho[remaining bits to rho]
+        Idx --> Upd["max register with rho"]
+        Rho --> Upd
+        Upd --> Est[harmonic mean estimate]
+    end
 ```
 
 ---
@@ -815,10 +824,17 @@ See the **worked example** below for table state after each insert.
 
 ```mermaid
 flowchart LR
-    Ins[Insert key] --> Hash[Compute d hashes]
-    Hash --> Inc[Increment d counters]
-    Qry[Query key] --> Hash2[Compute d hashes]
-    Hash2 --> Min[min across rows = estimate]
+    subgraph ins["Insert path"]
+        direction LR
+        Ins[Insert key] --> Hash[Compute d hashes]
+        Hash --> Inc[Increment d counters]
+    end
+    subgraph qry["Query path"]
+        direction LR
+        Qry[Query key] --> Hash2[Compute d hashes]
+        Hash2 --> Min[min across rows = estimate]
+    end
+    ins ~~~ qry
 ```
 
 ---
@@ -985,15 +1001,21 @@ on check(user_id):
 Sketches merge cell-wise at a regional aggregator (`Merged[i][j] = SketchA[i][j] + SketchB[i][j]`) — kilobytes shipped per node per minute, not raw event replay.
 
 ```mermaid
-flowchart TB
-    Ev[Event user_id] --> Hash[Hash to d column indices]
-    Hash --> Inc[Increment d counters in CMS matrix]
-    Q[Query user_id] --> Hash2[Hash to same d indices]
-    Hash2 --> Read[Read d counter values]
-    Read --> Min[min across rows = frequency estimate]
-    Min --> Thresh{estimate > threshold?}
-    Thresh -->|Yes| Exact[Promote to Redis INCR counter]
-    Thresh -->|No| OK[Continue monitoring]
+flowchart LR
+    subgraph update["On each event"]
+        direction LR
+        Ev[user_id] --> Hash[Hash d indices]
+        Hash --> Inc[Increment CMS cells]
+    end
+    subgraph check["On threshold check"]
+        direction LR
+        Q[user_id] --> Hash2[Hash d indices]
+        Hash2 --> Min[min = estimate]
+        Min --> Th{over threshold?}
+        Th -->|yes| Redis[Redis INCR exact]
+        Th -->|no| Mon[Keep monitoring]
+    end
+    update ~~~ check
 ```
 
 **Outcome:** Per-key abuse detection runs in **O(d)** (~7 hash ops) with **~7.4 KB** RAM per sketch regardless of distinct user count. Heavy senders are never missed (no underestimates); occasional overestimates trigger extra scrutiny, not silent bypass.
@@ -1039,15 +1061,15 @@ Each node holds `children: map<char, Node>` and `isEndOfWord: boolean`.
 Words: `cat`, `car`, `cart`, `dog`
 
 ```mermaid
-flowchart TB
+flowchart LR
     Root((root)) --> C[c]
     C --> A[a]
-    A --> T[t · cat ✓]
-    A --> R[r · car ✓]
-    R --> T2[t · cart ✓]
+    A --> Tcat[t cat]
+    A --> Rcar[r car]
+    Rcar --> Tcart[t cart]
     Root --> D[d]
     D --> O[o]
-    O --> G[g · dog ✓]
+    O --> G[g dog]
 ```
 
 #### Insert algorithm
@@ -1186,14 +1208,14 @@ Delete `"car"` → unmark end on `r`; keep nodes because `"cart"` still uses `c 
 ```
 
 ```mermaid
-flowchart TB
-    K1[Keystroke: s] --> W1[Walk root → s node]
-    W1 --> S1[Subtree scan — broad candidates]
-    K2[Keystroke: y] --> W2[Walk s → y node]
-    W2 --> S2[Narrower candidates]
-    K3[Keystroke: s] --> W3[Walk s → y → s node]
-    W3 --> Rank[Rank by frequency score]
-    Rank --> Top[Return top 5: system design, systemctl, …]
+flowchart LR
+    K1[keystroke s] --> W1[walk to s node]
+    W1 --> K2[keystroke y]
+    K2 --> W2[walk to y node]
+    W2 --> K3[keystroke s]
+    K3 --> W3[walk to sys node]
+    W3 --> Rank[rank by frequency]
+    Rank --> Top[top 5 results]
 ```
 
 Each keystroke touches only the path for characters typed plus the subtree under the current prefix — not millions of unrelated queries.
@@ -1327,10 +1349,10 @@ function search(target):
 ```mermaid
 flowchart LR
     S[Start: head at Level 2] --> R1[Move right while next less than 60]
-    R1 --> D1[At 50: next is 70, greater than 60 — drop to Level 1]
+    R1 --> D1[At 50: next is 70 - drop to Level 1]
     D1 --> R2[Move right on Level 1]
-    R2 --> D2[At 50: next is 70 — drop to Level 0]
-    D2 --> F[Walk to 60 on Level 0 — FOUND]
+    R2 --> D2[At 50: next is 70 - drop to Level 0]
+    D2 --> F[Walk to 60 on Level 0 - FOUND]
 ```
 
 ---
@@ -1679,12 +1701,12 @@ Proof size = **one sibling per tree level** = O(log n) hashes.
 
 ```mermaid
 flowchart LR
-    C[Block C] --> H3[Hash C → H3]
-    H4[Sibling H4] --> P1[Hash H3 || H4 → H34]
+    C[Block C] --> H3[Hash C to H3]
+    H4[Sibling H4] --> P1[Hash H3 and H4 to H34]
     H3 --> P1
-    H12[Sibling H12] --> P2[Hash H12 || H34 → Root']
+    H12[Sibling H12] --> P2[Hash H12 and H34 to Root prime]
     P1 --> P2
-    R[Published Root] --> V{Root' == Root?}
+    R[Published Root] --> V{Root prime == Root?}
     P2 --> V
     V -->|yes| OK[C is authentic]
     V -->|no| FAIL[Reject proof]
@@ -1943,7 +1965,7 @@ function owner(key):
 flowchart LR
     K["Key Apple hash=23"] --> R[Walk ring clockwise from any node]
     R --> A["Pass Node A id=20"]
-    A --> B["Land on Node B id=45 — first id ≥ 23"]
+    A --> B["Land on Node B id=45 - first id >= 23"]
     B --> GET[Return value from B]
 ```
 
@@ -2298,15 +2320,10 @@ function uuid_v7():
 
 ```mermaid
 flowchart LR
-    subgraph v7["UUID v7 — 128-bit layout"]
-        direction LR
-        T["Bits 0–47<br/>48-bit Unix ms"]
-        R1["Bits 48–59<br/>random"]
-        VER["Bits 60–63<br/>version = 7"]
-        VAR["Bits 64–65<br/>variant"]
-        R2["Bits 66–127<br/>random"]
-    end
-    T --> R1 --> VER --> VAR --> R2
+    T["48-bit Unix ms"] --> R1["random bits"]
+    R1 --> VER["version 7"]
+    VER --> VAR["variant bits"]
+    VAR --> R2["random bits"]
 ```
 
 Better index locality than v4; still no central coordinator. **Default for new database primary keys** when you want UUID semantics.
@@ -2530,10 +2547,10 @@ id = (timestamp << 22) | (datacenter_id << 17) | (worker_id << 12) | sequence
 
 ```mermaid
 flowchart LR
-    TS["Timestamp ms<br/>41 bits"] --> PACK["Bit-shift OR pack"]
-    DC["Datacenter ID<br/>5 bits"] --> PACK
-    WK["Worker ID<br/>5 bits"] --> PACK
-    SQ["Sequence<br/>12 bits"] --> PACK
+    TS["41-bit timestamp ms"] --> PACK["bit-shift OR pack"]
+    DC["5-bit datacenter"] --> PACK
+    WK["5-bit worker"] --> PACK
+    SQ["12-bit sequence"] --> PACK
     PACK --> ID["64-bit Snowflake ID"]
 ```
 
@@ -3090,13 +3107,8 @@ Displayed as **27 Base62 characters** (`0-9`, `A-Z`, `a-z`):
 
 ```mermaid
 flowchart LR
-    subgraph ksuid["KSUID — 160-bit structure"]
-        direction LR
-        T["32-bit timestamp sec<br/>custom epoch"]
-        P["128-bit random payload<br/>CSPRNG"]
-    end
-    T --> RAW["20 raw bytes"]
-    P --> RAW
+    T["32-bit timestamp sec"] --> RAW["20 raw bytes"]
+    P["128-bit random"] --> RAW
     RAW --> B62["Base62 encode"]
     B62 --> S["27-char string"]
 ```
