@@ -25,13 +25,11 @@
 
 ## 13.1 Bloom Filters
 
-### What this topic is about
+### Overview
 
-Imagine a library with a billion books and no card catalogue. Every time someone asks for a title, a librarian walks every aisle to see if it exists. That is what happens when a large system checks a database or disk for every key — costly, slow, and mostly wasteful, because most lookups are for things that were **never stored**.
+A **Bloom filter** is a tiny bit array plus `k` hash functions that answers “might this key exist?” in constant time. Invented by Burton Bloom in 1970, it does not store actual keys — only a compact pattern of bits built from them. It **never** wrongly clears a real member, but may occasionally send you to the database for a key that was never there. Size it with `m`, `n`, and `k` for your target error rate, treat “possibly present” as a hint, and always confirm with the real store.
 
-A **Bloom filter** is a compact in-memory shortcut invented by Burton Bloom in 1970. It does not store the actual keys. It stores only a pattern of bits built from those keys. When you ask “might this key exist?”, the filter answers in microseconds — using a tiny fraction of the memory a full list would need.
-
-Think of it as a **quick first question** before the expensive one. It cannot replace the database, but it can save you from asking the database thousands of times per second for keys you already know do not exist.
+Picture a library with a billion books and no card catalogue. Every time someone asks for a title, a librarian walks every aisle. That is what happens when a large system hits a database or disk for every key — costly and mostly wasteful, because most lookups are for things that were **never stored**. A Bloom filter is the **quick first question** before the expensive one: it cannot replace the database, but it can stop you from asking thousands of times per second for keys you already know do not exist — like rejecting signup attempts for emails that were never registered without touching the users table.
 
 ---
 
@@ -57,24 +55,42 @@ It accepts a small, tunable rate of **false positives** (saying “maybe” when
 
 ---
 
-### A layman analogy: the nightclub stamp pad
+### A simple analogy: “Is this email already registered?”
 
-Picture a nightclub with a stamp pad instead of a full guest list.
+When you sign up on a large site, the backend must answer: **does `alice@example.com` already exist in our users table?**
 
-When a guest enters, the bouncer stamps **three random spots** on a long strip of paper (not three fixed spots — the spots depend on the guest’s name via hash functions).
+A naive approach loads every registered email into memory, or runs `SELECT 1 FROM users WHERE email = ?` on **every** signup attempt and typo. With 500 million accounts, that is slow, expensive, and easy to abuse — bots can hammer random emails and force millions of database reads.
 
-When someone returns later, the bouncer checks those same three spots. If **any spot is unstamped**, that person was **never admitted** — certain. If **all three are stamped**, they **might** have been admitted — but another guest could have stamped overlapping spots, so the bouncer still checks the real list at the door.
+A Bloom filter sits **in front of** the database as a lightweight gate:
 
-That is exactly how a Bloom filter behaves:
+1. **When a user registers successfully**, the system hashes the email and sets a few bits in a shared bit array — “we have seen something that maps here.”
+2. **When someone tries to sign up**, the system hashes the new email and checks those same bit positions.
+3. If **any bit is 0** → that email was **never registered** → return “available” immediately, **no database query**.
+4. If **all bits are 1** → email **might** already exist → run the real `SELECT` on the users table to confirm.
 
-| Nightclub | Bloom filter |
-|-----------|--------------|
-| Stamp pad strip | Bit array |
-| Three stamp positions per guest | Three hash positions per key |
-| Unstamped spot → never entered | Any 0 bit → definitely not inserted |
-| All stamped → check real list | All 1 bits → possibly present, confirm store |
+```text
+POST /signup  { "email": "bob@newdomain.com" }
+  → Bloom.contains("bob@newdomain.com")?
+      bit check → one position is 0
+      → "Email available" (DB never touched)
 
-The pad is tiny compared to writing down every guest’s full name. The cost is occasional extra ID checks when stamps overlap by coincidence.
+POST /signup  { "email": "alice@example.com" }
+  → Bloom.contains("alice@example.com")?
+      all bits are 1 (alice was registered; bits may overlap with others)
+      → SELECT from users WHERE email = 'alice@example.com'
+      → "Email already taken"
+```
+
+The filter does not store `alice@example.com` — only a fingerprint of bits. Two different emails can accidentally flip the same bits (like two users sharing one locker combination by chance). That overlap is a **false positive**: the filter says “maybe taken,” you query the database, and find the email is actually free. Rare, but acceptable if you sized the filter for ~1% error.
+
+| Signup flow step | Bloom filter role |
+|------------------|-------------------|
+| User registers `alice@example.com` | `insert(email)` — set k bit positions |
+| New signup for `bob@newdomain.com` | `lookup` → any 0 → **definitely not registered** |
+| New signup for `alice@example.com` | `lookup` → all 1 → **maybe registered** → confirm in DB |
+| Bot tries 10,000 random emails/sec | Most get rejected in RAM; DB sees only “maybe” cases |
+
+The bit array might be ~1 MB for a million emails instead of gigabytes to hold every address string. The trade-off: occasional extra database lookups when the filter says “maybe” for an email that was never registered — far cheaper than querying the database for every attempt.
 
 ---
 
@@ -287,12 +303,6 @@ Request for product_id K
 ```
 
 The same pattern appears in **RocksDB** and **LevelDB**: each SSTable file carries a Bloom filter so the engine skips disk reads when a key **definitely** is not in that file. **Cassandra** and **HBase** use similar filters before remote or disk lookups.
-
----
-
-### Summary
-
-A Bloom filter is a tiny bit array plus `k` hash functions that answers “might this key exist?” in constant time. It **never** wrongly clears a real member, but may occasionally send you to the database for a key that was never there. Size it with `m`, `n`, and `k` for your target error rate, treat “possibly present” as a hint, and always confirm with the real store. Used well, it is one of the most practical tools in large-scale system design — a stamp pad in front of the full guest list.
 
 ---
 
