@@ -1,289 +1,116 @@
-﻿# 6. Messaging & Events
-
-> Status: **Documented**
+# 6. Messaging & Events
 
 [<- Back to master index](../README.md)
 
 ---
 
-## Overview
-
-Messaging and event-driven architecture decouple producers from consumers in time, space, and scale. Instead of synchronous RPC chains, services publish facts (events) or commands to durable intermediaries - queues, logs, or streams - so downstream systems react at their own pace, scale independently, and survive transient failures.
-
-The design space spans **delivery semantics** (at-most-once, at-least-once, exactly-once), **ordering** (per-partition vs global), and **architectural patterns** (event sourcing, CQRS, outbox, CDC). Kafka dominates high-throughput streaming; RabbitMQ and Pulsar fill complementary niches.
-
-```mermaid
-flowchart LR
-    subgraph fundamentals [Fundamentals]
-        Q[§6.1 Queues] --> PS[§6.2 Pub/Sub]
-        PS --> ES[§6.3 Streaming]
-        ES --> EDA[§6.4 EDA]
-    end
-    subgraph brokers [Brokers]
-        EDA --> K[§6.5 Kafka]
-        K --> RMQ[§6.8 RabbitMQ]
-        RMQ --> P[§6.10 Pulsar]
-    end
-    subgraph reliability [Reliability]
-        K --> ORD[§6.11 Ordering]
-        ORD --> DEL[§6.12–6.14 Delivery]
-        DEL --> FH[§6.15 DLQ · §6.16 Retry]
-    end
-    subgraph patterns [Patterns]
-        FH --> SRC[§6.17 Sourcing · §6.18 CQRS]
-        SRC --> INT[§6.19 CDC · §6.20 Outbox]
-        INT --> EV[§6.21 Replay · §6.22 Versioning · §6.23 Registry]
-    end
-```
-
-### Pattern cluster (§6.17–§6.23)
-
-```mermaid
-flowchart TB
-    subgraph es [Event sourcing + CQRS]
-        CMD[Command] --> ES[Event store]
-        ES --> PROJ[Projectors]
-        PROJ --> RM[Read models]
-    end
-    subgraph int [Integration]
-        DB[(OLTP DB)] --> CDC[CDC]
-        DB --> OB[Outbox]
-        CDC --> K[Kafka]
-        OB --> K
-    end
-    subgraph meta [Contracts & replay]
-        K --> REP[Replay]
-        SR[Schema registry] -.-> K
-        VER[Event versioning] -.-> ES
-    end
-```
-
----
-
 ## Sub-topics
 
-### Fundamentals & communication patterns
-
-| # | Sub-topic | Status |
-|---|-----------|--------|
-| 6.1 | [Message Queues](#61-message-queues) | Done |
-| 6.2 | [Publish Subscribe](#62-publish-subscribe) | Done |
-| 6.3 | [Event Streaming](#63-event-streaming) | Done |
-| 6.4 | [Event Driven Architecture](#64-event-driven-architecture) | Done |
-
-### Brokers & platforms
-
-| # | Sub-topic | Status |
-|---|-----------|--------|
-| 6.5 | [Kafka](#65-kafka) | Done — partitions & consumer groups |
-| 6.6 | [Kafka Partitions](#66-kafka-partitions) | Index → §6.5 |
-| 6.7 | [Kafka Consumer Groups](#67-kafka-consumer-groups) | Index → §6.5 |
-| 6.8 | [RabbitMQ](#68-rabbitmq) | Done |
-| 6.9 | [ActiveMQ](#69-activemq) | Done |
-| 6.10 | [Pulsar](#610-pulsar) | Done |
-
-### Ordering, delivery & failure handling
-
-| # | Sub-topic | Status |
-|---|-----------|--------|
-| 6.11 | [Ordering Guarantees](#611-ordering-guarantees) | Done — canonical |
-| 6.12 | [At Most Once Delivery](#612-at-most-once-delivery) | Done — comparison hub |
-| 6.13 | [At Least Once Delivery](#613-at-least-once-delivery) | Done |
-| 6.14 | [Exactly Once Delivery](#614-exactly-once-delivery) | Done |
-| 6.15 | [Dead Letter Queue](#615-dead-letter-queue) | Done |
-| 6.16 | [Retry Queue](#616-retry-queue) | Done |
-
-### Data & integration patterns
-
-| # | Sub-topic | Status |
-|---|-----------|--------|
-| 6.17 | [Event Sourcing](#617-event-sourcing) | Done |
-| 6.18 | [CQRS](#618-cqrs) | Done |
-| 6.19 | [Change Data Capture (CDC)](#619-change-data-capture-cdc) | Done |
-| 6.20 | [Outbox Pattern](#620-outbox-pattern) | Done |
-| 6.21 | [Event Replay](#621-event-replay) | Done |
-| 6.22 | [Event Versioning](#622-event-versioning) | Done |
-| 6.23 | [Schema Registry](#623-schema-registry) | Done |
+| # | Sub-topic |
+|---|-----------|
+| 6.1 | [Message Queues](#61-message-queues) |
+| 6.2 | [Publish Subscribe](#62-publish-subscribe) |
+| 6.3 | [Event Streaming](#63-event-streaming) |
+| 6.4 | [Event Driven Architecture](#64-event-driven-architecture) |
+| 6.5 | [Kafka](#65-kafka) |
+| 6.6 | [Kafka Partitions](#66-kafka-partitions) |
+| 6.7 | [Kafka Consumer Groups](#67-kafka-consumer-groups) |
+| 6.8 | [RabbitMQ](#68-rabbitmq) |
+| 6.9 | [ActiveMQ](#69-activemq) |
+| 6.10 | [Pulsar](#610-pulsar) |
+| 6.11 | [Ordering Guarantees](#611-ordering-guarantees) |
+| 6.12 | [At Most Once Delivery](#612-at-most-once-delivery) |
+| 6.13 | [At Least Once Delivery](#613-at-least-once-delivery) |
+| 6.14 | [Exactly Once Delivery](#614-exactly-once-delivery) |
+| 6.15 | [Dead Letter Queue](#615-dead-letter-queue) |
+| 6.16 | [Retry Queue](#616-retry-queue) |
+| 6.17 | [Event Sourcing](#617-event-sourcing) |
+| 6.18 | [CQRS](#618-cqrs) |
+| 6.19 | [Change Data Capture (CDC)](#619-change-data-capture-cdc) |
+| 6.20 | [Outbox Pattern](#620-outbox-pattern) |
+| 6.21 | [Event Replay](#621-event-replay) |
+| 6.22 | [Event Versioning](#622-event-versioning) |
+| 6.23 | [Schema Registry](#623-schema-registry) |
 
 ---
 
 ## 6.1 Message Queues
 
-### What is a message queue?
+### Overview
 
-A message queue is a communication mechanism that allows different services or applications to exchange messages **asynchronously**.
+Picture a busy restaurant kitchen. Orders do not go straight from the waiter to one chef who must finish every dish before taking the next ticket — they go on a rail where any available cook picks up the next job. A **message queue** works the same way for software: one service drops off work, walks away, and another service processes it when ready.
 
-Instead of Service A directly calling Service B, Service A sends a message to a queue and continues its work. Service B processes the message later.
+Technically, a message queue is an asynchronous buffer between **producers** (senders) and **consumers** (workers). The producer enqueues a message; the broker stores it durably; a consumer dequeues, processes, and acknowledges. This decouples services in time and failure domains — the producer does not block on the consumer, and a slow or down consumer does not immediately break the producer if the queue absorbs the backlog.
 
-This helps decouple services and improves scalability and reliability.
+---
 
-### Why message queues?
+### What problem it fixes
 
-**Without a queue:**
+Synchronous call chains create brittle systems:
 
 ```text
 Client → Service A → Service B → Service C
 ```
 
-Problems: tight coupling, high latency, failures propagate, poor scalability.
+Problems stack quickly: tight coupling, latency adds up, failures propagate, and you cannot scale each hop independently.
 
-**With a queue:**
+A queue inserts a durable buffer:
 
 ```text
 Client → Service A → Queue → Service B
 ```
 
-Benefits: asynchronous communication, better fault tolerance, load leveling, independent scaling, improved reliability.
+The producer returns after enqueueing; the consumer works at its own pace. Queues also **level load** during spikes — a burst of orders lands in the queue instead of overwhelming a payment service — and survive partial outages when messages wait safely until workers recover.
 
-### Core components
+---
+
+### What it does
+
+A message queue supports three roles:
 
 | Component | Role |
 |-----------|------|
-| **Producer** | Creates and sends messages to the queue |
-| **Message queue** | Stores messages temporarily; delivers to consumers |
-| **Consumer** | Reads and processes messages |
+| **Producer** | Creates and sends messages |
+| **Message queue** | Stores messages until a consumer is ready |
+| **Consumer** | Reads, processes, and acknowledges messages |
 
-```text
-Order Service
-     |
-     v
-+------------+
-|   Queue    |
-+------------+
-     |
-     v
-Email Service
-```
+Typical message contents: **payload** (business data), **metadata** (routing hints), **timestamp**, and a unique **message ID**.
 
-```mermaid
-sequenceDiagram
-    participant P as Producer
-    participant Q as Queue
-    participant C as Consumer
-    P->>Q: send message
-    Q->>C: deliver message
-    C->>C: process
-    C->>Q: ACK
-```
+Two common models share the same broker infrastructure:
 
-### How it works
+| Model | Delivery | Use case |
+|-------|----------|----------|
+| **Point-to-point queue** | One consumer per message | Order processing, background jobs |
+| **Publish-subscribe topic** | Copy to every subscriber | Domain events fan-out |
+
+Queues excel at **work distribution** — competing consumers drain the same backlog in parallel. Topics excel at **event broadcast** — every interested service gets its own copy.
+
+---
+
+### How it works — the architecture inside
+
+**Basic lifecycle:**
 
 ```text
 Step 1: Producer sends message
 Step 2: Queue stores message
 Step 3: Consumer fetches message
 Step 4: Consumer processes message
-Step 5: Queue removes message after successful processing
-
-Producer → Queue → Consumer
+Step 5: Consumer ACKs → queue removes message
 ```
 
-### Message structure
-
-```json
-{
-  "orderId": 123,
-  "userId": 456,
-  "event": "ORDER_CREATED"
-}
+```mermaid
+flowchart LR
+    P[Producer] --> Q[Queue]
+    Q --> C[Consumer]
+    C -->|ACK| Q
 ```
 
-Typically includes: **payload**, **metadata**, **timestamp**, **message ID**.
+**Acknowledgement (ACK).** The consumer must confirm successful processing. Without ACK, the broker keeps the message (or redelivers it after a timeout). This is the foundation of at-least-once delivery.
 
-### Synchronous vs asynchronous
+**Visibility timeout.** After delivery, the message is hidden from other consumers for a period (Amazon SQS uses this pattern). If the consumer crashes before ACK, the message becomes visible again and another worker can pick it up.
 
-| | Synchronous | Asynchronous |
-|---|-------------|--------------|
-| **Pattern** | Service A → Service B (wait for response) | Service A → Queue → Service B |
-| **Pros** | Simple | Fast response, decoupled, scalable |
-| **Cons** | Higher latency, tight coupling | More moving parts |
-
-### Queue models
-
-#### Point-to-point queue
-
-One message consumed by **one** consumer.
-
-```text
-Producer → Queue → Consumer
-```
-
-Example: order processing (competing workers on one queue).
-
-#### Publish-subscribe (pub/sub)
-
-One message delivered to **multiple** consumers via a topic.
-
-```text
-              Consumer A
-                   ^
-Producer --> Topic-+--> Consumer B
-                   |
-              Consumer C
-```
-
-Example: `ORDER_CREATED` → email, analytics, inventory — all receive the same event.
-
-Full treatment: [§6.2 Publish Subscribe](#62-publish-subscribe).
-
-Delivery semantics: [§6.12–§6.14](#612-at-most-once-delivery) (canonical comparison in §6.12).
-
-### Acknowledgement (ACK)
-
-Consumer must acknowledge after successful processing.
-
-```text
-Queue → Consumer → process OK → Consumer sends ACK → Queue deletes message
-
-Without ACK: queue keeps (or redelivers) the message
-```
-
-### Message retry
-
-```text
-Queue → Consumer → failure
-Message returned to queue → retried later
-```
-
-Benefits: handles temporary failures, reduces message loss. Retry topics and backoff: [§6.16 Retry Queue](#616-retry-queue).
-
-### Dead letter queue (DLQ)
-
-When a message fails repeatedly, move it to a **DLQ** instead of infinite retry.
-
-```text
-Queue → Consumer → failure (e.g. 5 retries) → DLQ
-```
-
-Benefits: stops poison messages blocking the queue; easier debugging. Detail: [§6.15 Dead Letter Queue](#615-dead-letter-queue).
-
-### Message ordering
-
-Messages may need to be processed in send order.
-
-```text
-Order Created → Payment Completed → Order Shipped
-```
-
-Challenges: multiple consumers, parallel processing.
-
-Solutions: single partition, FIFO queues. See [§6.11 Ordering Guarantees](#611-ordering-guarantees).
-
-### Backpressure
-
-**Problem:** producer rate exceeds consumer rate.
-
-```text
-Producer: 10,000 msg/sec
-Consumer:  1,000 msg/sec
-→ queue grows rapidly
-```
-
-Solutions: add consumers, rate limiting, auto-scaling. Related: [Chapter 4 — Backpressure](../04-distributed-system/README.md#420-backpressure).
-
-### Competing consumers
-
-Multiple consumers process the same queue; **each message goes to only one consumer**.
+**Competing consumers.** Multiple workers read the same queue; each message goes to exactly one consumer — horizontal scale without duplicate work on the same job.
 
 ```text
                 Consumer 1
@@ -293,99 +120,54 @@ Queue ---------
                 Consumer 2
 ```
 
-Benefits: parallel processing, higher throughput. Kafka consumer groups: [§6.5 Kafka](#65-kafka).
+**Retry and dead letter queue (DLQ).** On transient failure, the message returns to the queue or a retry topic. After repeated failures, it moves to a **DLQ** so poison messages do not block the entire pipeline.
 
-### Visibility timeout
+**Backpressure.** When producers outpace consumers, queue depth grows. Responses: add consumers, rate-limit producers, auto-scale workers, or shed load at the edge.
 
-After a consumer receives a message, it becomes **temporarily invisible** to other consumers.
+**Message batching.** Consumers can pull and process multiple messages per round trip — fewer network calls, higher throughput, lower cost per message.
 
-```text
-ACK received     → delete message
-Consumer crashes → message becomes visible again → redelivered
-```
-
-Prevents duplicate processing while work is in flight (e.g. Amazon SQS).
-
-### Message batching
-
-Process multiple messages in one round trip instead of one-by-one.
-
-```text
-[Msg1] [Msg2] [Msg3] → batch process
-```
-
-Benefits: fewer network calls, better throughput, lower cost.
-
-### Common use cases
-
-| Use case | Flow |
-|----------|------|
-| **Order processing** | Order Service → Queue → Payment Service |
-| **Email notifications** | User signup → Queue → Email Service |
-| **Video processing** | Upload → Queue → Encoding Service |
-| **Log processing** | Application → Queue → Analytics |
-| **Event-driven architecture** | Event → Queue/Topic → inventory + notification + analytics |
-
-Event-driven patterns: [§6.4 Event Driven Architecture](#64-event-driven-architecture).
-
-### Popular message queue systems
-
-| System | Notes | Section |
-|--------|-------|---------|
-| **Apache Kafka** | Distributed event streaming, high throughput, partitions | [§6.5](#65-kafka) |
-| **RabbitMQ** | Traditional broker, routing, reliable delivery | [§6.8](#68-rabbitmq) |
-| **Amazon SQS** | Managed, highly scalable | Cloud-native queues |
-| **Apache ActiveMQ** | JMS-based messaging | [§6.9](#69-activemq) |
-| **Redis Streams** | Lightweight queueing | Streams / lists |
-| **Apache Pulsar** | Multi-tenant streaming | [§6.10](#610-pulsar) |
-
-### Advantages
-
-- Decouples services
-- Improves scalability
-- Better fault tolerance
-- Asynchronous processing
-- Handles traffic spikes
-- Reliable message delivery (with correct ACK/retry/DLQ design)
-
-### Disadvantages
-
-- Increased complexity
-- Message duplication possible (at-least-once)
-- Ordering challenges
-- Operational overhead
-- Debugging becomes harder
-
-### Summary
-
-A message queue lets producers and consumers communicate asynchronously through a durable buffer.
-
-```text
-Producer → Queue → Consumer (+ ACK)
-```
-
-**Key ideas:** decoupling, competing consumers, delivery guarantees, retry/DLQ, ordering, backpressure.
-
-**Goal:** Scale and isolate services while surviving spikes and partial failures.
+**Ordering.** Strict FIFO across parallel consumers is hard. Solutions: single consumer, FIFO queue types, or partition by key (Kafka-style). See section 6.11 for the full ordering treatment.
 
 ---
 
+### Pitfalls and design tips
+
+- **Do not treat every queue like a log.** Classic queues delete on ACK; they are for tasks, not long-term event history. Use event streaming (section 6.3) when you need replay.
+- **Default to at-least-once + idempotent consumers** for anything involving money, inventory, or orders. At-most-once is only for metrics and telemetry where loss is acceptable (section 6.12).
+- **Set prefetch / visibility timeout** to match handler duration — too short causes duplicate delivery; too long delays recovery after crashes.
+- **Monitor queue depth and age-of-oldest-message** — a growing queue is the earliest sign of consumer starvation.
+- **Interview angle:** "Why not just HTTP between services?" — decoupling, load leveling, and surviving downstream outages without failing the caller.
+
+---
+
+### Real-world example
+
+**Order confirmation email (Amazon SQS-style flow).**
+
+1. User completes checkout; the Order Service writes the order to its database.
+2. Order Service publishes `{ "orderId": 123, "event": "ORDER_CREATED" }` to an SQS queue.
+3. Order Service returns HTTP 200 immediately — it does not wait for email delivery.
+4. Three Email Service workers compete on the queue. Worker B receives the message; SQS hides it from A and C for the visibility timeout.
+5. Worker B sends the confirmation email, then calls `DeleteMessage` (ACK).
+6. If Worker B crashes mid-send, the message reappears after the timeout and Worker A retries.
+
+The queue absorbed the spike during a flash sale and kept checkout fast even when the email provider was slow.
+
+---
 
 ## 6.2 Publish Subscribe
 
-### What is pub/sub?
+### Overview
 
-Publish-subscribe (pub/sub) is a messaging pattern where publishers send messages to a **topic** and multiple **subscribers** receive those messages.
+Think of a radio station. The DJ broadcasts on one frequency; anyone tuned in hears the same show — the DJ does not know who is listening, and listeners do not need to know who is on air. **Publish-subscribe (pub/sub)** applies that pattern to software: publishers emit events to a **topic**, and every subscribed consumer receives a copy.
 
-- Publishers do **not** know who the subscribers are
-- Subscribers do **not** know who the publishers are
-- Both are decoupled through a broker/topic
+Technically, pub/sub decouples producers from consumers through a **broker** and a logical **topic** channel. Publishers write once; the broker fans out to all active subscribers. Unlike a work queue, each subscriber gets its own copy — ideal for domain events that many systems must react to independently.
 
-Contrast with point-to-point queues: [§6.1 Message Queues](#61-message-queues).
+---
 
-### Why pub/sub?
+### What problem it fixes
 
-**Problem with direct communication:**
+Point-to-point wiring does not scale when many services care about the same event:
 
 ```text
 Order Service
@@ -397,9 +179,7 @@ Order Service
       +--> Inventory Service
 ```
 
-Problems: tight coupling, hard to add new services, difficult maintenance.
-
-**Solution: pub/sub**
+Every new subscriber means changing the Order Service. Pub/sub inverts the dependency:
 
 ```text
                     Email Service
@@ -409,64 +189,74 @@ Order Service --> Topic --+--> Analytics Service
                           +--> Inventory Service
 ```
 
-Benefits: loose coupling, easy scalability, easy addition of new services.
+Adding a Fraud Service means subscribing to the topic — the Order Service stays unchanged.
 
-### Core components
+---
 
-| Component | Role | Examples |
-|-----------|------|----------|
-| **Publisher** | Produces events/messages | Order, Payment, User services |
-| **Topic** | Logical channel for messages | `OrderCreated`, `PaymentCompleted`, `UserRegistered` |
-| **Subscriber** | Receives messages from topic | Email, Analytics, Inventory services |
+### What it does
 
-### How pub/sub works
+| Component | Role |
+|-----------|------|
+| **Publisher** | Produces events (Order Service, User Service) |
+| **Topic** | Named channel (`OrderCreated`, `PaymentCompleted`) |
+| **Subscriber** | Receives every message published to the topic |
+| **Broker** | Routes, stores (if durable), and delivers |
+
+**Queue vs topic:**
+
+| | Queue | Pub/sub topic |
+|---|-------|---------------|
+| **Purpose** | Work distribution | Event distribution |
+| **Consumers** | One per message | Many subscribers |
+| **Message copies** | One | One per subscriber |
+| **Example** | Payment job queue | `ORDER_CREATED` broadcast |
+
+**Subscription models:**
+
+| Model | Behavior | Trade-off |
+|-------|----------|-----------|
+| **Push** | Broker delivers to subscriber | Real-time; subscriber can be overwhelmed |
+| **Pull** | Subscriber polls the broker | Better flow control; slight delay |
+
+**Durable vs non-durable:**
+
+| | Durable | Non-durable |
+|---|---------|-------------|
+| **Subscriber offline** | Messages retained; delivered on reconnect | Messages lost |
+| **Use** | Must-not-miss events | Fire-and-forget notifications |
+
+**Filtering.** Subscribers can receive only matching events — by routing key pattern (RabbitMQ topic exchange) or subscription filter (AWS SNS, Google Pub/Sub).
+
+---
+
+### How it works — the architecture inside
 
 ```text
 Step 1: Publisher creates event
 Step 2: Event sent to topic
 Step 3: Broker receives event
-Step 4: Broker distributes event to all subscribers
-
-Publisher → Topic → Sub1, Sub2, Sub3
+Step 4: Broker copies event to all subscribers
 ```
 
 ```mermaid
-flowchart TB
+flowchart LR
     Pub[Publisher] --> Topic[Topic]
     Topic --> Sub1[Subscriber 1]
     Topic --> Sub2[Subscriber 2]
     Topic --> Sub3[Subscriber 3]
 ```
 
-### Real-world example
+**Fan-out.** One published event reaches Email, SMS, Analytics, and Inventory in parallel — the defining pub/sub pattern.
 
-**Order created event**
+**Scaling subscribers with consumer groups (Kafka-style).** One topic can feed multiple independent **consumer groups**. Inside a group, partitions are shared (each message processed once). Across groups, every group receives all messages — pub/sub at the group level, work-queue inside a group.
 
 ```text
-Publisher: Order Service
-
-Subscribers: Email, Inventory, Analytics
-
-Order Service -- Order Created --> Order Topic
-                                    /    |    \
-                                   v     v     v
-                              Email  Inventory Analytics
-
-All receive the same event.
+Topic --> Consumer Group A (analytics)
+      --> Consumer Group B (notifications)
+      --> Consumer Group C (fraud)
 ```
 
-### Topic vs queue
-
-| | Queue | Pub/sub topic |
-|---|-------|---------------|
-| **Purpose** | Work distribution | Event distribution |
-| **Consumers** | One consumer per message | Many subscribers |
-| **Message copies** | One | One per subscriber |
-| **Example** | Payment processing | Order created event |
-
-See [§6.1](#61-message-queues).
-
-### Message flow
+**Message flow example:**
 
 ```json
 {
@@ -475,162 +265,66 @@ See [§6.1](#61-message-queues).
 }
 ```
 
-Publisher sends event → broker copies event → delivered to Subscriber A, B, and C.
-
-### Broker
-
-The broker manages topics, message routing, delivery, and subscriber registration.
-
-| System | Section |
-|--------|---------|
-| Apache Kafka | [§6.5](#65-kafka) |
-| RabbitMQ | [§6.8](#68-rabbitmq) |
-| Amazon SNS / Google Pub/Sub / Azure Service Bus | Managed cloud pub/sub |
-
-### Fan-out pattern
-
-One event sent to many services — **fan-out**.
-
-```text
-Publisher --> Topic --> Email / SMS / Analytics / Inventory
-```
-
-### Subscription types
-
-| Model | How it works | Pros | Cons |
-|-------|--------------|------|------|
-| **Push** | Broker pushes to subscriber | Real-time | Consumer may be overloaded |
-| **Pull** | Subscriber pulls from broker | Better control | Slight delay |
-
-### Durable vs non-durable subscription
-
-| | Durable | Non-durable |
-|---|---------|-------------|
-| **Subscriber offline** | Messages retained; delivered when back | Messages lost |
-| **Trade-off** | No data loss | Faster, less storage |
-
-### Message ordering
-
-```text
-OrderCreated → PaymentCompleted → OrderShipped
-```
-
-Must arrive in the same order when required. Challenge: multiple partitions/subscribers.
-
-Solutions: single partition, FIFO topics, ordering keys. See [§6.11 Ordering Guarantees](#611-ordering-guarantees).
-
-Delivery semantics: [§6.12–§6.14](#612-at-most-once-delivery).
-
-### Filtering
-
-Subscribers receive only relevant events.
-
-```text
-Topic: Orders — OrderCreated, OrderCancelled, OrderShipped
-
-Subscriber A: only OrderCreated
-Subscriber B: only OrderShipped
-
-Broker filters (or routes) messages per subscription.
-```
-
-### Scaling pub/sub
-
-**Publisher scale:** many publishers → one topic.
-
-**Subscriber scale:** one topic → multiple consumer groups (each group processes independently).
-
-```text
-Topic --> Consumer Group A
-      --> Consumer Group B
-      --> Consumer Group C
-```
-
-Allows very high event throughput with horizontal scaling.
-
-### Pub/sub in Kafka
-
-```text
-Order Topic
-  |
-  +--> Consumer Group: Analytics
-  |
-  +--> Consumer Group: Notifications
-
-Within same consumer group: each message processed once (partition assignment)
-Across different groups: each group receives the message
-```
-
-Detail: [§6.5 Kafka](#65-kafka).
-
-### Common use cases
-
-| Use case | Pattern |
-|----------|---------|
-| **Order processing** | Order Service → Order Topic → Email / Inventory / Analytics |
-| **User registration** | User Service → User Topic → Email / CRM / Analytics |
-| **Microservices** | Service A → Topic → B, C, D (no direct dependencies) |
-| **Real-time notifications** | Publisher → Notification Topic → Mobile / Email / SMS |
-| **Event-driven architecture** | Every service publishes; others subscribe |
-
-See [§6.4 Event Driven Architecture](#64-event-driven-architecture).
-
-### Advantages
-
-- Loose coupling
-- Easy scalability
-- Easy addition of new services
-- Event-driven architecture
-- High throughput
-- Better maintainability
-
-### Disadvantages
-
-- Harder debugging
-- Message duplication (under at-least-once)
-- Ordering challenges
-- Eventual consistency
-- Broker dependency
-
-### Queue vs pub/sub (summary)
-
-| | Queue | Pub/sub |
-|---|-------|---------|
-| **Purpose** | Work distribution | Event distribution |
-| **Consumers** | One per message | Many subscribers |
-| **Copies** | One | One per subscriber |
-| **Example** | Payment job queue | Order created broadcast |
-
-### Summary
-
-Pub/sub decouples publishers and subscribers through a topic and broker.
-
-```text
-Publisher → Topic → all interested subscribers (fan-out)
-```
-
-**Key ideas:** fan-out, durable subscriptions, consumer groups, filtering, delivery guarantees.
-
-**Goal:** Broadcast domain events to many services without point-to-point wiring.
+Publisher sends once → broker delivers independent copies to Subscriber A, B, and C.
 
 ---
 
+### Pitfalls and design tips
+
+- **Pub/sub is not a task queue.** If only one worker should process each payment, use a queue — not a topic with competing subscribers on the same subscription.
+- **Expect eventual consistency.** Subscribers update at different speeds; do not assume all downstream views are synchronized immediately after publish.
+- **Plan for duplicates** under at-least-once delivery — subscribers need idempotent handlers keyed by event ID.
+- **Durable subscriptions cost storage.** Retain only as long as the slowest subscriber needs catch-up time.
+- **Default for new microservices:** publish domain facts to a topic; let interested services subscribe rather than chaining HTTP callbacks.
+
+---
+
+### Real-world example
+
+**Shopify-style order event fan-out.**
+
+1. Checkout completes; Order Service persists the order and publishes `orders/created` with `{ orderId, customerId, lineItems, total }`.
+2. A Kafka topic (or SNS topic) receives the event.
+3. **Inventory subscriber** reserves stock in its own database.
+4. **Email subscriber** enqueues a confirmation template send.
+5. **Analytics subscriber** increments real-time dashboard counters.
+6. A new **Recommendations subscriber** is added next quarter — it subscribes to the same topic without any Order Service code change.
+
+Each service processes at its own pace; a slow analytics pipeline does not block email delivery.
+
+---
 
 ## 6.3 Event Streaming
 
-### What is event streaming?
+### Overview
 
-Event streaming is the continuous flow of events from producers to consumers in real time.
+A security camera records everything to a DVR — you can watch live or rewind to any moment later. **Event streaming** treats business activity the same way: events are appended to a durable log as they happen, and many consumers can read live or replay history.
 
-Instead of processing data in batches, events are captured, stored, and processed as they occur.
+Technically, event streaming is a continuous, **append-only log** of immutable facts. Producers append events; a broker retains them for a configurable period; consumers track their **offset** (position in the log) and read forward. Unlike classic queues, processed events are **not deleted** — they remain available for replay, new consumers, and audit.
 
-An **event** represents something that happened in the system — e.g. user logged in, order created, payment completed, product viewed, sensor reading received.
+---
 
-Compare: [§6.1 Message Queues](#61-message-queues), [§6.2 Publish Subscribe](#62-publish-subscribe).
+### What problem it fixes
 
-### What is an event?
+The traditional pattern — write to a database, let consumers poll — creates load, delay, and tight coupling:
 
-An event = a **fact that happened in the past**.
+```text
+Application → Database → consumers query repeatedly
+```
+
+Event streaming moves facts to a shared log in real time:
+
+```text
+Application → Event Stream → Analytics / Search / Notifications
+```
+
+Benefits: millisecond-to-second latency, decoupled systems, horizontal scale via partitions, and the ability to **rebuild** a downstream system by replaying from offset zero after a bug fix.
+
+---
+
+### What it does
+
+An **event** is an immutable record of something that already happened:
 
 ```json
 {
@@ -640,284 +334,127 @@ An event = a **fact that happened in the past**.
 }
 ```
 
-Characteristics: **immutable**, **time-ordered**, **historical record**, **can be replayed**.
+| Component | Role |
+|-----------|------|
+| **Producer** | Appends events |
+| **Event stream / topic** | Ordered, partitioned log |
+| **Broker** | Stores and serves events (Kafka, Pulsar, Kinesis) |
+| **Consumer** | Reads from an offset; may belong to a consumer group |
 
-### Why event streaming?
+**Stream vs classic queue:**
 
-**Traditional approach:**
+| | Message queue | Event stream |
+|---|---------------|--------------|
+| **After processing** | Message usually removed | Event **retained** |
+| **Re-read** | No (unless DLQ/retry) | Yes — replay from any offset |
+| **Primary use** | Task distribution | Pipelines, analytics, audit |
 
-```text
-Application → Database → consumers query repeatedly
-```
+**Log-based storage.** Events land at offsets 0, 1, 2, 3… in each partition. Nothing is updated in place — only appended.
 
-Problems: high load, delayed updates, poor scalability.
+**Retention.** `retention = 7 days` means events stay available for replay even after every current consumer has read them.
 
-**Event streaming approach:**
+**Partitions.** Large topics split into parallel shards. Ordering is guaranteed **within** a partition, not across partitions.
 
-```text
-Application → Event Stream → Analytics / Search / Notifications
-```
+**Consumer groups.** Consumers in the same group divide partitions — each partition assigned to at most one consumer in the group. Different groups each read the full stream independently.
 
-Benefits: real-time processing, decoupled systems, high scalability, replay capability.
+---
 
-### Core components
-
-| Component | Role | Examples |
-|-----------|------|----------|
-| **Producer** | Creates events | Order, Payment, User services |
-| **Event stream** | Continuous sequence of events | Event 1, 2, 3… |
-| **Broker** | Stores and distributes events | Kafka, Pulsar, Kinesis — [§6.5](#65-kafka), [§6.10](#610-pulsar) |
-| **Consumer** | Processes events | Analytics, recommendations, notifications |
-
-### High-level flow
-
-```text
-Producer → Stream → Analytics / Search / Email
-
-Multiple consumers can read the same event.
-```
+### How it works — the architecture inside
 
 ```mermaid
 flowchart LR
     P[Producer] --> S[Event stream]
     S --> C1[Analytics]
-    S --> C2[Search]
-    S --> C3[Email]
+    S --> C2[Search index]
+    S --> C3[Email triggers]
 ```
 
-### Event stream vs message queue
-
-| | Message queue | Event stream |
-|---|---------------|--------------|
-| **Flow** | Producer → Queue → Consumer | Producer → Stream → A, B, C |
-| **After processing** | Message usually removed | Event **remains stored** |
-| **Re-read** | No (unless DLQ/retry) | Yes — replay from offset |
-
-### Key idea: events are not deleted immediately
+**Offset tracking.**
 
 ```text
-Traditional queue:  message processed → deleted
+Partition 0: Offset 0 → User Registered
+             Offset 1 → Login
+             Offset 2 → Order Created
 
-Event stream:     event processed → still stored → consumers can replay later
+Consumer: "I processed through offset 1" → next read starts at offset 2
 ```
 
-### Log-based storage
+**Replay.** Reset a consumer's offset (or deploy a new consumer group) to reprocess history — e.g. fix a bug in the analytics transformer and rebuild dashboards from day one.
 
-Most streaming systems use an **append-only log**.
+**Stream processing.** Frameworks (Kafka Streams, Flink, Spark Streaming) read the log and compute aggregations, joins, and alerts in real time — fraud scoring, recommendations, IoT anomaly detection.
 
-```text
-Offset 0 → User Registered
-Offset 1 → Login
-Offset 2 → Order Created
-Offset 3 → Payment Completed
-
-New events appended; nothing updated in-place.
-```
-
-### Offset
-
-Every event has a unique position in the log.
-
-```text
-Offset 0, 1, 2, 3…
-
-Consumer: "I processed until Offset 2" → next read from Offset 3
-```
-
-Kafka partitions: [§6.5 Kafka](#65-kafka).
-
-### Event retention
-
-Events stored for a configurable period.
-
-```text
-Retention = 7 days → events available for replay even after consumers process them
-```
-
-### Event replay
-
-Replay is a major advantage — e.g. analytics bug fixed → replay from Offset 0.
-
-```text
-Stored events → replay → consumer reprocesses history
-```
-
-Detail: [§6.21 Event Replay](#621-event-replay).
-
-### Real-world example
-
-```text
-Customer places order → Order Created event
-
-Consumers (independently):
-  Inventory, Email, Analytics, Recommendation
-```
-
-### Partitions
-
-Large streams split into **partitions** for parallelism.
-
-```text
-Topic: Partition 0 | Partition 1 | Partition 2
-
-Order 101 → P0,  Order 102 → P1,  Order 103 → P2
-```
-
-Benefits: parallel processing, higher throughput, better scalability. See [§6.5 Kafka](#65-kafka).
-
-### Ordering
-
-**Within a partition:** order preserved.
-
-```text
-P0: Offset 0 Order Created → Offset 1 Payment → Offset 2 Shipped
-```
-
-**Across partitions:** ordering **not** guaranteed. See [§6.11 Ordering Guarantees](#611-ordering-guarantees).
-
-### Consumer groups
-
-A **consumer group** = consumers working together; each partition assigned to one consumer in the group.
-
-```text
-Partition 0 → Consumer 1
-Partition 1 → Consumer 2
-Partition 2 → Consumer 3
-```
-
-Benefits: parallelism, load balancing. See [§6.5 Kafka](#65-kafka).
-
-### Multiple consumer groups
-
-```text
-Orders Topic → Analytics Group (all events)
-            → Email Group (all events)
-            → Inventory Group (all events)
-
-Inside a group: each event processed once
-Across groups: every group receives all events
-```
-
-### Event-driven architecture
-
-Services communicate via events — no direct service-to-service calls for every reaction.
-
-```text
-Order Service → Order Created → Email / Analytics / Inventory
-```
-
-See [§6.4 Event Driven Architecture](#64-event-driven-architecture).
-
-### Stream processing
-
-Process events as they arrive.
-
-Examples: fraud detection, recommendations, real-time analytics, stock trading, IoT monitoring.
-
-### Batch processing vs streaming
+**Batch vs streaming:**
 
 | | Batch | Streaming |
 |---|-------|-----------|
-| **Pattern** | Collect → process every hour | Event → immediate processing |
-| **Latency** | Minutes or hours | Milliseconds or seconds |
-
-### Exactly-once processing
-
-If a consumer crashes after processing: risk of duplicates or missed events.
-
-Streaming systems (e.g. Kafka) provide **exactly-once semantics (EOS)** mechanisms.
-
-See [§6.14 Exactly Once Delivery](#614-exactly-once-delivery).
-
-### Event sourcing relationship
-
-Event sourcing stores all state changes as events; current state = replay of events.
-
-```text
-Account Created → Money Deposited → Money Withdrawn
-```
-
-Event streaming often acts as the **transport layer** for event sourcing. See [§6.17 Event Sourcing](#617-event-sourcing).
-
-### Popular event streaming systems
-
-| System | Notes | Section |
-|--------|-------|---------|
-| **Apache Kafka** | Most popular; distributed; high throughput | [§6.5](#65-kafka) |
-| **Apache Pulsar** | Multi-tenant; distributed | [§6.10](#610-pulsar) |
-| **Amazon Kinesis** | AWS managed | — |
-| **Redpanda** | Kafka-compatible; no JVM | — |
-| **Azure Event Hubs** | Cloud-native streaming | — |
-
-### Common use cases
-
-| Use case | Flow |
-|----------|------|
-| **Real-time analytics** | Website → stream → dashboard |
-| **Fraud detection** | Payment → stream → fraud engine |
-| **Recommendations** | User click → stream → recommendation engine |
-| **IoT monitoring** | Sensors → stream → monitoring |
-| **Activity tracking** | User actions → stream → analytics |
-
-### Advantages
-
-- Real-time processing
-- High throughput
-- Replay capability
-- Decoupled services
-- Horizontal scalability
-- Durable storage
-- Event history preserved
-
-### Disadvantages
-
-- More operational complexity
-- Event schema management — [§6.23 Schema Registry](#623-schema-registry)
-- Ordering challenges
-- Storage requirements (retention)
-- Debugging can be difficult
-
-### Message queue vs pub/sub vs event streaming
-
-| | Message queue | Pub/sub | Event streaming |
-|---|---------------|---------|-----------------|
-| **Purpose** | Work distribution | Event distribution | Continuous event processing |
-| **Consumers** | One per message | Many | Many (independent groups) |
-| **Removed after use?** | Usually yes | Usually yes | **No** — retained |
-| **Example** | Payment job | Notifications | Analytics + monitoring + replay |
-
-### Summary
-
-Event streaming is a durable, append-only log of facts consumed in real time and replayed on demand.
-
-```text
-Producer → append-only stream (offsets, partitions) → many consumer groups
-```
-
-**Key ideas:** immutability, retention, offsets, partitions, consumer groups, replay.
-
-**Goal:** Real-time, scalable event pipelines with a permanent (retained) event history.
+| **Pattern** | Collect → process hourly | Process each event as it arrives |
+| **Latency** | Minutes to hours | Milliseconds to seconds |
 
 ---
 
+### Pitfalls and design tips
+
+- **Retention is storage cost.** Size topics for expected volume × retention window; use tiered storage (Pulsar) or compaction (Kafka) for key-value changelog topics.
+- **Schema drift breaks consumers.** Use a schema registry and version events before dozens of teams depend on implicit JSON shapes.
+- **Do not assume global ordering.** Use partition keys (order ID, user ID) for per-entity order; see section 6.11.
+- **Streaming ≠ event sourcing.** Streaming is often the transport; event sourcing is a domain pattern where state equals the sum of events (section 6.17).
+- **Interview default:** Kafka for high-throughput durable logs; RabbitMQ for task queues — know which problem you are solving.
+
+---
+
+### Real-world example
+
+**LinkedIn activity pipeline (Kafka's origin use case).**
+
+1. A member views a profile; the front-end service emits `ProfileViewed` to the `page-view` topic.
+2. Kafka appends the event to a partition chosen by `hash(viewerId)`.
+3. A **real-time counter** consumer updates trending metrics within seconds.
+4. A **search ranking** consumer adjusts relevance signals.
+5. Six months later, a data science team launches a new model. They create a new consumer group, reset to the earliest offset, and replay six months of `page-view` events to train offline — without touching production writers.
+
+The log is the system of record for "what happened"; consumers are disposable views over that history.
+
+---
 
 ## 6.4 Event Driven Architecture
 
-### What is EDA?
+### Overview
 
-Event-driven architecture (EDA) is a software architecture pattern where services communicate through **events** instead of direct synchronous calls.
+Instead of one service calling the next in a rigid chain — like dominoes that all fall when one tips — **event-driven architecture (EDA)** lets each service react when it hears news it cares about. The Order Service announces "order created"; Payment, Email, and Inventory each decide what to do, without the Order Service knowing their addresses.
 
-A service publishes an event when something happens; other interested services react to that event.
+Technically, EDA is an architectural style where services communicate through **asynchronous domain events** rather than synchronous request-response chains. A producer publishes a fact; the broker distributes it; consumers react independently. The result is loose coupling, independent scaling, and fault isolation — at the cost of distributed tracing complexity and eventual consistency.
 
-**Key idea:** services communicate by events, not by direct calls.
+---
 
-Building blocks: [§6.1 Message Queues](#61-message-queues), [§6.2 Pub/Sub](#62-publish-subscribe), [§6.3 Event Streaming](#63-event-streaming).
+### What problem it fixes
 
-### What is an event?
+Synchronous orchestration chains fail together:
 
-An event represents something that **happened** (past tense).
+```text
+Order Service → Payment → Email → Inventory (each waits for the next)
+```
 
-Examples: User Registered, Order Created, Payment Completed, Product Added to Cart, Order Shipped.
+One slow or failed hop blocks the user response and risks cascading failure.
+
+Event-driven flow returns fast and decouples reactions:
+
+```text
+Order Service → Order Created Event → Payment / Email / Inventory
+```
+
+The order API responds after persisting and publishing; downstream services catch up asynchronously.
+
+---
+
+### What it does
+
+| Component | Role |
+|-----------|------|
+| **Event producer** | Emits facts when state changes |
+| **Event broker** | Kafka, RabbitMQ, Pulsar, cloud buses |
+| **Event consumer** | Subscribes and reacts |
+
+Events are **immutable**, **past-tense**, and **time-ordered**:
 
 ```json
 {
@@ -927,44 +464,35 @@ Examples: User Registered, Order Created, Payment Completed, Product Added to Ca
 }
 ```
 
-Events are: **immutable**, **historical facts**, **time-ordered**, **replayable**.
+**Two coordination styles:**
 
-### Why EDA?
+| | Choreography | Orchestration |
+|---|--------------|---------------|
+| **Control** | Distributed — each service reacts to events | Central orchestrator directs steps |
+| **Coupling** | Very low | Higher — orchestrator is a dependency |
+| **Debugging** | Harder — no single workflow owner | Easier — orchestrator holds state |
+| **Example** | `OrderCreated` → Payment listens → `PaymentCompleted` → Shipping listens | Saga orchestrator calls Payment, then Inventory, then Shipping |
 
-**Traditional (synchronous wiring):**
+**Eventual consistency.** For a short window, the order database may show "paid" while inventory still shows "reserved pending" — services converge independently. Design UIs and APIs to tolerate lag or expose status explicitly.
 
-```text
-Order Service → Payment, Email, Inventory (direct calls)
-```
+**Idempotency.** At-least-once delivery means the same `PaymentCompleted` event may arrive twice — consumers dedupe by `eventId` or business key.
 
-Problems: tight coupling, hard to scale, cascading failures, difficult maintenance.
+---
 
-**Event-driven:**
-
-```text
-Order Service → Order Created Event → Payment / Email / Inventory
-```
-
-Benefits: loose coupling, scalability, flexibility, fault tolerance.
-
-### Core components
-
-| Component | Role | Examples |
-|-----------|------|----------|
-| **Event producer** | Generates events | Order, User, Payment services |
-| **Event broker** | Receives and distributes events | Kafka [§6.5](#65-kafka), RabbitMQ [§6.8](#68-rabbitmq), Pulsar [§6.10](#610-pulsar) |
-| **Event consumer** | Listens and reacts | Analytics, Email, Inventory |
-
-### High-level flow
+### How it works — the architecture inside
 
 ```text
-Producer → Event Broker → Consumer A / B / C
-
-Producer does not know consumers; consumers do not know producer.
+Step 1: User creates order
+Step 2: Order Service stores order
+Step 3: Order Service publishes ORDER_CREATED
+Step 4: Consumers react in parallel:
+         Inventory → reserve stock
+         Email → send confirmation
+         Analytics → update dashboard
 ```
 
 ```mermaid
-flowchart TB
+flowchart LR
     OrderSvc[Order Service] -->|OrderCreated| Bus[Event broker]
     Bus --> Payment[Payment Service]
     Bus --> Inventory[Inventory Service]
@@ -972,358 +500,279 @@ flowchart TB
     Bus --> Analytics[Analytics Service]
 ```
 
-### Real-world example
+**Failure handling.** Consumer failure triggers retry with backoff; exhausted retries land in a DLQ for manual inspection. Correlation IDs in event metadata tie a single business transaction across services for distributed tracing.
 
-```text
-Customer places order → Order Service → Order Created Event
+**Common EDA building blocks:**
 
-React independently:
-  Payment, Inventory, Email, Analytics
-```
-
-### Synchronous vs event-driven
-
-| | Synchronous | Event-driven |
-|---|-------------|--------------|
-| **Flow** | Order → Payment → Email (chain waits) | Order publishes event → returns immediately |
-| **Problems** | High latency, dependencies, failure propagation | — |
-| **Benefits** | Simple to trace in one request | Low latency response, decoupled, scalable |
-
-### Event flow example
-
-```text
-Step 1: User creates order
-Step 2: Order Service stores order
-Step 3: Order Service publishes { "event": "ORDER_CREATED" }
-Step 4: Consumers react:
-  Inventory → reserve stock
-  Email → send confirmation
-  Analytics → update dashboard
-```
-
-### Event choreography
-
-Services react to events **independently** — no central coordinator.
-
-```text
-Order Created → Payment Service → Payment Completed
-             → Shipping Service → Order Shipped
-```
-
-| Pros | Cons |
-|------|------|
-| Fully decoupled, easy scaling, no central bottleneck | Hard debugging, hard to track flow, complex event chains |
-
-Common with pub/sub and streams. Distributed sagas often use choreography.
-
-### Event orchestration
-
-A **central orchestrator** controls the workflow.
-
-```text
-Order Service → Order Orchestrator → Payment / Inventory / Shipping
-```
-
-| Pros | Cons |
-|------|------|
-| Easier monitoring, debugging, workflow control | Central dependency, potential bottleneck |
-
-Saga orchestration patterns: [Chapter 8 — Microservices](../08-microservices/README.md).
-
-### Choreography vs orchestration
-
-| | Choreography | Orchestration |
-|---|--------------|---------------|
-| **Control** | Distributed | Centralized |
-| **Communication** | Events | Commands / directed steps |
-| **Coupling** | Very low | Higher |
-| **Debugging** | Harder | Easier |
-
-### Eventual consistency
-
-In EDA, services update independently — for a short time, order data may differ from inventory data; **eventually** all converge.
-
-See [Chapter 4 — Eventual Consistency](../04-distributed-system/README.md#417-eventual-consistency).
-
-### Event schema
-
-Events should follow a defined structure for compatibility.
-
-```json
-{
-  "eventType": "PAYMENT_COMPLETED",
-  "paymentId": 100,
-  "orderId": 50,
-  "timestamp": "2026-06-25"
-}
-```
-
-Versioning and registry: [§6.22 Event Versioning](#622-event-versioning), [§6.23 Schema Registry](#623-schema-registry).
-
-### Idempotency
-
-Under at-least-once delivery, the same event may arrive twice — consumers must handle duplicates safely (e.g. dedupe by **event ID**).
-
-See [§6.13 At Least Once Delivery](#613-at-least-once-delivery).
-
-Delivery semantics: [§6.12–§6.14](#612-at-most-once-delivery).
-
-### Failure handling
-
-```text
-Order Created → Email Service fails → retry
-If retries exhausted → Dead Letter Queue (DLQ)
-```
-
-[§6.15 Dead Letter Queue](#615-dead-letter-queue), [§6.16 Retry Queue](#616-retry-queue).
-
-### Common EDA patterns
-
-| Pattern | Idea | Section |
-|---------|------|---------|
-| **Pub/sub** | Publisher → topic → many subscribers | [§6.2](#62-publish-subscribe) |
-| **Event streaming** | Durable log; events retained | [§6.3](#63-event-streaming) |
-| **Event sourcing** | State = replay of all events | [§6.17](#617-event-sourcing) |
-| **CQRS** | Separate write and read models | [§6.18](#618-cqrs) |
-
-### EDA in microservices
-
-Microservices + EDA is a common combination.
-
-Benefits: independent deployment, independent scaling, loose coupling, fault isolation.
-
-```text
-User, Order, Payment, Inventory services — communicate through events
-```
-
-### Popular technologies
-
-| Technology | Section |
-|------------|---------|
-| Apache Kafka | [§6.5](#65-kafka) |
-| RabbitMQ | [§6.8](#68-rabbitmq) |
-| Apache Pulsar | [§6.10](#610-pulsar) |
-| Amazon SNS / EventBridge, Azure Event Hubs, Google Pub/Sub | Managed cloud |
-
-### Use cases
-
-| Domain | Event | Triggers |
-|--------|-------|----------|
-| **E-commerce** | Order Created | Payment, inventory, shipping, notification |
-| **Banking** | Transaction | Fraud detection, notifications, auditing |
-| **Ride sharing** | Ride Requested | Driver matching, pricing, notifications |
-| **IoT** | Sensor reading | Monitoring, alerts, analytics |
-| **Social media** | User activity | Feed updates, recommendations, analytics |
-
-### Advantages
-
-- Loose coupling
-- Scalability
-- High availability
-- Fault isolation
-- Real-time processing
-- Easier service evolution
-- Better extensibility
-
-### Disadvantages
-
-- Complex debugging (need tracing/correlation IDs)
-- Eventual consistency
-- Event schema management
-- Monitoring challenges
-- Duplicate event handling
-
-### Summary
-
-EDA centers systems on **domain events** instead of synchronous call chains.
-
-```text
-Producer publishes fact → broker → independent consumers react
-```
-
-**Key ideas:** choreography vs orchestration, eventual consistency, idempotency, schema versioning.
-
-**Goal:** Build scalable, evolvable systems where services react to what happened without tight point-to-point coupling.
+| Pattern | Role |
+|---------|------|
+| Pub/sub | Fan-out domain events |
+| Event streaming | Durable retained log |
+| Event sourcing | State = replay of all events |
+| CQRS | Separate write and read models |
+| Outbox pattern | Atomic DB write + event publish |
 
 ---
 
+### Pitfalls and design tips
+
+- **Choreography without tracing is opaque.** Propagate `correlationId` and `causationId` on every event; use OpenTelemetry across consumers.
+- **Do not publish before commit.** Use the outbox pattern or transactional messaging so a DB rollback does not leave orphan events in the bus.
+- **Version events early.** Add optional fields; never rename or remove required fields without a migration plan.
+- **Orchestration vs choreography:** prefer choreography for simple fan-out; use orchestration (saga) when you need compensating transactions across many steps.
+- **Not everything should be async.** User-facing read paths that need immediate consistency still belong on synchronous APIs or read models fed by events.
+
+---
+
+### Real-world example
+
+**Uber trip lifecycle (choreographed EDA).**
+
+1. Rider requests a trip; Trip Service persists state and publishes `TripRequested`.
+2. **Matching Service** consumes the event, finds a driver, publishes `DriverAssigned`.
+3. **Notification Service** pushes "Your driver is arriving" to rider and driver apps.
+4. **Pricing Service** listens to `TripCompleted` and emits `FareCalculated`.
+5. **Billing Service** consumes `FareCalculated` and charges the payment method.
+
+No central trip orchestrator owns the entire workflow — each team owns its reaction. If Notification Service is down, messages backlog in Kafka and deliver when it recovers; the trip itself is not blocked.
+
+---
 
 ## 6.5 Kafka
 
-### What is Apache Kafka?
+### Overview
 
-Apache Kafka is a distributed **event streaming** platform for real-time data pipelines, event-driven systems, and streaming applications.
+Imagine a library that never throws away returned books — every edition is shelved in strict order, labeled by aisle and shelf number, and any number of reading clubs can start from page one or join where they left off. **Apache Kafka** is that library for events: a distributed, replicated **commit log** built for massive throughput and replay.
 
-Designed for: high throughput, fault tolerance, scalability, durability, real-time processing.
+Technically, Kafka is an event streaming platform. Producers append records to **topics** sharded into **partitions**; **brokers** store and replicate them; **consumers** in **consumer groups** read by **offset**. Data is retained after consumption, enabling multiple independent readers, fault recovery, and stream processing at millions of events per second.
+
+---
+
+### What problem it fixes
+
+Traditional message brokers delete messages after ACK — poor fit for analytics pipelines, audit logs, and rebuilding downstream systems. Kafka provides:
+
+- Durable, retained logs with configurable retention
+- Horizontal scale via partitions and broker clusters
+- Independent consumer groups (fan-out without duplicate processing within a group)
+- Replay from any offset
+
+Companies including LinkedIn (origin), Netflix, Uber, and Airbnb use Kafka as the central nervous system for real-time and batch-derived workloads.
+
+---
+
+### What it does
+
+| Component | Role |
+|-----------|------|
+| **Producer** | Sends records to a topic partition |
+| **Topic** | Logical category (`orders`, `payments`) |
+| **Partition** | Ordered, append-only shard of a topic |
+| **Broker** | Server that stores partition logs |
+| **Consumer** | Reads records from assigned partitions |
+| **Consumer group** | Cooperating consumers sharing partition work |
+| **Offset** | Monotonic position within a partition |
+| **KRaft** | Modern metadata quorum (replaces ZooKeeper) |
+
+**Producer partition choice:** `hash(key) % partitionCount` — same key always lands in the same partition for per-key ordering. No key → round-robin.
+
+**Replication.** Each partition has one **leader** broker and follower replicas. Producers write to the leader; followers replicate. **ISR** (in-sync replicas) are caught-up followers eligible for leader election.
+
+**Retention and compaction.** Time/size retention keeps raw history. **Log compaction** keeps only the latest record per key — useful for changelog topics (user profiles, config).
+
+**Acknowledgements (`acks`):**
+
+| Setting | Behavior |
+|---------|----------|
+| `acks=0` | Fire-and-forget; may lose data |
+| `acks=1` | Leader ACK |
+| `acks=all` | All ISR replicas ACK — production default |
+
+Pair `acks=all` with `replication.factor=3` and `min.insync.replicas=2`.
+
+---
+
+### How it works — the architecture inside
 
 ```text
-Think of Kafka as: "A distributed commit log"
-or: "A highly scalable event streaming platform"
-```
-
-Context: [§6.3 Event Streaming](#63-event-streaming), [§6.4 EDA](#64-event-driven-architecture).
-
-### Why Kafka?
-
-**Traditional queue problems:** limited scalability, messages deleted after consumption, difficult replay, lower throughput.
-
-**Kafka provides:** millions of events/sec, durable storage, event replay, horizontal scaling, multiple independent consumers.
-
-### Where Kafka is used
-
-Companies: Netflix, Uber, LinkedIn, Airbnb, Amazon, banking, e-commerce.
-
-Use cases: event streaming, log aggregation, analytics, fraud detection, monitoring, IoT processing.
-
-### Kafka high-level architecture
-
-```text
-Producer → Kafka → Consumer A / B / C
-
-Producer writes events; consumers read independently.
+Producer → Topic → Partition → Broker (leader + followers) → Consumer group
 ```
 
 ```mermaid
-flowchart TB
+flowchart LR
     Prod[Producer] --> Kafka[Kafka cluster]
-    Kafka --> CA[Consumer A]
-    Kafka --> CB[Consumer B]
-    Kafka --> CC[Consumer C]
+    Kafka --> G1[Analytics group]
+    Kafka --> G2[Email group]
+    Kafka --> G3[Fraud group]
 ```
 
-### Core components
-
-| # | Component | Role |
-|---|-----------|------|
-| 1 | **Producer** | Sends events |
-| 2 | **Topic** | Logical category of events |
-| 3 | **Partition** | Parallel shard of a topic |
-| 4 | **Broker** | Kafka server storing data |
-| 5 | **Consumer** | Reads events |
-| 6 | **Consumer group** | Consumers sharing work |
-| 7 | **Offset** | Position in partition log |
-| 8 | **ZooKeeper** | Legacy cluster metadata |
-| 9 | **KRaft** | Modern metadata mode (Kafka Raft) |
-
-### Topic
-
-A topic is a logical category of events.
-
-```text
-Examples: orders, payments, users
-
-Orders topic: Order Created, Order Paid, Order Shipped
-```
-
-Producer writes to topic; consumers read from topic.
-
-### Partition
-
-Topics are split into partitions for parallelism.
-
-```text
-Orders Topic → Partition 0 | Partition 1 | Partition 2
-
-Order 101 → P0,  Order 102 → P1,  Order 103 → P2
-```
-
-Benefits: parallelism, scalability, load distribution.
-
-### Broker
-
-Kafka server = **broker**. Cluster example: Broker 1, Broker 2, Broker 3.
-
-Responsibilities: store data, handle requests, replicate partitions, serve consumers.
-
-### Producer
-
-Sends messages to Kafka.
-
-```text
-Order Service → send(event) → Orders Topic
-```
-
-Partition choice: hash of **key** (or round-robin if no key).
-
-### Consumer
-
-Reads messages from Kafka.
-
-```text
-Orders Topic → poll() → Analytics Service
-```
-
-### Offset
-
-Every message has a unique offset in its partition.
+**Message flow within a partition:**
 
 ```text
 Partition 0:
   Offset 0 → Order Created
   Offset 1 → Payment Completed
   Offset 2 → Order Shipped
+
+Consumer commits offset 2 → restart resumes at offset 3
 ```
 
-Consumer remembers last offset (e.g. 100) → after restart, continue from 101.
+**Consumer group rules.**
 
-Benefits: recovery, replay, fault tolerance. Replay: [§6.21 Event Replay](#621-event-replay).
+- Partitions are divided among group members — each partition assigned to at most one consumer in the group.
+- Maximum useful consumers per group = partition count; extra consumers sit idle.
+- Different groups on the same topic each receive **all** messages independently.
 
-### Message flow
+**Production consumer settings:**
+
+| Setting | Guidance |
+|---------|----------|
+| `enable.auto.commit` | `false` — commit after successful processing |
+| `max.poll.interval.ms` | Long enough for slow handlers (5–15 min) |
+| `group.instance.id` | Static per pod to reduce rebalance storms on deploy |
+| Consumer lag | `log_end_offset − committed_offset` — alert on sustained high lag |
+
+**Commit order (at-least-once):** `process(message)` → then `commit(offset)`. Handlers must be idempotent.
+
+**Exactly-once semantics (EOS).** Idempotent producer + transactions enable read-process-write without duplicates — high complexity; most teams use at-least-once + idempotent consumers instead.
+
+**Ecosystem:** Kafka Connect (DB integration), Kafka Streams (processing), Schema Registry (Avro/Protobuf schemas).
+
+---
+
+### Pitfalls and design tips
+
+- **Hot partitions** from `key=null` or skewed keys (e.g. all events keyed to one merchant) — monitor per-partition byte rate.
+- **Kafka is not a task queue.** Long-running jobs need retry topics + DLQ; do not block partition consumption for minutes.
+- **`unclean.leader.election.enable=false`** — avoid promoting out-of-sync replicas and losing data.
+- **Plan partition count upfront** — increasing partitions later does not reorder existing keys but affects assignment; rule of thumb: `partitions ≥ target_write_RPS / per_consumer_throughput`.
+- **KRaft for new clusters** — simpler operations than ZooKeeper; faster metadata recovery.
+
+---
+
+### Real-world example
+
+**Netflix Keystone pipeline.**
+
+1. Microservices across Netflix emit operational and product events to regional Kafka clusters.
+2. Producers set keys like `viewingSessionId` so related events stay ordered within a partition.
+3. Real-time consumers power operational dashboards and anomaly detection with sub-minute lag targets.
+4. Kafka Connect sinks the same topics to S3 for the data warehouse — batch and stream share one log.
+5. When a downstream transformer ships a bug, engineers reset the consumer group offset and replay 24 hours of events to rebuild corrected aggregates — no re-emission from source services.
+
+Kafka is the durable spine; consumers are replaceable projections over the log.
+
+---
+
+## 6.6 Kafka Partitions
+
+### Overview
+
+A supermarket checkout has multiple lanes — each lane serves customers in the order they arrived, but lane 3 does not know whether lane 1's customer came first. **Kafka partitions** are those lanes: parallel pipelines inside one topic, each preserving strict order internally while the topic as a whole scales out.
+
+Technically, a partition is an ordered, append-only log segment on a broker. Producers choose a partition via key hash or explicit assignment. Throughput scales with partition count; ordering guarantees apply **only within** a single partition.
+
+---
+
+### What problem it fixes
+
+A single log serializes all writes and reads — one partition caps throughput. Splitting a topic into N partitions lets N consumers in a group process in parallel while still giving per-entity ordering when events share a key.
+
+Without partition keys, related events may scatter across partitions and arrive out of order at consumers — breaking workflows like `Created → Paid → Shipped`.
+
+---
+
+### What it does
 
 ```text
-Producer → Topic → Partition → Broker → Consumer
+Orders Topic → Partition 0 | Partition 1 | Partition 2
+
+Order 101 (key=101) → P0
+Order 102 (key=102) → P1
+Order 103 (key=103) → P2
 ```
 
-### Ordering guarantee
+| Mechanism | Effect |
+|-----------|--------|
+| `hash(key) % N` | Same key → same partition → per-key FIFO |
+| No key | Round-robin → maximum spread, no key-level order |
+| Partition count | Upper bound on parallel consumers per group |
 
-**Within a partition:** strict order. **Across partitions:** not guaranteed. Keys, idempotent producer, trade-offs: [§6.11 Ordering Guarantees](#611-ordering-guarantees).
+**Replication.** Each partition is replicated across brokers (typically RF=3). One leader serves reads/writes; ISR followers stay in sync for failover.
 
-### Keys in Kafka
+---
 
-Producer may set a **key** (e.g. customer ID = 123).
+### How it works — the architecture inside
 
-```text
-Hash(123) → Partition 2
-
-All events for customer 123 → same partition → ordering per customer
+```mermaid
+flowchart LR
+    P[Producer] -->|hash key| P0[Partition 0]
+    P -->|hash key| P1[Partition 1]
+    P -->|hash key| P2[Partition 2]
+    P0 --> B1[Broker leader]
+    P1 --> B2[Broker leader]
+    P2 --> B3[Broker leader]
 ```
 
-### Replication
+**Partition selection walkthrough.**
 
-Partitions are replicated for fault tolerance.
+1. Producer sends `{ key: "customer-42", value: OrderCreated }`.
+2. Kafka computes `hash("customer-42") % 12` → partition 7.
+3. All future events for customer 42 land on partition 7 at offsets 0, 1, 2…
+4. Consumer assigned partition 7 reads them strictly in offset order.
 
-```text
-Partition 0 — Leader
-              +--> Follower 1
-              +--> Follower 2
-```
+**Scaling rule:** consumers in one group ≤ partition count. Twelve partitions and four consumers → each consumer handles ~3 partitions. A thirteenth consumer has no partition to claim.
 
-**Replication factor (RF) = 3** → three copies of data.
+**Sizing trade-off:**
 
-Producer writes to **leader**; followers replicate. Consumers read from leader (by default).
+| Partitions | Ordering | Throughput | Overhead |
+|------------|----------|------------|----------|
+| 1 | Global topic order | Lowest | Minimal metadata |
+| Many | Per-key only | Highest | More broker file handles, rebalance cost |
 
-### ISR (in-sync replicas)
+Too few partitions → throughput ceiling. Too many → metadata overhead, longer rebalances, and idle consumers if not matched to traffic.
 
-**ISR** = replicas fully caught up with the leader.
+---
 
-```text
-Leader + Replica A (ISR) + Replica B (ISR)
-```
+### Pitfalls and design tips
 
-Kafka elects new leaders only from ISR members.
+- **Choose business IDs as keys** — `orderId`, `accountId`, `userId` — not random UUIDs if order matters.
+- **Null keys** for throughput-sensitive, order-agnostic telemetry only.
+- **Increasing partitions** does not reshuffle existing data — plan count near expected peak; use Kafka's partition reassignment tools for broker balance, not as a frequent knob.
+- **One slow partition** (hot key) limits an entire consumer — detect skew in per-partition lag metrics.
+- **Interview line:** "Ordering in Kafka is per-partition; the partition key is how you buy ordering without giving up parallelism."
 
-### Leader election
+---
 
-```text
-Before: Broker 1 = leader, Broker 2/3 = followers
-Leader crashes → Broker 2 elected leader from ISR
-```
+### Real-world example
 
-Related: [Chapter 5 — Leader Election](../05-distributed-databases/README.md#524-leader-election).
+**Stripe-style payment events.**
 
-### Consumer group
+Payment events for `account_abc` use `account_abc` as the Kafka key. `ChargeCreated`, `ChargeCaptured`, and `RefundIssued` for that account all append to the same partition. A fraud scorer consuming that partition sees refunds only after captures — balance logic stays correct. Accounts are spread across hundreds of partitions so thousands of accounts process in parallel without global lock-step.
 
-Multiple consumers in one **group** share partition work.
+---
+
+## 6.7 Kafka Consumer Groups
+
+### Overview
+
+A relay race team hands off batons so each runner covers one leg — no two runners hold the same baton at once, but multiple teams can run the same course independently. A **consumer group** is that team for Kafka: cooperating consumers split partitions so each message is processed once per group, while other groups read the full stream separately.
+
+Technically, consumers sharing a `group.id` coordinate partition assignment via the group coordinator. Rebalances redistribute partitions when members join, leave, or crash. Committed offsets record progress per partition — restart or new deploy resumes without re-reading the entire log (unless you choose to).
+
+---
+
+### What problem it fixes
+
+A single consumer on a high-volume topic becomes a bottleneck. Multiple uncoordinated consumers on the same topic would duplicate work. Consumer groups provide **load-balanced, exactly-once-per-group** consumption with horizontal scale bounded by partition count.
+
+Separately, different applications (analytics vs billing vs search) need the **same** events without stepping on each other's offsets — separate consumer groups solve that.
+
+---
+
+### What it does
+
+**Within one group:**
 
 ```text
 Partition 0 → Consumer 1
@@ -1331,38 +780,49 @@ Partition 1 → Consumer 2
 Partition 2 → Consumer 3
 ```
 
-**Rule:** one partition → at most **one** consumer per group (3 partitions, 3 consumers = full utilization).
+Each message in the topic is delivered to **one** consumer in the group.
 
-### Multiple consumer groups
-
-```text
-Orders Topic → Analytics Group (all messages)
-            → Email Group (all messages)
-            → Fraud Group (all messages)
-
-Inside a group: each message processed once
-Across groups: every group receives all messages
-```
-
-### Consumer group operations (production)
-
-**Assignment example:**
+**Across groups:**
 
 ```text
-Topic orders: 12 partitions (P0..P11), group checkout-workers: 4 consumers
-
-C1 → P0–P2,  C2 → P3–P5,  C3 → P6–P8,  C4 → P9–P11
-Max useful consumers = partition count (13th consumer sits idle)
+orders topic → analytics-group (all messages)
+            → email-group (all messages)
+            → fraud-group (all messages)
 ```
 
-**Rebalance triggers:** consumer join/leave, crash, `max.poll.interval.ms` exceeded, partition count change, rolling deploy.
+Each group maintains its own offset commits — fan-out with independent progress.
 
-| Setting | Typical prod | Pitfall if wrong |
-|---------|--------------|----------------|
-| `max.poll.interval.ms` | 5–15 min | Too low → rebalance during slow handler |
-| `enable.auto.commit` | **false** | Commit before process → message loss |
-| `partition.assignment.strategy` | `CooperativeStickyAssignor` | Less churn than range assignor |
-| `group.instance.id` | static per pod | Rolling deploy without rebalance storm |
+| Concept | Behavior |
+|---------|----------|
+| Same `group.id` | Partitions shared; cooperative consumption |
+| Different `group.id` | Independent reads of identical topic data |
+| Max active consumers | One per partition per group |
+| Static membership | `group.instance.id` reduces rebalance on rolling deploy |
+
+---
+
+### How it works — the architecture inside
+
+```mermaid
+flowchart LR
+    subgraph Topic
+        P0[P0]
+        P1[P1]
+        P2[P2]
+    end
+    subgraph checkout-workers
+        C1[Consumer 1]
+        C2[Consumer 2]
+        C3[Consumer 3]
+    end
+    P0 --> C1
+    P1 --> C2
+    P2 --> C3
+```
+
+**Assignment example:** topic `orders` has 12 partitions; group `checkout-workers` has 4 consumers → roughly P0–P2 to C1, P3–P5 to C2, etc.
+
+**Rebalance triggers:** consumer join/leave, crash, `max.poll.interval.ms` exceeded (handler too slow), partition count change.
 
 **Consumer lag:**
 
@@ -1370,1268 +830,548 @@ Max useful consumers = partition count (13th consumer sits idle)
 lag = log_end_offset − committed_offset
 ```
 
-Alert on sustained high lag; one hot partition → bad key skew (`key=null`).
+Sustained lag on one partition often signals a hot key or a slow handler.
 
-**Commit order (at-least-once):**
-
-```text
-process(message) → then commit(offset)   # handler must be idempotent
-```
-
-```mermaid
-flowchart TB
-    subgraph Topic
-        P0[Partition 0]
-        P1[Partition 1]
-    end
-    subgraph Group
-        C1[Consumer 1]
-        C2[Consumer 2]
-    end
-    P0 --> C1
-    P1 --> C2
-```
-
-### Retention
-
-Kafka retains data after consumption.
+**Commit-after-process (at-least-once):**
 
 ```text
-Retention = 7 days → messages available for replay
+poll() → process(record) → commitSync(offset + 1)
 ```
 
-### Message replay
+Committing before process → at-most-once risk. Auto-commit with long processing → duplicate risk on crash.
 
-```text
-Consumer offset = 100 → reset to 0 → reprocess from start
-```
+**Cooperative sticky assignor** (`CooperativeStickyAssignor`) revokes fewer partitions per rebalance than range assignor — less duplicate processing during deploys.
 
-Benefits: recovery, debugging, rebuilding downstream systems.
+---
 
-### Acknowledgements (`acks`)
+### Pitfalls and design tips
 
-| Setting | Behavior | Trade-off |
-|---------|----------|-----------|
-| **`acks=0`** | Producer does not wait | Fastest; least reliable |
-| **`acks=1`** | Leader confirms | Balanced |
-| **`acks=all`** | All ISR replicas confirm | Most reliable (production default) |
+- **`max.poll.interval.ms` too low** — slow handlers trigger rebalance loops; consumer never makes progress.
+- **`enable.auto.commit=true` with side effects** — offset may commit before processing finishes → message loss on crash.
+- **More consumers than partitions** — extras idle; add partitions (carefully) or merge groups.
+- **Rebalance during deploy** — use static `group.instance.id` and cooperative protocols; drain gracefully.
+- **Monitor lag per partition**, not just aggregate — one hot partition hides inside a healthy average.
 
-Pair with `min.insync.replicas=2` when `replication.factor=3`.
-
-### Exactly-once semantics (EOS)
-
-Consumer crash can cause duplicate processing. Kafka supports:
-
-- Idempotent producer
-- Transactions
-- Exactly-once processing (read-process-write)
-
-See [§6.14 Exactly Once Delivery](#614-exactly-once-delivery). Most teams use at-least-once + idempotent consumers.
-
-### Log compaction
-
-Keeps **latest value per key** instead of all history.
-
-```text
-User1 → A, User1 → B, User1 → C  →  compacted: User1 → C
-```
-
-Useful for caches, user profiles, current-state topics.
-
-### Kafka KRaft
-
-| | Legacy | Modern |
-|---|--------|--------|
-| **Metadata** | Kafka + ZooKeeper | Kafka + **KRaft** (Kafka Raft metadata mode) |
-| **Benefits** | — | Simpler ops, faster leader election, no ZooKeeper |
-
-### Kafka ecosystem
-
-| Component | Purpose |
-|-----------|---------|
-| **Kafka Producer / Consumer** | Write and read events |
-| **Kafka Streams** | Real-time stream processing |
-| **Kafka Connect** | Database ↔ Kafka integration |
-| **Schema Registry** | Event schemas — [§6.23](#623-schema-registry) |
+---
 
 ### Real-world example
 
-```text
-Customer places order → Order Service → Orders Topic
-  → Payment, Email, Analytics, Inventory (one event, many consumers)
-```
+**DoorDash order pipeline — two groups on `order-events`.**
 
-### Kafka vs RabbitMQ
+1. **Group `dispatch`** (8 consumers, 8 partitions): assigns drivers in real time; commits offset after dispatch API succeeds. Lag alert fires if any partition exceeds 30 seconds.
+2. **Group `data-warehouse`** (2 consumers, 8 partitions): sinks events to BigQuery via Kafka Connect — lag of hours is acceptable; offsets are independent of dispatch.
+3. During deploy, dispatch pods use `group.instance.id=dispatch-pod-3` so Kafka reassigns only that pod's partitions — not a full cluster rebalance.
 
-| | Kafka | RabbitMQ |
-|---|-------|----------|
-| **Purpose** | Event streaming | Message queue |
-| **Storage** | Persistent log | Queue |
-| **Replay** | Supported | Limited |
-| **Throughput** | Very high | Lower |
-
-RabbitMQ detail: [§6.8 RabbitMQ](#68-rabbitmq).
-
-### Advantages
-
-- Extremely high throughput
-- Durable storage
-- Event replay
-- Horizontal scaling
-- Fault tolerant
-- Distributed architecture
-- Strong ecosystem
-
-### Disadvantages
-
-- Operational complexity
-- Storage management
-- Ordering only within partition
-- Learning curve
-- Monitoring required (consumer lag, ISR)
-
-### Production essentials
-
-| Setting | Production guidance |
-|---------|---------------------|
-| `replication.factor` | **3** |
-| `min.insync.replicas` | **2** (with RF=3) |
-| `acks` | **`all`** |
-| `enable.idempotence` | **true** on producers |
-| `unclean.leader.election.enable` | **false** |
-| Partitions | Plan upfront — `partitions ≥ write_RPS / consumer_speed` |
-
-**Pitfalls:** hot partition (`key=null`), treating Kafka as a task queue (use retry topics + [§6.15 DLQ](#615-dead-letter-queue)), no lag alerts.
-
-### Summary
-
-Kafka is a distributed, replicated commit log with topics, partitions, and consumer groups.
-
-```text
-Producer → topic/partition (offsets) → consumer groups (independent fan-out + replay)
-```
-
-**Key ideas:** per-key ordering, ISR replication, offsets, retention, `acks`, KRaft.
-
-**Goal:** Durable, high-throughput event backbone for real-time and replayable pipelines.
+Same topic, two purposes, zero offset collision.
 
 ---
-
-
-## 6.6 Kafka Partitions
-
-> **Canonical coverage:** partitions, keys, ordering, and scaling rules are in [§6.5 Kafka — Partition](#65-kafka), [Keys in Kafka](#65-kafka), and [Ordering guarantee](#65-kafka). This entry is a sub-topic index only.
-
-| Quick reference | Detail in §6.5 |
-|----------------|----------------|
-| Ordering | [§6.11 Ordering Guarantees](#611-ordering-guarantees) |
-| Partition key | `hash(key) % N` |
-| Scale consumers | ≤ partition count per group |
-| Pitfall | Too few partitions caps throughput; too many adds metadata overhead |
-
----
-
-
-## 6.7 Kafka Consumer Groups
-
-> **Canonical coverage:** consumer groups, fan-out across groups, and production ops are in [§6.5 Kafka — Consumer group](#65-kafka), [Multiple consumer groups](#65-kafka), and [Consumer group operations (production)](#65-kafka). This entry is a sub-topic index only.
-
-| Quick reference | Detail in §6.5 |
-|----------------|----------------|
-| Same `group.id` | Partitions shared among members |
-| Different groups | Independent reads of same topic |
-| Max consumers | One per partition per group |
-| Ops | Lag, rebalance, commit-after-process |
-
----
-
 
 ## 6.8 RabbitMQ
 
-### What is RabbitMQ?
+### Overview
 
-RabbitMQ is an open-source **message broker** that implements **AMQP** (Advanced Message Queuing Protocol).
+A post office does not deliver every letter directly from sender to recipient's desk — it sorts mail into bins by address, and workers pull from each bin. **RabbitMQ** is that sorting office for messages: producers hand envelopes to an **exchange**, which routes them into **queues**, and consumers pick up work from their queue.
 
-It sits between producers and consumers and ensures reliable delivery of messages.
+Technically, RabbitMQ is an open-source **AMQP message broker**. Its distinguishing feature is **flexible broker-side routing** — direct, fanout, topic, and headers exchanges — plus acknowledgements, persistence, prefetch, and dead-letter queues for reliable task processing at moderate-to-high throughput.
 
-```text
-Producer → RabbitMQ → Consumer
-```
+---
 
-Primarily used for: message queuing, asynchronous processing, work distribution, service decoupling, reliable messaging.
+### What problem it fixes
 
-Compare: [§6.5 Kafka](#65-kafka) (event streaming log vs queue broker).
-
-### Why RabbitMQ?
-
-**Without RabbitMQ:**
+Direct HTTP calls fail when the downstream service is unavailable:
 
 ```text
-Order Service → Email Service
-Email down → request may fail
+Order Service → Email Service (Email down → checkout fails or times out)
 ```
 
-**With RabbitMQ:**
+With RabbitMQ:
 
 ```text
 Order Service → RabbitMQ Queue → Email Service
-Email down → message waits in queue
 ```
 
-Benefits: reliability, decoupling, fault tolerance, async processing.
+The message waits safely until a worker is healthy — decoupling availability and smoothing load spikes.
 
-### High-level architecture
+---
+
+### What it does
+
+**Critical rule:** producers never send directly to a queue. Flow is always:
 
 ```text
 Producer → Exchange → Queue → Consumer
 ```
 
-**Important:** producer **never** sends directly to a queue — producer sends to an **exchange**; the exchange routes to queue(s).
+| Component | Role |
+|-----------|------|
+| **Exchange** | Routes messages by type and rules |
+| **Binding** | Links exchange to queue with optional routing key |
+| **Queue** | Buffers messages until consumed and ACKed |
+| **Routing key** | Producer-supplied hint (`order.created`) |
+
+**Exchange types:**
+
+| Type | Routing behavior |
+|------|------------------|
+| **Direct** | Exact routing key match |
+| **Fanout** | Broadcast to all bound queues |
+| **Topic** | Pattern match (`order.*`, `order.#`) |
+| **Headers** | Match message headers |
+
+**Reliability knobs:**
+
+- **Durable queue + persistent message** — survive broker restart
+- **Manual ACK** — delete only after successful processing
+- **Prefetch count** — cap unacked messages per consumer (prevent memory blow-up)
+- **DLQ** — poison messages after max retries
+
+**Competing consumers** on one queue distribute tasks — each message to exactly one worker.
+
+---
+
+### How it works — the architecture inside
 
 ```mermaid
 flowchart LR
     Pub[Producer] --> Ex[Exchange]
-    Ex --> Q[Queue]
-    Q --> Con[Consumer]
-```
-
-### Core components
-
-| Component | Role |
-|-----------|------|
-| **Producer** | Creates and sends messages |
-| **Exchange** | Routes messages to queues |
-| **Queue** | Stores messages until consumed |
-| **Binding** | Links exchange to queue |
-| **Consumer** | Reads and processes messages |
-| **Broker** | RabbitMQ server |
-| **Routing key** | Used by exchange for routing |
-
-### Broker
-
-RabbitMQ server responsibilities: receive, store, route, and deliver messages.
-
-### Producer
-
-```text
-Order Service → RabbitMQ
-
-{ "orderId": 1001, "event": "ORDER_CREATED" }
-```
-
-### Queue
-
-Stores messages until consumed and **acknowledged**.
-
-```text
-+----------------+
-| Order Queue    |
-+----------------+
-```
-
-### Consumer
-
-```text
-Email Service: read → process → send ACK
-```
-
-### Exchange
-
-The central routing concept.
-
-```text
-Producer → Exchange → Queue A
-                    → Queue B
-
-Exchange decides: "Where should this message go?"
-```
-
-### Binding
-
-Connection between **exchange** and **queue**.
-
-```text
-Orders Exchange → Order Queue
-               → Analytics Queue
-```
-
-Binding + routing key determine routing.
-
-### Routing key
-
-Producer attaches a routing key; exchange uses it to route.
-
-```text
-Examples: order.created, order.shipped, payment.completed
-```
-
-### Message flow
-
-```text
-Producer → Exchange → Queue → Consumer
-```
-
-### Exchange types
-
-| Type | Routing |
-|------|---------|
-| **Direct** | Exact routing key match |
-| **Fanout** | Broadcast to all bound queues |
-| **Topic** | Pattern match (`*`, `#`) |
-| **Headers** | Match message headers (less common) |
-
-#### Direct exchange
-
-Routes using **exact** routing key match.
-
-```text
-Routing key order.created → Direct Exchange → Order Queue only
-
-order.shipped → Shipping Queue
-```
-
-#### Fanout exchange
-
-Broadcasts to **all** bound queues — no routing key needed.
-
-```text
-Producer → Fanout Exchange → Queue A, B, C (all receive)
-```
-
-Used for notifications and pub/sub. See [§6.2 Publish Subscribe](#62-publish-subscribe).
-
-#### Topic exchange
-
-Pattern matching on routing keys.
-
-```text
-Binding pattern order.* matches order.created, order.shipped, order.cancelled
-```
-
-**Wildcards:**
-
-| Symbol | Meaning | Example |
-|--------|---------|---------|
-| `*` | Exactly one word | `order.*` → `order.created` |
-| `#` | Zero or more words | `order.#` → `order.created.payment` |
-
-```mermaid
-flowchart LR
-    Pub[Publisher] --> Ex[Topic Exchange]
-    Ex -->|order.*| Q1[Queue A]
-    Ex -->|order.ship| Q2[Queue B]
+    Ex -->|binding + key| Q1[Order queue]
+    Ex -->|binding + key| Q2[Shipping queue]
     Q1 --> C1[Consumer]
+    Q2 --> C2[Consumer]
 ```
 
-#### Headers exchange
-
-Routes on message headers (e.g. `country=India`, `type=Premium`) instead of routing key.
-
-### Acknowledgements (ACK)
+**Topic exchange walkthrough.**
 
 ```text
-Consumer receives message → processes → sends ACK → RabbitMQ deletes message
+Binding: order.*  → Analytics queue
+Binding: order.shipped → Shipping queue
 
-No ACK (e.g. consumer crash) → message remains available for redelivery
+Publish routing key order.created → Analytics only
+Publish routing key order.shipped → Analytics AND Shipping
 ```
 
-See [§6.13 At Least Once Delivery](#613-at-least-once-delivery).
+Wildcards: `*` = one word; `#` = zero or more words.
 
-### Message durability
-
-| | Effect |
-|---|--------|
-| **Durable queue** | Queue survives broker restart |
-| **Persistent message** | Message written to disk |
-
-For maximum reliability: use **both** durable queue and persistent messages.
-
-### Redelivery
+**ACK flow:**
 
 ```text
-Consumer crashes before ACK → RabbitMQ redelivers → no message loss (at-least-once)
+Consumer receives → processes → basicAck → RabbitMQ deletes message
+Crash before ACK → message redelivered (at-least-once)
 ```
 
-### Dead letter queue (DLQ)
-
-After repeated failures, message moves to DLQ.
-
-```text
-Queue → retry failed → DLQ (debug / manual fix)
-```
-
-Detail: [§6.15 Dead Letter Queue](#615-dead-letter-queue).
-
-### Prefetch count
-
-Limits unacked messages per consumer.
-
-```text
-Prefetch = 5 → consumer holds at most 5 messages at once → prevents overload
-```
-
-### Competing consumers
-
-Multiple consumers on the same queue — each message processed by **one** consumer.
-
-```text
-Queue → Consumer 1 / Consumer 2 / Consumer 3
-```
-
-Benefits: load balancing, higher throughput. See [§6.1 Message Queues](#61-message-queues).
-
-### Pub/sub using RabbitMQ
-
-```text
-Producer → Fanout Exchange → Email / Analytics / SMS
-```
-
-All bound queues receive the same message.
-
-### Ordering
-
-| Setup | Ordering |
-|-------|----------|
-| **Single queue, single consumer** | Preserved |
-| **Multiple competing consumers** | Not guaranteed |
-
-See [§6.11 Ordering Guarantees](#611-ordering-guarantees).
-
-### Clustering
-
-```text
-Node 1 | Node 2 | Node 3 → high availability, scalability
-```
-
-### Quorum queues
-
-Modern queue type using **Raft consensus** (preferred over classic mirrored queues).
-
-Benefits: high availability, better reliability, fault tolerance.
-
-### RabbitMQ vs Kafka
-
-| | RabbitMQ | Kafka |
-|---|----------|-------|
-| **Purpose** | Message queue / task processing | Event streaming |
-| **Replay** | Limited | Strong |
-| **Latency** | Very low | Low |
-| **Throughput** | Moderate | Extremely high |
-| **Routing** | Excellent (exchanges) | Topic + partition key |
-| **Model** | Delete on ACK | Retained log |
-
-Detail: [§6.5 Kafka](#65-kafka).
-
-### When to use RabbitMQ?
-
-- Background jobs
-- Email / order processing
-- Task queues
-- Microservice communication
-- RPC-style messaging
-- Workflow systems
-
-### When to use Kafka?
-
-- Event streaming
-- Real-time analytics
-- Clickstream data
-- Audit logs
-- Event sourcing — [§6.17](#617-event-sourcing)
-- Big data pipelines
-
-### Advantages
-
-- Easy to use
-- Reliable delivery
-- Flexible routing (exchange types)
-- Supports retries and DLQ
-- Good for microservices
-
-### Disadvantages
-
-- Lower throughput than Kafka
-- Limited event replay
-- Queue storage growth if consumers lag
-- Complex cluster management
-
-### Summary
-
-RabbitMQ routes messages **producer → exchange → queue → consumer** with flexible AMQP routing.
-
-```text
-Key concepts: exchange, binding, routing key, ACK, durability, prefetch, competing consumers
-```
-
-**Goal:** Reliable async work distribution and decoupling with rich broker-side routing.
+**Quorum queues** (modern default for HA) use Raft consensus — preferred over legacy mirrored queues for data safety.
 
 ---
 
+### Pitfalls and design tips
+
+- **Fanout for pub/sub, single queue for work queues** — mixing patterns on one queue causes confusion about who should process what.
+- **Auto-ACK** only for disposable metrics — otherwise you get at-most-once loss on crash.
+- **Unbounded queue growth** when consumers lag — monitor `messages_ready` and `messages_unacknowledged`; scale consumers or throttle producers.
+- **Ordering** requires single active consumer per queue — competing consumers break strict FIFO.
+- **Choose RabbitMQ over Kafka** when you need complex routing, low-latency tasks, and delete-on-success semantics — not multi-day replay at billions of events.
+
+---
+
+### Real-world example
+
+**Background job routing at a SaaS billing platform.**
+
+1. `InvoiceService` publishes to the `billing` **topic exchange** with routing key `invoice.created`.
+2. Bindings route `invoice.created` to `pdf-render-queue` and `analytics-queue`.
+3. Three workers compete on `pdf-render-queue` with `prefetch=10` — each generates a PDF, uploads to S3, then ACKs.
+4. A malformed invoice crashes the PDF worker five times; RabbitMQ dead-letters the message to `pdf-render-dlq` for ops review while other invoices keep flowing.
+
+Exchanges decouple "what happened" from "which workers care" without the invoice service knowing queue names.
+
+---
 
 ## 6.9 ActiveMQ
 
-### What is Apache ActiveMQ?
+### Overview
 
-Apache ActiveMQ is an open-source **message broker** for communication between distributed applications.
+ActiveMQ is the enterprise Java team's long-distance operator — it speaks many protocols (JMS, AMQP, MQTT, STOMP) and connects legacy mainframes, Spring apps, and mobile clients through one broker. If your organization standardizes on **JMS** for messaging, ActiveMQ is often already in the data center.
 
-Implements: **JMS** (Java Message Service), **AMQP**, **MQTT**, **STOMP**, **OpenWire**.
+Technically, **Apache ActiveMQ** is a multi-protocol message broker. The classic broker targets JMS **queues** (point-to-point) and **topics** (pub/sub). **ActiveMQ Artemis** is the modern high-performance core recommended for new deployments — same concepts, better throughput and clustering.
 
-Used for: enterprise messaging, asynchronous communication, system integration, microservices messaging, event-driven systems.
+---
 
-Compare: [§6.8 RabbitMQ](#68-rabbitmq) (AMQP-native), [§6.5 Kafka](#65-kafka) (streaming).
+### What problem it fixes
 
-### What is a message broker?
+Enterprise Java systems historically integrated through JMS, not raw HTTP or Kafka. ActiveMQ provides:
 
-```text
-Without broker:  Service A → Service B (direct dependency)
+- Standard JMS API (`ConnectionFactory`, `Session`, `Destination`)
+- Reliable async messaging between JVM services
+- Queue/worker and topic/broadcast patterns in one broker
+- Request-reply over temporary reply queues (RPC-style without synchronous HTTP)
 
-With ActiveMQ:   Service A → ActiveMQ → Service B
+It bridges brownfield integration — insurance claims, banking workflows, ERP connectors — where JMS is the contract.
 
-Benefits: decoupling, reliability, scalability
-```
+---
 
-### Why ActiveMQ?
-
-**Distributed system problems:** tight coupling, service downtime, slow processing, request failures.
-
-**ActiveMQ solution:**
-
-```text
-Producer → Queue → Consumer
-Messages stored safely until processed
-```
-
-### Core components
+### What it does
 
 | Component | Role |
 |-----------|------|
-| **Producer** | Sends messages |
-| **Consumer** | Receives and processes messages |
-| **Queue** | Point-to-point destination |
-| **Topic** | Publish-subscribe destination |
+| **Producer** | Sends to a queue or topic |
+| **Consumer** | Receives and acknowledges |
+| **Queue** | One consumer per message |
+| **Topic** | Many subscribers per message |
 | **Broker** | ActiveMQ server |
-| **Message** | Payload + headers |
-| **Connection factory** | JMS entry point for connections |
-| **Destination** | Queue or topic |
+| **ConnectionFactory** | JMS entry point for connections |
 
-### Broker
-
-ActiveMQ server responsibilities: accept, store, route, and deliver messages.
-
-### Producer
-
-```text
-Order Service → ActiveMQ
-
-{ "orderId": 1001, "event": "ORDER_CREATED" }
-```
-
-### Consumer
-
-```text
-Email Service: read → process → acknowledge
-```
-
-### Destination
-
-Where messages are sent — two types: **queue** or **topic**.
-
-### Queue model (point-to-point)
-
-One message → **one** consumer.
-
-```text
-Producer → Queue → Consumer
-
-Order queue with Consumers A, B, C — only ONE gets each message
-```
-
-See [§6.1 Message Queues](#61-message-queues).
-
-### Topic model (publish-subscribe)
-
-One message → **many** consumers.
-
-```text
-Producer → Topic → A, B, C (all receive)
-
-Order Created → Email, Analytics, Inventory
-```
-
-See [§6.2 Publish Subscribe](#62-publish-subscribe).
-
-### Queue vs topic
+**Queue vs topic:**
 
 | | Queue | Topic |
-|---|-------|-------|
-| **Consumers** | One per message | Many |
-| **Copies** | Single | Multiple |
-| **Use case** | Task processing | Event broadcasting |
+|---|-------|------|
+| **Delivery** | One consumer | All active subscribers |
+| **Use** | Task processing | Event broadcast |
 
-### Message flow
+**JMS message types:** `TextMessage`, `ObjectMessage`, `MapMessage`, `BytesMessage`, `StreamMessage`.
 
-```text
-Producer → Broker → Queue/Topic → Consumer
-```
+**Persistence:** persistent messages survive broker restart; non-persistent trade durability for speed.
+
+**Durable subscribers** on topics retain messages while offline — non-durable subscribers miss events during downtime.
+
+**Message groups** route related messages to the same consumer for ordered processing per customer.
+
+**DLQ** after retry exhaustion — same poison-message pattern as RabbitMQ.
+
+---
+
+### How it works — the architecture inside
 
 ```mermaid
 flowchart LR
-    P[Producer] --> B[Broker]
-    B --> D[Queue or Topic]
-    D --> C[Consumer]
+    P[Producer] --> B[ActiveMQ broker]
+    B --> Q[Queue]
+    B --> T[Topic]
+    Q --> C1[Single consumer]
+    T --> C2[Subscriber A]
+    T --> C3[Subscriber B]
 ```
 
-### JMS (Java Message Service)
-
-JMS is the Java API for messaging; ActiveMQ is a popular **JMS provider**.
-
-**JMS components:** ConnectionFactory, Connection, Session, Producer, Consumer, Destination.
+**JMS client stack:**
 
 ```text
-Application → ConnectionFactory → Connection → Session → Producer/Consumer
+Application → ConnectionFactory → Connection → Session → Producer/Consumer → Destination
 ```
 
-### Message types
-
-| Type | Example |
-|------|---------|
-| **TextMessage** | `"Order Created"` |
-| **ObjectMessage** | Java object |
-| **MapMessage** | Key-value pairs |
-| **BytesMessage** | Binary data |
-| **StreamMessage** | Stream of values |
-
-### Message persistence
-
-| Mode | Behavior |
-|------|----------|
-| **Persistent** | Stored on disk; survives broker restart |
-| **Non-persistent** | Memory only; faster, less reliable |
-
-### Acknowledgements
-
-```text
-Consumer → ACK → broker removes message
-No ACK (crash) → broker redelivers
-```
-
-See [§6.13 At Least Once Delivery](#613-at-least-once-delivery).
-
-### Delivery modes
-
-| Mode | Trade-off |
-|------|-----------|
-| **Persistent** | Reliable; slower |
-| **Non-persistent** | Fast; less reliable |
-
-### Message selectors
-
-Consumers filter messages — e.g. only `type='payment'`.
-
-### Durable vs non-durable subscribers (topics)
-
-| | Durable | Non-durable |
-|---|---------|-------------|
-| **Subscriber offline** | Messages retained; delivered on return | Messages lost |
-| **Use** | Must-not-miss events | Fire-and-forget notifications |
-
-### Request-reply pattern
+**Request-reply:**
 
 ```text
 Client → request queue → Server → response queue → Client
 ```
 
-Similar to RPC over messaging.
+Correlation ID in message headers ties reply to request.
 
-### Message groups
+**High availability:** master/slave failover, network of brokers for geographic distribution, Artemis replicated stores for modern clusters.
 
-Route related messages to the same consumer for **ordered** processing (e.g. all events for Customer 101).
+**ActiveMQ Classic vs Artemis:**
 
-### Dead letter queue (DLQ)
-
-```text
-Retries exhausted → message moved to DLQ (debugging, stop endless retry)
-```
-
-See [§6.15 Dead Letter Queue](#615-dead-letter-queue).
-
-### Network of brokers
-
-```text
-Broker A ↔ Broker B ↔ Broker C
-```
-
-Benefits: scalability, geographic distribution.
-
-### High availability
-
-```text
-Master broker → slave broker (failover)
-Modern: shared storage HA, replicated storage
-```
-
-### ActiveMQ Artemis
-
-**Apache ActiveMQ Artemis** — modern implementation.
-
-Benefits: faster, better scalability and clustering, improved performance. **Recommended for new ActiveMQ deployments.**
-
-### ActiveMQ vs RabbitMQ
-
-| | ActiveMQ | RabbitMQ |
-|---|----------|----------|
-| **Strength** | Strong JMS; enterprise Java | Flexible AMQP routing |
-| **Best for** | Java enterprise applications | General-purpose messaging |
-
-Detail: [§6.8 RabbitMQ](#68-rabbitmq).
-
-### ActiveMQ vs Kafka
-
-| | ActiveMQ | Kafka |
-|---|----------|-------|
-| **Purpose** | Message queue | Event streaming |
-| **Storage** | Queue-based | Log-based |
-| **Replay** | Limited | Excellent |
-| **Use cases** | Task processing | Analytics, streaming |
-
-Detail: [§6.5 Kafka](#65-kafka).
-
-### When to use ActiveMQ?
-
-- Enterprise Java applications
-- JMS-based systems
-- Banking, insurance, legacy enterprise integration
-- Reliable task queues
-- Request-reply messaging
-
-### When to use ActiveMQ Artemis?
-
-- Modern JMS applications
-- High-throughput enterprise messaging
-- Large-scale enterprise systems
-- Cloud-native Java applications
-
-### ActiveMQ Classic vs Artemis
-
-| | ActiveMQ Classic | ActiveMQ Artemis |
-|---|------------------|------------------|
-| **Status** | Older implementation | Modern implementation |
-| **Performance** | Moderate | Much faster |
-| **Architecture** | Traditional | High-performance core |
-| **Recommended** | Legacy maintenance | **Yes** for new systems |
-
-### Advantages
-
-- Strong JMS support
-- Reliable messaging
-- Queue and topic support
-- Durable subscriptions
-- Dead letter queues
-- Request-reply support
-- Enterprise-ready
-
-### Disadvantages
-
-- Lower throughput than Kafka
-- More Java-centric
-- Less suitable for event streaming
-- Complex clustering
-- Older Classic versions slower
-
-### Summary
-
-ActiveMQ is a multi-protocol enterprise broker with JMS queues/topics at its core.
-
-```text
-Producer → broker → queue (one consumer) or topic (many subscribers)
-Prefer Artemis for new deployments; consider Kafka for streaming/replay at scale.
-```
-
-**Goal:** Reliable async messaging for Java enterprise and integrated distributed systems.
+| | Classic | Artemis |
+|---|---------|---------|
+| **Status** | Legacy maintenance | Recommended for new systems |
+| **Performance** | Moderate | Significantly faster |
+| **Clustering** | Network of brokers | Built-in HA replication |
 
 ---
 
+### Pitfalls and design tips
+
+- **New Java projects → Artemis**, not Classic — better performance and supported clustering path.
+- **ObjectMessage** ties you to Java serialization — prefer JSON/TextMessage for cross-language services.
+- **Not a replay log** — limited retention vs Kafka; use Kafka when analytics needs historical re-read.
+- **Message selectors** filter in the broker but add CPU cost — prefer routing to dedicated queues when volume is high.
+- **Interview context:** ActiveMQ = JMS enterprise integration; RabbitMQ = flexible AMQP routing; Kafka = streaming scale.
+
+---
+
+### Real-world example
+
+**Bank payment settlement (JMS queue).**
+
+1. A core banking JVM service enqueues `SettlementRequest` XML as a persistent `TextMessage` on `settlement.queue`.
+2. Three adapter instances compete on the queue; JMS ensures each message goes to one adapter.
+3. The adapter calls an external clearinghouse API; on success it calls `message.acknowledge()`.
+4. Broker restart overnight does not lose unacked persistent messages — they redeliver on startup.
+5. Messages failing validation after five redelivers route to `ActiveMQ.DLQ` for compliance review.
+
+JMS gives the bank a standardized API across vendors; ActiveMQ is the on-prem broker they operate.
+
+---
 
 ## 6.10 Pulsar
 
-### What is Apache Pulsar?
+### Overview
 
-**Apache Pulsar** is a distributed messaging and event-streaming platform designed for high throughput, low latency, scalability, multi-tenancy, and geo-replication.
+Most messaging systems weld the waiter and the pantry into one role — take orders and store food in the same kitchen. **Apache Pulsar** splits them: stateless **brokers** serve clients while **Apache BookKeeper** stores message ledgers separately. You can add more waiters or more pantry space independently.
 
-It combines features of **message queues** (RabbitMQ-style) and **event streaming** (Kafka-style) in a single system.
+Technically, Pulsar is a distributed pub/sub and streaming platform (originated at Yahoo, now Apache). It offers Kafka-like partitioned topics and retention with RabbitMQ-like subscription flexibility — plus built-in **multi-tenancy** and **geo-replication** — at the cost of operating brokers and BookKeeper (and optionally tiered object storage).
 
-Open-source publish-subscribe messaging, originally developed at Yahoo, now an **Apache Software Foundation** project.
+---
 
-Peers: Kafka, RabbitMQ, ActiveMQ — with a **different architecture** (storage/compute separation).
+### What problem it fixes
 
-### Core components
+Kafka couples storage to broker disks — scaling read throughput often means copying partition data to more brokers. Pulsar decouples serving from storage:
 
-1. **Producers** — publish messages
-2. **Consumers** — subscribe and consume
-3. **Topics** — logical channels (`orders`, `payments`, `notifications`)
-4. **Brokers** — stateless serving layer (accept, route, serve consumers)
-5. **BookKeeper** — persistent storage layer (ledgers)
+| | Kafka | Pulsar |
+|---|-------|--------|
+| **Broker** | Compute + local log segments | Stateless compute |
+| **Storage** | On broker disks | BookKeeper ledgers |
+| **Scale** | Joint | Independent |
 
-### High-level architecture
+Teams needing multi-region replication without MirrorMaker-style plumbing, or SaaS platforms isolating tenants on one cluster, benefit from Pulsar's first-class features.
 
-```text
-Producer → Pulsar broker → Apache BookKeeper → consumer
-```
+---
+
+### What it does
+
+| Component | Role |
+|-----------|------|
+| **Broker** | Accepts publishes, serves subscriptions — stateless |
+| **BookKeeper** | Replicated ledger storage |
+| **Topic** | Logical channel, optionally partitioned |
+| **Subscription** | Consumer's cursor on a topic |
+
+**Subscription modes:**
+
+| Mode | Behavior |
+|------|----------|
+| **Exclusive** | One consumer only |
+| **Shared** | Competing consumers — round-robin |
+| **Failover** | One active, standby on failure |
+| **Key_Shared** | Same key → same consumer — per-key ordering |
+
+**Retention and replay.** Messages persist after ACK; reset the subscription cursor to replay — Kafka-offset-reset equivalent.
+
+**Geo-replication.** Built-in cross-cluster topic replication between regions.
+
+**Multi-tenancy.** Tenants and namespaces isolate quotas, ACLs, and topics on shared hardware.
+
+**Tiered storage.** Offload old ledgers to S3-compatible object storage for cheap long retention.
+
+---
+
+### How it works — the architecture inside
 
 ```mermaid
-flowchart TB
+flowchart LR
     P[Producers] --> B[Brokers]
     B --> BK[BookKeeper]
     BK --> C[Consumers]
 ```
 
-**Biggest difference from Kafka:** storage and compute are **separated**.
-
-| | Kafka | Pulsar |
-|---|-------|--------|
-| **Broker** | Compute + storage (log segments on broker) | Compute only (stateless) |
-| **Storage** | Inside broker | **BookKeeper** (ledgers) |
-
-Scale brokers and storage **independently** — more flexible at large scale.
-
-Detail: [§6.5 Kafka](#65-kafka).
-
-### Brokers
-
-Responsibilities: accept messages, serve consumers, route traffic, manage topics.
-
-Brokers are **stateless** → easy horizontal scaling.
-
-### BookKeeper
-
-Persistent storage layer — messages stored in **ledgers** with replication, durability, and fault tolerance.
-
-Optional **tiered storage** offload to object storage (S3) for long retention at lower cost.
-
-### Topics and message flow
-
 ```text
-Producer → topic → broker → BookKeeper → consumer
+Producer → topic → broker → BookKeeper ledger → consumer ACK → cursor advances
 ```
 
-**Partitioned topics** (`orders` partition 0, 1, 2) for higher throughput — same idea as Kafka partitions.
+**Key_Shared walkthrough.**
 
-### Subscriptions
+1. Events keyed by `userId=42` arrive on a partitioned topic.
+2. Pulsar assigns all key-42 messages to Consumer B within the subscription.
+3. User 42's `Login`, `Purchase`, `Logout` process in order on B while other users parallelize on A and C.
 
-Pulsar supports multiple subscription modes:
-
-| Mode | Behavior | Ordering |
-|------|----------|----------|
-| **Exclusive** | One consumer only; second rejected | Per subscription |
-| **Shared** | Multiple consumers; messages distributed (competing consumers) | Not per-message |
-| **Failover** | One active + standby; standby takes over on failure | Per subscription |
-| **Key_Shared** | Same message key → same consumer | **Per key** (like Kafka partition key) |
-
-```text
-Key = User123 → all User123 events → one consumer → ordering per user
-```
-
-### Ordering guarantees
-
-- **Single partition:** ordering guaranteed
-- **Multiple partitions:** ordering only **within** each partition
-
-Same rule as Kafka — canonical detail: [§6.11 Ordering Guarantees](#611-ordering-guarantees).
-
-### Message acknowledgments
-
-```text
-Consumer receives → processes → sends ACK → broker marks consumed
-No ACK → message redelivered (at-least-once)
-```
-
-### Delivery guarantees
-
-| Guarantee | Behavior |
-|-----------|----------|
-| **At-most-once** | May lose messages; no redelivery |
-| **At-least-once** | No loss; duplicates possible |
-| **Effectively once** | At-least-once + **idempotent** consumers |
-
-Detail: [§6.12](#612-at-most-once-delivery) · [§6.13](#613-at-least-once-delivery) · [§6.14](#614-exactly-once-delivery).
-
-### Message retention and event replay
-
-Pulsar retains messages after consumption — useful for replay, recovery, and analytics.
-
-```text
-Reset consumer cursor / position → read old messages again
-```
-
-Similar to Kafka offset reset — [§6.21 Event Replay](#621-event-replay).
-
-### Geo-replication
-
-Built-in cross-region topic replication:
-
-```text
-Region A ↔ Region B — topics replicated automatically
-```
-
-Useful for disaster recovery and multi-region applications (Kafka typically needs MirrorMaker or cluster linking).
-
-### Multi-tenancy
-
-Strong Pulsar feature — single cluster, isolated **tenants** (Tenant A, B, C). Useful for SaaS and cloud platforms.
-
-### Pulsar vs Kafka
-
-| | Kafka | Pulsar |
-|---|-------|--------|
-| **Storage architecture** | Storage inside broker | BookKeeper (separated) |
-| **Scaling** | Scale brokers (storage tied) | Independent compute + storage |
-| **Geo-replication** | Additional setup | Built-in |
-| **Multi-tenancy** | Basic | Strong |
-| **Ecosystem** | Largest | Smaller |
-| **Complexity** | Simpler ops | More components (brokers + BookKeeper) |
-
-### Pulsar vs RabbitMQ
-
-| | RabbitMQ | Pulsar |
-|---|----------|--------|
-| **Focus** | Message queue | Streaming + queueing |
-| **Retention / replay** | Limited | Strong (log-style retention) |
-| **Replay** | Not native | Native cursor reset |
-
-Detail: [§6.8 RabbitMQ](#68-rabbitmq).
-
-### Use cases
-
-- Event streaming and microservices
-- IoT, financial systems, analytics pipelines
-- Real-time processing
-- Multi-region and multi-tenant platforms
-
-### Advantages
-
-- Storage–compute separation and high scalability
-- Built-in geo-replication and multi-tenancy
-- Event replay and strong durability (BookKeeper)
-- Flexible subscription modes (exclusive, shared, failover, key_shared)
-
-### Disadvantages
-
-- More components (brokers + BookKeeper + optional tiered storage)
-- Higher operational complexity
-- Smaller ecosystem and community than Kafka
-- Steeper setup for small teams
-
-### When to use Pulsar?
-
-- Large-scale systems needing independent broker/storage scaling
-- Multi-tenant SaaS backbones
-- Multi-region deployments with built-in replication
-- Event streaming where Kafka ops model is a poor fit
-
-### When not to use?
-
-- Small projects or simple point-to-point queues
-- Teams new to messaging (Kafka/RabbitMQ lower barrier)
-- When Kafka ecosystem (connectors, tooling) is required
-
-### Summary
-
-```text
-Pulsar = queue + streaming unified; brokers stateless, BookKeeper stores ledgers
-Choose for multi-tenant / multi-region scale; Kafka for ecosystem maturity
-```
-
-**Goal:** Kafka-like streaming with RabbitMQ-like flexibility and separated storage scaling.
+**Delivery guarantees:** at-most-once, at-least-once (default with ACK), effectively-once with idempotent consumers.
 
 ---
 
+### Pitfalls and design tips
+
+- **More moving parts than Kafka** — brokers, BookKeeper bookies, ZooKeeper or etcd metadata, optional tiered storage — staff accordingly.
+- **Smaller connector ecosystem** than Kafka — verify Kafka Connect equivalents exist for your sources.
+- **Overkill for simple task queues** — RabbitMQ or SQS is simpler for point-to-point jobs.
+- **Strong fit:** multi-tenant SaaS event backbone, multi-region active-active, teams that outgrow Kafka broker disk coupling.
+- **Key_Shared** is the Pulsar answer to Kafka's partition key + single consumer per partition — understand assignment on rebalance.
+
+---
+
+### Real-world example
+
+**Yahoo's original Pulsar deployment (documented design goal).**
+
+Yahoo built Pulsar to unify messaging for Mail, Finance, and Sports properties on shared infrastructure. Each property is a **tenant** with isolated namespaces. Global users publish to regional brokers; **geo-replication** copies critical topics between US and Asia clusters so failover does not require a separate MirrorMaker pipeline. BookKeeper replication (typically 3 copies across bookies) survives single-machine loss without losing acknowledged messages.
+
+The split architecture let Yahoo scale broker pools for read-heavy fan-out without rebalancing terabytes of disk per broker add — the pattern Pulsar still sells to large multi-team platforms.
+
+---
 
 ## 6.11 Ordering Guarantees
 
-Kafka context: [§6.5 Kafka](#65-kafka). This section is the **canonical** treatment of ordering (partitions, keys, producer config, consumer groups).
+### Overview
 
-### What is ordering guarantee?
+A single-file line at a bank teller preserves who arrived first. Open ten tellers without coordination and two people from the same account might be served out of order — deposits and withdrawals could interleave wrongly. **Ordering guarantees** in messaging systems work the same way: parallelism is bought with narrower ordering scope.
 
-Ordering guarantee means Kafka ensures messages are consumed in the **same order they were produced**.
+Technically, most brokers guarantee FIFO **only within a constrained unit** — a Kafka partition, a single RabbitMQ queue with one consumer, or a Pulsar Key_Shared key. Global ordering across an entire high-throughput topic requires a single serial pipeline and sacrifices scale.
 
-```text
-Produced:  A → B → C
-Consumed:  A → B → C   (not B → A → C)
-```
+---
 
-### Key rule
+### What problem it fixes
 
-```text
-Kafka guarantees ordering ONLY within a single partition.
-Kafka does NOT guarantee ordering across multiple partitions.
-```
-
-### Ordering scope
-
-| Guaranteed | Not guaranteed |
-|------------|----------------|
-| Partition ordering | Topic-level ordering |
-| | Global ordering |
-
-### Single partition example
+Many workflows are state machines that break if events arrive shuffled:
 
 ```text
-Orders topic — Partition 0
-
-Offset 0 → Order Created
-Offset 1 → Payment Completed
-Offset 2 → Order Shipped
-
-Consumer reads: Created → Payment → Shipped
+Order Created → Payment Completed → Order Shipped
 ```
 
-### Why ordering works
+If `Shipped` is processed before `Payment Completed`, you ship unpaid orders. Messaging systems must expose **where** order is preserved and **how** to route related events to the same serial pipeline.
 
-Kafka stores messages in an **append-only log** per partition.
+---
+
+### What it does
+
+**Kafka's core rule:**
 
 ```text
-Partition 0: Offset 0, 1, 2, 3…
-Written sequentially → read sequentially
+Ordering guaranteed WITHIN a partition
+Ordering NOT guaranteed ACROSS partitions
 ```
 
-### Multiple partitions
+| Scope | Guaranteed? |
+|-------|-------------|
+| Single partition | Yes — offset order |
+| Same key (same partition) | Yes — per-entity order |
+| Entire topic (many partitions) | No |
+| Global (all events) | Only with one partition |
+
+**Partition by business key:**
 
 ```text
-Partition 0: A, C
-Partition 1: B, D
-
-Global order could be A B C D or B A D C — NOT guaranteed
+hash(OrderID) → partition 3
+All events for Order 1001 → partition 3 → offsets 0, 1, 2 in order
 ```
 
-### How Kafka decides partition
+**Producer-side ordering hazards.** Retries without idempotence can reorder: M2 succeeds, M1 retries later → M2 consumed before M1.
 
-Producer sends **key + value**.
-
-```text
-Hash(key) → partition
-
-CustomerID = 101 → always Partition 2
-```
-
-All messages for the same key land in the same partition.
-
-### Key-based ordering
-
-```text
-Customer 101: Created → Updated → Deleted
-Key = CustomerID 101 → Partition 2
-
-Offsets 0 → Created, 1 → Updated, 2 → Deleted
-```
-
-### Without key
-
-```text
-Message A → Partition 0
-Message B → Partition 2
-Message C → Partition 1
-→ ordering across related events may be lost
-```
-
-### Good practice
-
-Use a **business identifier** as the key:
-
-```text
-OrderID, CustomerID, AccountID, UserID
-→ related events stay in the same partition
-```
-
-### Producer retries and ordering
-
-```text
-Send M1, M2 — M1 fails, M2 succeeds, M1 retried later
-Possible result: M2 before M1 → ordering broken
-```
-
-**Solution:** enable idempotent producer.
+**Fix:**
 
 ```properties
 enable.idempotence=true
 ```
 
-Kafka then avoids duplicates and preserves order per partition on retry.
+Kafka assigns sequence numbers per partition; retries do not create duplicates or reorder visible records.
 
-### Max in-flight requests
+**Consumer group rule.** One partition → at most one consumer per group — otherwise two consumers could interleave reads from the same log.
 
-Multiple in-flight requests can reorder on retry.
+**Other brokers (brief):**
 
-```properties
-enable.idempotence=true
-max.in.flight.requests.per.connection=5   # (or ≤5 with idempotence)
-```
+| Broker | Ordering |
+|--------|----------|
+| **RabbitMQ** | Single queue + single consumer; competing consumers break order |
+| **SQS FIFO** | Per message group ID |
+| **Pulsar Key_Shared** | Per key within subscription |
 
-### Ordering with multiple producers
+---
 
-```text
-Producer A and B both write to Partition 0
-Interleaved by arrival: A1, B1, A2, B2 — stored in broker receive order
-```
-
-### Consumer group ordering
-
-```text
-Partition 0 → Consumer 1
-Partition 1 → Consumer 2
-Partition 2 → Consumer 3
-
-Ordering preserved within each partition
-```
-
-**Rule:** one partition → at most **one** consumer per consumer group.
+### How it works — the architecture inside
 
 ```mermaid
-flowchart TB
-    subgraph Topic
-        P0[P0: A,B,C]
-        P1[P1: …]
+flowchart LR
+    subgraph P0["Partition 0"]
+        A[Created] --> B[Paid] --> C[Shipped]
+    end
+    subgraph P1["Partition 1"]
+        D[Created] --> E[Paid]
     end
     P0 --> C1[Consumer 1]
     P1 --> C2[Consumer 2]
 ```
 
-### Rebalancing
+**Multiple partitions — no global order:**
 
 ```text
-Before: P0 → Consumer 1
-New consumer joins → P0 → Consumer 2
+P0: A, C
+P1: B, D
 
-Only one consumer reads a partition at a time → ordering intact
+Observed global order might be A, B, C, D or B, A, D, C — both valid
 ```
 
-Detail: [§6.5 — Consumer group operations](#65-kafka).
+**Ordering vs throughput trade-off:**
 
-### Ordering vs throughput
+| Design | Ordering | Throughput |
+|--------|----------|------------|
+| 1 partition | Global for topic | Limited |
+| N partitions + keys | Per entity | High |
+| N partitions, no keys | None across entities | Highest |
 
-| | Single partition | Multiple partitions |
-|---|------------------|---------------------|
-| **Ordering** | Perfect (global for topic) | Per-key only |
-| **Throughput** | Limited | High |
-| **Trade-off** | Order vs scalability | |
-
-### Achieving global ordering
-
-**Option 1 — single partition**
-
-```text
-Topic → Partition 0 only → total ordering
-Problem: limited scalability
-```
-
-**Option 2 — partition by entity (most common)**
-
-```text
-Key = OrderID / CustomerID / AccountID
-→ ordering per entity, parallel across entities
-```
-
-### Real-world example
-
-```text
-Bank account: Deposit ₹1000 → Withdraw ₹500 → Withdraw ₹200
-
-Wrong order → incorrect balance
-Solution: AccountID as Kafka key → same partition → order preserved
-```
-
-### Ordering in replication
-
-```text
-Leader: Offset 0→A, 1→B, 2→C
-Followers replicate in same order → identical log
-```
-
-### Ordering after leader failure
-
-```text
-Leader crashes → follower promoted
-Follower copied offsets in order → ordering preserved
-```
-
-### Best practices
-
-- Use message keys (business IDs)
-- Enable idempotent producer
-- Avoid unnecessary partitions for entities that need strict order
-- Keep related events on the same key
-- Design for **per-entity** ordering, not global
-
-### Ordering in other brokers (brief)
-
-| Broker | Ordering |
-|--------|----------|
-| **RabbitMQ** | Single queue + single consumer; competing consumers break order — [§6.8](#68-rabbitmq) |
-| **Message queue** | FIFO per queue if one consumer — [§6.1](#61-message-queues) |
-| **Pub/sub** | No cross-subscriber order — [§6.2](#62-publish-subscribe) |
-
-### Summary
-
-```text
-Partition = unit of ordering in Kafka
-Key = route related events to same partition
-enable.idempotence = preserve order on producer retry
-```
-
-**Goal:** Per-entity (or global single-partition) ordering without assuming topic-wide FIFO.
+**Replication preserves order.** Followers replicate the leader's offset sequence; leader failover promotes a replica with an identical ordered log.
 
 ---
 
+### Pitfalls and design tips
+
+- **Default design: per-entity ordering** — `accountId`, `orderId` as key — not global FIFO.
+- **Enable idempotent producer** whenever order matters and retries are enabled.
+- **`max.in.flight.requests.per.connection`** — with idempotence, keep ≤ 5; without it, set to 1 if you must minimize reorder risk (hurts throughput).
+- **Do not add partitions** to fix consumer lag on a single hot key — only more consumers on **other** keys help; hot keys need application-level splitting or async serialization.
+- **Rebalance** does not break partition order — only one consumer reads a partition at a time.
+
+---
+
+### Real-world example
+
+**Bank account ledger (Kafka).**
+
+Events: `Deposit ₹1000`, `Withdraw ₹500`, `Withdraw ₹200` for account `ACC-99`.
+
+1. Producer sets key `ACC-99` → all three events land on partition 5.
+2. A single consumer in the `ledger` group reads offsets 100, 101, 102 in order.
+3. Running balance math stays correct: 1000 → 500 → 300.
+4. If `Withdraw ₹500` were processed before `Deposit ₹1000` because keys were missing and events split across partitions, the account could incorrectly reject valid withdrawals.
+
+The key is not optional decoration — it is the ordering contract.
+
+---
 
 ## 6.12 At Most Once Delivery
 
-> **Delivery guarantees hub:** canonical three-way comparison lives here. Detail for each guarantee: [§6.13](#613-at-least-once-delivery), [§6.14](#614-exactly-once-delivery).
+### Overview
 
-### What is at-most-once delivery?
+A weather station that drops readings when the radio buffer is full prefers a gap in the chart over plotting the same storm twice. **At-most-once delivery** makes the same trade for messages: each message is delivered zero or one times — **never twice**, but loss is acceptable.
 
-At-most-once delivery means a message is delivered **zero or one** time.
+Technically, at-most-once means the broker or consumer treats a message as "done" before processing is guaranteed to complete — or the producer does not wait for broker confirmation. There is no redelivery on failure. Duplicates are impossible; gaps are possible.
+
+---
+
+### What problem it fixes
+
+Reliable delivery requires acknowledgements, retries, and idempotence — complexity and latency. For **high-volume, low-stakes** data (metrics, clickstream, debug logs), losing a fraction of events is cheaper than deduplicating billions of duplicates or blocking on ACKs.
+
+At-most-once maximizes throughput and simplicity when the business tolerates gaps.
+
+---
+
+### What it does
 
 ```text
-✓ May be delivered once
+✓ Delivered zero or one time
 ✓ May be lost
 ✗ Never delivered twice
 ```
 
-In simple words: *better to lose a message than process it more than once.*
-
-### Delivery guarantee comparison (canonical)
-
-```mermaid
-flowchart TB
-    subgraph AMO [At-most-once]
-        AMO1[0 or 1 delivery]
-        AMO2[May lose messages]
-    end
-    subgraph ALO [At-least-once]
-        ALO1[1+ deliveries]
-        ALO2[Duplicates possible]
-    end
-    subgraph EO [Exactly-once]
-        EO1[Exactly 1 effect]
-        EO2[High complexity]
-    end
-```
+**Canonical comparison:**
 
 | | At most once | At least once | Exactly once |
 |---|--------------|---------------|--------------|
-| **Deliveries** | 0 or 1 | 1 or more | Exactly 1 |
+| **Deliveries** | 0 or 1 | 1 or more | 1 effective processing |
 | **Duplicates** | No | Possible | No |
-| **Loss** | Possible | No* | No* |
-| **Section** | §6.12 | [§6.13](#613-at-least-once-delivery) | [§6.14](#614-exactly-once-delivery) |
+| **Loss** | Possible | Avoided* | Avoided* |
+| **Complexity** | Lowest | Medium | Highest |
 
-*With correct broker durability and consumer design.
+*With durable broker and correct consumer design.
 
-### Visualization
+**Typical mechanisms:**
 
-```text
-Producer → Queue/Broker → Consumer
+| System | At-most-once configuration |
+|--------|---------------------------|
+| **Kafka consumer** | `enable.auto.commit=true` + commit before process |
+| **Kafka producer** | `acks=0` (fire-and-forget) |
+| **RabbitMQ** | Auto-ACK on deliver |
+| **SQS** | Delete message before processing completes |
 
-Message may reach consumer once OR be lost — never duplicated.
-```
+---
+
+### How it works — the architecture inside
 
 ```mermaid
 flowchart LR
@@ -2640,414 +1380,221 @@ flowchart LR
     Q -.->|may lose| X[Lost]
 ```
 
-### How it works
-
-Message is considered **delivered before processing completes**.
+**Consumer-side timeline:**
 
 ```text
-Queue → Consumer → queue removes message immediately → consumer processes
-Consumer crashes → message lost forever (no retry, no redelivery)
+Step 1: Queue holds Message A
+Step 2: Consumer receives A → broker deletes A immediately
+Step 3: Consumer crashes during processing
+Result: Message A lost forever — no retry
 ```
 
-### Example
+Contrast with at-least-once:
 
 ```text
-Step 1: Queue contains Message A
-Step 2: Consumer receives A → queue deletes A
-Step 3: Consumer crashes
-Result: Message A lost permanently
+Receive → process → ACK → delete
+Crash before ACK → redeliver → possible duplicate
 ```
 
-### Timeline
+**Kafka offset example:**
 
 ```text
-Message A → Queue → Consumer → ✗ crash → message lost
+Offset 10: poll → auto-commit offset 10 → crash before process
+Restart from offset 11 → offset 10 never processed
 ```
 
-### Why message loss happens
-
-Broker assumes: *once I sent the message, my job is done* — no acknowledgement required before removal.
-
-### With acknowledgement (contrast)
-
-```text
-Queue → Consumer → process → ACK → delete message
-```
-
-Safer pattern — used in **at-least-once** systems. See [§6.13](#613-at-least-once-delivery).
-
-### Without acknowledgement
-
-```text
-Queue → Consumer → delete immediately
-Crash → message lost forever
-```
-
-### Advantages
-
-- Very fast
-- Low latency
-- Simple implementation
-- No duplicate messages
-- Minimal network overhead
-
-### Disadvantages
-
-- Message loss possible
-- No retry
-- No reliability guarantee
-- Data may be missing
-
-### Real-world example
-
-```text
-Website analytics: user click → analytics queue → analytics service
-One lost click event → usually acceptable
-```
-
-### Good use cases
-
-- Metrics collection
-- Monitoring data
-- Logging
-- User activity tracking
-- Telemetry
-- Non-critical notifications
-
-### Bad use cases
-
-Message loss is unacceptable for:
-
-- Banking / payments
-- Order processing
-- Inventory updates
-- Financial or medical systems
-
-### Kafka example
-
-```text
-enable.auto.commit=true
-Offset committed BEFORE processing
-
-Consumer crashes → restart at next offset → previous message skipped forever
-→ at-most-once behavior
-```
-
-```text
-Offset 10: receive → commit → crash → restart from 11 → offset 10 lost
-```
-
-Producer-side at-most-once: `acks=0` (fire-and-forget). See [§6.5 Kafka](#65-kafka).
-
-### RabbitMQ example
-
-```text
-Auto ACK enabled → message acknowledged on deliver → consumer crashes → message lost
-```
-
-See [§6.8 RabbitMQ](#68-rabbitmq).
-
-### When to choose at-most-once?
-
-Choose when speed matters more than reliability, small data loss is acceptable, and duplicates must be avoided.
-
-Examples: application logs, metrics, monitoring events, clickstream analytics.
-
-### Summary
-
-```text
-At-most-once = fast and simple, no duplicates, loss is possible
-Avoid for money, orders, inventory; OK for metrics and telemetry
-```
-
-**Goal:** Maximum throughput where occasional loss is acceptable.
+**Producer `acks=0`:** producer does not wait for broker write confirmation — fastest, least durable.
 
 ---
 
+### Pitfalls and design tips
+
+- **Never use for money, inventory, orders, or medical records** — loss is silent; you will not know which events disappeared.
+- **Auto-commit Kafka consumers** are at-most-once if processing fails after a commit — fine for log shipping, dangerous for billing side effects.
+- **If you chose at-most-once, do not also build expensive dedup** — you are paying twice for the wrong guarantee.
+- **Good fit:** application logs, Datadog-style metrics, sampling telemetry, A/B impression counters where ±1% error is acceptable.
+- **Interview contrast:** at-most-once = speed; at-least-once = reliability + idempotent handlers; exactly-once = hardest, often "effectively once" in practice.
+
+---
+
+### Real-world example
+
+**Web analytics beacon (browser → collector).**
+
+1. A retail site fires a `page_view` JSON blob to an ingestion endpoint on every page load.
+2. The collector enqueues to Kafka with `acks=1` on a lossy edge cluster; overflow drops events rather than blocking the browser.
+3. Consumers use `enable.auto.commit=true` and commit offsets every second — if a consumer pod dies, up to one second of partition events may be skipped.
+4. Product analytics dashboards show "~99.9% of sessions" — stakeholders accept minor under-counting; they explicitly reject duplicate session counts that would inflate conversion rates.
+
+Speed and volume win; a missing click rarely changes a merchandising decision.
 
 ## 6.13 At Least Once Delivery
 
-### What is at-least-once delivery?
+### Overview
 
-At-least-once delivery means a message is guaranteed to be delivered **one or more** times.
+Picture a postal worker who will not throw away your letter until you sign the delivery receipt. If you sign, the letter leaves their bag. If you crash on the couch before signing, they come back tomorrow — maybe with the same letter again. That is at-least-once delivery: the broker keeps the message until the consumer confirms success, so nothing is lost, but the same work might arrive twice.
 
-```text
-✓ Will NOT be lost (when broker + ACK configured correctly)
-✓ May be delivered multiple times
-✗ Duplicate processing is possible
-```
+Technically, **at-least-once delivery** means a message is delivered **one or more times**. The broker stores the message, delivers it to a consumer, and removes it (or commits the offset) only after a successful **acknowledgement (ACK)**. If the consumer processes the message but crashes before ACK, or the ACK is lost on the network, the broker redelivers. Duplicates are possible; loss is not — when ACK semantics are configured correctly.
 
-In simple words: *better to process a message twice than lose it completely.*
+---
 
-See [§6.12](#612-at-most-once-delivery) for the three-way delivery comparison.
+### What problem it fixes
 
-### Visualization
+Distributed messaging fails at every step: producers disconnect, brokers restart, consumers crash mid-processing. Without a durability + ACK contract, messages vanish silently — orders never ship, payments never settle.
+
+At-least-once fixes **message loss** by making the broker responsible for redelivery until it receives proof of successful processing:
 
 ```text
-Producer → Broker → Consumer → process → ACK → broker deletes message
+Broker keeps message  →  consumer processes  →  consumer ACKs  →  broker deletes / commits offset
+No ACK               →  broker assumes failure  →  redelivery
 ```
 
-**Key idea:** broker keeps the message until it receives a successful **ACK**. No ACK → redelivery.
-
-```mermaid
-sequenceDiagram
-    participant B as Broker
-    participant C as Consumer
-    B->>C: deliver message
-    C->>C: process
-    C->>B: ACK
-    Note over B: message removed
-```
-
-### How it works
-
-```text
-Step 1: Producer sends message
-Step 2: Broker stores message
-Step 3: Consumer receives message
-Step 4: Consumer processes message
-Step 5: Consumer sends ACK
-Step 6: Broker deletes message (or commits offset)
-```
-
-### Normal flow
-
-```text
-Producer → Broker → Consumer → process → ACK → delete
-→ delivered once in the successful case
-```
-
-### Failure scenario
-
-```text
-Consumer processes → crashes before ACK
-→ broker retries → message redelivered → possible duplicate
-```
-
-### Timeline
-
-```text
-Message A → consumer receives → processes → ✗ crash before ACK
-→ broker waits → Message A redelivered → processed twice
-```
-
-### Why duplicates happen
-
-Broker cannot know if processing finished successfully.
-
-```text
-Payment succeeds → consumer crashes before ACK → broker retries
-→ payment processed again → duplicate (unless idempotent)
-```
-
-### The golden rule
+The trade-off is explicit: reliability over duplicate-freedom.
 
 | Guaranteed | Not guaranteed |
 |------------|----------------|
-| No message loss | No duplicates |
+| No message loss (with correct ACK config) | No duplicate processing |
 
-### Idempotency
+---
 
-**Most important concept** with at-least-once delivery: processing the same message multiple times produces the **same result**.
+### What it does
 
-**Bad example:**
+At-least-once delivery provides:
+
+- **Durable storage** — the broker persists messages until ACKed.
+- **Automatic redelivery** — transient consumer failures trigger retry without producer involvement.
+- **Offset / visibility semantics** — Kafka commits offsets after processing; SQS hides messages until timeout; RabbitMQ uses manual ACK.
+
+It does **not** make your business logic duplicate-safe. That is the application's job through **idempotent consumers**.
+
+---
+
+### How it works — the architecture inside
 
 ```text
-Message: Deposit ₹1000 — processed twice → ₹2000 deposited (wrong)
+Step 1: Producer sends message
+Step 2: Broker stores message durably
+Step 3: Consumer receives message
+Step 4: Consumer processes message
+Step 5: Consumer sends ACK (or commits offset)
+Step 6: Broker deletes message / advances offset
 ```
 
-**Good example:**
+**Normal path:** one delivery, one ACK, message removed.
 
-```text
-Message ID = TXN-101
-If already processed → ignore; else process → only one deposit
+**Failure path:** consumer processes → crashes before ACK → broker redelivers → possible duplicate.
+
+```mermaid
+flowchart LR
+    P[Producer] --> B[Broker stores message]
+    B --> C[Consumer receives]
+    C --> Proc[Process business logic]
+    Proc --> ACK{ACK sent?}
+    ACK -->|Yes| Done[Broker removes / commits]
+    ACK -->|No / crash| B
 ```
 
-### Idempotent consumer pattern
+The broker cannot know whether processing finished — only whether ACK arrived. A payment that succeeded but was never ACKed will be retried.
+
+#### Idempotent consumer pattern
+
+Processing the same message twice must produce the **same result** as processing it once:
 
 ```text
-Receive message → check message ID
+Receive message → check message ID / idempotency key
   → already processed? → ignore
   → new? → process → record ID as processed
 ```
 
-Patterns: natural idempotency (`SET status=PAID`), UNIQUE idempotency key, `processed_events` table, `ON CONFLICT DO NOTHING`.
+Patterns: natural idempotency (`SET status = PAID WHERE status != PAID`), `UNIQUE` idempotency key column, `processed_events` table, `ON CONFLICT DO NOTHING`.
 
-### RabbitMQ example
+**Bad:** `Deposit ₹1000` run twice → ₹2000 deposited.
 
-```text
-Queue → Consumer → process → manual ACK
-Missing ACK → RabbitMQ redelivers → at-least-once
-```
+**Good:** message ID `TXN-101` already in dedup table → skip → ₹1000 deposited once.
 
-See [§6.8 RabbitMQ](#68-rabbitmq).
+#### Broker examples
 
-### Kafka example
+**RabbitMQ:** manual ACK — missing ACK → message redelivered.
 
-```text
-enable.auto.commit=false
-Process message → commit offset AFTER processing
-Crash before commit → message read again → duplicate possible
-```
+**Kafka:** `enable.auto.commit = false` — commit offset **after** processing. Crash before commit → offset unchanged → message read again.
 
 ```text
-Offset 10: read → process → ✗ crash (no commit) → restart → read offset 10 again
+Offset 10: read → process → crash (no commit) → restart → read offset 10 again
 ```
-
-See [§6.5 Kafka](#65-kafka).
-
-### Delivery timeline
-
-```text
-Message A → process → failure → retry → process again
-Outcomes: 1, 2, or 3 times — but never zero times
-```
-
-### Advantages
-
-- No message loss
-- Reliable delivery
-- Fault tolerant
-- Supports retries
-- Widely used (default for production messaging)
-
-### Disadvantages
-
-- Duplicate processing
-- Idempotency required
-- More storage / retry overhead
-
-### Common use cases
-
-- Order processing
-- Payment systems
-- Email sending
-- Inventory updates
-- Banking systems
-- Microservices messaging
-
-### Real-world example
-
-```text
-Order Created → queue → Inventory Service
-Service crashes before ACK → message stays in queue → recovers → processes again
-No order lost (inventory handler must be idempotent)
-```
-
-### Best practices
-
-- Use message IDs
-- Build **idempotent consumers**
-- Use retry policies — [§6.16 Retry Queue](#616-retry-queue)
-- Configure **DLQ** after max retries — [§6.15 Dead Letter Queue](#615-dead-letter-queue)
-- **Commit offset after processing** (Kafka)
-- Track processed messages (dedup store)
-- DB + outbox for side effects — [§6.20 Outbox Pattern](#620-outbox-pattern)
-
-### Summary
-
-```text
-At-least-once = no loss, duplicates possible → idempotent consumers required
-Default choice for orders, payments, inventory
-```
-
-**Goal:** Reliable delivery with acceptable duplicate risk handled in application code.
 
 ---
 
+### Pitfalls and design tips
+
+- **Default for production** — at-least-once is the standard choice for orders, payments, and inventory; at-most-once is only for metrics and logs where loss is acceptable.
+- **Commit offset after processing** (Kafka) — never auto-commit before business logic completes.
+- **Always use message IDs or idempotency keys** — duplicates are when, not if.
+- **Pair with retry limits and DLQ** — redelivery without bounds becomes an infinite loop on poison messages.
+- **Do not confuse broker guarantee with end-to-end guarantee** — ACK after DB write but before external API call can still duplicate side effects; design idempotency at every layer that mutates state.
+- **Interview angle:** "We use at-least-once + idempotent consumers" is the honest production answer; claiming true exactly-once across heterogeneous systems is usually overstated.
+
+---
+
+### Real-world example
+
+An e-commerce **Inventory Service** consumes `OrderCreated` from a queue. It decrements stock and ACKs. The JVM runs out of memory after the DB update but before ACK. RabbitMQ redelivers the message on restart. Without an idempotency check on `orderId`, stock drops twice. With `processed_orders(order_id UNIQUE)`, the second delivery is a no-op — the order is fulfilled exactly once in business terms while the broker delivered at-least-once.
+
+---
 
 ## 6.14 Exactly Once Delivery
 
-### What is exactly-once delivery?
+### Overview
 
-Exactly-once delivery means a message is **processed exactly one time**.
+Imagine a bank teller who must move money exactly once — not lose the transfer, and not run it twice if the power flickers. That is the user-facing promise of exactly-once: each message is processed once and only once. In practice, the teller's ledger uses duplicate-transaction IDs, because true atomicity across separate buildings (database and message broker) is extraordinarily hard.
 
-```text
-✓ Never lost
-✓ Never duplicated
-✓ Processed exactly once
-```
+Technically, **exactly-once delivery** means a message is **never lost** and **never processed more than once**. Achieving this end-to-end across a database, message broker, and external APIs requires **atomicity** between business processing and acknowledgement — or compensating patterns (idempotency, inbox, transactions) that produce the same observable outcome as true exactly-once.
 
-In simple words: *the message must be processed once and only once.*
+---
 
-See [§6.12](#612-at-most-once-delivery) for the three-way delivery comparison.
+### What problem it fixes
 
-### Why is it hard?
-
-Distributed systems can fail at any time.
+The classic failure: consumer receives message → updates database → crashes before ACK → broker redelivers → database updated twice.
 
 ```text
-Consumer receives → processes → crashes
-Did processing complete? Or did it fail?
-Broker often cannot know → uncertainty makes exactly-once very difficult
+Queue → Consumer → DB updated → crash before ACK
+→ broker retries → DB updated again → duplicate result
 ```
 
-### Problem scenario
+Exactly-once (or equivalent behavior) fixes **duplicate side effects** in domains where repetition is unacceptable: bank transfers, payment capture, inventory accounting, billing ledgers.
+
+---
+
+### What it does
+
+Exactly-once semantics aim to unify two operations into one atomic unit:
+
+1. **Business processing** (database write, state change)
+2. **Message acknowledgement** (ACK, offset commit, mark processed)
+
+When both succeed together or both roll back, the system cannot enter the "processed but not ACKed" trap that creates duplicates on retry.
+
+Mechanisms include:
+
+- **Idempotent consumer + dedup store** — practical default
+- **Kafka EOS** — idempotent producer + transactions + atomic offset commit
+- **Outbox / inbox patterns** — local DB atomicity, then async publish
+- **Two-phase commit (2PC)** — strong but slow; rarely used for messaging today
+
+---
+
+### How it works — the architecture inside
+
+#### The core challenge
 
 ```text
-Step 1: Consumer receives message
-Step 2: Database updated
-Step 3: Consumer crashes before ACK
-→ Broker thinks processing failed → retries
-→ Database updated twice → duplicate processing
+Receive → process → ACK   (naive — crash between process and ACK still duplicates)
 ```
 
-```text
-Queue → Consumer → database updated → ✗ crash before ACK
-→ broker retries → database updated again → duplicate result
-```
+Both steps must succeed as **one unit**, or duplicates must be harmless via idempotency.
 
-```mermaid
-sequenceDiagram
-    participant B as Broker
-    participant C as Consumer
-    participant DB as Database
-    B->>C: deliver message
-    C->>DB: update state
-    Note over C: crash before ACK
-    B->>C: redeliver (duplicate risk)
-```
+#### Identity check (inbox pattern)
 
-### Goal of exactly-once
-
-```text
-Message → processed once → never processed again (even during failures)
-```
-
-### Key requirements
-
-- No message loss
-- No duplicate processing
-- **Atomic operations** (business work + acknowledgement as one unit)
-- Fault tolerance
-
-### Naive approach (insufficient)
-
-```text
-Receive → process → ACK
-```
-
-Crash between **process** and **ACK** → duplicates still possible. See [§6.13 At Least Once](#613-at-least-once-delivery).
-
-### The core challenge
-
-Both must succeed as **one unit**:
-
-1. Business processing
-2. Message acknowledgement (ACK / offset commit)
-
-### Atomicity
-
-**Atomic = all or nothing.**
-
-```text
-Database update + offset commit
-→ either both succeed OR both fail — never partial success
-```
-
-### Exactly-once using identity check
-
-Store processed message IDs; before processing, check inbox/dedup table.
+Store processed message IDs before processing:
 
 ```text
 Message ID = TXN-100
@@ -3055,181 +1602,125 @@ Processed IDs: TXN-50, TXN-60 → TXN-100 not found → process → insert TXN-1
 Future duplicate TXN-100 → found → ignore
 ```
 
-Practical pattern: **at-least-once delivery + idempotent consumer** (see practical approach below).
+This is **at-least-once delivery + idempotent consumer** — the pragmatic production definition of "exactly-once behavior."
 
-### Idempotency
+#### Kafka exactly-once semantics (EOS)
 
-Exactly-once often relies on **idempotent operations** — repeated execution produces the same result.
+Kafka provides EOS through three layers:
 
-**Bad:** `Deposit ₹1000` run twice → ₹2000 (wrong).
+1. **Idempotent producer** (`enable.idempotence = true`) — broker dedupes by producer ID + sequence per partition; network retries do not create duplicate log records.
+2. **Transactions** (`transactional.id`) — multi-partition writes are all-or-nothing.
+3. **Atomic offset commit** — consumer offset committed in the same transaction as output records (read-process-write topology).
 
-**Good:** `TXN-101` already processed → ignore duplicate → ₹1000 deposited once.
-
-### Kafka exactly-once semantics (EOS)
-
-Kafka provides EOS using:
-
-1. **Idempotent producers** — `enable.idempotence=true`; broker dedupes by producer ID + sequence per partition
-2. **Transactions** — `transactional.id`; all-or-nothing multi-partition writes
-3. **Atomic offset commit** — consumer offset committed in same transaction as processing (read-process-write topology)
-
-**Idempotent producer:** retry after network failure without duplicate records in the log.
-
-**Transactions:** messages A, B, C — either all committed or none.
-
-```text
-Producer → Kafka topic → Consumer
-  → transaction start → business processing → offset commit → transaction commit
-  → everything succeeds or everything rolls back
+```mermaid
+flowchart LR
+    P[Producer txn start] --> W[Write to topic]
+    C[Consumer reads] --> Proc[Process]
+    Proc --> O[Offset commit in same txn]
+    O --> Commit[Txn commit]
+    Commit -->|failure| Rollback[All rolls back]
 ```
 
-Requires `acks=all`, healthy **ISR** (`min.insync.replicas`), and adds latency/overhead (~10–20%). Flink and Kafka Streams provide EOS within stream topologies. Detail: [§6.5 Kafka](#65-kafka).
+Requires `acks = all`, healthy ISR (`min.insync.replicas`), and adds latency (~10–20%). Flink and Kafka Streams provide EOS within stream topologies.
 
 EOS does **not** automatically cover SMTP, external HTTP APIs without idempotency keys, or heterogeneous systems without cooperation at every layer.
 
-### Outbox pattern
+#### Outbox and inbox
 
-Popular microservice solution when **DB updated but event publish fails**.
+**Outbox (producer side):** same DB transaction writes business row + outbox event row; relay publishes later — guarantees no event loss from the write path.
 
-```text
-Same DB transaction: business data + outbox event row
-→ background relay reads outbox → publishes to broker
+**Inbox (consumer side):** store processed message IDs; duplicates are ignored — exactly-once **behavior** on top of at-least-once delivery.
+
+```mermaid
+flowchart LR
+    subgraph Producer
+        DB[(DB txn)] --> BR[Business row]
+        DB --> OB[Outbox row]
+    end
+    OB --> Relay[Relay / Debezium]
+    Relay --> Broker[Broker]
+    Broker --> Inbox[Inbox dedup]
+    Inbox --> Handler[Handler]
 ```
 
-Guarantees **local consistency** between database and eventual event emission. Detail: [§6.20 Outbox Pattern](#620-outbox-pattern).
-
-### Inbox pattern
-
-Consumer-side complement: store processed message IDs in an **inbox** table.
-
-```text
-Duplicate arrives → check inbox → already processed? → ignore
-```
-
-Provides exactly-once **behavior** on top of at-least-once delivery.
-
-### Two-phase commit (2PC)
-
-```text
-Coordinator → prepare (DB + broker) → commit
-```
-
-Strong consistency but **slow, complex, blocking** — rarely used for messaging today. See distributed transactions in [Chapter 5](../05-distributed-databases/README.md).
-
-### Why exactly-once is expensive
-
-- Transactions and coordination
-- Additional storage (outbox, inbox, dedup tables)
-- Deduplication logic
-- Lower throughput and higher latency
-
-### Advantages
-
-- No duplicates
-- No data loss
-- Strong consistency
-- Ideal for critical systems
-
-### Disadvantages
-
-- Complex implementation
-- Lower performance
-- Higher latency
-- More infrastructure cost
-
-### Real-world example
-
-**Bank transfer ₹10,000:**
+#### Comparison for a ₹10,000 bank transfer
 
 | Guarantee | Risk |
 |-----------|------|
 | At-most-once | Transfer may be **lost** |
 | At-least-once | Transfer may run **twice** |
-| Exactly-once | Transferred **exactly once** — required behavior |
-
-### Use cases
-
-- Banking transactions
-- Payment processing
-- Trading systems
-- Financial ledgers
-- Inventory accounting
-- Billing systems
-
-### Practical approach
-
-True exactly-once delivery across an entire distributed system is extremely difficult. Most production systems implement:
-
-```text
-At-least-once delivery + idempotent processing
-→ achieves practical exactly-once behavior
-```
-
-Many teams over-engineer Kafka transactions when a **UNIQUE idempotency key** on the consumer suffices.
-
-### Summary
-
-```text
-Exactly-once = no loss, no duplicates — high complexity and cost
-Kafka EOS: idempotent producer + transactions + atomic offset commit
-Pragmatic default: at-least-once + idempotency keys / inbox table
-```
-
-**Goal:** Correctness for money, inventory, and ledgers — choose the simplest mechanism that meets the guarantee.
+| Exactly-once (or idempotent equivalent) | Transferred **once** — required behavior |
 
 ---
 
+### Pitfalls and design tips
+
+- **Pragmatic default:** at-least-once + `UNIQUE` idempotency key on the consumer — many teams over-engineer Kafka transactions when a dedup table suffices.
+- **EOS scope is bounded** — it covers Kafka producer → consumer within a transactional topology, not your payment gateway or email provider.
+- **2PC across DB + broker** — strong consistency but blocking, slow, and fragile; outbox is the modern replacement.
+- **Cost:** transactions, dedup tables, outbox relay, and lower throughput — reserve full EOS for money, inventory, and ledgers.
+- **Interview angle:** distinguish **broker semantics** (Kafka EOS) from **business semantics** (idempotency key on `payment_id`).
+
+---
+
+### Real-world example
+
+A **payment service** uses Kafka EOS in a stream topology: read `PaymentRequested`, write `PaymentCaptured` and commit the consumer offset in one transaction. Separately, the REST callback to a card processor uses an idempotency key `payment_id` — because Kafka EOS does not span that HTTP boundary. The combination achieves exactly-once **effect** for the business: one charge, one ledger entry, one downstream event.
+
+---
 
 ## 6.15 Dead Letter Queue
 
-> Pairs with [§6.16 Retry Queue](#616-retry-queue): retry handles transient failures; DLQ quarantines poison messages after max attempts.
+### Overview
 
-### What is a dead letter queue (DLQ)?
+A hospital triage nurse does not keep resuscitating a patient chart with a permanently wrong blood type — after a few attempts, the case goes to a specialist review desk. A **dead letter queue (DLQ)** is that review desk for messages: after bounded retries fail, the poison message is quarantined instead of blocking the ward.
 
-A **dead letter queue (DLQ)** is a special queue used to store messages that could not be processed successfully after multiple retry attempts.
+Technically, a **DLQ** is a dedicated queue or topic that stores messages that could not be processed after exhausting retry attempts. It isolates **poison messages** (corrupt payloads, schema mismatches, logic bugs) from the main processing path, with monitoring, ownership, and a replay runbook.
 
-Instead of retrying forever, failed messages are moved to the DLQ for later inspection.
+---
 
-In simple words: *DLQ is a parking lot for bad messages.*
-
-DLQ is not optional logging — it is a **first-class queue/topic** with monitoring, ownership, and a **replay runbook**.
-
-### Why do we need a DLQ?
+### What problem it fixes
 
 **Without DLQ:**
 
 ```text
-Message → consumer → ✗ failure → retry → ✗ failure → retry → ✗ failure → …
-→ infinite retry loop
+Message → consumer → failure → retry → failure → retry → …
+→ infinite retry loop, wasted CPU, queue blockage, masked root cause
 ```
-
-Problems: wasted resources, queue blockage, system overload, difficult debugging.
 
 **With DLQ:**
 
 ```text
-Message → consumer → ✗ failure → retry 1 → retry 2 → retry 3 → DLQ
-→ problematic message isolated
+Message → consumer → failure → retry 1 → retry 2 → retry 3 → DLQ
+→ problematic message isolated; main queue keeps flowing
 ```
 
-Pair with bounded retries — detail: [§6.16 Retry Queue](#616-retry-queue).
+DLQ converts infinite failure loops into actionable quarantine.
 
-### How DLQ works
+---
+
+### What it does
+
+A DLQ:
+
+- **Captures failed messages** after `maxRetries` or `maxReceiveCount`
+- **Preserves context** — original payload, error, retry count, timestamp, source topic/partition/offset
+- **Enables triage** — ops and engineers inspect, classify, fix root cause, replay idempotently
+- **Protects throughput** — one bad message cannot stall the entire consumer group
+
+DLQ is a **first-class queue** with alerts, not optional logging.
+
+---
+
+### How it works — the architecture inside
 
 ```text
-Step 1: Message arrives
-Step 2: Consumer tries processing
+Step 1: Message arrives on main queue / topic
+Step 2: Consumer attempts processing
 Step 3: Processing fails
-Step 4: Broker retries (up to limit)
+Step 4: Broker or app retries (up to limit)
 Step 5: Retry limit exceeded
 Step 6: Message moved to DLQ
-```
-
-### Message flow
-
-```text
-Producer → main queue → consumer → ✗ failure
-  → retry queue → ✗ retry limit reached → dead letter queue
 ```
 
 ```mermaid
@@ -3241,44 +1732,17 @@ flowchart LR
     DLQ --> Ops[Alert + triage + replay]
 ```
 
-### Common reasons for failure
+#### Common failure reasons
 
-1. **Invalid data** — required field missing (`"orderId": null`)
-2. **Application bug** — consumer throws exception
-3. **Database failure** — DB unavailable
-4. **External service failure** — payment API down
-5. **Schema mismatch** — producer sends unexpected format
-6. **Corrupt messages** — malformed JSON/XML
+| Cause | Example |
+|-------|---------|
+| Invalid data | `"orderId": null` when required |
+| Application bug | `NullPointerException` in handler |
+| Downstream outage | DB or payment API unavailable (should retry first, not DLQ immediately) |
+| Schema mismatch | Producer sends unexpected JSON shape |
+| Corrupt message | Malformed JSON/XML |
 
-### Example
-
-```json
-{ "orderId": 1001 }
-```
-
-Consumer expects `customerId` as well — missing field → consumer fails → retries exhausted → move to DLQ.
-
-### Retry strategy
-
-```text
-Message → attempt 1 ✗ → attempt 2 ✗ → attempt 3 ✗ → DLQ
-```
-
-### Why not retry forever?
-
-Corrupted message `{ "invalid": "data" }` fails on retry 1, 2, and 100 — infinite retries waste resources. DLQ prevents this.
-
-### DLQ contents
-
-Typically stores:
-
-- Original message
-- Error details
-- Retry count
-- Timestamp
-- Failure reason
-
-**Recommended envelope (Kafka / application DLQ):**
+#### Recommended DLQ envelope
 
 ```json
 {
@@ -3293,131 +1757,7 @@ Typically stores:
 }
 ```
 
-### Real-world example
-
-```text
-E-commerce: Order queue → Inventory Service
-Order message arrives; inventory DB down
-Retry 1 ✗ → retry 2 ✗ → retry 3 ✗ → move to DLQ
-→ operations team investigates
-```
-
-### DLQ in RabbitMQ
-
-```text
-Queue → ✗ processing failure → Dead Letter Exchange (DLX) → DLQ
-```
-
-RabbitMQ routes failed messages via **Dead Letter Exchange (DLX)**.
-
-**Configuration:**
-
-```text
-Main queue (x-dead-letter-exchange) → DLX → dead letter queue
-```
-
-See [§6.8 RabbitMQ](#68-rabbitmq).
-
-### DLQ in Kafka
-
-Kafka has **no built-in DLQ**. Application creates separate topics:
-
-```text
-orders-topic → consumer ✗ → publish failed event → orders-dlq-topic
-```
-
-**Retry topology (application-managed):**
-
-```text
-orders → fail → orders-retry → still fails → orders-dlq
-```
-
-See [§6.5 Kafka](#65-kafka).
-
-### DLQ in AWS SQS
-
-```text
-Main queue → ✗ failure (after max receive count) → DLQ
-```
-
-Configuration: `maxReceiveCount = 5` — after 5 failures, message moves to DLQ.
-
-### DLQ in microservices
-
-```text
-Order Service → order queue → Inventory Service → ✗ failure → order DLQ
-→ operations team reviews failures
-```
-
-### DLQ monitoring
-
-Important metrics:
-
-- DLQ message count
-- Retry count
-- Failure rate
-- Oldest message age
-
-High DLQ volume usually indicates application bug, service outage, or bad data. **Alert on DLQ depth > 0.**
-
-### DLQ reprocessing
-
-After the root cause is fixed:
-
-```text
-DLQ → reprocessing service → main queue
-```
-
-Example: database repaired → re-submit failed messages.
-
-**Replay runbook:**
-
-```text
-1. Stop auto-replay scripts
-2. Identify failure class (schema? downstream? bad data?)
-3. Fix code / deploy / schema
-4. Sample messages — dry-run in staging
-5. Replay in batches with rate limit
-6. Monitor lag + error rate; stop if errors return
-```
-
-Replay must be **idempotent** — see [§6.13 At Least Once](#613-at-least-once-delivery) and [§6.14 Exactly Once](#614-exactly-once-delivery).
-
-### Best practices
-
-- Always configure DLQ
-- Add retry limits — [§6.16](#616-retry-queue)
-- Log failure reasons
-- Monitor DLQ growth; alert on spikes
-- Build replay tools
-- Separate DLQ per service/domain (`payments-dlq` vs `emails-dlq`)
-- Retention 7–30 days for investigation
-
-### Common mistakes
-
-- No DLQ configured
-- Infinite retries
-- Ignoring DLQ messages (no alerts)
-- No monitoring
-- Replaying without fixing root cause (re-poisons main queue)
-
-### Advantages
-
-- Prevents infinite retries
-- Isolates bad messages (poison messages)
-- Easier debugging
-- Improves reliability
-- Better observability
-- Protects main queue
-
-### Disadvantages
-
-- Additional storage
-- Operational overhead
-- Requires monitoring
-- Reprocessing logic needed
-
-### Broker-native summary
+#### Platform mechanisms
 
 | Platform | DLQ mechanism |
 |----------|---------------|
@@ -3426,135 +1766,147 @@ Replay must be **idempotent** — see [§6.13 At Least Once](#613-at-least-once-
 | **Kafka** | Manual: application publishes to `*-dlq` topic |
 | **Azure Service Bus** | Forward to dead-letter sub-queue |
 
-### Summary
+**RabbitMQ:** main queue sets `x-dead-letter-exchange` → DLX routes to DLQ.
+
+**Kafka:** no built-in DLQ — application publishes failed events to `orders-dlq` after retry exhaustion.
+
+**SQS:** `maxReceiveCount = 5` → message moves to configured DLQ automatically.
+
+#### Replay runbook
 
 ```text
-DLQ = parking lot for poison messages after bounded retries
-Configure everywhere in production; monitor, alert, replay idempotently
+1. Stop auto-replay scripts
+2. Classify failure (schema? downstream? bad data?)
+3. Fix code / deploy / schema
+4. Sample messages — dry-run in staging
+5. Replay in batches with rate limit
+6. Monitor lag + error rate; stop if errors return
 ```
 
-**Goal:** Convert infinite failure loops into actionable quarantine.
+Replay must be **idempotent** — duplicates are expected on redelivery.
 
 ---
 
+### Pitfalls and design tips
+
+- **Configure DLQ everywhere in production** — no DLQ means poison messages retry forever or block partitions.
+- **Alert on DLQ depth > 0** — a growing DLQ usually signals a bug, outage, or bad deploy.
+- **Separate DLQ per domain** — `payments-dlq` vs `emails-dlq` for clear ownership.
+- **Do not replay before fixing root cause** — re-poisoning the main queue wastes another cycle.
+- **Retention 7–30 days** — long enough for investigation; tune per compliance needs.
+- **Distinguish transient vs permanent errors** — DB down → retry queue; invalid JSON → DLQ immediately.
+
+---
+
+### Real-world example
+
+An **Inventory Service** consumes order events. The inventory database is down for maintenance. Retries 1–3 fail with connection timeouts. After `maxRetries = 3`, the message lands in `orders-dlq` with the connection error attached. PagerDuty fires on DLQ depth. After DB recovery, ops replays DLQ messages in batches of 100 with rate limiting; idempotent handlers on `orderId` prevent double-decrement.
+
+---
 
 ## 6.16 Retry Queue
 
-> Pairs with [§6.15 Dead Letter Queue](#615-dead-letter-queue): bounded retries with backoff before quarantine.
+### Overview
 
-```mermaid
-flowchart LR
-    Main[Main queue] --> C[Consumer]
-    C -->|success| Done[ACK]
-    C -->|transient fail| Retry[Retry + backoff]
-    Retry --> Main
-    C -->|max retries| DLQ[DLQ]
-```
+When a restaurant kitchen burns a dish, the waiter does not immediately shove the same order back through the line — they wait a minute, let the grill cool, then retry. A **retry queue** does the same for messages: failed deliveries wait with **backoff** before re-entering the main queue, giving downstream systems time to recover.
 
-### What is a retry queue?
+Technically, a **retry queue** is an intermediate holding area (or delayed visibility mechanism) where failed messages rest before reprocessing. Combined with exponential backoff, jitter, and a max retry count leading to DLQ, it handles **transient failures** without retry storms.
 
-A **retry queue** is an intermediate queue used to temporarily hold failed messages before they are retried again.
+---
 
-Instead of immediately reprocessing a failed message, it is placed in a retry queue and retried **after a delay**.
+### What problem it fixes
 
-In simple words: *retry queue gives failed messages another chance after waiting for some time.*
-
-After max retries, messages go to the **DLQ** — [§6.15 Dead Letter Queue](#615-dead-letter-queue).
-
-### Why do we need retry queues?
-
-**Without retry queue:**
+**Without delay:**
 
 ```text
-Message → consumer → ✗ failure → immediate retry → ✗ failure → immediate retry → …
+Message → consumer → failure → immediate retry → failure → immediate retry → …
+→ retry storm, CPU spike, cascading failure when dependency flickers back
 ```
-
-Problems: retry storm, high CPU, service overload, cascading failures.
 
 **With retry queue:**
 
 ```text
-Message → consumer → ✗ failure → retry queue → (wait) → main queue → consumer
+Message → consumer → failure → retry queue → (wait) → main queue → consumer
+→ reduced load, time for recovery, controlled retries
 ```
 
-Benefits: reduced load, time for recovery, controlled retries.
+---
 
-### When is a retry queue used?
+### What it does
 
-**Temporary failures (retry):**
+A retry queue:
 
-- Database down
-- Network timeout
-- External API failure
-- Service unavailable
-- Rate limiting (429)
+- **Delays reprocessing** after transient failures (DB down, 503, 429, timeout)
+- **Classifies errors** — retryable vs permanent (permanent → DLQ immediately)
+- **Tracks attempt metadata** — `retryCount`, last error, timestamp
+- **Pairs with DLQ** — after `maxRetries`, quarantine poison messages
 
-**Permanent failures (skip retry → DLQ):**
+| | Retry queue | DLQ |
+|---|-------------|-----|
+| **Purpose** | Temporary recovery | Permanent failure storage |
+| **Expectation** | Message may succeed later | Message needs investigation |
+| **Returned to main** | Yes (automatic) | No (manual replay) |
 
-- Invalid data
-- Corrupted message
-- Bad schema
+---
 
-Classify in code:
+### How it works — the architecture inside
+
+```text
+Main queue → consumer → success → ACK
+                    → failure → retry queue → (delay) → main queue → consumer
+                    → still failing after max → DLQ
+```
+
+```mermaid
+flowchart LR
+    Main[Main queue] --> Consumer
+    Consumer -->|success| Done[ACK / commit]
+    Consumer -->|transient fail| R1[Retry + backoff]
+    R1 --> Main
+    Consumer -->|max retries| DLQ[DLQ]
+```
+
+#### Error classification
 
 ```text
 Retryable:     TimeoutException, 503, 429, OptimisticLockException
 Non-retryable: JsonParseException, 400, 404, ValidationException → DLQ immediately
 ```
 
-### High-level flow
+#### Retry strategies
 
-```text
-Producer → main queue → consumer → success → done
-                              → ✗ failure → retry queue → main queue → consumer
-                              → success OR DLQ (after max retries)
-```
+| Strategy | Behavior | When to use |
+|----------|----------|-------------|
+| **Fixed delay** | Same wait every attempt | Simple; poor under load |
+| **Exponential backoff** | Delay doubles each attempt | Production default |
+| **Incremental** | Delay increases linearly | Moderate load smoothing |
 
-### Message lifecycle
-
-```text
-Message arrives → process → ✗ fail → retry queue → delay → main queue → process again
-```
-
-### Example
-
-```json
-{ "orderId": 1001 }
-```
-
-Inventory database down → processing fails → move to retry queue → wait 30 seconds → retry → DB recovered → processing succeeds.
-
-### Retry strategies
-
-1. **Fixed delay** — same wait every retry
-2. **Exponential backoff** — delay doubles (most common)
-3. **Incremental backoff** — delay increases linearly
-
-#### 1. Fixed delay retry
-
-```text
-Retry 1 → 30 sec → retry 2 → 30 sec → retry 3 → 30 sec
-```
-
-Simple but not optimal under load.
-
-#### 2. Exponential backoff
-
-```text
-Retry 1 → 10 sec → retry 2 → 20 sec → retry 3 → 40 sec → retry 4 → 80 sec
-```
-
-Prevents retry storms, API overload, and database overload; gives systems time to recover.
-
-**With jitter (recommended):**
+**Exponential backoff with jitter (recommended):**
 
 ```text
 delay = min(cap, base × 2^attempt) + random(0, base)
 ```
 
-Jitter avoids synchronized retry waves when a dependency recovers.
+Jitter prevents synchronized retry waves when thousands of consumers recover simultaneously.
 
-**Example schedule:**
+**How to calculate:**
+
+Given: `base = 1 s`, `cap = 30 min`, `attempt` starts at 0.
+
+| Attempt | `base × 2^attempt` | After `min(cap, …)` | With jitter `+ random(0, 1s)` |
+|---------|-------------------|---------------------|-------------------------------|
+| 0 | 1 s | 1 s | ~1.0–2.0 s |
+| 1 | 2 s | 2 s | ~2.0–3.0 s |
+| 2 | 4 s | 4 s | ~4.0–5.0 s |
+| 3 | 8 s | 8 s | ~8.0–9.0 s |
+| 4 | 16 s | 16 s | ~16–17 s |
+| 5 | 32 s | 32 s | ~32–33 s |
+| … | … | … | … |
+| 11 | 2,048 s ≈ 34 min | 30 min (capped) | ~30–31 min |
+
+**Sanity check:** 50,000 messages failing together without jitter all retry at T+30s → second outage. Jitter spreads load across a window.
+
+**Example production schedule:**
 
 | Attempt | Delay before next try |
 |---------|----------------------|
@@ -3565,238 +1917,85 @@ Jitter avoids synchronized retry waves when a dependency recovers.
 | 5 | 30 min |
 | 6+ | → DLQ |
 
-#### 3. Incremental backoff
+#### Platform implementations
+
+**RabbitMQ:** retry queue with TTL; on expiry, dead-letter exchange routes back to main queue.
+
+**Kafka:** application-managed — `orders-retry-1s`, `orders-retry-5m` topics, or scheduler republishing from DB/Redis when `retry_at` is due. Avoid long `sleep()` in consumer thread (blocks partition, violates `max.poll.interval`).
+
+**SQS:** visibility timeout acts as built-in retry — message hidden, then visible again after timeout.
+
+#### Staged retry queues
 
 ```text
-Retry 1 → 10 sec → retry 2 → 20 sec → retry 3 → 30 sec → retry 4 → 40 sec
+Main → fail → retry-10s → fail → retry-1m → fail → retry-5m → fail → DLQ
 ```
-
-### Common architecture
-
-```text
-Main queue → consumer → success → done
-                    → ✗ failure → retry queue → (delay) → main queue
-```
-
-```mermaid
-flowchart LR
-    Main[Main queue] --> Consumer
-    Consumer -->|success| Done[ACK / commit]
-    Consumer -->|fail| R1[Retry queue 1]
-    R1 --> Main
-    Consumer -->|still fail| R2[Retry queue 2]
-    R2 --> Main
-    Consumer -->|max attempts| DLQ[DLQ]
-```
-
-### Multiple retry queues
-
-Large systems often use staged delays:
-
-```text
-Main queue → ✗ → retry queue 1 (10 sec) → ✗ → retry queue 2 (1 min) → ✗ → retry queue 3 (5 min) → ✗ → DLQ
-```
-
-### Retry count
-
-Message metadata usually tracks attempts:
-
-```json
-{ "messageId": "123", "retryCount": 2 }
-```
-
-Every failure increments count. When `retryCount >= maxRetry` → move to DLQ.
-
-### Retry queue vs DLQ
-
-| | Retry queue | DLQ |
-|---|-------------|-----|
-| **Purpose** | Temporary recovery | Permanent failure storage |
-| **Expectation** | Message may succeed later | Message needs investigation |
-| **Returned to main queue** | Yes | No (replay is manual) |
-
-**Examples:** database down → retry queue; invalid JSON → DLQ (retry will never fix it).
-
-### RabbitMQ implementation
-
-```text
-Main queue → ✗ failure → retry queue (TTL = 30 sec)
-→ TTL expires → dead letter exchange → main queue
-```
-
-Retry queue uses **TTL (time to live)**; after expiry, message routes back via DLX. See [§6.8 RabbitMQ](#68-rabbitmq).
-
-### Kafka implementation
-
-Application-managed topics:
-
-```text
-orders-topic → ✗ failure → orders-retry-topic → consumer waits / schedules → retry later
-→ still fails → orders-dlq-topic
-```
-
-| Pattern | How |
-|---------|-----|
-| **Multiple retry topics** | `orders-retry-1s`, `orders-retry-5m` — one consumer per delay |
-| **Single retry + scheduler** | Store `retry_at` in DB/Redis; republish when due |
-| **Sleep in consumer** | Blocks partition — avoid for long delays (`max.poll.interval` violation) |
-
-See [§6.5 Kafka](#65-kafka).
-
-### AWS SQS implementation
-
-```text
-Main queue → ✗ failure → visibility timeout (message hidden) → timeout expires → visible again
-```
-
-Acts as a built-in retry mechanism without a separate retry queue.
-
-### Retry storm scenario
-
-```text
-Payment API down 10 minutes → 50K messages fail → all retry in 30s
-→ 50K concurrent calls when API flickers up → API dies again
-```
-
-Fix: exponential backoff + jitter + circuit breaker (fast-fail to retry topic slowly).
-
-### Best practices
-
-- Use **exponential backoff** with jitter
-- **Limit retry count**; use DLQ after max retries — [§6.15](#615-dead-letter-queue)
-- Store retry metadata (`retryCount`, error, timestamp)
-- Monitor retry rates and retry-queue depth
-- Separate **transient** vs **permanent** errors
-- Preserve message key (Kafka) so ordering is maintained per key
-- Idempotent consumers — [§6.13](#613-at-least-once-delivery)
-
-### Common mistakes
-
-- Infinite retries (no DLQ)
-- Immediate retries (no delay)
-- Ignoring retry metrics
-- Treating all failures equally
-- Long sleep in Kafka consumer thread → partition stall
-
-### Advantages
-
-- Improves reliability
-- Handles transient failures
-- Reduces message loss
-- Prevents retry storms
-- Improves fault tolerance
-
-### Disadvantages
-
-- Increased complexity
-- Additional queues/topics
-- Longer end-to-end latency
-- More monitoring needed
-
-### Summary
-
-```text
-Retry queue = delayed second chance for transient failures
-Exponential backoff + max retries + DLQ = production default
-```
-
-**Goal:** Recover from blips without overwhelming downstream systems or losing messages.
 
 ---
 
+### Pitfalls and design tips
+
+- **Exponential backoff + jitter + max retries + DLQ** — production default trio.
+- **Never infinite retries** — corrupted JSON will never succeed on attempt 100.
+- **Preserve partition key** (Kafka) — retries for the same entity should stay ordered per key.
+- **Circuit breaker** — when payment API is down, fast-fail to retry topic slowly instead of hammering a dead endpoint.
+- **Monitor retry-queue depth and retry rate** — spikes often precede DLQ growth.
+- **Idempotent consumers** — every retry is a potential duplicate delivery.
+
+---
+
+### Real-world example
+
+An order processor hits a **rate-limited inventory API** (HTTP 429). The handler classifies 429 as retryable, publishes to `orders-retry` with `retryCount = 1` and `retry_at = now + 10s`. A scheduler republishes to the main topic when due. On attempt 3 the API recovers; processing succeeds. A separate message with invalid JSON goes straight to DLQ — no retry queue — because retry will never fix malformed data.
+
+---
 
 ## 6.17 Event Sourcing
 
-> Often paired with [§6.18 CQRS](#618-cqrs). Replay mechanics: [§6.21](#621-event-replay). Schema evolution: [§6.22](#622-event-versioning).
+### Overview
 
-### What is event sourcing?
+A bank passbook does not erase yesterday's lines when you deposit today — it appends new entries, and your balance is the sum of the story. **Event sourcing** treats the business the same way: instead of overwriting current state in a row, the system stores every change as an immutable **event** and derives state by replaying them.
 
-**Event sourcing** is a design pattern where the application stores every change to an entity as a sequence of **immutable events** instead of storing only the current state.
+Technically, **event sourcing** is a pattern where the **event log** is the source of truth, not the current-state table. Commands that pass validation produce events; events are appended to a per-aggregate stream; read models and current state are **projections** built by replaying events (optionally from a snapshot).
+
+---
+
+### What problem it fixes
+
+Traditional CRUD stores only current state:
+
+```text
+| AccountID | Balance |
+| 101       | 5000    |
+```
+
+You cannot answer how the balance became ₹5000, who changed it, or what happened on March 3. Updates overwrite history — bad for audit, debugging, regulatory compliance, and rebuilding views after bugs.
+
+Event sourcing fixes **lost history** and **inability to reconstruct state** from a canonical record.
+
+---
+
+### What it does
+
+Event sourcing:
+
+- **Appends immutable events** — `AccountCreated`, `MoneyDeposited`, `OrderShipped`
+- **Derives state** — `State = Replay(Events)` (from offset 0 or latest snapshot)
+- **Models deletes as events** — `UserDeactivated`, not physical erase
+- **Enables replay** — rebuild read models, fix projectors, onboard new consumers
+- **Defines aggregates** — one event stream per aggregate ID (consistency boundary)
 
 | Approach | Stores |
 |----------|--------|
 | **Traditional** | Current state |
 | **Event sourcing** | History of changes (events) |
 
-### Traditional approach
+---
+
+### How it works — the architecture inside
 
 ```text
-Bank account — current balance = ₹5000
-
-| AccountID | Balance |
-| 101       | 5000    |
-```
-
-Problem: past changes are lost. Cannot answer how the balance became ₹5000 or what transactions occurred.
-
-### Event sourcing approach
-
-Store every event:
-
-```text
-Account Created
-Money Deposited ₹1000
-Money Deposited ₹5000
-Money Withdrawn ₹1000
-```
-
-Current balance is **derived** by replaying events.
-
-### Core idea
-
-```text
-State = Replay(Events)
-```
-
-Current state is not the source of truth — **events are the source of truth**.
-
-### What is an event?
-
-An event is a **fact that happened**.
-
-Examples: `UserRegistered`, `OrderCreated`, `PaymentCompleted`, `MoneyDeposited`, `MoneyWithdrawn`.
-
-```json
-{ "eventType": "MoneyDeposited", "amount": 1000 }
-```
-
-### Event characteristics
-
-- **Immutable** — once created, never updated
-- Historical fact
-- Time ordered
-- Append only
-
-Deletes are modeled as compensating events (e.g. `UserDeactivated`), not physical erase.
-
-### Example — account lifecycle
-
-```text
-Event 1: AccountCreated          → balance = 0
-Event 2: MoneyDeposited ₹1000    → balance = 1000
-Event 3: MoneyDeposited ₹500     → balance = 1500
-Event 4: MoneyWithdrawn ₹200     → balance = 1300
-```
-
-### Visualization
-
-```text
-Account stream (Account 101):
-  Offset 0 → AccountCreated
-  Offset 1 → Deposit 1000
-  Offset 2 → Deposit 500
-  Offset 3 → Withdraw 200
-Replay all events → balance = 1300
-```
-
-Each entity has its own **event stream** — Account 101 and Account 102 are independent streams.
-
-**Aggregate** = consistency boundary; one stream per aggregate ID. Optimistic concurrency via expected version.
-
-### How event sourcing works
-
-```text
-Command → business logic → generate event → store event → update read model
+Command → business logic → generate event → append to event store → projector updates read model
 ```
 
 ```mermaid
@@ -3808,18 +2007,7 @@ flowchart LR
     Proj --> Read[Read model]
 ```
 
-### Flow example
-
-User deposits ₹1000:
-
-```text
-Command: DepositMoney(1000)
-Validation: amount > 0
-Generate event: MoneyDeposited(1000)
-Store event → update read model (projection)
-```
-
-### Commands vs events
+#### Commands vs events
 
 | | Command | Event |
 |---|---------|-------|
@@ -3827,9 +2015,20 @@ Store event → update read model (projection)
 | **Example** | `DepositMoney(1000)` | `MoneyDeposited(1000)` |
 | **Meaning** | "Please do this." | "This happened." |
 
-### Event store
+#### Walkthrough — account lifecycle
 
-Database that stores events append-only:
+```text
+Event 1: AccountCreated          → balance = 0
+Event 2: MoneyDeposited ₹1000    → balance = 1000
+Event 3: MoneyDeposited ₹500     → balance = 1500
+Event 4: MoneyWithdrawn ₹200     → balance = 1300
+```
+
+Replay: `0 + 1000 + 500 − 200 = 1300`.
+
+#### Event store
+
+Append-only log per aggregate:
 
 ```text
 | SeqNo | Event            |
@@ -3839,243 +2038,105 @@ Database that stores events append-only:
 | 4     | Withdraw 200     |
 ```
 
-### Rebuilding state
+Optimistic concurrency: reject commands when `expectedVersion` does not match stream head.
 
-Replay all events in order:
+#### Snapshots
 
-```text
-AccountCreated → 0 → +1000 → 1500 → -200 → final balance = 1300
-```
+**Problem:** millions of events → full replay is slow on startup.
 
-### Event replay
+**Solution:** periodic snapshot + replay only events after snapshot.
 
 ```text
-Stored events → replay → reconstruct state
+Snapshot at event #5000: balance = ₹1,00,000
+→ replay events 5001 … N only
 ```
 
-Useful for recovery, debugging, and auditing. **Rebuild read model:** replay all events after fixing projector logic.
+**How to calculate:**
 
-### Audit trail
+Given: 2,000,000 events, replay cost ≈ 0.5 ms/event, snapshot at event 1,800,000 with balance already materialized.
 
-Traditional DB: only current state. Event sourcing: complete history — who changed an order, when, and what changed.
+- Full replay: `2,000,000 × 0.5 ms = 1,000 s` ≈ 16.7 min
+- With snapshot: `(2,000,000 − 1,800,000) × 0.5 ms = 100 s` ≈ 1.7 min
 
-### Snapshots
+**Sanity check:** snapshot every 10,000–100,000 events is typical; tune by aggregate size and replay SLA.
 
-**Problem:** millions of events → replay becomes slow.
-
-**Solution:** store state periodically.
-
-```text
-Snapshot: balance = ₹1,00,000 at event #5000
-→ replay only events 5001 onward
-```
-
-Benefits: faster startup and recovery.
-
-### Eventual consistency
-
-Common with event sourcing:
-
-```text
-Write model → events → read model (may lag slightly → eventually consistent)
-```
-
-Detail: [§6.18 CQRS](#618-cqrs).
-
-### CQRS + event sourcing
-
-Very common combination — command side handles writes; query side handles reads; events synchronize both.
-
-```text
-Command → event store → read model → query
-```
-
-CQRS does not require event sourcing, but they pair well. Full CQRS detail: [§6.18](#618-cqrs) — not duplicated here.
-
-### Event versioning
-
-Schema evolves over time (`amount` only → `amount` + `currency`). Solutions: version field, schema registry, upcasting.
-
-Detail: [§6.22 Event Versioning](#622-event-versioning).
-
-### Real-world example — e-commerce order
-
-```text
-OrderCreated → PaymentCompleted → OrderPacked → OrderShipped → OrderDelivered
-Current order status derived from events
-```
-
-### Banking example
-
-```text
-AccountCreated → deposit ₹1000 → deposit ₹500 → withdraw ₹300 → deposit ₹200
-Replay → balance = ₹1400 — complete history preserved
-```
-
-### Advantages
-
-- Complete audit trail
-- Full history preserved
-- Easy debugging and event replay
-- Natural fit for event-driven systems — [§6.4](#64-event-driven-architecture)
-- Supports CQRS and state reconstruction
-
-### Disadvantages
-
-- Complex design
-- Event versioning challenges
-- Large event storage
-- Replay overhead (mitigate with snapshots)
-- Eventual consistency on read models
-- Difficult querying without projections
-
-### When to use event sourcing?
-
-- Banking systems, financial ledgers, payment systems
-- Audit-heavy and regulatory compliance applications
-- Trading platforms, order management systems
-
-### When not to use?
-
-- Simple CRUD applications
-- Small internal tools
-- Systems without audit requirements
-- Low-complexity domains
-
-### Event sourcing vs CRUD
-
-| CRUD | Event sourcing |
-|------|----------------|
-| Store current state (`balance = ₹5000`) | Store changes (`deposit 1000`, `deposit 5000`, `withdraw 1000`) |
-| Balance is stored directly | Balance derived by replay |
-
-### Event sourcing vs event streaming
+#### Event sourcing vs event streaming
 
 | | Event sourcing | Event streaming |
 |---|----------------|-----------------|
-| **Purpose** | Store history | Move events |
-| **Source of truth** | Events | Usually database |
+| **Purpose** | Store history (source of truth) | Move events between services |
 | **Focus** | State reconstruction | Real-time communication |
 
-Event sourcing answers *what happened?* Event streaming answers *who should receive the event?*
-
-Detail: [§6.3 Event Streaming](#63-event-streaming).
-
-### Summary
-
-```text
-Event sourcing = events are source of truth; state = replay(events)
-Pair with CQRS for read models; snapshots for scale; versioning for schema evolution
-```
-
-**Goal:** Immutable history and auditability where CRUD loses the past.
+Event sourcing answers *what happened?* Event streaming answers *who should receive it?*
 
 ---
 
+### Pitfalls and design tips
+
+- **Not for simple CRUD** — small internal tools without audit needs add complexity for little gain.
+- **Event versioning is mandatory** — schemas evolve; old events live forever in the log (see 6.22).
+- **Querying raw events is hard** — build projections (often paired with CQRS).
+- **Storage grows monotonically** — plan retention, compaction policies, and snapshots.
+- **Eventual consistency on read models** — write path is canonical; reads may lag.
+- **Do not mutate events in place** — compensating events only; rewriting history breaks audit and replay.
+
+---
+
+### Real-world example
+
+An **e-commerce order** stream: `OrderCreated` → `PaymentCompleted` → `OrderPacked` → `OrderShipped` → `OrderDelivered`. Current status is never updated in place — each transition is an appended event. Customer support replays the stream for order `ORD-8821` and sees the exact timeline. A projector bug miscalculated tax for 30 days; engineers fix the projector and replay from snapshot — dashboards correct without touching the OLTP event log.
+
+---
 
 ## 6.18 CQRS
 
-> Often paired with [§6.17 Event Sourcing](#617-event-sourcing). Read models rebuilt via [§6.21 Event Replay](#621-event-replay).
+### Overview
 
-### What is CQRS?
+A restaurant separates the kitchen (where orders are cooked and recipes enforced) from the menu board and waiter scripts (optimized for fast reading). **CQRS** does the same for software: **commands** change state through a write model; **queries** read from a separate read model tuned for the questions users ask.
 
-**CQRS (Command Query Responsibility Segregation)** separates:
+Technically, **CQRS (Command Query Responsibility Segregation)** splits write and read paths into different models, handlers, and often different databases. Writes enforce business rules and consistency; reads use denormalized projections, search indexes, or caches — synchronized by events, with eventual consistency between sides.
 
-1. **Commands** — write operations that change state
-2. **Queries** — read operations that return data
+---
 
-into different models. Instead of one model for both reads and writes, CQRS uses specialized models for each purpose.
+### What problem it fixes
 
-| Letter | Meaning |
-|--------|---------|
-| **C** | Command |
-| **Q** | Query |
-| **R** | Responsibility |
-| **S** | Segregation |
+Most applications are **read-heavy**: Amazon might see ~10M product views/day vs ~10K updates/day. One schema serving both forces complex joins on the read path and transactional contention on the write path. Heavy `SELECT` analytics queries slow `INSERT`/`UPDATE` on the same tables.
 
-CQRS does **not** require event sourcing — but the two are often paired. Event sourcing detail: [§6.17](#617-event-sourcing).
+CQRS fixes **read/write interference** and enables **independent scaling** of each path.
 
-### Core idea
+---
+
+### What it does
+
+CQRS provides:
+
+- **Command side** — `CreateOrder`, `DepositMoney`; validates, mutates, emits events
+- **Query side** — `GetOrder`, `SearchProducts`; read-only, optimized shapes
+- **Separate stores** (in full form) — write DB for consistency; read DB / Elasticsearch / Redis for speed
+- **Event-driven sync** — projectors update read models from the write path or event log
+
+CQRS does **not** require event sourcing — but the two pair naturally when the write side is an event store.
+
+---
+
+### How it works — the architecture inside
 
 **Traditional:**
 
 ```text
-Read + write → single model
+Read + write → single model / single database
 ```
 
 **CQRS:**
 
 ```text
-Write model ──events──► read model
-Reads and writes handled separately
-```
-
-### Why CQRS?
-
-In most applications, **read traffic >> write traffic**.
-
-Example — Amazon: ~10M product views/day vs ~10K product updates/day.
-
-One database for both causes resource contention, scaling issues, and complex queries affecting writes. CQRS addresses this.
-
-### Traditional CRUD architecture
-
-```text
-Application → database
-  Reads:  SELECT
-  Writes: INSERT / UPDATE / DELETE
-Same schema for both
-```
-
-**CRUD example** — users table: `SELECT *` and `UPDATE` on the same model.
-
-### CQRS architecture
-
-```text
-              +-------------+
-              | Write model |
-              +-------------+
-                     |
-                  Events
-                     |
-                     v
-              +-------------+
-              | Read model  |
-              +-------------+
-```
-
-- **Write side:** optimized for consistency, transactions, business rules
-- **Read side:** optimized for fast queries, search, analytics
-
-### Command side
-
-**Command** = intent to change state. Examples: `CreateOrder`, `UpdateUser`, `CancelOrder`, `DepositMoney`.
-
-Commands **modify** data.
-
-```json
-CreateOrder { "orderId": 1001 } → order created → state changes
-```
-
-### Query side
-
-**Query** = request for data. Examples: `GetUser`, `GetOrder`, `GetBalance`, `GetProducts`.
-
-Queries **never modify** data.
-
-```text
-GetOrder(1001) → { "orderId": 1001, "status": "SHIPPED" }
-```
-
-### CQRS flow
-
-```text
-User → command → write model → database / event store
-  → read model updated → query model serves reads
+Command API → write model → write store
+                ↓ events
+            projectors → read model(s) → query API
 ```
 
 ```mermaid
-flowchart TB
+flowchart LR
     User[User] --> Cmd[Command API]
     User --> Qry[Query API]
     Cmd --> WS[Write store / event log]
@@ -4088,27 +2149,7 @@ flowchart TB
     Qry --> P3
 ```
 
-### Real-world example — e-commerce
-
-| Write side | Read side |
-|------------|-----------|
-| Create / update / delete product | Search product, product details, recommendations |
-
-Different optimization requirements per side.
-
-### Separate databases
-
-CQRS often uses a **write database** and a **read database**:
-
-```text
-Write DB → events → read DB
-```
-
-| Write DB | Read DB |
-|----------|---------|
-| Consistency, transactions | Fast queries, search, analytics |
-
-**Variants:**
+#### Deployment variants
 
 | Variant | Complexity | When |
 |---------|------------|------|
@@ -4116,477 +2157,236 @@ Write DB → events → read DB
 | Separate read DBs | Medium | Read scaling |
 | Event sourcing + multiple projections | High | Audit, temporal queries |
 
-Simple CQRS (same database, separate APIs):
+Simple start:
 
 ```text
 POST /commands/PlaceOrder → command handler → normalized DB
 GET  /queries/OrderSummary → query handler → denormalized view table
 ```
 
-Not every app needs full CQRS — consider read replicas first.
+#### Read model shape
 
-### Event flow
-
-```text
-Command → write model → database → event → read model update
-→ read model available for queries
-```
-
-Projectors may update SQL, Elasticsearch, Redis in parallel. **Idempotent projectors** — same event twice must not double-count.
-
-### Eventual consistency
-
-```text
-Write DB updated → read DB not updated yet → temporary inconsistency
-→ eventually read DB synchronized
-```
-
-Lag is often 100ms–2s. UX pitfall: *"I saved but don't see it."*
-
-Mitigations: read-your-writes (route immediate read to write store), version polling, or show pending state in UI.
-
-### CQRS + event sourcing
-
-Most common combination:
-
-```text
-Command → event store → events → read model (projection)
-```
-
-**Bank example:**
-
-```text
-Command: Deposit ₹1000 → event: MoneyDeposited → read model: balance = ₹1000
-Query: GetBalance → returns ₹1000
-```
-
-Full event-sourcing mechanics: [§6.17 Event Sourcing](#617-event-sourcing).
-
-### Read model
-
-Denormalized for fast reads — no complex joins:
+Denormalized for fast reads — no joins at query time:
 
 ```json
 {
-  "orderDetails": { ... },
-  "customerDetails": { ... },
-  "productDetails": { ... }
+  "orderDetails": { "orderId": 1001, "status": "SHIPPED" },
+  "customerDetails": { "name": "Jane", "tier": "GOLD" },
+  "productDetails": [ { "sku": "ABC", "qty": 2 } ]
 }
 ```
 
-**Rebuild read model:** replay all events after fixing projector logic — [§6.17](#617-event-sourcing).
+#### Eventual consistency
 
-### Scaling benefits
+```text
+Write DB updated → read DB not updated yet → temporary inconsistency → eventually synchronized
+```
+
+Typical lag: 100 ms–2 s. UX mitigations: read-your-writes (route immediate read to write store), version polling, or show "pending" state.
+
+#### Scaling example
 
 ```text
 Read traffic:  100,000 req/sec
 Write traffic: 1,000 req/sec
-→ scale read side independently
+→ scale read replicas / search cluster independently
 ```
 
-### Use cases
-
-- E-commerce, banking, trading systems
-- Inventory and booking systems
-- Social media platforms (extreme read:write ratio)
-
-### When to use CQRS?
-
-- High read traffic
-- Complex business logic on writes
-- Event-driven systems — [§6.4](#64-event-driven-architecture)
-- Need independent scaling
-- Event sourcing architecture
-
-### When not to use CQRS?
-
-- Small applications, simple CRUD, low traffic
-- Small internal tools
-
-CQRS adds complexity — avoid when CRUD suffices.
-
-### Advantages
-
-- Independent scaling of read and write paths
-- Better performance per workload
-- Optimized reads and writes
-- Supports event sourcing
-- Flexible architecture; easier complex domain modeling on write side
-
-### Disadvantages
-
-- Increased complexity and infrastructure
-- Eventual consistency on read models
-- Data synchronization / projector failure handling
-- Harder debugging (trace read anomaly → projector → source event)
-
-### CQRS vs CRUD
-
-| | CRUD | CQRS |
-|---|------|------|
-| **Read model** | One | Separate |
-| **Write model** | One | Separate |
-| **Database** | One | Often separate |
-| **Complexity** | Low | High |
-
-### CQRS + event sourcing example
-
-```text
-Command: CreateOrder
-  → write model stores OrderCreated in event store
-  → read model updates order view
-Query: GetOrder → returns order data from read model
-```
-
-### Summary
-
-```text
-CQRS = separate command (write) and query (read) models
-Scale reads independently; pair with event sourcing when audit/history matters
-Start simple (same DB, separate handlers) before full projection pipeline
-```
-
-**Goal:** Match architecture to read-heavy workloads without polluting write models with query concerns.
+Projectors must be **idempotent** — same event twice must not double-count.
 
 ---
 
+### Pitfalls and design tips
+
+- **Try read replicas before full CQRS** — many apps do not need separate projection pipelines.
+- **Debugging is harder** — read anomaly → trace projector → find source event.
+- **Projector failure** — monitor lag; stale read models are a common production incident.
+- **Not for small CRUD apps** — complexity tax is real.
+- **Interview angle:** CQRS solves read scaling and domain complexity, not "make my monolith cooler."
+
+---
+
+### Real-world example
+
+An **e-commerce platform** uses a normalized write DB for `PlaceOrder` commands (inventory reservation, payment authorization). A projector listens to `OrderCreated` and `OrderShipped` events and maintains a denormalized `order_summary_view` plus an Elasticsearch product catalog. Product search serves 50k QPS from Elasticsearch; writes stay at 200 TPS on PostgreSQL — each side scaled independently.
+
+---
 
 ## 6.19 Change Data Capture (CDC)
 
-> Complements [§6.20 Outbox Pattern](#620-outbox-pattern): CDC streams DB row changes; outbox emits designed domain events from the same transaction.
+### Overview
 
-### What is change data capture (CDC)?
+Instead of asking "did anything change?" every five seconds by querying the whole database, imagine a security camera on the transaction log that streams every insert, update, and delete the moment it happens. **Change Data Capture (CDC)** watches the database's own write log and publishes row-level changes as events — no application dual-write required.
 
-**Change Data Capture (CDC)** captures changes made to a database and propagates those changes to other systems in real time.
+Technically, **CDC** captures **INSERT**, **UPDATE**, and **DELETE** operations from a database and propagates them to downstream systems (search indexes, caches, warehouses, microservices) in near real time. Log-based CDC (reading WAL/binlog) is preferred over polling or triggers for production scale.
 
-Instead of repeatedly querying the database, CDC detects **INSERT**, **UPDATE**, and **DELETE** operations and publishes them as events.
+---
 
-### Core idea
-
-```text
-Database → detect changes → publish events → other systems
-```
-
-CDC answers: *what changed in the database?*
-
-```mermaid
-flowchart LR
-    DB[(Database)] --> Log[WAL / Binlog]
-    Log --> CDC[CDC connector]
-    CDC --> Broker[Message broker]
-    Broker --> Analytics[Analytics]
-    Broker --> Search[Search index]
-    Broker --> DW[Data warehouse]
-```
-
-### Why do we need CDC?
+### What problem it fixes
 
 **Without CDC:**
 
 ```text
-Database ← polling every 5 seconds ← Service B
+Service B polls database every 5 seconds: SELECT * WHERE updated_at > ?
+→ high DB load, delayed sync, missed edge cases, wasted queries
 ```
-
-Problems: high database load, delayed updates, wasted queries.
 
 **With CDC:**
 
 ```text
-Database → change happens → CDC → event published → consumers (real-time)
+Row changes → transaction log → CDC connector → event published → consumers (real-time)
 ```
 
-Keeps OLTP DB as source of truth while search indexes, caches, and warehouses stay synchronized — **without application dual-write**.
-
-### Real-world example
-
-```text
-INSERT INTO orders → CDC detects new row → publishes OrderCreated event
-→ consumers receive event instantly
-```
-
-### High-level architecture
-
-```text
-Database → CDC → message broker → analytics / search index / data warehouse
-```
-
-### What changes can CDC capture?
-
-| Operation | Meaning |
-|-----------|---------|
-| **INSERT** | New record created |
-| **UPDATE** | Existing record modified |
-| **DELETE** | Record removed |
-
-**Example — UPDATE:**
-
-```text
-Before: { "id": 1, "name": "John" }
-After:  { "id": 1, "name": "Johnny" }
-
-CDC event:
-{ "operation": "UPDATE", "before": { ... }, "after": { ... } }
-```
-
-### CDC approaches
-
-1. **Timestamp based** — query `WHERE UpdatedAt > LastReadTime`
-2. **Trigger based** — DB trigger writes to change/audit table
-3. **Log based** — read WAL / transaction log (most modern systems)
-
-#### 1. Timestamp based CDC
-
-```text
-| ID | Name | UpdatedAt |
-```
-
-Advantages: simple. Disadvantages: missed updates possible, polling required, extra queries.
-
-#### 2. Trigger based CDC
-
-```text
-Orders table → INSERT/UPDATE/DELETE trigger → change table
-```
-
-Advantages: easy to understand, immediate detection. Disadvantages: database overhead, slower writes, maintenance complexity.
-
-#### 3. Log based CDC (preferred)
-
-CDC reads the database **write-ahead log (WAL)** or **transaction log** directly — no polling, no triggers.
-
-```text
-Application INSERT order → transaction log records change
-→ CDC reads log → publishes OrderCreated
-```
-
-Advantages: minimal DB impact, real-time, reliable, scalable, captures all changes. This is how **Debezium** works.
-
-**Database logs:**
-
-| Database | Log |
-|----------|-----|
-| **MySQL** | Binlog |
-| **PostgreSQL** | WAL |
-| **SQL Server** | Transaction log |
-| **Oracle** | Redo log |
-
-### CDC flow
-
-```text
-Application → database → transaction log → CDC connector → Kafka → consumers
-```
-
-Initial **snapshot + streaming** for backfill when connector starts or after long downtime.
-
-### Popular CDC tool — Debezium
-
-Debezium reads MySQL binlog, PostgreSQL WAL, SQL Server logs, Oracle logs — publishes changes to Kafka.
-
-```text
-Database → transaction log → Debezium → Kafka topic → consumers
-```
-
-See [§6.5 Kafka](#65-kafka).
-
-### CDC + Kafka
-
-Very common architecture:
-
-```text
-Database → Debezium → Kafka → analytics / search / reporting
-```
-
-One database change updates many systems.
-
-### CDC vs polling
-
-| | Polling | CDC |
-|---|---------|-----|
-| **Mechanism** | Repeated queries | Capture changes |
-| **Latency** | High | Low |
-| **Database load** | High | Low |
-| **Efficiency** | Low | High |
-
-### CDC vs event sourcing
-
-| | CDC | Event sourcing |
-|---|-----|----------------|
-| **Source of truth** | Database | Events |
-| **Events generated** | After DB change | Before / instead of current-state storage |
-| **Direction** | Database → events | Events → database (derived state) |
-
-Detail: [§6.17 Event Sourcing](#617-event-sourcing).
-
-### CDC vs outbox pattern
-
-| | CDC (on business/outbox table) | Outbox |
-|---|--------------------------------|--------|
-| **Who emits events** | Log connector reads DB changes | App writes outbox row in same transaction |
-| **Event shape** | Row-level change | Domain event you design |
-
-Detail: [§6.20 Outbox Pattern](#620-outbox-pattern).
-
-### Real-world use cases
-
-1. **Search synchronization** — database → CDC → Elasticsearch
-2. **Data warehouse** — database → CDC → warehouse
-3. **Microservices integration** — Service A DB → CDC → Kafka → Service B
-4. **Cache synchronization** — database → CDC → Redis
-
-### Key operational details
-
-- Ordering generally preserved per table / primary key
-- **Tombstone events** for deletes (Kafka compacted topics)
-- **Schema evolution** on captured tables needs a strategy — [§6.22 Event Versioning](#622-event-versioning)
-- Log retention limits vs long CDC downtime → snapshot recovery needed
-- Wide tables → large events; consider column filtering
-- Deletes and GDPR erasure need compaction/tombstone policies
-
-### Advantages
-
-- Real-time updates, low latency
-- Reduced database load vs polling
-- Reliable data propagation
-- Supports event-driven systems — [§6.4](#64-event-driven-architecture)
-- Easy integration with existing OLTP databases
-
-### Disadvantages
-
-- Additional infrastructure (connector, broker)
-- Event ordering challenges across tables
-- Schema evolution complexity
-- Operational complexity; debugging can be difficult
-
-### When to use CDC?
-
-- Database replication and search index updates
-- Analytics pipelines and data warehouses
-- Event-driven microservices integration
-- Cache synchronization
-
-### When not to use?
-
-- Small applications with no integration needs
-- Simple CRUD with no downstream consumers
-
-### Summary
-
-```text
-CDC = database changes → events in real time (log-based preferred)
-Debezium + Kafka is the common stack; complements outbox and event sourcing
-```
-
-**Goal:** Propagate DB changes to search, cache, warehouse, and services without dual-write bugs.
+CDC keeps the OLTP database as source of truth while search, analytics, and caches stay synchronized **without** the application writing to two places.
 
 ---
 
+### What it does
+
+CDC:
+
+- **Detects row-level changes** — before/after images on UPDATE
+- **Publishes change events** — often to Kafka via Debezium
+- **Supports initial snapshot + streaming** — backfill existing rows, then tail the log
+- **Preserves ordering** — generally per table or primary key
+
+| Operation | CDC event |
+|-----------|-----------|
+| **INSERT** | New row |
+| **UPDATE** | `before` + `after` |
+| **DELETE** | Tombstone / delete event |
+
+---
+
+### How it works — the architecture inside
+
+```mermaid
+flowchart LR
+    App[Application] --> DB[(Database)]
+    DB --> Log[WAL / Binlog]
+    Log --> CDC[CDC connector]
+    CDC --> Broker[Message broker]
+    Broker --> Search[Search index]
+    Broker --> Cache[Cache]
+    Broker --> DW[Data warehouse]
+```
+
+#### CDC approaches
+
+| Approach | Mechanism | Trade-off |
+|----------|-----------|-----------|
+| **Timestamp** | `WHERE UpdatedAt > last_read` | Simple; polling; can miss deletes |
+| **Trigger** | DB trigger → change table | Immediate; slows writes |
+| **Log-based** | Read WAL / binlog / redo log | Low DB impact; production default |
+
+**Log-based flow:**
+
+```text
+Application INSERT order → transaction log records change
+→ CDC reads log → publishes OrderCreated (no extra queries on hot tables)
+```
+
+| Database | Log |
+|----------|-----|
+| **PostgreSQL** | WAL |
+| **MySQL** | Binlog |
+| **SQL Server** | Transaction log |
+| **Oracle** | Redo log |
+
+**Debezium** is the common open-source connector: database log → Kafka topics.
+
+#### CDC vs polling
+
+| | Polling | CDC (log-based) |
+|---|---------|-----------------|
+| **Latency** | Seconds–minutes | Milliseconds–seconds |
+| **DB load** | High (repeated queries) | Low (sequential log read) |
+| **Deletes** | Hard to detect | Captured |
+
+#### CDC vs event sourcing vs outbox
+
+| | CDC | Event sourcing | Outbox |
+|---|-----|----------------|--------|
+| **Source of truth** | Database rows | Event log | Database + designed domain events |
+| **Event shape** | Row before/after | Domain events | Domain events you design |
+| **Who emits** | Log connector | Application on command | Application in same txn |
+
+CDC on a **business table** emits what changed in SQL. **Outbox** emits the event you intended (`OrderPaid`, not `row.status: PAID → SHIPPED`).
+
+---
+
+### Pitfalls and design tips
+
+- **Prefer log-based CDC** — timestamp polling does not scale and misses subtle failures.
+- **Schema evolution** — captured table DDL changes need a strategy (see 6.22, 6.23).
+- **Wide tables** — large before/after payloads; use column filtering in connector config.
+- **Deletes and GDPR** — tombstone events and compaction policies for Kafka compacted topics.
+- **Long connector downtime** — log retention may expire; plan snapshot recovery.
+- **Do not use CDC as domain modeling** — row changes ≠ rich domain events; pair with outbox when semantics matter.
+
+---
+
+### Real-world example
+
+A product catalog lives in **PostgreSQL**. On each `INSERT`/`UPDATE` to `products`, Debezium streams changes to Kafka topic `db.products`. An Elasticsearch consumer indexes the `after` image — search results update within seconds of the DB commit. The application never calls Elasticsearch directly; one write path, many derived views.
+
+---
 
 ## 6.20 Outbox Pattern
 
-> Alternative to polling the business table via [§6.19 CDC](#619-change-data-capture-cdc). Relay often uses CDC on the outbox table.
+### Overview
 
-### What is the outbox pattern?
+You would not mail a wedding invitation and update the guest spreadsheet in two separate buildings hoping both succeed. The **outbox pattern** writes the guest row and the "send invitation" note in the **same ledger transaction**; a clerk mails invitations later from the outbox tray. Database and "intent to publish" commit together — no half-done state.
 
-The **outbox pattern** is a reliability pattern used in distributed systems and microservices to ensure that **database changes** and **event publishing** happen consistently.
+Technically, the **outbox pattern** stores a pending event row in an **outbox table** inside the same database transaction as the business write. A **relay** (polling process or CDC connector) reads unpublished outbox rows and publishes to the message broker asynchronously — eliminating dual-write inconsistency without two-phase commit across DB and Kafka.
 
-It solves: *database update succeeds but event publishing fails.*
+---
 
-### The problem
+### What problem it fixes
 
 ```text
-Order Service:
-  Step 1: Save order to database     ✓ success
-  Step 2: Publish OrderCreated event ✗ failure
+Step 1: Save order to database     ✓ success
+Step 2: Publish OrderCreated event ✗ failure
 
-Result: order exists in DB but inventory, payment, and shipping never receive the event
-→ system inconsistent
+Result: order exists; inventory, payment, shipping never notified → inconsistent system
 ```
+
+Or the reverse: event published, DB rolls back → phantom event.
+
+The root cause: **no atomic transaction spans PostgreSQL and Kafka**. Naive `save()` then `kafka.send()` is unsafe.
+
+---
+
+### What it does
+
+The outbox pattern:
+
+- **Atomically persists** business data + outbox event row in one DB transaction
+- **Defers publishing** to a background relay — at-least-once to the broker
+- **Guarantees no event loss** from the write path (once txn commits, event row exists)
+- **Requires idempotent consumers** — relay may publish duplicates
+
+| Guaranteed | Not guaranteed |
+|------------|----------------|
+| No event loss after DB commit | No duplicate publishes on broker |
+
+---
+
+### How it works — the architecture inside
 
 ```mermaid
-flowchart TB
-    S[Order service] --> DB[(Save order ✓)]
-    S --> K[Publish event ✗]
-    K -.->|missing| Inv[Inventory]
-    K -.->|missing| Pay[Payment]
-    K -.->|missing| Ship[Shipping]
-```
-
-### Why does this happen?
-
-Database and message broker are **different systems** (e.g. PostgreSQL + Kafka). You must update both — but **no atomic transaction** spans DB and broker.
-
-### Naive approach (insufficient)
-
-```text
-BEGIN → save order → publish event → COMMIT
-```
-
-Database transaction cannot control Kafka/RabbitMQ — **partial failure** is possible.
-
-**Dual-write without outbox:**
-
-```text
-UPDATE orders SET status='PAID' ✓  →  kafka.publish(OrderPaid) ✗
-→ DB says PAID, no event → inventory never decrements
-
-OR: publish ✓ → DB update ✗ rolls back → phantom event
-```
-
-### Outbox pattern solution
-
-Instead of publishing directly:
-
-1. Save business data
-2. Save event in **outbox table**
-
-Both inside the **same database transaction**. A background process publishes later.
-
-```mermaid
-flowchart TB
-    subgraph SameTxn[Single DB transaction]
-        BR[Business row]
-        OB[Outbox INSERT]
+flowchart LR
+    subgraph Txn[Single DB transaction]
+        BR[Business row INSERT/UPDATE]
+        OB[Outbox row INSERT]
     end
-    SameTxn --> Commit[COMMIT]
+    Txn --> Commit[COMMIT]
     Commit --> Relay[Outbox publisher / Debezium]
     Relay --> Broker[Kafka / RabbitMQ]
     Broker --> Consumers[Downstream consumers]
 ```
 
-### Architecture
-
-```text
-                +------------+
-                | Database   |
-                +------------+
-                       |
-       +---------------+---------------+
-       |                               |
-       v                               v
- Business table                 Outbox table
-                                       |
-                               Outbox publisher → Kafka
-```
-
-### Flow
-
-```text
-Command → database transaction
-  → save order + save event to outbox → COMMIT
-  → outbox publisher → Kafka → consumers
-```
-
-### Step-by-step example
-
-```text
-Create order orderId=1001
-Transaction:
-  INSERT INTO orders ...
-  INSERT INTO outbox { "event": "OrderCreated", "orderId": 1001 }
-COMMIT → both succeed together → no inconsistency
-```
-
-**Transactional write:**
+#### Transactional write example
 
 ```sql
 BEGIN;
@@ -4596,307 +2396,125 @@ BEGIN;
 COMMIT;
 ```
 
-### Outbox table
+Both succeed or both roll back — never partial.
 
-Stores pending events:
-
-```text
-| ID | EventType    | Status |
-| 1  | OrderCreated | NEW    |
-```
-
-**Typical schema:**
+#### Outbox table schema
 
 | Column | Purpose |
 |--------|---------|
-| `id` | Unique event ID (UUID) — idempotency key |
-| `aggregate_type` / `aggregate_id` | Entity routing, partition key |
-| `event_type` | `OrderPaid` — Debezium routing |
+| `id` | Unique event ID — idempotency key |
+| `aggregate_type` / `aggregate_id` | Routing, partition key |
+| `event_type` | `OrderPaid` — topic routing |
 | `payload` | JSON / Avro |
 | `created_at` | Ordering, lag monitoring |
 | `published_at` | NULL until relay succeeds |
 
-### Outbox publisher
-
-Background process:
-
-```text
-Outbox table → read unpublished rows → publish to broker → mark sent / delete row
-```
-
-**Relay implementations:**
+#### Relay implementations
 
 | Method | Mechanism | Latency | Scale |
 |--------|-----------|---------|-------|
-| **Polling** | `SELECT … WHERE published=false` | 100ms–1s | Simple; DB load at volume |
+| **Polling** | `SELECT … WHERE published_at IS NULL FOR UPDATE SKIP LOCKED` | 100 ms–1 s | Simple; DB load at volume |
 | **CDC (Debezium)** | Read outbox from WAL/binlog | Near real-time | Preferred at scale |
 
-Relay HA: `FOR UPDATE SKIP LOCKED` for polling, or single CDC connector. Monitor **outbox lag** (`now() - created_at` for unpublished rows).
+**Debezium Outbox Event Router** transforms outbox rows → Kafka topics by `aggregate_type`, key by `aggregate_id` — minimal custom relay code.
 
-### Event flow
-
-```text
-Orders table → outbox table → publisher → Kafka topic → consumers
-```
-
-### Atomicity guarantee
-
-Single database transaction:
-
-```text
-Insert order AND insert outbox event
-→ either both commit OR both rollback — never partial success
-```
-
-Database ACID ensures order row and outbox row are stored together → **no event can be lost** from the write path.
-
-### Failure scenarios
+#### Failure scenarios
 
 | Scenario | Result | Recovery |
 |----------|--------|----------|
-| **1.** Crash before COMMIT | Transaction rolls back — nothing saved | Consistent; client retries |
-| **2.** Order + outbox saved; publisher crashes | Event not published yet | Outbox row remains; publisher retries on restart |
-| **3.** Event published; crash before mark sent | Duplicate publish possible | **Idempotent consumers** |
+| Crash before COMMIT | Rollback — nothing saved | Client retries command |
+| Order + outbox saved; relay crashes | Event not yet on broker | Relay retries on restart |
+| Published; crash before mark sent | Duplicate on broker | Idempotent consumers |
 
-### Important consequence
+**How to calculate — outbox lag alert:**
 
-| Guaranteed | Not guaranteed |
-|------------|----------------|
-| No event loss (from DB commit) | No duplicates on broker |
+Given: `published_at IS NULL` rows with `created_at` timestamps.
 
-Consumers should be idempotent — [§6.13 At Least Once](#613-at-least-once-delivery), [§6.14 Exactly Once](#614-exactly-once-delivery).
+- `lag_p99 = percentile(now() − created_at)` for unpublished rows
+- Alert when `lag_p99 > 30 s` (tune to SLA)
 
-```text
-Event ID = EVT-100 → already processed? → ignore : process
-```
+Example: 500 unpublished rows, oldest `created_at` = 45 s ago → relay stalled or under-provisioned.
 
-Symmetric inbound pattern: **transactional inbox** table.
+**Sanity check:** steady-state lag should be sub-second with CDC; seconds with polling at moderate volume.
 
-### Outbox + CDC
+#### Outbox vs 2PC
 
-Modern architecture — instead of polling:
-
-```text
-Orders DB → outbox table → Debezium → Kafka
-```
-
-Debezium automatically publishes new outbox records. Detail: [§6.19 Change Data Capture](#619-change-data-capture-cdc).
-
-**Debezium outbox event router** transforms row → Kafka topic by `aggregateType` with key `aggregateId` — minimal custom relay code.
-
-### Outbox + Kafka
-
-Most common stack:
-
-```text
-Application → database → outbox table → Debezium → Kafka
-```
-
-See [§6.5 Kafka](#65-kafka).
-
-### Real-world example
-
-```text
-Order Service: order created → save order + save outbox event
-→ Debezium reads outbox → publishes OrderCreated
-→ inventory, shipping, payment services updated — all stay consistent
-```
-
-Foundation for event-driven sagas and CQRS projections — [§6.17](#617-event-sourcing), [§6.18](#618-cqrs).
-
-### Outbox vs direct publishing
-
-| Direct publishing | Outbox |
-|-------------------|--------|
-| Save order → publish event (separate steps) | Save order + save event (same transaction) |
-| Risk: order saved, event lost | No event loss from write path |
-
-### Outbox vs 2PC
-
-| | Outbox | 2PC (two-phase commit) |
-|---|--------|------------------------|
+| | Outbox | 2PC |
+|---|--------|-----|
 | **Complexity** | Low | High |
-| **Performance** | High | Lower |
-| **Availability** | High | Blocking possible |
+| **Performance** | High | Lower (blocking) |
+| **Availability** | High | Coordinator failure blocks |
 
-Modern systems prefer outbox over 2PC across DB and broker. See [Chapter 5](../05-distributed-databases/README.md) distributed transactions.
-
-**Outbox vs CDC on business table** — explicit domain events vs row before/after: [§6.19](#619-change-data-capture-cdc).
-
-### Advantages
-
-- Prevents event loss after local commit
-- Strong consistency within single DB boundary
-- No distributed transactions across DB + broker
-- Works well with Kafka and Debezium
-- Reliable microservice communication; scalable relay
-
-### Disadvantages
-
-- Additional outbox table and publisher process
-- Duplicate events possible (need idempotent consumers)
-- Relay lag (100ms–seconds between commit and publish)
-- Operational complexity (cleanup, monitoring, schema evolution — [§6.22](#622-event-versioning))
-
-### When to use outbox?
-
-- Microservices and event-driven architecture — [§6.4](#64-event-driven-architecture)
-- Kafka integration, reliable domain-event publishing
-- Replacing unsafe `save()` then `kafka.send()` sequencing
-
-### When not to use?
-
-- Simple monoliths without messaging
-- Small CRUD applications with no downstream consumers
-
-### Summary
-
-```text
-Outbox = atomic DB write + event row; relay publishes asynchronously
-At-least-once to broker + idempotent consumers = practical exactly-once effect
-Prefer Debezium CDC on outbox table at scale
-```
-
-**Goal:** Eliminate dual-write inconsistency without 2PC across database and message broker.
+Modern systems prefer outbox over 2PC across DB and broker.
 
 ---
 
+### Pitfalls and design tips
+
+- **Default for microservices emitting domain events** — replaces unsafe dual-write.
+- **Monitor outbox lag** — growing unpublished count means relay failure or overload.
+- **Cleanup policy** — delete or archive published rows; do not let the outbox table grow forever.
+- **Symmetric inbound: transactional inbox** — dedup on consume for end-to-end correctness.
+- **Prefer Debezium on outbox table at scale** — polling hammers DB under high write TPS.
+- **Not for monoliths with no messaging** — added table and relay for no benefit.
+
+---
+
+### Real-world example
+
+An **Order Service** on PostgreSQL creates an order and inserts `OrderCreated` into `outbox` in one transaction. Debezium tails the outbox table and publishes to Kafka topic `orders`. Inventory, shipping, and payment services consume the event. When the relay restarts after a crash, it republishes an event that was committed but not yet marked sent — consumers dedupe on `outbox.id`.
+
+---
 
 ## 6.21 Event Replay
 
-### What is event replay?
+### Overview
 
-**Event replay** is the process of re-reading and re-processing previously stored events to rebuild state, recover systems, fix bugs, or create new views.
+A DVR lets you rewind a game to rewatch from the fourth quarter — or from the opening whistle if you need the full story. **Event replay** does that for system history: re-read stored events from the log or event store to rebuild state, fix a bug in a projector, or onboard a new service with years of context.
 
-One of the biggest advantages of:
+Technically, **event replay** reprocesses previously stored events — from offset 0, a timestamp, or a snapshot — through consumers or projectors. It is a core capability of event sourcing, Kafka (immutable log + consumer offsets), and CQRS read-model recovery.
 
-- Event sourcing — [§6.17](#617-event-sourcing)
-- Kafka — [§6.5](#65-kafka)
-- Event streaming — [§6.3](#63-event-streaming)
+---
 
-### Core idea
+### What problem it fixes
 
-Events are stored permanently (within retention). Because events are retained, they can be replayed anytime.
+- **New consumer** needs three years of order history — no backfill API exists.
+- **Projector bug** computed wrong tax for 30 days — fix code, replay, correct dashboards without touching OLTP.
+- **Read model corrupted** — replay events to rebuild.
+- **New projection** — CQRS dashboard from existing event log.
 
-```text
-Stored events → replay → reconstruct state
-```
+Without durable event storage and replay mechanics, these require expensive one-off ETL from source systems.
+
+---
+
+### What it does
+
+Event replay:
+
+- **Re-reads** events from Kafka topic, event store, or DLQ (for manual replay)
+- **Reconstructs state** — `State = Replay(Events)` from beginning or snapshot
+- **Supports selective scope** — full log, time window, event type filter
+- **Requires side-effect discipline** — suppress emails, charges, and live publishes during replay
+
+---
+
+### How it works — the architecture inside
 
 ```mermaid
-flowchart TB
+flowchart LR
     Log[(Kafka / event store)] -->|read from offset 0 or snapshot| Proj[Projector / consumer]
     Proj -->|idempotent upsert| ReadDB[(Read model)]
     Proj -->|suppress| Side[External side effects]
     Snap[Snapshot at offset N] -.->|start here| Proj
 ```
 
-### Why event replay?
-
-```text
-Events: OrderCreated → PaymentCompleted → OrderShipped
-New Analytics Service added — how process old events? → replay historical events
-```
-
-### Real-world example
-
-E-commerce events (`OrderCreated`, `PaymentCompleted`, `OrderDelivered`). New **recommendation service** needs past order history → replay all historical events → build recommendations.
-
-### Event replay in event sourcing
-
-```text
-Event store: AccountCreated → deposit ₹1000 → deposit ₹500 → withdraw ₹200
-Replay: 0 + 1000 + 500 - 200 = balance ₹1300
-```
-
-**Rule:** `State = Replay(Events)` — replay from beginning (or snapshot) to rebuild state.
-
-```text
-Offset 1 → AccountCreated
-Offset 2 → Deposit 1000
-Offset 3 → Deposit 500
-Offset 4 → Withdraw 200
-Replay → balance = 1300
-```
-
-Snapshots truncate replay — detail in [§6.17](#617-event-sourcing).
-
-### Kafka event replay
-
-Kafka stores events for a **retention period**. Consumers track **offsets** — replay means move offset back and read events again.
-
-```text
-Topic: offset 0 → Event A, offset 1 → Event B, offset 2 → Event C
-Current offset = 3 → reset to 0 → consumer reads A, B, C again
-```
-
-**How Kafka supports replay:** messages live in immutable logs; consumption does not remove them — only offsets advance.
-
-```text
-Producer → Kafka topic → consumer
-Replay: reset offset → consumer reprocesses events
-```
-
-### Use cases
-
-| # | Use case | Scenario |
-|---|----------|----------|
-| **1** | New consumer | Analytics service needs 3 years of order history |
-| **2** | Bug fix | Incorrect projector logic → fix code → replay → correct state |
-| **3** | Disaster recovery | Read model DB corrupted → replay events → rebuild |
-| **4** | New read model | CQRS — new dashboard projection from event log |
-
-**Bug-fix example:**
-
-```text
-Projector bug: wrong tax calculation for 30 days
-→ fix code + replay from offset 0 → correct dashboards without touching OLTP
-```
-
-### Event replay with CQRS
-
-```text
-Write model → events → read model
-Read model lost → replay events → read model rebuilt
-```
-
-Detail: [§6.18 CQRS](#618-cqrs).
-
-**Full rebuild example:**
-
-```text
-OrderCreated → PaymentCompleted → OrderPacked → OrderShipped → OrderDelivered
-Replay → order status = Delivered (derived again)
-```
-
-### Replay strategies
-
-| Strategy | Description | Trade-off |
-|----------|-------------|-----------|
-| **Full replay** | All events from event 1 … N | Most accurate; can be slow |
-| **Partial replay** | Snapshot → replay remaining events only | Much faster |
-| **Selective replay** | Specific event types only (e.g. payments) | Useful for analytics |
-
-**Snapshots timeline:**
-
-```text
-Events 1 … 1,000,000 → snapshot saved → replay only 1,000,001 onward
-```
-
-### Kafka replay modes
+#### Kafka replay modes
 
 | Mode | How | Use case |
 |------|-----|----------|
-| **Offset reset** | New consumer group, `auto.offset.reset=earliest` | New service needs full history |
+| **Offset reset** | New consumer group, `auto.offset.reset = earliest` | New service needs full history |
 | **Timestamp seek** | `offsetsForTimes()` from T0 | Replay from incident start |
-| **Partition clone** | Copy topic to `orders-replay` | Isolate replay load from live |
-
-**Common offset reset options:**
-
-| Setting | Behavior |
-|---------|----------|
-| `earliest` | Read from beginning |
-| `latest` | Read only new events |
-| Specific offset | Read from chosen position |
+| **Partition clone** | Copy to `orders-replay` topic | Isolate replay load from live |
 
 ```bash
 kafka-consumer-groups --bootstrap-server $BS \
@@ -4905,198 +2523,153 @@ kafka-consumer-groups --bootstrap-server $BS \
   --topic orders --execute
 ```
 
-Use a **new consumer group name** for replay — never reset offsets on the live production group.
+Use a **new consumer group name** — never reset offsets on the live production group.
 
-### Event replay challenges
+#### Replay strategies
 
-1. Long replay time
-2. Large storage / retention requirements
-3. Event versioning — [§6.22](#622-event-versioning)
-4. Duplicate side effects
+| Strategy | Description | Trade-off |
+|----------|-------------|-----------|
+| **Full replay** | All events from 1 … N | Most accurate; slowest |
+| **Partial replay** | Snapshot → remaining events only | Much faster |
+| **Selective replay** | Specific event types | Analytics backfills |
 
-### Duplicate side effects problem
+**How to calculate — replay duration estimate:**
 
-```text
-Replay event → send email → replay again → send email again (bad)
-```
+Given: 5,000,000 events, consumer processes 2,000 events/sec (limited by DB writes).
 
-**Solution:** separate **state changes** from **side effects** — disable external actions during replay.
+- `duration = 5,000,000 / 2,000 = 2,500 s` ≈ **42 min**
+
+With snapshot at event 4,500,000: replay only 500,000 events → **~4 min**.
+
+**Sanity check:** expect 2–10× normal write IOPS during replay; scale consumers ≤ partition count.
+
+#### Side effects during replay
 
 | Side effect | Replay behavior |
 |-------------|-----------------|
 | **DB projection** | Safe with idempotent upsert (`ON CONFLICT UPDATE`) |
 | **Send email** | **Suppress** — `replay_mode` flag |
-| **Charge card** | **Never replay** — read-only projection |
+| **Charge card** | **Never replay** |
 | **Publish downstream** | Write to `orders-replay-output`, not live topic |
-| **Metrics** | Tag `replay=true` |
 
 ```text
 if (context.isReplay()) return; // skip external API
 ```
 
-### Event replay vs retry
+#### Replay vs retry
 
 | | Retry | Event replay |
 |---|-------|--------------|
-| **Purpose** | Handle failure | Reprocess history |
+| **Purpose** | Recover one failed message | Reprocess history |
 | **Scope** | Single message | Many events |
-| **Timing** | Immediately / with backoff | Any time |
+| **Timing** | Immediately / backoff | Any time |
 
-Retry detail: [§6.16 Retry Queue](#616-retry-queue).
-
-### Replay runbook
+#### Replay runbook
 
 ```text
 1. Declare replay window (start/end offset or timestamp)
-2. Deploy fixed projector (replay_mode=true)
+2. Deploy fixed projector (replay_mode = true)
 3. Scale consumers (≤ partition count; watch DB load)
 4. Suppress side effects
-5. Monitor lag + write IOPS (expect 2–10× normal)
+5. Monitor lag + write IOPS
 6. Validate checksums / row counts
 7. Cut over read traffic
 8. Disable replay_mode; document offsets replayed
 ```
 
-**Performance:** replay speed limited by consumer CPU, DB writes, and `max.poll.records`. Kafka retention must cover the replay window.
-
-### Advantages
-
-- Rebuild state and read models
-- Disaster recovery and bug correction
-- Historical analysis and new consumer onboarding
-- Core capability for event sourcing and Kafka
-
-### Disadvantages
-
-- Time consuming and resource intensive
-- Event versioning complexity on old events
-- Side-effect duplication risk if not suppressed
-
-### When to use event replay?
-
-- Event sourcing, Kafka, CQRS read-model recovery
-- Analytics backfills, new services, data recovery
-
-### When not to use?
-
-- Systems without stored events
-- Traditional CRUD without an event log
-- Short-lived transient events (no durable history)
-
-### Summary
-
-```text
-Event replay = reprocess stored history; Kafka offsets + event store retention enable it
-Full replay for accuracy; snapshots for speed; never replay side effects blindly
-```
-
-**Goal:** Correct derived state from the canonical event log without re-emitting from source systems.
+Kafka retention must cover the replay window — expired segments cannot be replayed.
 
 ---
 
+### Pitfalls and design tips
+
+- **Never replay side effects blindly** — duplicate emails and charges are the classic disaster.
+- **Event versioning** — old V1 events must still deserialize during replay (see 6.22).
+- **Isolate replay load** — separate consumer group, clone topic, or off-peak window.
+- **Idempotent projectors** — replays and at-least-once delivery both duplicate.
+- **Not possible without durable logs** — CRUD-only systems have nothing to replay.
+
+---
+
+### Real-world example
+
+A **recommendation service** launches six months after the order platform. Engineers create consumer group `recommendations-bootstrap` with `auto.offset.reset = earliest` on the `orders` topic. The projector builds user purchase history from all `OrderDelivered` events. `replay_mode = true` skips sending "you might also like" emails during the backfill. After lag reaches zero, they disable replay mode and route live traffic to the new service.
+
+---
 
 ## 6.22 Event Versioning
 
-> Kafka enforcement via [§6.23 Schema Registry](#623-schema-registry). Replay implications: [§6.21](#621-event-replay).
+### Overview
 
-### What is event versioning?
+Old diary entries do not rewrite themselves when you start recording your email address too — new pages have more fields, and readers must understand both formats. **Event versioning** is how systems evolve event schemas on **immutable logs** without breaking producers, consumers, or replay of events written years ago.
 
-**Event versioning** is the practice of evolving event schemas over time **without breaking** existing producers and consumers.
+Technically, **event versioning** is the practice of changing event structure over time while maintaining **compatibility** — backward (new code reads old events), forward (old code reads new events), or full (both). Strategies include version fields, separate event types, schema registry enforcement, and upcasting on read.
 
-It allows old and new versions of events to coexist safely.
+---
 
-### Why do we need event versioning?
+### What problem it fixes
 
-Events are **immutable**. Once stored in Kafka, an event store, or an event-sourcing system, they cannot be modified.
-
-```text
-Problem: millions of old events exist → new requirements → schema must change
-```
-
-**Example:**
-
-```json
-V1 UserCreated: { "userId": 101, "name": "John" }
-V2 UserCreated: { "userId": 101, "name": "John", "email": "john@gmail.com" }
-```
-
-What about all the V1 events already in the log? → **need versioning.**
-
-### Core challenge
+Events are **immutable** once appended to Kafka or an event store:
 
 ```text
-Producer upgraded, consumer still old  — OR —
-Consumer upgraded, old events still exist
-→ both must continue working
+Millions of V1 events exist → product needs email field → schema must change
+Old events cannot be edited → consumers and replay must handle all versions
 ```
 
-Events live forever in retention / event stores; breaking changes brick **replay** — [§6.21 Event Replay](#621-event-replay).
+Breaking changes (rename, remove required field, change type) brick production consumers and historical replay.
 
-### What can change?
+---
 
-1. Add fields
-2. Remove fields
-3. Rename fields
-4. Change data types
-5. Split events
-6. Merge events
+### What it does
 
-Schema evolution must preserve compatibility.
+Event versioning:
 
-**Example — field added:**
+- **Defines compatibility rules** for schema changes
+- **Allows safe evolution** — add optional fields with defaults
+- **Supports multiple representations** — version field, parallel event types, upcasters
+- **Preserves replayability** — 2023 events must process in 2026
 
-```json
-V1: { "orderId": 1001 }
-V2: { "orderId": 1001, "customerId": 500 }
-```
+---
 
-Old consumers should still work (ignore unknown / use defaults).
+### How it works — the architecture inside
 
-### Event evolution rule
-
-**Prefer:** add optional fields with defaults.
-
-**Avoid:** remove or rename fields — breaks consumers.
+#### What can change safely
 
 | Change | Compatibility |
 |--------|---------------|
-| Add optional field | Backward compatible |
+| Add optional field with default | Backward compatible |
 | Remove field | Breaking |
-| Rename field | Breaking (without alias) |
+| Rename field | Breaking (without alias / dual-read) |
+| Change data type | Breaking |
 | New event type | Parallel consumers |
 
-**Good change:**
+**Good:**
 
 ```json
 V1: { "name": "John" }
 V2: { "name": "John", "email": "john@gmail.com" }
 ```
 
-**Bad change:**
+**Bad:**
 
 ```json
 V1: { "name": "John" }
 V2: { "fullName": "John" }
 ```
 
-Field renamed → old consumers break.
+Old consumers expect `name` — they break on `fullName`.
 
-### Compatibility types
+#### Compatibility types
 
-| Type | Meaning | Example |
-|------|---------|---------|
-| **Backward** | New consumer reads old events | New consumer expects `email` → missing on old event → use default |
-| **Forward** | Old consumer reads new events | Old consumer ignores extra `email` field |
-| **Full** | Both directions work | Best scenario |
+| Type | Meaning |
+|------|---------|
+| **Backward** | New consumer reads old events (missing new fields → defaults) |
+| **Forward** | Old consumer reads new events (ignores unknown fields) |
+| **Full** | Both directions — ideal for shared topics |
 
-### Event versioning strategies
+#### Strategies
 
-1. **Version field** in payload
-2. **Separate event types** (`UserCreated` vs `UserCreatedV2`)
-3. **Schema registry** (Kafka) — detail: [§6.23 Schema Registry](#623-schema-registry)
-4. **Upcasting** (event sourcing)
-
-#### 1. Version field
+**1. Version field in payload**
 
 ```json
 { "version": 2, "orderId": 1001, "customerId": 500 }
@@ -5104,165 +2677,165 @@ Field renamed → old consumers break.
 
 Consumer branches on `version`.
 
-#### 2. Separate event types
+**2. Separate event types**
 
-Instead of versioning one type, publish `UserCreated` and `UserCreatedV2` — consumers choose. Simple but proliferates types.
+`UserCreated` and `UserCreatedV2` — simple but proliferates types.
 
-#### 3. Schema registry
+**3. Schema registry**
 
-Centralized schema store with compatibility checks — [§6.23 Schema Registry](#623-schema-registry).
+Central store validates compatibility on register (see 6.23).
 
-#### 4. Upcasting
+**4. Upcasting (event sourcing)**
 
-Common in event sourcing — transform old events to current shape **before** processing (especially on replay).
+Transform old shape to current model before processing:
 
 ```mermaid
 flowchart LR
     V1[Event V1] --> Up[Upcaster]
-    Up --> V2[Event V2 model]
+    Up --> V2[Current model]
     V2 --> Proj[Projector / handler]
 ```
-
-**Example:**
 
 ```json
 Old: { "name": "John" }
 Upcast: { "name": "John", "email": "unknown" }
-→ consumer always sees latest format
 ```
 
-Major breaking changes may need a **dual-write transition** period (publish both V1 and V2 temporarily).
+Major breaking changes may need a **dual-write transition** — publish both V1 and V2 temporarily.
 
-### Event sourcing challenge
-
-Events stored for years — replay in 2026 must handle 2023 V1, 2024 V2, 2025 V3 events.
-
-Detail: [§6.17 Event Sourcing](#617-event-sourcing).
-
-### Kafka example
-
-```text
-Producer V1: { "orderId": 1001 }
-Producer V2: { "orderId": 1001, "customerId": 500 }
-→ consumers (or deserializers) handle both schemas
-```
-
-### Real-world example — payment event
+#### Payment event example
 
 ```json
 V1: { "amount": 1000 }
 V2: { "amount": 1000, "currency": "INR" }
 ```
 
-Old consumers ignore `currency`; new consumers use it — both continue working.
-
-### Best practices
-
-- Keep events immutable; never rewrite history in the log
-- Prefer adding optional fields; use defaults for missing values
-- Avoid removing required fields or renaming without aliases
-- Use schema registry with CI compatibility checks
-- Test replay with old event fixtures
-- Version carefully; document upcaster chains
-
-### Common mistakes
-
-- Renaming fields without dual-read period
-- Removing required fields
-- Changing data types in place
-- Breaking compatibility without coordinated deploy
-- Ignoring old events during replay / new consumer bootstrap
-
-### Advantages
-
-- Safe schema evolution over years
-- Supports event replay and new consumers
-- Backward and forward compatibility
-- Long-term maintainability of shared topics
-
-### Disadvantages
-
-- Additional complexity and multiple schema versions
-- More testing (old + new payloads)
-- Upcaster chain maintenance over time
-
-### When to use event versioning?
-
-- Any long-lived Kafka topic or event-sourced aggregate
-- Shared topics across team boundaries
-- Outbox payloads — [§6.20](#620-outbox-pattern)
-
-### Summary
-
-```text
-Event versioning = evolve schemas on immutable logs without breaking prod or replay
-Add fields > remove/rename; schema registry + upcasting for Kafka and event sourcing
-```
-
-**Goal:** Old and new producers/consumers coexist while history remains replayable.
+Old consumers ignore `currency`; new consumers default `currency` to `"INR"` when absent on V1 events during replay.
 
 ---
 
+### Pitfalls and design tips
+
+- **Prefer add optional fields** — never rewrite history in the log.
+- **Test replay with old event fixtures** in CI — catch breakage before deploy.
+- **Document upcaster chains** — each new version adds a transform; chains grow over time.
+- **Coordinate deploy order** — with backward mode, deploy consumer before producer; with forward, reverse.
+- **Outbox payloads need versioning too** — same rules apply to rows in the outbox table.
+- **Interview angle:** "rename field" is almost always breaking — use alias field or new event type.
+
+---
+
+### Real-world example
+
+A shared Kafka topic `users` carries `UserCreated` events. Team adds optional `marketingOptIn` with default `false` in Avro schema V2. Confluent Schema Registry runs in **BACKWARD** mode — registration succeeds because new schema reads old data. Consumers deployed first apply default `false` to millions of V1 events during replay. No topic compaction or re-publish required.
+
+---
 
 ## 6.23 Schema Registry
 
-### What is a schema registry?
+### Overview
 
-A **schema registry** is a centralized service used to store, manage, validate, and version schemas for events and messages.
+A construction site shares one official blueprint binder — electricians and plumbers pull the same revision, and the inspector rejects plans that would not fit existing walls. A **schema registry** is that binder for messages: producers register schemas, consumers fetch by ID, and incompatible changes are rejected before they hit production.
 
-It ensures producers and consumers agree on the structure of data being exchanged.
+Technically, a **schema registry** is a centralized service that stores, versions, and validates schemas (Avro, Protobuf, JSON Schema) for serialized messages. Producers embed a **schema ID** in each message; consumers deserialize using the schema looked up from the registry — smaller payloads than embedding full JSON schemas per message.
 
-Popular implementations: **Confluent Schema Registry**, **AWS Glue Schema Registry**.
+---
 
-### Problem without schema registry
+### What problem it fixes
+
+**Without registry:**
 
 ```json
 Producer:  { "orderId": 1001, "amount": 500 }
 Consumer expects: { "orderId": 1001, "amount": 500, "currency": "INR" }
-→ consumer may fail — schema mismatch
+→ deserialization failure or silent data loss
 ```
 
-Or producer sends `{ "orderId": 1001 }` while consumer expects `customerId` → consumer crashes.
+Multiple teams, evolving schemas, and no central contract → production crashes on deploy and undetected drift between services.
 
-### Why do we need it?
+---
 
-In event-driven systems with multiple producers, multiple consumers, and evolving schemas, you need a **central authority** for schema management.
+### What it does
 
-Detail on evolution strategies: [§6.22 Event Versioning](#622-event-versioning).
+A schema registry:
 
-### High-level architecture
+- **Stores schemas** per subject (`orders-value`, `payments-key`)
+- **Assigns schema IDs** — referenced in each Kafka record
+- **Validates compatibility** on registration — rejects breaking changes
+- **Versions schemas** — V1, V2, V3 per subject
+- **Enables CI gates** — block producer deploy if schema incompatible
 
-```text
-          +----------------+
-          | Schema Registry|
-          +----------------+
-                  ^
-        +---------+---------+
-        |                   |
-    Producer              Consumer
-        |                   |
-        +-------- Kafka -----+
-```
+Popular implementations: **Confluent Schema Registry**, **AWS Glue Schema Registry**.
 
-Producer registers schema; consumer fetches schema by ID.
+---
+
+### How it works — the architecture inside
 
 ```mermaid
 flowchart LR
     Prod[Producer] --> Reg[Schema Registry]
-    Prod --> Kafka[Kafka]
+    Prod -->|schema ID + payload| Kafka[Kafka]
     Kafka --> Cons[Consumer]
     Cons --> Reg
+    Reg --> Cons
 ```
-
-### What is a schema?
-
-Defines fields, data types, required fields, and validation rules.
 
 ```text
-OrderCreated: orderId (long), amount (double), currency (string)
+Step 1: Producer defines Avro/Protobuf schema
+Step 2: Producer registers schema under subject (e.g. orders-value)
+Step 3: Registry assigns schema ID = 15
+Step 4: Producer sends [magic byte | schema ID | serialized data]
+Step 5: Consumer fetches schema 15 from registry (cached locally)
+Step 6: Consumer deserializes payload
 ```
 
-### Supported formats
+#### Why schema ID?
+
+Full schema in every message wastes bandwidth. Typical Kafka record:
+
+```text
+[0x00 magic][4-byte schema ID][Avro binary payload]
+```
+
+Registry holds: `schema 15 = { orderId: long, amount: double, currency: string default "INR" }`.
+
+**How to calculate — payload size savings:**
+
+Given: Avro schema JSON ≈ 400 bytes; message payload ≈ 80 bytes; 1,000,000 messages/day.
+
+- **Without registry** (JSON with embedded field names per message): ~200 bytes/msg → 200 MB/day
+- **With Avro + schema ID**: ~80 bytes/msg + negligible 5-byte header → 80 MB/day
+
+**Sanity check:** savings grow with schema complexity and volume; 50–70% reduction is common on verbose JSON.
+
+#### Compatibility modes (Confluent)
+
+| Mode | Registry behavior |
+|------|-------------------|
+| **BACKWARD** | New schema readable by old consumers — **default** |
+| **FORWARD** | Old consumers can read new schema |
+| **FULL** | Backward + forward |
+| **NONE** | No validation — avoid in production |
+
+#### Compatible Avro evolution
+
+```json
+V1: { "type": "record", "name": "Order", "fields": [{ "name": "orderId", "type": "long" }] }
+V2: adds { "name": "customerId", "type": "long", "default": 0 }
+→ BACKWARD compatible — registry accepts
+```
+
+**Invalid:** `amount` changes from `double` to `string` → registry rejects.
+
+#### Subjects and naming
+
+```text
+orders-value, orders-key, payments-value
+```
+
+Naming strategies: `{topic}-value`, `{topic}-key`, or custom record name.
+
+#### Supported formats
 
 | Format | Notes |
 |--------|-------|
@@ -5270,167 +2843,22 @@ OrderCreated: orderId (long), amount (double), currency (string)
 | **Protobuf** | Strong typing; widely used |
 | **JSON Schema** | Supported; less mature in some stacks |
 
-Kafka stacks commonly use **Avro + Schema Registry**. See [§6.5 Kafka](#65-kafka).
+---
 
-### With schema registry
+### Pitfalls and design tips
 
-```text
-Producer → validate schema → schema registry → Kafka
-Invalid schema changes rejected → compatibility maintained
-```
+- **Registry availability** — consumers cache schemas, but new deploys need registry up; run HA cluster.
+- **BACKWARD by default** — deploy consumers before producers when adding fields.
+- **Avoid raw JSON on shared multi-team topics** — no compile-time or registry enforcement.
+- **Schema governance in CI** — `mvn schema-registry:validate` or equivalent before merge.
+- **Do not use NONE compatibility in production** — breaking changes slip through.
+- **Glue vs Confluent** — AWS-native stacks use Glue; Kafka-centric stacks use Confluent; serializer config differs.
 
-### How it works
-
-```text
-Step 1: Producer creates schema
-Step 2: Producer registers schema (subject e.g. orders-value)
-Step 3: Registry assigns schema ID
-Step 4: Producer sends schema ID + serialized data
-Step 5: Consumer fetches schema by ID
-Step 6: Consumer deserializes message
-```
-
-### Flow
-
-```text
-Producer → schema registry → schema ID = 15 → Kafka topic
-→ consumer → fetch schema 15 → deserialize data
-```
-
-### Why schema ID?
-
-Instead of sending the full schema with every message, send **schema ID = 15** — smaller payloads, better performance.
-
-```text
-Kafka message: { schemaId: 101, data: ... }
-Registry: schema 101 = { orderId: long, amount: double }
-```
-
-### Schema evolution
-
-Registry tracks versions and **checks compatibility** on register:
-
-```text
-V1: { orderId } → V2: { orderId, customerId } → validated before deploy
-```
-
-### Compatibility modes (registry)
-
-Configured per subject in Confluent Schema Registry (and similar products). Mode definitions and examples: [§6.22 Event Versioning](#622-event-versioning).
-
-| Mode | Registry behavior |
-|------|-------------------|
-| **Backward** | New schema readable by old consumers — **default** |
-| **Forward** | Old consumers can read new schema |
-| **Full** | Backward + forward |
-| **None** | No validation — avoid in production |
-
-### Avro example — compatible change
-
-```json
-V1: { "type": "record", "name": "Order", "fields": [{ "name": "orderId", "type": "long" }] }
-V2: adds { "name": "customerId", "type": "long", "default": 0 }
-→ backward compatible — registry accepts
-```
-
-### Invalid change
-
-```text
-V1: amount (double) → V2: amount (string)
-→ data type changed → registry rejects schema
-```
-
-### Schema versioning
-
-```text
-OrderCreated V1 → V2 → V3 — all versions tracked per subject
-```
-
-### Schema registry in Kafka
-
-```text
-Producer → Avro serializer → schema registry → Kafka topic
-Consumer → Avro deserializer → schema registry
-```
-
-### Common operations
-
-- Register schema
-- Get schema / fetch version
-- Validate schema
-- Check compatibility (CI gate before deploy)
-
-### Subjects
-
-Schemas stored under **subjects** — each subject maintains its own version history:
-
-```text
-orders-value, orders-key, payments-value
-```
-
-Naming strategies: `{topic}-value`, `{topic}-key`.
+---
 
 ### Real-world example
 
-```text
-Order Service V1: OrderCreated { orderId }
-Later need customerId → V2: { orderId, customerId }
-→ registry validates → consumers continue working
-```
+An **Order Service** publishes `OrderCreated` as Avro to Kafka. V1 schema has `orderId` and `amount`. Product adds `customerId` — engineer registers V2 with `customerId` default `0`. Confluent Schema Registry validates BACKWARD compatibility and assigns ID 16. Producers immediately send ID 16; old consumers still read messages (ignore or default `customerId`). New consumers deployed first use `customerId` for partitioning downstream fulfillment — no coordinated big-bang deploy, no topic wipe.
 
-### Benefits
-
-- Centralized schema management and versioning
-- Automatic compatibility checks
-- Smaller messages (schema ID vs full schema)
-- Safer deployments; prevents schema drift
-- Easier maintenance across teams
-
-### Disadvantages
-
-- Extra infrastructure and operational overhead
-- Learning curve (Avro/Protobuf tooling)
-- **Dependency on registry availability** — consumers cache schemas but new deploys need registry up
-
-### Schema registry vs no registry
-
-| | Without registry | With registry |
-|---|------------------|---------------|
-| **Schema management** | Manual | Centralized |
-| **Compatibility** | Risky | Automatic checks |
-| **Versioning** | Difficult | Built-in per subject |
-
-### Best practices
-
-- Use Avro or Protobuf for Kafka topics
-- Enable compatibility checks (backward by default)
-- Prefer adding fields with defaults — [§6.22](#622-event-versioning)
-- Avoid removing fields or changing types
-- Schema governance in CI/CD (reject breaking producer deploys)
-- Avoid raw JSON everywhere on shared multi-team topics
-
-### Common mistakes
-
-- Breaking compatibility (rename, remove required fields)
-- Changing field types in place
-- No schema governance process
-- Deploying producer before consumer can read new schema (without forward/full mode)
-
-### When to use schema registry?
-
-- Avro/Protobuf serialization in Kafka
-- Multi-team shared topics with contract governance
-- Long-lived event streams requiring safe evolution
-
-### Summary
-
-```text
-Schema registry = central contracts for Kafka messages (Avro/Protobuf + schema ID)
-Backward compatibility by default; registry rejects breaking changes at deploy time
-```
-
-**Goal:** Agreed data contracts, safe evolution, and smaller payloads across producers and consumers.
-
----
 
 [<- Back to master index](../README.md)

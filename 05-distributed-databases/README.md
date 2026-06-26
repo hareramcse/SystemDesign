@@ -1,103 +1,147 @@
-﻿# 5. Distributed Databases
-
-> Status: **Documented**
+# 5. Distributed Databases
 
 [<- Back to master index](../README.md)
 
 ---
 
-## Overview
-
-Distributed databases spread data and query load across multiple nodes so a single machine is not the bottleneck or sole point of failure. They combine **partitioning** (how data is split), **replication** (how copies are kept), and **consensus** (how nodes agree on state).
-
-Interview discussions usually center on partition keys, replication mode, quorum math (`R + W > N`), failure handling, and when distributed transactions are worth the cost. For CAP/PACELC framing, see [Chapter 4 — Consistency](../04-distributed-system/README.md#412-consistency).
-
-```mermaid
-flowchart LR
-    subgraph placement [Data placement]
-        P[Partition / Shard] --> H[Hashing & rebalance]
-    end
-    subgraph copies [Copies & consistency]
-        R[Replication] --> Q[Quorum R/W]
-    end
-    subgraph coord [Coordination]
-        C[Consensus] --> SB[Split brain prevention]
-    end
-    placement --> copies --> coord
-    copies --> TX[Distributed transactions]
-    coord --> LC[Logical clocks]
-    placement --> PROD[§5.29 Production pattern]
-```
-
----
-
 ## Sub-topics
 
-### Data placement & routing
-
-| # | Sub-topic | Status |
-|---|-----------|--------|
-| 5.1 | [Partitioning](#51-partitioning) | Done — taxonomy & strategies |
-| 5.2 | [Sharding](#52-sharding) | Done |
-| 5.3 | [Hash Partitioning](#53-hash-partitioning) | Done |
-| 5.4 | [Range Partitioning](#54-range-partitioning) | Done |
-| 5.5 | [Geo Partitioning](#55-geo-partitioning) | Done |
-| 5.6 | [Hot Partitions](#56-hot-partitions) | Done |
-| 5.7 | [Rebalancing](#57-rebalancing) | Done |
-| 5.8 | [Consistent Hashing](#58-consistent-hashing) | Done |
-| 5.9 | [Virtual Nodes](#59-virtual-nodes) | Done |
-| 5.10 | [Rendezvous Hashing](#510-rendezvous-hashing) | Done |
-| 5.29 | [Sharding, Bucketing & Partitioning](#529-sharding-bucketing--partitioning) | Done — production stack |
-
-### Replication & quorums
-
-| # | Sub-topic | Status |
-|---|-----------|--------|
-| 5.11 | [Replication](#511-replication) | Done — overview |
-| 5.12 | [Leader Follower Replication](#512-leader-follower-replication) | Done |
-| 5.13 | [Multi Leader Replication](#513-multi-leader-replication) | Done |
-| 5.14 | [Quorum Reads](#514-quorum-reads) | Done — `R + W > N` canonical |
-| 5.15 | [Quorum Writes](#515-quorum-writes) | Done |
-
-### Transactions & coordination
-
-| # | Sub-topic | Status |
-|---|-----------|--------|
-| 5.16 | [Distributed Transactions](#516-distributed-transactions) | Done — overview |
-| 5.17 | [Two Phase Commit](#517-two-phase-commit) | Done |
-| 5.18 | [Three Phase Commit](#518-three-phase-commit) | Done |
-| 5.19 | [Distributed Locking](#519-distributed-locking) | Done |
-| 5.20 | [Split Brain](#520-split-brain) | Done |
-
-### Consensus & leadership
-
-| # | Sub-topic | Status |
-|---|-----------|--------|
-| 5.21 | [Consensus](#521-consensus) | Done — problem & properties |
-| 5.22 | [Paxos](#522-paxos) | Done |
-| 5.23 | [Raft](#523-raft) | Done — canonical election & log |
-| 5.24 | [Leader Election](#524-leader-election) | Done — concept & triggers |
-
-### Ordering, membership & production
-
-| # | Sub-topic | Status |
-|---|-----------|--------|
-| 5.25 | [Lamport Clocks](#525-lamport-clocks) | Done |
-| 5.26 | [Vector Clocks](#526-vector-clocks) | Done |
-| 5.27 | [Gossip Protocol](#527-gossip-protocol) | Done |
-| 5.28 | [Membership Protocols](#528-membership-protocols) | Done |
+| # | Sub-topic |
+|---|-----------|
+| 5.1 | [Partitioning](#51-partitioning) |
+| 5.2 | [Sharding](#52-sharding) |
+| 5.3 | [Hash Partitioning](#53-hash-partitioning) |
+| 5.4 | [Range Partitioning](#54-range-partitioning) |
+| 5.5 | [Geo Partitioning](#55-geo-partitioning) |
+| 5.6 | [Hot Partitions](#56-hot-partitions) |
+| 5.7 | [Rebalancing](#57-rebalancing) |
+| 5.8 | [Consistent Hashing](#58-consistent-hashing) |
+| 5.9 | [Virtual Nodes](#59-virtual-nodes) |
+| 5.10 | [Rendezvous Hashing](#510-rendezvous-hashing) |
+| 5.11 | [Replication](#511-replication) |
+| 5.12 | [Leader Follower Replication](#512-leader-follower-replication) |
+| 5.13 | [Multi Leader Replication](#513-multi-leader-replication) |
+| 5.14 | [Quorum Reads](#514-quorum-reads) |
+| 5.15 | [Quorum Writes](#515-quorum-writes) |
+| 5.16 | [Distributed Transactions](#516-distributed-transactions) |
+| 5.17 | [Two Phase Commit](#517-two-phase-commit) |
+| 5.18 | [Three Phase Commit](#518-three-phase-commit) |
+| 5.19 | [Distributed Locking](#519-distributed-locking) |
+| 5.20 | [Split Brain](#520-split-brain) |
+| 5.21 | [Consensus](#521-consensus) |
+| 5.22 | [Paxos](#522-paxos) |
+| 5.23 | [Raft](#523-raft) |
+| 5.24 | [Leader Election](#524-leader-election) |
+| 5.25 | [Lamport Clocks](#525-lamport-clocks) |
+| 5.26 | [Vector Clocks](#526-vector-clocks) |
+| 5.27 | [Gossip Protocol](#527-gossip-protocol) |
+| 5.28 | [Membership Protocols](#528-membership-protocols) |
+| 5.29 | [Sharding, Bucketing & Partitioning](#529-sharding-bucketing--partitioning) |
 
 ---
 
 ## 5.1 Partitioning
 
-### What is partitioning?
+### Overview
 
-Partitioning is the process of splitting a large dataset into smaller parts called **partitions** (or **shards**).
+Imagine a warehouse that holds every product a company has ever sold. Eventually the building is too big to search, too heavy for one floor, and too busy for one loading dock. Partitioning is the decision to split that warehouse into aisles — each aisle holds a slice of inventory, and workers go to the right aisle instead of walking the whole building.
 
-Instead of storing all data on a single database server, data is distributed across multiple servers.
+Technically, **partitioning** splits a large dataset into smaller parts called **partitions** (often called **shards** when each part is its own database). Instead of one server holding everything, data and workload spread across multiple machines. Common strategies — range, hash, list/geo, and directory — choose which slice owns each record.
 
-**Example — users database:**
+---
+
+### What problem it fixes
+
+As data and traffic grow on a single database:
+
+- Storage fills up
+- Read and write requests concentrate on one machine
+- Indexes and backups take longer
+- One failure takes down all data
+
+Partitioning distributes both **storage** and **request load** so no single node must hold or serve the entire dataset.
+
+---
+
+### What it does
+
+Partitioning answers: *which slice of the data lives on which server?*
+
+It supports two structural forms:
+
+| Type | What splits | Result |
+|------|-------------|--------|
+| **Horizontal** | Rows | Same schema, different rows per partition |
+| **Vertical** | Columns | Different tables or databases per column group |
+
+It also supports multiple **routing strategies** for choosing a partition:
+
+| Strategy | How partition is chosen | Best for | Main risk |
+|----------|-------------------------|----------|-----------|
+| **Range** | Key falls in a value range | Time-series, range scans, retention by range | Hot partitions |
+| **Hash** | `Hash(key) % N` | Even spread across nodes | Poor range-query locality; resharding cost |
+| **List / geo** | Category or region | Data residency, low latency per region | Skew if one region dominates |
+| **Directory** | Lookup table | Flexible routing, uneven tenants | Metadata service availability |
+
+A **shard** is usually a separate database instance; a **partition** is often a sub-table inside one instance. Production systems often combine both layers.
+
+---
+
+### How it works — the architecture inside
+
+**Horizontal partitioning** — rows spread across partitions:
+
+```text
+Original table          Partition-1          Partition-2
+UserID | Name           UserID | Name        UserID | Name
+1      | A              1      | A           3      | C
+2      | B              2      | B           4      | D
+3      | C
+4      | D
+```
+
+**Vertical partitioning** — columns split by access pattern:
+
+```text
+User table: UserID | Name
+Profile table: UserID | Address
+```
+
+**Range-based routing:**
+
+```text
+Partition-1   UserID : 1 – 10,000
+Partition-2   UserID : 10,001 – 20,000
+Partition-3   UserID : 20,001 – 30,000
+```
+
+**Hash-based routing:**
+
+```text
+Partition = Hash(Key) % N
+
+Hash(101) % 3 = 2
+Hash(202) % 3 = 1
+Hash(303) % 3 = 0
+```
+
+**List-based routing** (geo is a common case):
+
+```text
+Partition-1   Country = India
+Partition-2   Country = USA
+Partition-3   Country = UK
+```
+
+**Directory-based routing** — a lookup service stores locations:
+
+```text
+UserID 101 → Server A
+UserID 205 → Server C
+UserID 309 → Server B
+```
+
+**Example — 100 million users across four servers:**
 
 ```text
 Server-1  →  Users 1 to 25 Million
@@ -114,202 +158,71 @@ flowchart LR
     DB --> S4[Server-4 · 75–100M]
 ```
 
-For sharding at deployment scale, see [§5.2 Sharding](#52-sharding). For production shard → bucket → partition layering, see [§5.29 Sharding, Bucketing & Partitioning](#529-sharding-bucketing--partitioning).
-
-### Why partitioning is needed?
-
-As data grows:
-
-- Storage requirements increase
-- Number of requests increases
-- Database size becomes very large
-
-Partitioning distributes data and workload across multiple machines.
-
-### Types of partitioning
-
-#### A) Horizontal partitioning
-
-Rows are distributed across multiple partitions.
-
-**Original table:**
-
-```text
-+--------+-------+
-| UserID | Name  |
-+--------+-------+
-| 1      | A     |
-| 2      | B     |
-| 3      | C     |
-| 4      | D     |
-+--------+-------+
-```
-
-**Partition-1:**
-
-```text
-+--------+-------+
-| UserID | Name  |
-+--------+-------+
-| 1      | A     |
-| 2      | B     |
-+--------+-------+
-```
-
-**Partition-2:**
-
-```text
-+--------+-------+
-| UserID | Name  |
-+--------+-------+
-| 3      | C     |
-| 4      | D     |
-+--------+-------+
-```
-
-**Characteristics:** Same schema, different rows.
-
-#### B) Vertical partitioning
-
-Columns are distributed into different tables or databases.
-
-**User table:**
-
-```text
-+--------+--------+
-| UserID | Name   |
-+--------+--------+
-```
-
-**Profile table:**
-
-```text
-+--------+---------+
-| UserID | Address |
-+--------+---------+
-```
-
-**Characteristics:** Different columns, same entity data spread across tables.
-
-### Partitioning strategies
-
-#### A) Range-based partitioning
-
-Data is divided based on value ranges. See [§5.4 Range Partitioning](#54-range-partitioning).
-
-```text
-Partition-1   UserID : 1 – 10,000
-Partition-2   UserID : 10,001 – 20,000
-Partition-3   UserID : 20,001 – 30,000
-```
-
-#### B) Hash-based partitioning
-
-A hash function determines the partition. See [§5.3 Hash Partitioning](#53-hash-partitioning).
-
-```text
-Partition = Hash(Key) % N
-
-N = number of partitions
-
-Hash(101) % 3 = 2
-Hash(202) % 3 = 1
-Hash(303) % 3 = 0
-```
-
 ```mermaid
 flowchart LR
     Key[Partition key] --> H[Hash function] --> Mod["% N partitions"] --> P[Target partition]
 ```
 
-#### C) List-based partitioning
+---
 
-Data is divided using predefined values. See [§5.5 Geo Partitioning](#55-geo-partitioning) for region/list-style placement.
+### Pitfalls and design tips
 
-```text
-Partition-1   Country = India
-Partition-2   Country = USA
-Partition-3   Country = UK
-```
+- **Cross-partition queries** — joins and aggregations that span partitions are expensive; design the partition key around your hottest query paths.
+- **Uneven distribution** — range and list strategies skew easily; monitor per-partition size and QPS (see 5.6 Hot Partitions).
+- **Resharding cost** — changing partition count with naive `hash % N` moves most keys; plan for rebalancing (5.7) or consistent hashing (5.8) early.
+- **Shard vs partition naming** — in interviews, clarify whether you mean independent DB instances (shards) or logical splits inside one engine (partitions).
+- **Default for new systems** — hash or consistent-hash sharding on a high-cardinality key (user ID, order ID) unless range scans or geo compliance drive a different choice.
 
-#### D) Directory-based partitioning
+---
 
-A lookup service stores partition locations.
+### Real-world example
 
-```text
-Directory
-
-UserID 101 → Server A
-UserID 205 → Server C
-UserID 309 → Server B
-```
-
-The directory tells where the data exists.
-
-#### Strategy comparison (canonical)
-
-| Strategy | How partition is chosen | Best for | Main risk |
-|----------|-------------------------|----------|-----------|
-| **Range** | Key falls in a value range — [§5.4](#54-range-partitioning) | Time-series, range scans, retention by range | Hot partitions — [§5.6](#56-hot-partitions) |
-| **Hash** | `Hash(key) % N` — [§5.3](#53-hash-partitioning) | Even spread across nodes | Poor range-query locality; resharding — [§5.8](#58-consistent-hashing) |
-| **List / geo** | Category or region — [§5.5](#55-geo-partitioning) | Data residency, low latency per region | Skew if one region dominates |
-| **Directory** | Lookup table | Flexible routing, uneven tenants | Metadata service availability |
-
-**Shard vs partition:** a **shard** is usually a separate database instance; a **partition** is often a sub-table inside one instance. Combined production pattern: [§5.29](#529-sharding-bucketing--partitioning).
-
-### Benefits
-
-- Data is distributed across servers
-- Storage load is spread out
-- Request load is distributed
-- Large datasets become manageable
-- System can grow by adding partitions
-
-### Challenges
-
-- Queries may need data from multiple partitions
-- Data may not be evenly distributed — see [§5.6 Hot Partitions](#56-hot-partitions)
-- Partition management becomes necessary
-- Data movement may be required when partitions change — see [§5.7 Rebalancing](#57-rebalancing)
-
-### Real-world usage
-
-| Domain | Usage |
-|--------|-------|
-| Social media | User data stored across multiple shards |
-| E-commerce | Customer and order data distributed across servers |
-| Messaging systems | Messages partitioned across clusters |
-
-### Summary
-
-Partitioning = splitting data into smaller pieces.
-
-**Main types:**
-
-1. Horizontal partitioning
-2. Vertical partitioning
-
-**Common strategies:**
-
-1. Range-based
-2. Hash-based
-3. List-based
-4. Directory-based
-
-**Result:** Large datasets are distributed across multiple partitions instead of being stored on a single server.
+**Cassandra** tables declare a **partition key** (and optional clustering columns). All rows sharing the same partition key live on one token range — one physical partition. A social feed keyed by `user_id` keeps one user's posts co-located for fast reads; a poorly chosen key (e.g. a single `country` value) creates one giant partition and a hot spot.
 
 ---
 
 
 ## 5.2 Sharding
 
-### What is sharding?
+### Overview
 
-Sharding is a database scaling technique where data is split across multiple databases called **shards**.
+Partitioning is splitting a warehouse into aisles; **sharding** is giving each aisle its own building with its own staff and power supply. Each shard is an independent database that holds only a fraction of total data, so no single machine must store or serve everything.
 
-Each shard contains only a portion of the total data. A shard is an independent database that stores a subset of records.
+Technically, sharding is horizontal partitioning across **multiple independent database instances**. A **shard key** decides placement, and a **shard router** (or client library) directs each request to the correct shard. Strategies mirror partitioning — range, hash, geo, directory — but at deployment scale across separate databases.
 
-**Example — users database (100 million users):**
+---
+
+### What problem it fixes
+
+A single database eventually hits hard limits:
+
+```text
+                Database
+                    |
+            ----------------
+            |              |
+        Too much data   Too much traffic
+```
+
+Storage grows, read and write QPS climb, and the database becomes the system bottleneck. Sharding distributes **data**, **read traffic**, and **write traffic** across many databases.
+
+---
+
+### What it does
+
+| Term | Meaning |
+|------|---------|
+| **Shard** | A database containing a subset of data |
+| **Shard key** | Attribute that decides placement — e.g. `UserID`, `CustomerID`, `Country` |
+| **Shard router** | Component that maps a key to the correct shard |
+
+Each shard stores only its slice. A point lookup touches one shard; scatter-gather queries may touch many.
+
+---
+
+### How it works — the architecture inside
+
+**100 million users across three shards:**
 
 ```text
                  Users
@@ -328,38 +241,7 @@ flowchart LR
     Users --> S3[Shard-3 · 67–100M]
 ```
 
-Instead of storing all users in one database, users are distributed among multiple databases. See [§5.1 Partitioning](#51-partitioning) for the general split-data concept.
-
-### Terminology
-
-| Term | Meaning |
-|------|---------|
-| **Shard** | A database containing a subset of data |
-| **Shard key** | The attribute used to decide which shard stores data — e.g. `UserID`, `CustomerID`, `Country`, `Email` |
-| **Shard router** | Component responsible for directing requests to the correct shard |
-
-### Why sharding is needed?
-
-**Single database problems:**
-
-```text
-                Database
-                    |
-            ----------------
-            |              |
-        Too much data   Too much traffic
-```
-
-As data grows:
-
-- Storage increases
-- Read requests increase
-- Write requests increase
-- Database becomes a bottleneck
-
-Sharding distributes both data and traffic.
-
-### How sharding works
+**Request routing:**
 
 ```text
 Shard-1  →  UserID 1–1000
@@ -367,45 +249,8 @@ Shard-2  →  UserID 1001–2000
 Shard-3  →  UserID 2001–3000
 
 Request: Get User 1500
-Router checks UserID → User 1500 → Shard-2
-Only Shard-2 is queried.
+Router checks UserID → Shard-2 → only Shard-2 queried
 ```
-
-```mermaid
-flowchart LR
-    App[Application] --> Router[Shard Router]
-    Router -->|"UserID 1500"| S2[Shard-2]
-    S2 --> Result[Result returned]
-```
-
-### Sharding strategies
-
-Same strategies as [§5.1 Partitioning](#51-partitioning) — applied across **independent database instances** (shards) instead of partitions inside one DB:
-
-| Strategy | Section |
-|----------|---------|
-| Range-based | [§5.4 Range Partitioning](#54-range-partitioning) |
-| Hash-based | [§5.3 Hash Partitioning](#53-hash-partitioning) |
-| Geographic | [§5.5 Geo Partitioning](#55-geo-partitioning) |
-| Directory-based | [§5.1](#51-partitioning) (directory strategy) |
-
-```mermaid
-flowchart LR
-    App[Application] --> Router[Shard router]
-    Router --> S1[Shard-1]
-    Router --> S2[Shard-2]
-    Router --> S3[Shard-3]
-```
-
-### Shard key
-
-A shard key determines where data is stored.
-
-**Example:** `UserID` — UserID 100, 200, 300. The shard key is processed to determine the shard.
-
-Good shard keys distribute data evenly. Bad shard keys may place most records in one shard — see [§5.6 Hot Partitions](#56-hot-partitions).
-
-### Shard architecture
 
 ```mermaid
 flowchart LR
@@ -418,110 +263,50 @@ flowchart LR
     S3 --> D3[Data]
 ```
 
-**Flow:**
-
-1. Request arrives
-2. Router determines shard
-3. Request sent to shard
-4. Result returned
-
-### Benefits
-
-- Distributes data across databases
-- Distributes read traffic
-- Distributes write traffic
-- Reduces load on a single database
-- Supports large-scale systems
-- Increases overall storage capacity
-
-### Challenges
-
-- Managing multiple shards
-- Data may become unevenly distributed
-- Queries across shards can be complex
-- Data movement may be required — see [§5.7 Rebalancing](#57-rebalancing)
-- Routing logic is needed
-
-### Example
-
-**User table:**
+**Walkthrough — six users split three ways:**
 
 ```text
-+--------+--------+
-| UserID | Name   |
-+--------+--------+
-| 1      | A      |
-| 2      | B      |
-| 3      | C      |
-| 4      | D      |
-| 5      | E      |
-| 6      | F      |
-+--------+--------+
+Shard-1: UserID 1, 2
+Shard-2: UserID 3, 4
+Shard-3: UserID 5, 6
 ```
 
-**Shard-1:**
+**Flow:** request arrives → router hashes or ranges the shard key → request sent to one shard → result returned.
 
-```text
-+--------+--------+
-| UserID | Name   |
-+--------+--------+
-| 1      | A      |
-| 2      | B      |
-+--------+--------+
-```
+Sharding combines with **replication** — each shard typically has its own primary and replicas (see 5.11).
 
-**Shard-2:**
+---
 
-```text
-+--------+--------+
-| UserID | Name   |
-+--------+--------+
-| 3      | C      |
-| 4      | D      |
-+--------+--------+
-```
+### Pitfalls and design tips
 
-**Shard-3:**
+- **Bad shard keys** — low-cardinality keys (country, status) concentrate data; prefer high-cardinality, evenly distributed keys.
+- **Cross-shard transactions** — avoid designing workflows that need ACID across shards; use sagas or per-shard consistency.
+- **Operational overhead** — N shards means N backup jobs, N migration paths, and routing logic to maintain.
+- **Resharding** — adding shards with `hash % N` reshuffles most data; plan consistent hashing or a directory layer before you need it.
+- **Interview angle** — sharding is a scaling **architecture** choice, not a first-day optimization; exhaust vertical scaling, read replicas, and caching first unless requirements demand it.
 
-```text
-+--------+--------+
-| UserID | Name   |
-+--------+--------+
-| 5      | E      |
-| 6      | F      |
-+--------+--------+
-```
+---
 
-### Summary
+### Real-world example
 
-Sharding = horizontal partitioning of data across multiple independent databases.
-
-**Core components:** shard, shard key, shard router.
-
-**Common strategies:** range-based, hash-based, directory-based, geographic sharding.
-
-**Goal:** Distribute data and traffic across multiple databases instead of relying on a single database server.
-
-For production shard → bucket → partition layering, see [§5.29 Sharding, Bucketing & Partitioning](#529-sharding-bucketing--partitioning).
+**Vitess** (used by YouTube and others) sits in front of many MySQL shards. Applications talk to Vitess; it parses SQL, routes by sharding key, and can reshuffle with minimal app changes. The shard key and VSchema define which rows live on which MySQL instance — the application does not hard-code shard URLs.
 
 ---
 
 
 ## 5.3 Hash Partitioning
 
-### What is hash partitioning?
+### Overview
 
-Hash partitioning is a partitioning technique where a hash function is applied to a partition key to determine which partition stores the data.
+If you randomly assign each customer to a checkout lane instead of letting everyone queue behind the newest account numbers, lines stay roughly even. **Hash partitioning** does the same for data: a hash function turns each key into a number, and modulo arithmetic picks a partition so load spreads without manual range tuning.
 
-Instead of storing data based on ranges or categories, the partition is selected using a mathematical function.
+Technically, partition placement is `Partition = Hash(Key) % NumberOfPartitions`. The hash spreads keys pseudo-randomly across partitions, aiming for uniform storage and traffic — unlike range partitioning, which preserves order but risks skew.
 
-```text
-Partition = Hash(Key) % NumberOfPartitions
-```
+---
 
-### Why hash partitioning?
+### What problem it fixes
 
-The goal is to distribute data across partitions as evenly as possible.
+Without hashing, natural key clustering can skew partitions:
 
 ```text
 Without hashing
@@ -535,15 +320,26 @@ With hashing
   Partition-3  →  ~33%
 ```
 
-Data becomes more balanced across partitions. Uneven keys can still create hot partitions — see [§5.6 Hot Partitions](#56-hot-partitions).
+Hashing improves balance when keys are not naturally uniform. (Skewed **access** patterns on popular keys can still create hot partitions — see 5.6.)
 
-### How hash partitioning works
+---
+
+### What it does
+
+Given a partition key and `N` partitions:
+
+1. Compute `hash(key)`
+2. Apply `% N` to get partition index
+3. Route inserts and point lookups to that partition only
+
+Point reads never scan unrelated partitions. Range queries often must hit **all** partitions.
+
+---
+
+### How it works — the algorithm inside
 
 ```text
 NumberOfPartitions = 4
-
-Partitions: P0, P1, P2, P3
-
 Formula: Partition = UserID % 4
 
 UserID = 100  →  100 % 4 = 0  →  P0
@@ -551,8 +347,6 @@ UserID = 101  →  101 % 4 = 1  →  P1
 UserID = 102  →  102 % 4 = 2  →  P2
 UserID = 103  →  103 % 4 = 3  →  P3
 ```
-
-### Visualization
 
 ```mermaid
 flowchart LR
@@ -563,105 +357,55 @@ flowchart LR
     Mod --> P3[P3]
 ```
 
-### Example
+**Distribution with three partitions:**
 
 ```text
 NumberOfPartitions = 3
 Formula: Partition = UserID % 3
 
-+--------+------------+
-| UserID | Partition  |
-+--------+------------+
-| 100    | P1         |
-| 101    | P2         |
-| 102    | P0         |
-| 103    | P1         |
-| 104    | P2         |
-| 105    | P0         |
-+--------+------------+
-```
+UserID | Partition
+100    | P1
+101    | P2
+102    | P0
+103    | P1
+104    | P2
+105    | P0
 
-**Data distribution:**
-
-```text
 P0: 102, 105
 P1: 100, 103
 P2: 101, 104
 ```
 
-### Data insertion
+**Insert:** `UserID = 125` → `125 % 3 = 2` → store in P2.
 
-```text
-Insert UserID = 125  →  125 % 3 = 2  →  Store in P2
-Insert UserID = 126  →  126 % 3 = 0  →  Store in P0
-Insert UserID = 127  →  127 % 3 = 1  →  Store in P1
-```
+**Lookup:** `UserID = 125` → `125 % 3 = 2` → read P2 only.
 
-### Data retrieval
+---
 
-**Find UserID = 125:**
+### Pitfalls and design tips
 
-1. `125 % 3 = 2`
-2. Go directly to P2
-3. Search inside P2
-
-No need to check other partitions.
-
-### Comparison with range partitioning
-
-See the **strategy comparison** table in [§5.1 Partitioning](#51-partitioning).
-
-### Advantages
-
-- Data is spread across partitions
-- Load distribution is generally uniform
-- Simple partition selection process
-- Direct access to the target partition
-- Suitable for large datasets
-
-### Disadvantages
-
-- Data location is not human-readable
-- Related records may end up in different partitions
-- Changing the number of partitions may require redistributing data — see [§5.8 Consistent Hashing](#58-consistent-hashing) and [§5.7 Rebalancing](#57-rebalancing)
-- Range-based queries may need to access multiple partitions
-
-### Summary
-
-Hash partitioning uses a hash function to determine where data is stored.
-
-```text
-Partition = Hash(Key) % NumberOfPartitions
-
-UserID = 101  →  101 % 3 = 2  →  Store in Partition-2
-```
-
-**Goal:** Distribute data evenly across partitions using a hash function.
+- **Changing N is painful** — `hash(key) % 4` vs `% 5` reassigns most keys; use consistent hashing (5.8) or directory routing when elasticity matters.
+- **No range locality** — `WHERE user_id BETWEEN 1000 AND 2000` fans out to every partition; use range partitioning (5.4) if range scans dominate.
+- **Related rows scatter** — two keys that "belong together" land on different partitions unless you design a composite or shared partition key.
+- **Modulo on raw IDs** — sequential IDs modulo N can still be even enough for storage, but celebrity keys create hot partitions regardless of hash balance.
+- **Production default** — MurmurHash or similar on a string shard key, not bare `%` on auto-increment IDs, when you need stable distribution across string identifiers.
 
 ---
 
 
 ## 5.4 Range Partitioning
 
-### What is range partitioning?
+### Overview
 
-Range partitioning is a partitioning technique where data is divided into partitions based on a range of values.
+Think of filing cabinets labeled by month: January's papers go in drawer one, February's in drawer two. **Range partitioning** divides data by contiguous value ranges on a partition key — you know exactly which drawer holds a record by checking which range its key falls into.
 
-Each partition stores records whose partition key falls within a specific range.
+Technically, each partition owns a half-open or closed interval of key values (e.g. UserID 1–1000 on P1). Range queries that align with the key hit one or few partitions; unlike hash partitioning, data location is human-readable and ordered.
 
-```text
-P1  →  UserID 1 – 1000
-P2  →  UserID 1001 – 2000
-P3  →  UserID 2001 – 3000
-```
+---
 
-The partition is determined by checking which range contains the key value.
+### What problem it fixes
 
-### Why range partitioning?
-
-Large datasets can be divided into smaller partitions using meaningful value ranges.
-
-**Orders:**
+Monolithic tables with time-ordered or ID-ordered access patterns benefit from splitting along natural boundaries:
 
 ```text
 P1  →  Jan orders
@@ -669,33 +413,27 @@ P2  →  Feb orders
 P3  →  Mar orders
 ```
 
-**Users:**
+Retention ("drop partitions older than 90 days"), archival, and range scans become cheap when each range maps to one partition.
 
-```text
-P1  →  UserID 1–1000
-P2  →  UserID 1001–2000
-P3  →  UserID 2001–3000
-```
+---
 
-### How range partitioning works
+### What it does
 
-**Partition rules:**
+Partition rules define intervals; each record routes to the partition whose range contains its key.
 
 ```text
 P1  :  UserID 1 – 1000
 P2  :  UserID 1001 – 2000
 P3  :  UserID 2001 – 3000
+
+UserID = 750   →  P1
+UserID = 1450  →  P2
+UserID = 2800  →  P3
 ```
 
-**Examples:**
+---
 
-```text
-UserID = 750   →  range 1–1000      →  P1
-UserID = 1450  →  range 1001–2000   →  P2
-UserID = 2800  →  range 2001–3000   →  P3
-```
-
-### Visualization
+### How it works — the architecture inside
 
 ```text
 UserID space: 1 ---------------------------------- 3000
@@ -711,65 +449,24 @@ flowchart LR
     K --> P3[P3 · 2001–3000]
 ```
 
-### Example
-
-**Partition rules:**
+**Smaller example:**
 
 ```text
 P1  :  1 – 100
 P2  :  101 – 200
 P3  :  201 – 300
+
+UserID | Partition
+50     | P1
+120    | P2
+250    | P3
 ```
 
-```text
-+--------+-----------+
-| UserID | Partition |
-+--------+-----------+
-| 50     | P1        |
-| 75     | P1        |
-| 120    | P2        |
-| 180    | P2        |
-| 250    | P3        |
-| 290    | P3        |
-+--------+-----------+
-```
-
-**Data distribution:**
+**Range queries:**
 
 ```text
-P1: 50, 75
-P2: 120, 180
-P3: 250, 290
-```
-
-### Data insertion
-
-```text
-Insert UserID = 90   →  range 1–100    →  P1
-Insert UserID = 170  →  range 101–200  →  P2
-Insert UserID = 275  →  range 201–300  →  P3
-```
-
-### Data retrieval
-
-**Find UserID = 170:**
-
-1. Identify the range — 170 belongs to 101–200
-2. Go directly to P2
-3. Search inside P2
-
-### Range query example
-
-**Query: find users from 120 to 180**
-
-```text
-Range 120–180 → data exists only in P2 → only P2 searched
-```
-
-**Query: find users from 50 to 250**
-
-```text
-Required partitions: P1, P2, P3 → multiple partitions checked
+Query 120–180  →  only P2
+Query 50–250   →  P1, P2, and P3
 ```
 
 ```mermaid
@@ -780,110 +477,83 @@ flowchart LR
     Q2 --> P3[P3]
 ```
 
-### Common range keys
+**Common range keys:**
 
 | Key | Example ranges |
 |-----|----------------|
 | **UserID** | P1 → 1–1000, P2 → 1001–2000 |
 | **OrderID** | P1 → 1–50000, P2 → 50001–100000 |
-| **Date** | P1 → January, P2 → February, P3 → March |
-| **Age** | P1 → 0–18, P2 → 19–40, P3 → 41–60 |
+| **Date** | P1 → January, P2 → February |
+| **Age** | P1 → 0–18, P2 → 19–40 |
 
-### Advantages
+---
 
-- Easy to understand
-- Data location is predictable
-- Efficient for range-based queries
-- Simple partition selection
-- Natural fit for ordered data
+### Pitfalls and design tips
 
-### Disadvantages
+- **Hot trailing edge** — the newest range (latest month, highest IDs) often absorbs most writes; split ranges or combine with hashing for the hot band.
+- **Boundary management** — poorly chosen cut points leave one partition 10× larger than others; monitor size and split proactively.
+- **Rebalancing** — moving range boundaries requires data migration; plan split operations during low traffic.
+- **vs hash** — choose range when ordered scans, TTL by time, or predictable pruning matter; choose hash when even spread matters more than locality.
+- **Time-series default** — partition by day or hour on `timestamp` for append-heavy metrics and logs; drop old partitions instead of deleting rows.
 
-- Data may become unevenly distributed — see [§5.6 Hot Partitions](#56-hot-partitions)
-- Some partitions may grow much larger than others
-- Certain partitions may receive more traffic
-- Partition boundaries must be managed
+---
 
-### Comparison with hash partitioning
+### Real-world example
 
-See the **strategy comparison** table in [§5.1 Partitioning](#51-partitioning).
-
-### Summary
-
-Range partitioning divides data according to predefined value ranges.
-
-```text
-P1  →  UserID 1–1000
-P2  →  UserID 1001–2000
-P3  →  UserID 2001–3000
-```
-
-A record is stored in the partition whose range contains its key value.
-
-**Goal:** Organize data into partitions using continuous value ranges.
+**PostgreSQL declarative partitioning** lets you define a parent table and child tables per range (e.g. `orders_2024_01`, `orders_2024_02`). Inserts route to the child whose `CHECK` constraint matches the order date; a query `WHERE order_date BETWEEN '2024-01-01' AND '2024-01-31'` scans only January's child via partition pruning.
 
 ---
 
 
 ## 5.5 Geo Partitioning
 
-### What is geo partitioning?
+### Overview
 
-Geo partitioning is a partitioning technique where data is divided based on geographical regions.
+A global company opens regional offices so Mumbai staff file Mumbai paperwork locally instead of shipping every form to headquarters. **Geo partitioning** stores data in the region it belongs to — India users on India infrastructure, US users on US infrastructure — so reads and compliance stay close to home.
 
-Each partition stores data belonging to a specific location or region.
+Technically, this is **list-based** or **geographic** partitioning: the partition key is a geographic attribute (`Country`, `Region`, `State`, `City`), and all rows for that value route to the same partition or shard.
 
-**Examples:**
+---
 
-```text
-India users   →  India partition
-USA users     →  USA partition
-Europe users  →  Europe partition
-```
+### What problem it fixes
 
-Data is stored according to geographic boundaries. Also called **list-based** or **geographic sharding** — see [§5.1 Partitioning](#51-partitioning) and [§5.2 Sharding](#52-sharding).
+Global applications face latency and regulation:
 
-### Why geo partitioning?
+- Users far from a single central database see high round-trip times
+- Data residency laws may require citizen data to stay in-country
+- Regional outages should not take down unrelated regions
 
-Applications often serve users from different parts of the world.
+Geo grouping keeps regional traffic regional and simplifies per-jurisdiction retention and legal holds.
 
-Instead of storing all data in a single partition, data is grouped by region.
+---
 
-```text
-Users from India   →  India partition
-Users from USA     →  USA partition
-Users from Europe  →  Europe partition
-```
+### What it does
 
-### How geo partitioning works
-
-**Partition key:** `Country`, `State`, `Region`, `City`
-
-The geographical attribute determines where data is stored.
-
-**Example:**
+The geographic attribute on each record determines placement:
 
 ```text
 +--------+---------+
 | UserID | Country |
 +--------+---------+
-| 101    | India   |
-+--------+---------+
-→ Stored in India partition
+| 101    | India   |  →  India partition
+| 202    | USA     |  →  USA partition
 ```
 
-**Another user:**
+Partitions are predefined lists of regions, not computed ranges or hashes.
+
+---
+
+### How it works — the architecture inside
 
 ```text
-+--------+---------+
-| UserID | Country |
-+--------+---------+
-| 202    | USA     |
-+--------+---------+
-→ Stored in USA partition
-```
+P1  →  India
+P2  →  USA
+P3  →  Europe
 
-### Visualization
+P1 (India):   101, 102
+P2 (USA):     201, 202
+P3 (Europe):  301, 302
+```
 
 ```mermaid
 flowchart LR
@@ -895,431 +565,189 @@ flowchart LR
     Europe --> P3[P3]
 ```
 
-### Example
+**Retrieval:** `UserID = 601, Country = USA` → identify USA → read USA partition only.
 
-**Partitions:**
-
-```text
-P1  →  India
-P2  →  USA
-P3  →  Europe
-```
-
-**User records:**
-
-```text
-+--------+---------+
-| UserID | Country |
-+--------+---------+
-| 101    | India   |
-| 102    | India   |
-| 201    | USA     |
-| 202    | USA     |
-| 301    | Germany |
-| 302    | France  |
-+--------+---------+
-```
-
-**Data distribution:**
-
-```text
-P1 (India):   101, 102
-P2 (USA):     201, 202
-P3 (Europe):  301, 302
-```
-
-### Data insertion
-
-```text
-UserID = 501, Country = India    →  P1
-UserID = 601, Country = USA      →  P2
-UserID = 701, Country = Germany  →  P3
-```
-
-### Data retrieval
-
-**Find UserID = 601, Country = USA:**
-
-1. Identify region — USA
-2. Access USA partition
-3. Retrieve record
-
-### Common geo partitioning levels
+**Partitioning levels:**
 
 | Level | Examples |
 |-------|----------|
 | **Country** | India, USA, UK, Germany |
-| **Region** | Asia, Europe, North America, South America |
-| **State** | Karnataka, Maharashtra, Tamil Nadu |
-| **City** | Bengaluru, Mumbai, Delhi |
+| **Region** | Asia, Europe, North America |
+| **State** | Karnataka, Maharashtra |
+| **City** | Bengaluru, Mumbai |
+
+---
+
+### Pitfalls and design tips
+
+- **Population skew** — one country may hold 80% of users; India partition becomes hot (5.6). Sub-partition large regions (India-North / India-South).
+- **User relocation** — a user moving countries may require cross-partition migration; design account region as sticky or allow explicit transfer workflows.
+- **Multi-region queries** — global analytics must fan out to every geo partition; use a separate OLAP pipeline for cross-region reporting.
+- **Not a latency cure alone** — geo partition helps only if the app routes to the regional endpoint; DNS and API gateways must align with partition map.
+- **Compliance** — pair geo partitioning with encryption keys and backup policies per region; placement alone does not satisfy GDPR without access controls.
+
+---
 
 ### Real-world example
 
-**Global e-commerce platform:**
-
-```text
-India customers   →  India partition
-USA customers     →  USA partition
-Europe customers  →  Europe partition
-```
-
-**Global social media platform:**
-
-```text
-Asian users     →  Asia partition
-European users  →  Europe partition
-```
-
-### Advantages
-
-- Data is organized by location
-- Users from the same region are grouped together
-- Easier regional data management
-- Supports geographically distributed systems
-- Data can be separated by country or region
-
-### Disadvantages
-
-- Data distribution may not be equal — see [§5.6 Hot Partitions](#56-hot-partitions)
-- Some regions may contain significantly more data
-- Users moving between regions may require data relocation
-- Queries involving multiple regions may need access to several partitions
-
-### Comparison with other strategies
-
-See the **strategy comparison** table in [§5.1 Partitioning](#51-partitioning). Geo partitioning adds **region** as the partition key for latency and compliance.
-
-### Summary
-
-Geo partitioning divides data according to geographic regions.
-
-```text
-India   →  Partition-1
-USA     →  Partition-2
-Europe  →  Partition-3
-```
-
-A geographic attribute such as country, state, region, or city determines where data is stored.
-
-**Goal:** Group and manage data based on geographical boundaries.
+**Azure Cosmos DB** multi-region accounts can pin a partition key range to a preferred region. A document with `tenantRegion = "EU"` is written and replicated according to the account's regional topology — keeping EU tenant data in EU datacenters for residency while still offering multi-region read availability within policy.
 
 ---
 
 
 ## 5.6 Hot Partitions
 
-### What is a hot partition?
+### Overview
 
-A hot partition is a partition that receives significantly more traffic or stores significantly more data than other partitions.
+Ten checkout lanes are useless if nine stand empty and one has a mile-long queue. A **hot partition** is that overcrowded lane — one slice of your data absorbs most traffic or storage while siblings sit idle.
 
-As a result, one partition becomes overloaded while other partitions remain underutilized.
+Technically, a hot partition receives disproportionate read/write QPS or holds far more data than peers. It becomes a **bottleneck** even though the system is "distributed." Hot partitions arise from skewed keys, skewed access patterns, or poor strategy choice — not from having too few machines alone.
 
-### How does it happen?
+---
 
-When data is not distributed evenly, some partitions receive more requests than others.
+### What problem it fixes
+
+Distributed systems only scale when work spreads evenly. Hot partitions cause:
+
+- Uneven CPU, memory, and disk utilization
+- Higher latency on the overloaded node
+- Risk of throttling or failure while other nodes have spare capacity
+
+Identifying and mitigating hot partitions restores the benefit of sharding and partitioning.
+
+---
+
+### What it does
+
+Hot partitions are a **failure mode to detect and correct**, not a feature. Symptoms include one partition at 80–90% of traffic, elevated p99 latency on one shard, or one Cassandra partition growing without bound.
+
+**Hot data vs hot partition:**
+
+| Concept | Scope | Example |
+|---------|-------|---------|
+| **Hot data** | Specific record(s) | UserID 100 — celebrity account |
+| **Hot partition** | Entire shard/slice | India partition — 85% of requests |
+
+---
+
+### How it works — the architecture inside
+
+**Skewed traffic:**
 
 ```text
 Partitions: P1, P2, P3
 
-Traffic distribution:
-  P1  →  80% of requests
-  P2  →  10% of requests
-  P3  →  10% of requests
-
-P1 becomes a hot partition.
+Traffic:  P1 → 80%   P2 → 10%   P3 → 10%
+Result:   P1 is hot
 ```
-
-### Visualization
-
-**Normal distribution:**
-
-```text
-P1  ========
-P2  ========
-P3  ========
-```
-
-**Hot partition scenario:**
-
-```text
-P1  ====================================
-P2  ====
-P3  ====
-```
-
-P1 receives most of the traffic.
 
 ```mermaid
 flowchart LR
     subgraph Normal[Normal]
+        direction LR
         N1[P1 · 33%]
         N2[P2 · 33%]
         N3[P3 · 33%]
     end
     subgraph Hot[Hot partition]
+        direction LR
         H1[P1 · 80%]
         H2[P2 · 10%]
         H3[P3 · 10%]
     end
+    Normal ~~~ Hot
 ```
 
-### Example using range partitioning
-
-See [§5.4 Range Partitioning](#54-range-partitioning).
+**Range partitioning — active users cluster in low IDs:**
 
 ```text
-P1  →  UserID 1–1000
-P2  →  UserID 1001–2000
-P3  →  UserID 2001–3000
-
-Most active users in UserID 1–1000
-
-Traffic:  P1 → 90%   P2 → 5%   P3 → 5%
-Result:   P1 becomes a hot partition
+P1 → UserID 1–1000   (90% of traffic)
+P2 → UserID 1001–2000
+P3 → UserID 2001–3000
 ```
 
-### Example using geo partitioning
-
-See [§5.5 Geo Partitioning](#55-geo-partitioning).
+**Geo partitioning — dominant region:**
 
 ```text
-India  →  P1
-USA    →  P2
-Europe →  P3
-
-Traffic:  India → 85%   USA → 10%   Europe → 5%
-Result:   India partition becomes hot
+India → 85% traffic   USA → 10%   Europe → 5%
 ```
 
-### Example using social media
+**Social feed — celebrity partition:**
 
 ```text
-Posts partition:
-  P1  →  Celebrity posts
-  P2  →  Regular users
-  P3  →  Regular users
-
-Millions access celebrity content.
-
-Traffic:  P1 → extremely high   P2 → low   P3 → low
-Result:   P1 becomes a hot partition
+P1 → Celebrity posts   (millions of reads)
+P2, P3 → Regular users
 ```
 
-### Characteristics of a hot partition
+**Effects:** slower responses, resource exhaustion, reduced overall efficiency — the system scales on paper but not in practice.
 
-- Receives most read requests
-- Receives most write requests
-- Higher CPU usage
-- Higher memory usage
-- Higher disk activity
-- Handles much more load than other partitions
+---
 
-### Problems caused by hot partitions
+### Pitfalls and design tips
 
-```text
-Traffic:  P1 → 90%   P2 → 5%   P3 → 5%
-```
-
-**Effects:**
-
-- Uneven workload
-- Slower response times
-- Increased latency
-- Resource exhaustion
-- Reduced overall system efficiency
-
-Even though multiple partitions exist, one partition becomes the bottleneck. See [§4.23 Bottleneck Analysis](../04-distributed-system/README.md#423-bottleneck-analysis).
-
-### Example
-
-**Users table:**
-
-```text
-P1  →  India
-P2  →  USA
-P3  →  Europe
-
-India users   →  10 million requests
-USA users     →   1 million requests
-Europe users  →  500K requests
-
-Load:  P1 → very high   P2 → moderate   P3 → low
-Result: P1 becomes a hot partition
-```
-
-### Hot data vs hot partition
-
-**Hot data** — a specific record or small set of records receives heavy traffic.
-
-```text
-Example: UserID = 100 receives millions of requests
-```
-
-**Hot partition** — an entire partition receives heavy traffic.
-
-```text
-Example: Partition P1 receives most system requests
-```
-
-### Summary
-
-Hot partition = a partition that receives a disproportionately high amount of traffic or stores a disproportionately large amount of data.
-
-```text
-P1  →  80% traffic
-P2  →  10% traffic
-P3  →  10% traffic
-```
-
-**Result:** P1 becomes the hot partition while other partitions remain underutilized.
+- **Mitigations** — split hot ranges, add read replicas for hot shards, cache hot keys at the edge, or introduce a sub-key (e.g. `celebrity_id + bucket`) to spread writes.
+- **DynamoDB / Cassandra** — watch for partitions exceeding ~10 GB or 3,000 RCU; redesign partition key before AWS throttles you.
+- **Do not blame hash alone** — hash balances **keys**, not **traffic**; a viral post on one key stays hot on one partition.
+- **Monitoring** — alert on per-partition QPS and size variance; mean cluster utilization hides hot spots.
+- **Interview angle** — always mention hot partitions when proposing range or geo sharding; propose composite keys or hybrid strategies.
 
 ---
 
 
 ## 5.7 Rebalancing
 
-### What is rebalancing?
+### Overview
 
-Rebalancing is the process of redistributing data across partitions (shards) so that data and traffic are more evenly distributed.
+Over time, one filing cabinet overflows while others stay half empty. **Rebalancing** is the deliberate job of moving folders between cabinets until each holds a fair share — both in gigabytes and in daily foot traffic.
 
-It is performed when some partitions become larger or busier than others.
+Technically, rebalancing redistributes data across partitions or shards when storage or load becomes uneven, or when nodes are added or removed. The goal is balanced data **and** balanced traffic without unnecessary downtime.
 
-**Goal:**
+---
 
-```text
-Balanced data distribution
-+
-Balanced traffic distribution
-```
+### What problem it fixes
 
-### Why rebalancing is needed?
-
-Over time, partitions may become uneven.
-
-**Before rebalancing:**
+Partitions drift out of balance as data grows and access patterns shift:
 
 ```text
-P1  →  70 GB
-P2  →  20 GB
-P3  →  10 GB
+Before:  P1 → 70 GB   P2 → 20 GB   P3 → 10 GB
 ```
 
-P1 stores most of the data.
+Uneven storage leads to hot partitions, wasted capacity on small nodes, and risk that the largest node fails first. Rebalancing corrects the skew.
 
-**Result:**
+---
 
-- Uneven storage usage
-- Uneven workload
-- Hot partitions may occur — see [§5.6 Hot Partitions](#56-hot-partitions)
+### What it does
 
-To correct this imbalance, data is redistributed.
+Rebalancing:
 
-### Visualization
+1. Identifies overloaded or underloaded partitions
+2. Selects data to move
+3. Copies records to target partitions
+4. Updates routing metadata
+5. Resumes normal traffic
 
-**Before:**
+Triggers include size imbalance, traffic imbalance, adding a shard, removing a shard, or hitting storage limits.
 
-```text
-P1  ==============================
-P2  ==========
-P3  =====
-```
+---
 
-**After:**
-
-```text
-P1  ==============
-P2  ==============
-P3  ==============
-```
-
-Data is more evenly distributed.
+### How it works — the architecture inside
 
 ```mermaid
 flowchart LR
     subgraph Before[Before]
+        direction LR
         B1[P1 · 70 GB]
         B2[P2 · 20 GB]
         B3[P3 · 10 GB]
     end
     subgraph After[After]
+        direction LR
         A1[P1 · ~33 GB]
         A2[P2 · ~33 GB]
         A3[P3 · ~33 GB]
     end
-    Before --> After
+    Before ~~~ After
 ```
-
-### Example
-
-**Initial distribution:**
-
-```text
-P1: User 1, 2, 3, 4, 5, 6
-P2: User 7
-P3: User 8
-
-Storage:  P1 → 75%   P2 → 12.5%   P3 → 12.5%
-P1 is overloaded.
-```
-
-**After rebalancing:**
-
-```text
-P1: User 1, 2, 3
-P2: User 4, 5, 7
-P3: User 6, 8
-
-Distribution becomes more balanced.
-```
-
-### When rebalancing occurs
-
-1. One partition stores much more data than others
-2. One partition receives significantly more traffic
-3. A new partition is added
-4. An existing partition is removed
-5. Storage limits are reached
-
-### Rebalancing after adding a shard
-
-**Before:** P1, P2, P3
-
-```text
-Data:  P1 → 33%   P2 → 33%   P3 → 34%
-```
-
-**New shard added:** P4
-
-```text
-Before rebalancing:  P1 → 33%   P2 → 33%   P3 → 34%   P4 → 0%
-After rebalancing:   P1 → 25%   P2 → 25%   P3 → 25%   P4 → 25%
-```
-
-Some data is moved to P4.
-
-### Rebalancing after removing a shard
-
-**Before:** P1, P2, P3, P4
-
-**Remove P4.** Data stored in P4: User A, User B, User C
-
-**After rebalancing:**
-
-```text
-P1 ← some data
-P2 ← some data
-P3 ← some data
-```
-
-Data from P4 is redistributed.
-
-### Rebalancing process
-
-1. Identify overloaded partitions
-2. Select data to move
-3. Transfer data to target partitions
-4. Update partition mapping information
-5. Resume normal traffic flow
 
 ```mermaid
 flowchart LR
@@ -1329,171 +757,97 @@ flowchart LR
     S4 --> S5[Resume traffic]
 ```
 
-### Effect on system
+**Adding shard P4:**
 
 ```text
-Before:  P1 → 80%   P2 → 10%   P3 → 10%
+Before:  P1 → 33%   P2 → 33%   P3 → 34%   P4 → 0%
+After:   P1 → 25%   P2 → 25%   P3 → 25%   P4 → 25%
+```
+
+**Removing P4:** data on P4 redistributes to P1, P2, P3.
+
+**User-level example:**
+
+```text
+Before:  P1: users 1–6 (75%)   P2: user 7   P3: user 8
+After:   P1: 1,2,3   P2: 4,5,7   P3: 6,8
+```
+
+**Geo split when India overloads:**
+
+```text
+Before:  India → 80M users (one partition)
+After:   India-North, India-South, USA, Europe
+```
+
+**Workload effect:**
+
+```text
+Before:  P1 → 80% traffic
 After:   P1 → 34%   P2 → 33%   P3 → 33%
 ```
 
-Workload becomes more balanced.
+Naive `hash % N` reshuffling moves most keys when N changes — consistent hashing (5.8) limits migration to keys near the changed ring position.
 
-### Example with geo partitioning
+---
 
-See [§5.5 Geo Partitioning](#55-geo-partitioning).
+### Pitfalls and design tips
 
-**Before:**
-
-```text
-India partition   →  80 million users
-USA partition     →  10 million users
-Europe partition  →  10 million users
-```
-
-India partition becomes overloaded.
-
-**After rebalancing:**
-
-```text
-India-North partition
-India-South partition
-USA partition
-Europe partition
-```
-
-Traffic and storage are distributed more evenly.
-
-### Benefits
-
-- More balanced storage usage
-- More balanced request load
-- Reduces overloaded partitions
-- Better resource utilization
-- Supports system growth
-
-### Challenges
-
-- Data movement can be expensive
-- Large datasets take time to transfer
-- Additional coordination is required
-- Temporary increase in network traffic
-- Metadata updates are needed
-
-Changing partition count with naive `hash % N` moves most keys — see [§5.8 Consistent Hashing](#58-consistent-hashing) for minimizing migration.
-
-### Summary
-
-Rebalancing is the process of moving data between partitions to achieve a more even distribution of data and workload.
-
-```text
-Before:  P1 → 70%   P2 → 20%   P3 → 10%
-After:   P1 → 33%   P2 → 33%   P3 → 34%
-```
-
-**Goal:** Prevent overloaded partitions and maintain balanced resource utilization across the system.
+- **Migration cost** — large transfers saturate network and I/O; throttle background moves and use dual-write or read-from-both during cutover.
+- **Metadata consistency** — clients must not route to old owners mid-move; use versioned routing tables or centralized coordinators (etcd, ZooKeeper).
+- **Timing** — rebalance during low traffic; feature-flag progressive rollout per key range.
+- **Elasticity planning** — if you expect frequent node add/remove, adopt consistent hashing + virtual nodes from the start.
+- **Cassandra / Kafka** — both have built-in rebalance concepts (token moves, partition reassignment); understand their progress APIs before production cluster resize.
 
 ---
 
 
 ## 5.8 Consistent Hashing
 
-Part of the **hash-ring routing** cluster: [§5.9 Virtual Nodes](#59-virtual-nodes) (load balance), [§5.10 Rendezvous Hashing](#510-rendezvous-hashing) (alternative). Used when partition count changes — [§5.7 Rebalancing](#57-rebalancing).
+### Overview
 
-### What is consistent hashing?
+Adding a new shelf to a library should not require relocating every book — only the ones near that shelf. **Consistent hashing** maps both servers and data keys onto a ring so when you add or remove a server, only keys near that change move, not the entire collection.
 
-Consistent hashing is a hashing technique used to distribute data across multiple servers (or shards) while minimizing data movement when servers are added or removed.
+Technically, consistent hashing places partitions and keys on a logical **hash ring** (0 to max hash, wrapping). Each key is stored on the first partition encountered moving clockwise from the key's position. Adding or removing a partition reassigns only the arc between its neighbors.
 
-Unlike traditional hash partitioning, only a small portion of data needs to be redistributed when the number of servers changes.
+---
 
-### Problem with traditional hashing
+### What problem it fixes
+
+Traditional modulo hashing reshuffles almost everything when partition count changes:
 
 ```text
 Partition = Hash(Key) % N
 
-N = number of partitions
+N = 3:  Hash(100) % 3 = P1
+N = 4:  Hash(100) % 4 = P0   ← same key, new home
 ```
 
-**Example — N = 3:**
+Most records must migrate — expensive and risky during scaling. Consistent hashing bounds migration to keys in the affected arc (~1/N of data when adding one of N nodes, in the uniform case).
+
+---
+
+### What it does
+
+- Hash each partition to a point on the ring
+- Hash each key to a point on the ring
+- Assign key → first partition clockwise (wraps at max value)
+- On add/remove, only keys between changed neighbors move
+
+---
+
+### How it works — the architecture inside
+
+**Ring placement:**
 
 ```text
-UserID = 100
-Hash(100) % 3 = P1
+P1 (20)   P2 (50)   P3 (80)
+
+Key A → 10   → clockwise → P1 (20)
+Key B → 35   → clockwise → P2 (50)
+Key C → 65   → clockwise → P3 (80)
+Key D → 90   → wrap → P1 (20)
 ```
-
-**Add a new partition — N = 4:**
-
-```text
-Hash(100) % 4 = P0
-```
-
-The same data now belongs to a different partition. **Result:** many records must be moved.
-
-```text
-Before adding P3:  P0, P1, P2
-After adding P3:   P0, P1, P2, P3  →  most keys get reassigned
-```
-
-See [§5.3 Hash Partitioning](#53-hash-partitioning).
-
-### Basic idea
-
-Instead of hashing data directly to partition numbers, both data and partitions are placed on a logical ring.
-
-Data is stored in the first partition encountered while moving clockwise around the ring.
-
-### Hash ring
-
-```text
-Logical ring
-
-                0
-               / \
-              /   \
-             /     \
-      75                 25
-             \     /
-              \   /
-               \ /
-                50
-
-Hash values wrap around:
-
-Maximum value  →  100 wraps to 0
-```
-
-### Placing servers on the ring
-
-```text
-                P1
-                 |
-         P3 -----+----- P2
-
-Each partition receives a position based on its hash.
-
-Example ring:
-
-                     P1 (20)
-                         \
-                          \
-P3 (80) ------------------- P2 (50)
-```
-
-### Placing data on the ring
-
-```text
-Key A → 10
-Key B → 35
-Key C → 65
-Key D → 90
-```
-
-**Key A (10):** clockwise → P1 (20) → stored in **P1**
-
-**Key B (35):** clockwise → P2 (50) → stored in **P2**
-
-**Key C (65):** clockwise → P3 (80) → stored in **P3**
-
-**Key D (90):** clockwise → wrap around → P1 (20) → stored in **P1**
 
 ```mermaid
 flowchart LR
@@ -1503,199 +857,96 @@ flowchart LR
     D["Key D · 90"] -->|wrap| P1
 ```
 
-### Data assignment rule
+**Assignment rule:** key at position 40 on ring with P1=20, P2=50 → move clockwise to 50 → **P2**.
 
-**Rule:** Store data in the first partition encountered while moving clockwise around the ring.
-
-**Example:**
-
-```text
-Key position = 40
-
-Ring:  P1 = 20   P2 = 50   P3 = 80
-
-Move clockwise: 40 → 50  →  Store in P2
-```
-
-### Adding a new partition
-
-**Before:** P1 (20), P2 (50), P3 (80)
-
-**Add P4 (65):**
+**Add P4 at 65:**
 
 ```text
 Before:  P1 ---- P2 ----------- P3
 After:   P1 ---- P2 ---- P4 ---- P3
 ```
 
-Only keys that fall between **P2 and P4** need to move. Other keys remain unchanged.
+Only keys between P2 and P4 move (e.g. K3 at 60 moves from P3 to P4).
 
-### Removing a partition
+**Remove P2:** P2's keys move to the next partition clockwise (P3); other keys unchanged.
 
-**Before:** P1 (20), P2 (50), P3 (80)
-
-**Remove P2** — keys belonging to P2 move to the next partition clockwise:
+**Walkthrough:**
 
 ```text
-P1 (20)   P3 (80)
+K1 → 10 → P1    K2 → 35 → P2    K3 → 60 → P3    K4 → 90 → P1
+Add P4(65):  only K3 → P4 moves
 ```
 
-Only P2's data is reassigned. Other data remains unchanged.
-
-### Visualization of minimal data movement
-
-```text
-Traditional hashing — add new partition:
-  Most data  →  reassigned
-
-Consistent hashing — add new partition:
-  Small portion  →  reassigned
+```mermaid
+flowchart LR
+    subgraph Traditional[Traditional hash]
+        direction LR
+        T1["Add node"] --> T2["Most keys remap"]
+    end
+    subgraph Consistent[Consistent hash]
+        direction LR
+        C1["Add node"] --> C2["~1/N keys move"]
+    end
+    Traditional ~~~ Consistent
 ```
 
-See [§5.7 Rebalancing](#57-rebalancing).
+---
 
-### Example
+### Pitfalls and design tips
 
-**Partitions:** P1 → 20, P2 → 50, P3 → 80
+- **Uneven arcs** — random server positions leave uneven segments; use virtual nodes (5.9).
+- **Ring state** — all clients and proxies need the same ring view; gossip or a config service publishes membership changes.
+- **Hot spots remain** — consistent hashing balances **ownership**, not **access**; viral keys still need caching.
+- **Where it appears** — Dynamo-style databases, memcached client rings, Cassandra token ranges, CDN edge selection.
+- **vs rendezvous hashing (5.10)** — rings minimize state and migration; HRW avoids ring management at the cost of O(servers) hashes per lookup.
 
-**Keys:** K1 → 10, K2 → 35, K3 → 60, K4 → 90
+---
 
-**Assignments:**
+### Real-world example
 
-```text
-K1 → P1
-K2 → P2
-K3 → P3
-K4 → P1
-```
-
-**Add P4 → 65. New assignments:**
-
-```text
-K1 → P1
-K2 → P2
-K3 → P4   ← only K3 moved
-K4 → P1
-```
-
-### Benefits
-
-- Minimal data movement
-- Easy addition of partitions
-- Easy removal of partitions
-- Supports distributed systems
-- Reduces rebalancing overhead
-- Scales efficiently
-
-### Challenges
-
-- Data may not be evenly distributed — see [§5.9 Virtual Nodes](#59-virtual-nodes)
-- Ring management is required
-- Partition positions must be maintained
-- Additional routing logic is needed
-
-### Summary
-
-Consistent hashing places both data and partitions on a logical hash ring.
-
-**Rule:** A key is stored in the first partition encountered while moving clockwise around the ring.
-
-**Key advantage:** When partitions are added or removed, only a small portion of data needs to be moved.
-
-```text
-Traditional hashing:  Hash(Key) % N  →  most data moves when N changes
-Consistent hashing:   hash ring       →  only affected keys move
-```
+**Amazon Dynamo** (2007 paper) introduced consistent hashing for peer-to-peer storage nodes. When a node joins, it claims a token range on the ring; only keys in that range migrate from the successor node. DynamoDB's partition model evolved from this lineage — elastic scale without full-table reshuffles on every node change.
 
 ---
 
 
 ## 5.9 Virtual Nodes
 
-Extension of [§5.8 Consistent Hashing](#58-consistent-hashing) — multiple virtual positions per physical server for even load.
+### Overview
 
-### What are virtual nodes?
+One person guarding half the museum floor is unfair if two others split the other half. **Virtual nodes (vnodes)** give each physical server several ticket booths spaced around the hash ring so no machine owns one giant slice while others guard slivers.
 
-A virtual node (vnode) is a logical node that represents a physical server on the consistent hash ring.
+Technically, a vnode is a logical placement of a physical server on the consistent hash ring. Instead of one hash point per machine, each server registers many points (e.g. S1-A, S1-B, S1-C), smoothing arc lengths and improving load balance when using consistent hashing (5.8).
 
-Instead of placing a server only once on the ring, the same server is placed multiple times at different positions.
+---
 
-```text
-Physical server  →  multiple virtual nodes
-```
+### What problem it fixes
 
-This helps distribute data more evenly. See [§5.8 Consistent Hashing](#58-consistent-hashing).
-
-### Why are virtual nodes needed?
-
-Without virtual nodes, servers may be unevenly placed on the hash ring.
+Single-point ring placement skews ownership:
 
 ```text
 Ring:  P1(10)   P2(30)   P3(90)
 
-Distribution:
-  P1  →  small portion
-  P2  →  large portion
-  P3  →  very large portion
+P1 owns ~20%   P2 owns ~20%   P3 owns ~60%
 ```
 
-Some servers receive much more data than others.
+P3 becomes a hot partition. Virtual nodes split each physical server's responsibility into many smaller arcs that interleave around the ring.
 
-**Result:** uneven storage, uneven traffic, hot partitions — see [§5.6 Hot Partitions](#56-hot-partitions).
+---
 
-### Problem without virtual nodes
+### What it does
 
-```text
-Hash ring:  0 ---------------------------------------- 100
+- Map each physical server to `V` virtual positions on the ring (often `hash(server_id + i)`)
+- Assign keys to the first vnode clockwise; vnode maps back to physical host
+- On add/remove of a server, only vnodes for that server change; migration stays localized
 
-            P1(10)      P2(30)                    P3(90)
-```
+---
 
-**Ownership:**
-
-```text
-P1 owns  (90 → 10)   wrap-around arc
-P2 owns  (10 → 30)
-P3 owns  (30 → 90)
-```
-
-**Approximate distribution:**
-
-```text
-P1  →  20%
-P2  →  20%
-P3  →  60%
-```
-
-P3 stores much more data.
-
-### Basic idea of virtual nodes
-
-**Instead of:**
-
-```text
-P1  →  one position
-P2  →  one position
-P3  →  one position
-```
-
-**Use:**
-
-```text
-P1  →  multiple positions   (P1-A, P1-B, P1-C)
-P2  →  multiple positions   (P2-A, P2-B, P2-C)
-P3  →  multiple positions   (P3-A, P3-B, P3-C)
-```
-
-These are virtual nodes.
-
-### Hash ring with virtual nodes
+### How it works — the architecture inside
 
 **Without vnodes:**
 
 ```text
 0 ------------------------------------------ 100
-
 P1       P2                          P3
 ```
 
@@ -1703,378 +954,213 @@ P1       P2                          P3
 
 ```text
 0 ------------------------------------------ 100
-
 P1A  P2A  P3A  P1B  P2B  P3B  P1C  P2C  P3C
 ```
-
-Server positions are spread throughout the ring.
 
 ```mermaid
 flowchart LR
     subgraph Without[Without vnodes]
+        direction LR
         W1[S1 · large arc]
         W2[S2 · small]
         W3[S3 · small]
     end
     subgraph With[With vnodes]
+        direction LR
         V1[S1A] ~~~ V2[S2A] ~~~ V3[S3A] ~~~ V4[S1B] ~~~ V5[S2B] ~~~ V6[S3B]
     end
+    Without ~~~ With
 ```
 
-### Data assignment
+**Assignment:** key at 35, ring `P1A(10) P2A(25) P3A(40) ...` → clockwise to 40 → **P3A** → physical server P3.
 
-**Rule:** A key is assigned to the first vnode encountered clockwise.
-
-**Example:**
+**Load comparison:**
 
 ```text
-Ring:  P1A(10)  P2A(25)  P3A(40)  P1B(55)  P2B(70)  P3B(85)
-
-Key = 35  →  move clockwise  →  40  →  assigned to P3A  →  physical server P3
+Without vnodes:  S1 → 15%   S2 → 25%   S3 → 60%
+With vnodes:     S1 → 33%   S2 → 34%   S3 → 33%
 ```
 
-### Example
+**Add S4:** insert S4A, S4B, S4C; only keys near new vnodes move.
 
-**Physical servers:** S1, S2, S3
+**Remove S2:** drop S2A, S2B, S2C; their keys reassign to next clockwise vnode.
 
-**Virtual nodes:**
+---
 
-```text
-S1-A  S1-B  S1-C
-S2-A  S2-B  S2-C
-S3-A  S3-B  S3-C
-```
+### Pitfalls and design tips
 
-**Hash ring order:**
+- **Vnode count** — too few vnodes leave skew; too many increase metadata and lookup cost. Cassandra often uses 256 vnodes per node; memcached clients use 40–160 per host as a starting range.
+- **Unequal hardware** — assign more vnodes to larger machines to weight capacity.
+- **Rebalance churn** — adding a node with many vnodes triggers multiple small moves; throttle to protect production traffic.
+- **State size** — every client may cache the full vnode list; prefer centralized routing for very large clusters.
+- **Interview tip** — "consistent hashing + vnodes" is the standard answer for elastic cache and storage rings.
 
-```text
-S1A  S2A  S3A  S1B  S2B  S3B  S1C  S2C  S3C
-```
+---
 
-Keys are distributed across virtual nodes. Each virtual node ultimately belongs to a physical server.
+### Real-world example
 
-### Adding a new server
-
-**Before:** S1, S2, S3 with vnodes S1A/B/C, S2A/B/C, S3A/B/C
-
-**Add S4** with new virtual nodes S4A, S4B, S4C
-
-Only keys near these new virtual nodes move. Most keys remain unchanged.
-
-### Removing a server
-
-**Remove S2** — virtual nodes S2A, S2B, S2C removed.
-
-Only keys owned by those virtual nodes are reassigned. Other keys remain unaffected.
-
-### Load distribution
-
-```text
-Without vnodes:  S1 → 15%   S2 → 25%   S3 → 60%   (uneven)
-
-With vnodes:     S1 → 33%   S2 → 34%   S3 → 33%   (balanced)
-```
-
-### Visualization
-
-**Without virtual nodes:**
-
-```text
-Ring:  S1 ---------------- S2 -------------------- S3
-       Large ownership differences.
-```
-
-**With virtual nodes:**
-
-```text
-Ring:  S1  S2  S3  S1  S3  S2  S1  S2  S3
-       Ownership spread across the ring — more balanced data distribution.
-```
-
-### Benefits
-
-- Better load balancing
-- More uniform data distribution
-- Reduces hot partitions
-- Easier scaling
-- Smaller impact when adding servers
-- Smaller impact when removing servers
-
-### Summary
-
-Virtual nodes are multiple logical positions of the same physical server on a consistent hash ring.
-
-```text
-Instead of:  S1, S2, S3
-
-Use:
-  S1A  S1B  S1C
-  S2A  S2B  S2C
-  S3A  S3B  S3C
-```
-
-**Result:**
-
-- More balanced data distribution
-- Better load balancing
-- Reduced chance of hot partitions
-- Improved effectiveness of consistent hashing
+**Apache Cassandra** switched from one token per node to vnodes (default 256 per node). Each vnode owns a slice of the ring; `nodetool status` shows token ranges per vnode. Adding a node distributes many small ranges instead of one contiguous chunk, speeding bootstrap and balancing disk use across the cluster.
 
 ---
 
 
 ## 5.10 Rendezvous Hashing
 
-### What is rendezvous hashing?
+### Overview
 
-Rendezvous hashing (highest random weight hashing — **HRW**) is a hashing technique used to assign data to servers (or shards).
+Instead of walking a circular hallway to find the right office, imagine every candidate office scores a bid for your package and the highest bid wins. **Rendezvous hashing** (highest random weight hashing — **HRW**) picks the owning server per key by hashing the key together with each server name and choosing the maximum score.
 
-For every key, a score is calculated against every server. The server with the highest score becomes the owner of that key.
+Technically, for key `K` and servers `S1…Sn`, compute `score = Hash(K + Si)` for each server; the server with the highest score owns `K`. No hash ring, no virtual nodes — and when servers are added or removed, only keys whose winner changes migrate.
 
-**Rule:** Key belongs to the server with the highest hash score.
+---
 
-### Why is it used?
+### What problem it fixes
 
-Like consistent hashing, rendezvous hashing aims to:
+Distributed caches and storage layers need:
 
-- Distribute data across servers
-- Support adding servers
-- Support removing servers
-- Minimize data movement
+- Even key distribution across servers
+- Minimal data movement on topology change
+- Simple mental model without ring maintenance
 
-It achieves these goals **without using a hash ring**. See [§5.8 Consistent Hashing](#58-consistent-hashing) for ring-based assignment.
+HRW delivers consistent-hashing-like migration properties without ring state, at the cost of more hash evaluations per lookup.
 
-### Basic idea
+---
 
-For a given key:
+### What it does
 
-1. Combine key + server
-2. Calculate hash score
-3. Repeat for all servers
-4. Pick the server with the highest score
+For every key:
 
-```text
-Score = Hash(Key + Server)
+1. Combine key + each server identifier
+2. Hash to a score
+3. Assign to the server with the highest score
 
-Highest score wins.
-```
+Adding S4: recompute scores; only keys where S4 wins move to S4. Removing S2: only keys that previously won on S2 pick a new winner.
 
-### Example
+---
 
-**Servers:** S1, S2, S3
-
-**Key:** `User123`
-
-**Calculate scores:**
+### How it works — the algorithm inside
 
 ```text
+Servers: S1, S2, S3
+Key: User123
+
 Hash(User123 + S1) = 150
 Hash(User123 + S2) = 420
 Hash(User123 + S3) = 310
+
+Highest → 420 → User123 stored on S2
 ```
-
-**Highest score:** 420
-
-**Result:** `User123` → **S2**
-
-### Visualization
 
 ```mermaid
-flowchart TB
-    K[User123] --> S1["S1 · score 150"]
-    K --> S2["S2 · score 420"]
-    K --> S3["S3 · score 310"]
-    S2 --> Win[Highest → S2]
+flowchart LR
+    K[User123] --> S1["S1 · 150"]
+    K --> S2["S2 · 420"]
+    K --> S3["S3 · 310"]
+    S2 --> Win[Owner S2]
 ```
+
+**Another key:**
 
 ```text
-                 User123
-                     |
-    ------------------------------------
-    |                 |               |
-  S1 · 150         S2 · 420        S3 · 310
-                     |
-                 Highest → S2
+Order789:  S1 → 550   S2 → 120   S3 → 470   →  Owner S1
 ```
 
-### Another example
-
-**Key:** `Order789`
+**Add S4 to User123:**
 
 ```text
-Hash(Order789 + S1) = 550
-Hash(Order789 + S2) = 120
-Hash(Order789 + S3) = 470
-
-Highest score = 550  →  Order789 → S1
+Before:  S2 wins (420)
+After:   S4 → 500   →  new owner S4 (only this key moves)
 ```
 
-### Data assignment
-
-**Key = K1:**
+**Remove S2:**
 
 ```text
-S1 → 200   S2 → 600   S3 → 450   →  Winner: S2   →  Store K1 in S2
+Before:  S2 → 700 (owner)
+After:   S3 → 500 wins among remaining
 ```
-
-**Key = K2:**
-
-```text
-S1 → 900   S2 → 100   S3 → 400   →  Winner: S1   →  Store K2 in S1
-```
-
-### Adding a new server
-
-**Current servers:** S1, S2, S3
-
-**Add S4** — recalculate for each key:
-
-```text
-Hash(Key + S1)
-Hash(Key + S2)
-Hash(Key + S3)
-Hash(Key + S4)
-```
-
-Only keys for which S4 gets the highest score will move to S4. Other keys remain unchanged.
-
-### Example of adding server
-
-**Before — Key = User123:**
-
-```text
-S1 → 150   S2 → 420   S3 → 310   →  Owner: S2
-```
-
-**After adding S4:**
-
-```text
-S1 → 150   S2 → 420   S3 → 310   S4 → 500   →  New owner: S4
-```
-
-Owner changes S2 → S4. Only this key moves.
-
-### Removing a server
-
-**Before:**
-
-```text
-S1 → 200   S2 → 700   S3 → 500   →  Owner: S2
-```
-
-**Remove S2** — recalculate:
-
-```text
-S1 → 200   S3 → 500   →  New owner: S3
-```
-
-Only keys owned by S2 are reassigned.
-
-### Load distribution
-
-Many keys (K1, K2, K3, K4, K5, …) each independently choose the server with the highest score.
-
-**Result:** keys naturally spread across servers.
-
-```text
-S1 → 34%   S2 → 33%   S3 → 33%   (approximately balanced)
-```
-
-### Comparison with consistent hashing
 
 | | Consistent hashing | Rendezvous hashing |
 |---|-------------------|-------------------|
-| Structure | Uses a hash ring | No hash ring |
-| Lookup | Clockwise on ring | Score every server |
-| Virtual nodes | Often needed for balance | Not required |
-| Ownership | First partition clockwise | Highest score wins |
+| Structure | Hash ring | No ring |
+| Lookup | Clockwise successor | Max score over all servers |
+| Balance aid | Virtual nodes | Built-in spread |
+| Lookup cost | O(log N) with tree | O(N) hash per server |
 
-### Benefits
-
-- Simple concept
-- No hash ring
-- Balanced key distribution
-- Minimal data movement
-- Easy server addition
-- Easy server removal
-
-### Challenges
-
-For each key, a score must be calculated for **every** server:
-
-```text
-Hash(Key + S1)
-Hash(Key + S2)
-Hash(Key + S3)
-...
-Hash(Key + Sn)
+```mermaid
+flowchart LR
+  K[Key] --> H1[Hash key+S1]
+  K --> H2[Hash key+S2]
+  K --> H3[Hash key+Sn]
+  H1 --> Max[Pick max score]
+  H2 --> Max
+  H3 --> Max
+  Max --> Owner[Winning server]
 ```
 
-As the number of servers increases, more hash calculations are required.
+---
 
-### Summary
+### Pitfalls and design tips
 
-Rendezvous hashing assigns a key to the server with the highest hash score.
-
-```text
-Score = Hash(Key + Server)
-
-User123:
-  S1 → 150   S2 → 420   S3 → 310
-  Highest = 420  →  User123 → S2
-```
-
-**Key characteristics:**
-
-- No hash ring
-- No virtual nodes
-- Balanced distribution
-- Minimal data movement when servers are added or removed
+- **O(N) per lookup** — acceptable for tens of servers; for thousands, use ring hashing or hierarchical HRW.
+- **Stable hash required** — use a fixed hash (Murmur3, SHA-256 truncated) so scores do not jump on process restart.
+- **Weighted servers** — multiply score by weight or duplicate server IDs in the candidate list for heterogeneous capacity.
+- **Use cases** — CDN origin pickers, distributed cache clients, gateway routing when N is small and simplicity beats ring ops.
+- **Not for Dynamo-scale nodes** — prefer consistent hashing + vnodes when membership changes constantly and N is large.
 
 ---
 
 
 ## 5.11 Replication
 
-Replication modes (leader–follower, multi-leader) and failover are covered in [§5.12](#512-leader-follower-replication) and [§5.13](#513-multi-leader-replication). Quorum tuning: [§5.14](#514-quorum-reads) / [§5.15](#515-quorum-writes).
+### Overview
 
-### What is replication?
+Keeping one copy of important documents in a single drawer is risky — fire, theft, or a spilled coffee ends everything. **Replication** stores identical copies of data on multiple servers so one failure does not erase availability.
 
-Replication is the process of maintaining multiple copies of the same data on different servers.
+Technically, each copy is a **replica**. A **primary** (leader) often accepts writes and propagates changes; **replicas** serve reads and stand by for failover. **Replication factor (RF)** counts how many copies exist. Replication combines with sharding — each shard has its own replica set.
 
-Each copy is called a **replica**.
+---
 
-**Goal:** Store identical data on multiple machines.
+### What problem it fixes
 
-```text
-                Original data
-                      |
-          --------------------------
-          |           |            |
-       Replica-1   Replica-2   Replica-3
-```
-
-All replicas contain the same data.
-
-### Why replication is needed?
-
-If data exists on only one server, failure of that server makes the data unavailable.
-
-**Without replication:**
+Single-server storage is a single point of failure:
 
 ```text
-Database → Server-1
-Server-1 fails → data unavailable
+Without replication:  Server-1 fails → data unavailable
+With replication:     S1 fails → S2, S3 still serve data
 ```
 
-**With replication:**
+Replication improves **availability**, **fault tolerance**, and **read scalability** at the cost of storage, sync complexity, and consistency trade-offs.
+
+---
+
+### What it does
+
+| Concept | Role |
+|---------|------|
+| **Primary / leader** | Main writable copy; source of truth for writes |
+| **Replica / follower** | Duplicate copy; read scaling and failover |
+| **Replication factor (RF)** | Number of copies per piece of data |
+| **Sync replication** | Ack after replicas confirm — stronger durability, higher latency |
+| **Async replication** | Ack after primary only — faster, risk of stale reads |
+
+**Replication modes:**
+
+| Mode | Writes |
+|------|--------|
+| **Single-primary (leader–follower)** | One leader — see 5.12 |
+| **Multi-primary** | Multiple leaders — see 5.13 |
+| **Peer-to-peer** | Any node may coordinate |
+
+**RF examples:**
 
 ```text
-Database → S1, S2, S3
-One server fails → data still exists on other servers
+RF = 1  →  one copy
+RF = 3  →  three copies on Server-A, B, C
 ```
 
-### Basic architecture
+---
+
+### How it works — the architecture inside
 
 ```mermaid
 flowchart LR
@@ -2082,109 +1168,21 @@ flowchart LR
     Primary --> R2[Replica-2]
 ```
 
-Primary stores the main copy. Replicas store duplicate copies.
-
-### Write operation
-
-1. Client sends write request
-2. Primary updates data
-3. Primary propagates changes to replicas
-
-**Example — write `User = Alice`:**
+**Write path:**
 
 ```text
-Primary updated
-      |
-      V
-Replica-1 updated
-Replica-2 updated
+Client → Primary updates → propagate → Replica-1, Replica-2 updated
 ```
 
-All copies become identical.
-
-### Read operation
-
-Reads may be served from primary or replicas.
+**Read path** — clients may read primary or any replica:
 
 ```text
-                Primary
-                   |
-          ------------------
-          |                |
-      Replica-1        Replica-2
-
 Client-1 → Replica-1
 Client-2 → Replica-2
 Client-3 → Primary
 ```
 
-Multiple servers can serve read requests.
-
-### Example
-
-**Original record:**
-
-```text
-+--------+-------+
-| UserID | Name  |
-+--------+-------+
-| 101    | Alice |
-+--------+-------+
-```
-
-Same record on primary, replica-1, and replica-2 — all servers contain identical data.
-
-### Types of replication
-
-| Mode | Writes | Section |
-|------|--------|---------|
-| **Single-primary (leader–follower)** | One primary | [§5.12](#512-leader-follower-replication) |
-| **Multi-primary** | Multiple leaders | [§5.13](#513-multi-leader-replication) |
-| **Peer-to-peer** | Any node may coordinate | Ad-hoc clusters |
-
-### Synchronous vs asynchronous
-
-| | Synchronous | Asynchronous |
-|---|-------------|--------------|
-| **Ack** | After replicas confirm | After primary only |
-| **Risk** | Higher latency | Replication lag on reads |
-
-Used in detail in [§5.12](#512-leader-follower-replication).
-
-### Replication factor
-
-**Replication factor (RF)** — number of copies maintained for each piece of data.
-
-```text
-RF = 1   →  one copy   (S1)
-RF = 2   →  two copies (S1, S2)
-RF = 3   →  three copies (S1, S2, S3)
-```
-
-**Example — RF = 3:** user data exists on Server-A, Server-B, Server-C.
-
-### Failure scenario
-
-```text
-RF = 3:  S1, S2, S3
-S1 fails → remaining copies: S2, S3 → data still available
-```
-
-### Sharding + replication
-
-See [§5.2 Sharding](#52-sharding).
-
-```text
-                System
-                   |
-    ----------------------------------
-    |               |               |
-  Shard-1        Shard-2         Shard-3
-    |               |               |
-  P,R,R           P,R,R           P,R,R
-```
-
-Each shard has its own primary and replicas.
+**Sharding + replication:**
 
 ```mermaid
 flowchart LR
@@ -2196,72 +1194,65 @@ flowchart LR
     Sh3 --> R3[Primary + replicas]
 ```
 
-### Benefits
+**Failure with RF = 3:** S1 dies → S2 and S3 still hold data → service continues (after failover or quorum reads).
 
-- Multiple copies of data
-- Higher availability
-- Improved fault tolerance
-- Reduced risk of data loss
-- Read requests can be distributed
-- Supports large-scale systems
+Quorum tuning for reads and writes: 5.14 and 5.15.
 
-### Challenges
+---
 
-- Additional storage required
-- Data synchronization needed
-- Network overhead increases
-- Replica management complexity
-- Updates must be propagated
+### Pitfalls and design tips
 
-### Summary
+- **Replication ≠ backup** — replicas replay live writes; deleted data deletes on replicas too. Keep separate backups and PITR.
+- **Lag** — async replicas serve stale reads; use quorum reads or read-from-leader when freshness matters.
+- **Split brain** — two primaries without fencing cause divergent writes; use consensus or STONITH before promoting a replica.
+- **RF and cost** — RF=3 triples storage and write fan-out; RF=2 is common for non-critical caches.
+- **Default** — leader–follower with async replication to local replicas; sync only for financial or inventory critical paths.
 
-Replication is the process of maintaining multiple copies of the same data on different servers.
+---
 
-```text
-Primary
-   |
--------------------
-|                 |
-Replica-1     Replica-2
-```
+### Real-world example
 
-**Core concepts:** primary, replica, replication factor, synchronous replication, asynchronous replication.
-
-**Goal:** Improve availability, fault tolerance, and data durability by storing multiple copies of data.
+**PostgreSQL streaming replication** ships WAL records from primary to standbys. A read replica applies WAL asynchronously; `synchronous_standby_names` can require one standby to ACK before commit returns. On primary failure, `pg_promote` on a standby becomes the new primary — classic leader–follower replication in production.
 
 ---
 
 
 ## 5.12 Leader Follower Replication
 
-### What is leader-follower replication?
+### Overview
 
-Leader-follower replication is a replication model where one server acts as the **leader** and one or more servers act as **followers**.
+One editor holds the master manuscript; assistants make copies and distribute them to branch offices for reading. Only the editor applies corrections — that is **leader–follower replication**: one **leader** takes all writes; **followers** copy the leader and serve reads.
 
-The leader accepts write operations. Followers receive copies of the leader's data.
+Technically, the leader is the source of truth for writes. Followers receive a replication stream (binlog, WAL, oplog) and apply changes in order. Reads scale across followers; writes stay serialized through the leader. Failover promotes a follower when the leader dies.
 
-```text
-                Leader
-                   |
-        ---------------------
-        |                   |
-     Follower-1        Follower-2
-```
+---
 
-All followers maintain copies of leader data. See [§5.11 Replication](#511-replication).
+### What problem it fixes
 
-### Components
+A single database handles limited write throughput and is a single failure domain. Leader–follower replication provides:
+
+- Multiple read paths (followers)
+- Hot standby for disaster recovery
+- Clear write ordering (no multi-leader conflicts)
+
+---
+
+### What it does
 
 | Component | Role |
 |-----------|------|
-| **Leader** | Main server responsible for processing writes |
-| **Follower** | Replica servers that maintain copies of leader data |
-| **Client** | Application sending read and write requests |
+| **Leader** | Processes all writes |
+| **Follower** | Read-only copy; may become leader |
+| **Client** | Sends writes to leader; reads to leader or followers |
 
-### Basic architecture
+**Synchronous vs asynchronous** (from 5.11): sync waits for follower ACK; async returns after leader commit — followers may lag.
+
+---
+
+### How it works — the architecture inside
 
 ```mermaid
-flowchart TB
+flowchart LR
     Client[Client] -->|write| Leader[Leader]
     Client -->|read| Leader
     Client -->|read| F1[Follower-1]
@@ -2270,181 +1261,77 @@ flowchart TB
     Leader --> F2
 ```
 
-Leader contains the source of truth.
+**Write:** `UserID = 101, Name = Alice` → client → leader updated → followers updated.
 
-### Write operation
+**Read:** any node can serve; followers may return stale data if replication lags.
 
-1. Client sends write request
-2. Leader updates its data
-3. Leader propagates changes to followers
-
-**Example — insert user:**
+**Replication lag example:**
 
 ```text
-UserID = 101, Name = Alice
-
-Client → Leader updated → Follower-1 updated → Follower-2 updated
+Leader:    Name = Alice
+Follower:  Name = Alex   ← not yet applied
 ```
 
-All copies become identical.
+**Failover:**
 
-### Write flow visualization
-
-```text
-                Client
-                   |
-                   V
-                Leader
-                   |
-        ---------------------
-        |                   |
-        V                   V
-    Follower-1         Follower-2
+```mermaid
+flowchart LR
+    subgraph Before[Before failure]
+        direction LR
+        L1[Leader] --> F1[Follower-1]
+        L1 --> F2[Follower-2]
+    end
+    subgraph After[After failover]
+        direction LR
+        NL[Follower-1 promoted] --> NF[Follower-2]
+    end
+    Before ~~~ After
 ```
 
-Writes always go through the leader.
+Leader fails → cluster elects or promotes a follower → clients redirect writes to new leader.
 
-### Read operation
+---
 
-Reads can be served by leader or followers.
+### Pitfalls and design tips
 
-```text
-                Leader
-                   |
-        ---------------------
-        |                   |
-   Follower-1         Follower-2
+- **Leader write bottleneck** — all writes hit one node; shard before chasing multi-leader complexity.
+- **Stale reads** — route session-sensitive reads to leader or use "read your writes" token tracking.
+- **Failover data loss** — async replication may lose last seconds of writes on leader death; measure RPO before auto-promote.
+- **Thundering herd** — after failover, cold follower caches spike load; warm standbys and connection pooling help.
+- **MySQL / Postgres / MongoDB** — all ship leader–follower; know your vendor's promotion tool (`repmgr`, Orchestrator, Replica Set election).
 
-Client-A → Follower-1
-Client-B → Follower-2
-Client-C → Leader
-```
+---
 
-Read traffic can be distributed.
+### Real-world example
 
-### Read flow visualization
-
-```text
-Client-1  ----->  Follower-1
-Client-2  ----->  Follower-2
-Client-3  ----->  Leader
-```
-
-Multiple servers can serve read requests.
-
-### Example
-
-```text
-+--------+-------+
-| UserID | Name  |
-+--------+-------+
-| 101    | Alice |
-+--------+-------+
-```
-
-Same record on leader, follower-1, and follower-2 — all nodes contain the same data.
-
-### Synchronous vs asynchronous replication
-
-Covered in [§5.11 Replication](#511-replication) (sync waits for followers; async returns after leader). Leader–follower specifics below.
-
-### Leader failure
-
-**Before failure:**
-
-```text
-                Leader
-                   |
-        ---------------------
-        |                   |
-     Follower-1       Follower-2
-```
-
-**Leader fails:**
-
-```text
-             X Leader (failed)
-        ---------------------
-        |                   |
-     Follower-1       Follower-2
-```
-
-A follower may become the new leader.
-
-### Failover
-
-**Before:** Leader, Follower-1, Follower-2
-
-**Leader fails.**
-
-**After:** Follower-1 → new leader; Follower-2 → follower
-
-```text
-Before:  Leader → Followers
-After:   New Leader → Followers
-```
-
-See [§4.11 Failover](../04-distributed-system/README.md#411-failover).
-
-### Replication lag
-
-Sometimes followers are not updated immediately.
-
-```text
-Leader:    UserID = 101, Name = Alice
-Follower:  UserID = 101, Name = Alex   ← not yet updated
-```
-
-This temporary difference is called **replication lag**.
-
-### Benefits
-
-- Multiple copies of data
-- High availability
-- Improved fault tolerance
-- Read load distribution
-- Reduced load on leader for reads
-- Data remains available after failures
-
-### Challenges
-
-- Leader can become a bottleneck
-- Replication lag may occur
-- Failover management required
-- Additional storage needed
-- Synchronization overhead
-
-### Summary
-
-Leader-follower replication consists of one leader plus multiple followers.
-
-```text
-                Leader
-                   |
-        ---------------------
-        |                   |
-     Follower-1       Follower-2
-
-Writes:  Client → Leader
-Reads:   Client → Leader or followers
-```
-
-**Core concepts:** leader, followers, replication, failover, replication lag.
-
-**Goal:** Maintain multiple copies of data while centralizing write operations through a leader.
+**MongoDB replica sets** elect a primary from secondaries. Drivers default writes to the primary; `readPreference=secondary` sends analytics to secondaries. On primary loss, an election promotes the most caught-up secondary — leader–follower with automatic failover in under ~30 seconds for typical deployments.
 
 ---
 
 
 ## 5.13 Multi Leader Replication
 
-### What is multi-leader replication?
+### Overview
 
-Multi-leader replication is a replication model where multiple servers act as leaders and can accept write operations.
+What if every branch office could edit the catalog locally and sync changes overnight? **Multi-leader replication** lets multiple servers accept writes, each acting as a leader that replicates to the others — great for geographic distribution, dangerous when two offices edit the same line differently.
 
-Each leader replicates its changes to other leaders and replicas.
+Technically, writes are not restricted to one node. Each leader propagates changes to peer leaders and their followers. Conflicts arise when two leaders update the same row concurrently — the system must detect and resolve them (last-write-wins, vector clocks, application merge).
 
-Unlike leader-follower replication, writes are not restricted to a single leader.
+---
+
+### What problem it fixes
+
+A single leader in one region forces every global write across an ocean:
+
+- Write latency for distant users
+- Leader as write throughput ceiling
+- Regional outage may block writes worldwide
+
+Multi-leader places writable nodes in each region so local writes stay local.
+
+---
+
+### What it does
 
 ```text
           Leader-A <-------> Leader-B
@@ -2453,39 +1340,18 @@ Unlike leader-follower replication, writes are not restricted to a single leader
                  Leader-C
 ```
 
-All leaders can process writes. See [§5.12 Leader Follower Replication](#512-leader-follower-replication) for single-leader model.
+- Any leader accepts reads and writes
+- Leaders replicate to each other
+- Remaining leaders continue if one fails
+- Conflict resolution is mandatory
 
-### Why multi-leader replication?
+---
 
-In some systems, a single leader may become a bottleneck.
-
-Instead of routing all writes to one server, multiple leaders can accept writes independently.
-
-**Benefits include:**
-
-- Distributed write handling
-- Reduced write bottlenecks
-- Improved availability
-
-### Basic architecture
-
-```text
-                Client requests
-                      |
-      -------------------------------------
-      |                |                 |
-      V                V                 V
-   Leader-A        Leader-B         Leader-C
-      |                |                 |
-      -------------------------------------
-                Replication
-```
-
-Each leader can receive writes.
+### How it works — the architecture inside
 
 ```mermaid
-flowchart TB
-    C[Client requests] --> LA[Leader-A]
+flowchart LR
+    C[Clients] --> LA[Leader-A]
     C --> LB[Leader-B]
     C --> LC[Leader-C]
     LA <-->|replicate| LB
@@ -2493,546 +1359,298 @@ flowchart TB
     LA <-->|replicate| LC
 ```
 
-### Write operation
+**Write to Leader-A:** `UserID = 101, Name = Alice` → A updates → replicates to B and C.
 
-**Example — Client sends `UserID = 101`, `Name = Alice` to Leader-A:**
-
-```text
-Client → Leader-A updated → Leader-B updated → Leader-C updated
-```
-
-All leaders eventually receive the change.
-
-### Another write example
-
-**Client sends `UserID = 202`, `Name = Bob` to Leader-B:**
-
-```text
-Client → Leader-B updated → Leader-A updated → Leader-C updated
-```
-
-Every leader propagates updates to others.
-
-### Visualization
-
-```text
-                 Leader-A
-                 /      \
-                /        \
-         Leader-B ------ Leader-C
-
-Replication occurs between leaders.
-```
-
-### Read operation
-
-Reads can be served from Leader-A, Leader-B, or Leader-C.
-
-```text
-Client-1 → Leader-A
-Client-2 → Leader-B
-Client-3 → Leader-C
-```
-
-Any leader can handle reads.
-
-### Data synchronization
-
-```text
-Leader-A receives: UserID = 101, Name = Alice
-      |
-      V
-Leader-B
-      |
-      V
-Leader-C
-```
-
-All leaders eventually receive the same update.
-
-### Conflict problem
-
-Multiple leaders can accept writes at the same time.
-
-```text
-Leader-A:  UserID = 101, Name = Alice
-Leader-B:  UserID = 101, Name = Alex   (at the same time)
-```
+**Write to Leader-B:** `UserID = 202, Name = Bob` → B updates → replicates to A and C.
 
 **Conflict:**
 
 ```text
-Leader-A → Alice
-Leader-B → Alex
+Initial:  UserID = 101, Name = John
+Leader-A: Name = Alice   (concurrent)
+Leader-B: Name = Alex
+
+After sync without merge: divergent or one value wins via policy
 ```
 
-Different leaders contain different values.
-
-### Conflict visualization
-
-```text
-Client-1 → Leader-A   Name = Alice
-Client-2 → Leader-B   Name = Alex
-
-Both updates occur independently.
-Conflict occurs when replication happens.
+```mermaid
+flowchart LR
+    C1[Client-1] --> LA[Leader-A · Alice]
+    C2[Client-2] --> LB[Leader-B · Alex]
+    LA --> Conflict[Replication conflict]
+    LB --> Conflict
 ```
 
-### Example of conflict
-
-**Initial state:** UserID = 101, Name = John
-
-```text
-Update 1 (Leader-A):  Name = Alice
-Update 2 (Leader-B):  Name = Alex
-
-Before synchronization:
-  Leader-A → Alice
-  Leader-B → Alex
-```
-
-### Leader failure
-
-**Before:** Leader-A, Leader-B, Leader-C
-
-**Leader-A fails** → remaining: Leader-B, Leader-C
-
-Writes can still be processed by remaining leaders. System continues operating.
-
-### Replication flow
-
-```text
-Write at Leader-A  →  Leader-B  →  Leader-C
-
-or
-
-Write at Leader-C  →  Leader-A  →  Leader-B
-```
-
-Changes spread among leaders.
-
-### Leader-follower vs multi-leader
-
-See [§5.12](#512-leader-follower-replication).
-
-| | Leader-follower | Multi-leader |
+| | Leader–follower | Multi-leader |
 |---|-----------------|--------------|
-| **Topology** | Leader → followers | Leader-A, Leader-B, Leader-C |
-| **Writes** | Only leader | Any leader |
+| **Writes** | Leader only | Any leader |
+| **Conflicts** | None (single writer) | Must resolve |
+| **Latency** | Remote writers pay RTT | Local writes per region |
+| **Complexity** | Lower | Higher |
 
-### Benefits
+---
 
-- Multiple write locations
-- Reduced write bottlenecks
-- Improved availability
-- Better geographic distribution
-- System continues even if one leader fails
+### Pitfalls and design tips
 
-### Challenges
+- **Conflict resolution policy** — define LWW, CRDT, or application-level merge before shipping; "we'll figure it out" fails in production.
+- **Not for strongly consistent inventory** — bank balances and seat booking need single-leader or distributed transactions.
+- **CouchDB / mobile sync** — multi-leader shines for offline-first apps with mergeable document state.
+- **Galera / Tungsten** — MySQL multi-primary exists but needs conflict-aware schemas and careful write routing.
+- **Interview** — cite geo write latency as the motivator; cite conflicts as the price.
 
-- Conflict management required
-- More complex replication
-- Data synchronization overhead
-- Multiple leaders must stay consistent
-- Increased operational complexity
+---
 
-### Summary
+### Real-world example
 
-Multi-leader replication allows multiple leaders to accept write requests.
-
-```text
-         Leader-A
-            |
-     ----------------
-     |              |
-  Leader-B      Leader-C
-```
-
-**Characteristics:**
-
-- Multiple writable leaders
-- Leaders replicate changes to one another
-- Reads can be served by any leader
-- Writes can be accepted by any leader
-- Conflicts may occur when leaders update the same data independently
-
-**Goal:** Distribute write operations across multiple leaders instead of relying on a single leader.
+**CouchDB** replication is multi-master between nodes and devices. Two users edit the same document offline; on sync, CouchDB stores both revisions and flags a `_conflict` for the application to merge. The database does not silently pick a winner — conflict handling is explicit by design.
 
 ---
 
 
 ## 5.14 Quorum Reads
 
-### What is a quorum read?
+### Overview
 
-A quorum read is a read operation where the system collects responses from a minimum number of replicas before returning the result.
+Asking one witness about an event might get yesterday's story; asking three and trusting the majority vote gets you closer to the truth. A **quorum read** contacts multiple replicas and waits until enough agree before returning data — trading latency for a better chance of reading the latest write.
 
-Instead of reading from just one replica, the system consults multiple replicas and uses enough responses to form a quorum.
+Technically, with replication factor **N** and read quorum **R**, the read completes after **R** replicas respond (often returning the highest version among them). Combined with write quorum **W** where `R + W > N`, a read quorum overlaps a write quorum on at least one replica that saw the latest write.
 
-Quorum read ensures that the returned data is likely to be the latest version.
+---
 
-### Basic idea
+### What problem it fixes
 
-**Replication factor (RF)** — number of replicas storing the same data.
-
-```text
-RF = 3  →  Replica-1, Replica-2, Replica-3
-```
-
-**Read quorum (R)** — number of replicas that must respond to a read.
+Reading a single replica — especially a lagging follower — returns stale data:
 
 ```text
-RF = 3, R = 2  →  at least 2 replicas must respond before completing the read
+R1 → Version 7    R2 → Version 7    R3 → Version 6
 ```
 
-See [§5.11 Replication](#511-replication) for RF. Write quorum in [§5.15 Quorum Writes](#515-quorum-writes).
+Read only R3 → stale. Quorum reads reduce stale-read probability and tolerate unavailable replicas: with `N=3, R=2`, one dead replica still allows a read.
 
-### Architecture
+---
+
+### What it does
+
+- Broadcast read to all or a subset of replicas
+- Wait until **R** responses arrive
+- Return the value with the highest version (or merge per policy)
+- Succeed if at least R replicas are reachable
+
+---
+
+### How it works — the architecture inside
 
 ```mermaid
-flowchart TB
-    Client[Client] --> Req[Read request]
-    Req --> R1[Replica-1]
-    Req --> R2[Replica-2]
-    Req --> R3[Replica-3]
-    R1 --> Q{Quorum met?}
+flowchart LR
+    Client[Client] --> R1[Replica-1]
+    Client --> R2[Replica-2]
+    Client --> R3[Replica-3]
+    R1 --> Q{R responses?}
     R2 --> Q
     R3 --> Q
-    Q -->|R responses| Result[Return result]
+    Q -->|yes| Result[Return highest version]
 ```
 
-### Example
+**Example — N = 3, R = 2:**
 
 ```text
-RF = 3   Replicas: R1, R2, R3
-R = 2
-
-Client requests UserID = 101
-System contacts R1, R2, R3
-Responses from R1, R2 → quorum achieved → read succeeds
-```
-
-### Version example
-
-**UserID = 101:**
-
-```text
+Client reads UserID = 101
 R1 → Version 5
 R2 → Version 5
-R3 → Version 4
+R3 → Version 4  (slow)
 
-R = 2
-Responses: R1 → V5, R2 → V5
-Result: Version 5 returned
+R1 + R2 respond → quorum met → return Version 5
 ```
 
-Latest data is obtained from quorum responses (highest version among responders).
-
-### Read flow
-
-1. Client sends read request
-2. Request reaches replicas
-3. Replicas return stored versions
-4. System waits until quorum is reached
-5. Appropriate version is returned
-
-### Example with RF = 5
+**RF = 5, R = 3:**
 
 ```text
-Replicas: R1, R2, R3, R4, R5
-R = 3
-
-Responses:
-  R1 → Version 10
-  R2 → Version 10
-  R3 → Version 10
-
-Quorum achieved → result returned
+R1, R2, R3 → Version 10 → quorum → return 10
 ```
 
-### Quorum condition (canonical)
+**How to calculate:**
+
+**Given:** `N = 3` replicas, desired overlap with writes using `W = 2`.
+
+**Step 1 — quorum overlap rule:**
 
 ```text
-N = replication factor
-R = read quorum
-W = write quorum
-
-Commonly:  R + W > N
-
-Example:  N = 3, R = 2, W = 2  →  2 + 2 > 3  ✓
+R + W > N
+R + 2 > 3
+R > 1
 ```
 
-This guarantees overlap between reads and writes so a read quorum sees at least one replica that participated in the latest write quorum. Write side: [§5.15](#515-quorum-writes).
+**Step 2 — choose minimum R for fault tolerance:** to tolerate `F` failed replicas on read, need `R ≤ N - F` and enough live nodes: `R ≤ N - F` with at least R nodes up → `F = N - R`.
 
-### Why multiple replicas are read?
+For `N = 3, R = 2`: tolerate 1 failed replica (need 2 of 3).
+
+**Step 3 — verify overlap:** `R + W = 2 + 2 = 4 > 3` ✓ — every read quorum shares at least one node with every write quorum.
+
+**Sanity check:** `R = 1` would allow stale reads from a single lagging replica; `R = N` is strongest but least available.
+
+**Given:** `N = 5`, `W = 3`, find minimum R for strong overlap.
 
 ```text
-R1 → Version 7
-R2 → Version 7
-R3 → Version 6
+R + 3 > 5  →  R > 2  →  minimum R = 3
 ```
 
-Reading only R3 may return old data. Reading multiple replicas increases the probability of obtaining the latest version.
+With `R = 3, W = 3`: tolerate 2 failed replicas on read and on write independently.
 
-### Example
+---
 
-```text
-RF = 3
+### Pitfalls and design tips
 
-R1 → Alice
-R2 → Alice
-R3 → Alex
+- **Latency** — every read waits for the slowest of R replicas; use local-quorum or monotonic reads when strict global quorum is overkill.
+- **Not linearizable alone** — quorum + LWW can still anomaly under concurrent writes; see leader leases or consensus for strict linearizability.
+- **Cassandra `LOCAL_QUORUM`** — quorum within the local datacenter avoids cross-region read RTT.
+- **SLA math** — if each replica has 99.9% availability, `R=2 of 3` has roughly `1 - (0.001)^2` per pair — model before picking R.
+- **Interview** — always state `R + W > N` when discussing tunable consistency.
 
-R = 2
-Responses: R1 → Alice, R2 → Alice
-Result: Alice
-```
+---
 
-The quorum agrees on the latest value.
+### Real-world example
 
-### Benefits
-
-- Increased likelihood of reading recent data
-- Works even if some replicas are unavailable
-- Improves fault tolerance
-- Supports distributed databases
-- Reduces dependency on a single replica
-
-### Challenges
-
-- Multiple replicas must be contacted
-- Read latency can increase
-- More network communication required
-- Additional coordination is needed
-- Quorum calculation adds complexity
-
-### Quorum read vs single replica read
-
-**Single replica read:**
-
-```text
-Client → Replica  →  one response required
-```
-
-**Quorum read:**
-
-```text
-Client → multiple replicas → quorum responses required
-```
-
-### Summary
-
-Quorum read is a read operation that requires responses from a minimum number of replicas before returning data.
-
-```text
-N = replication factor
-R = read quorum
-W = write quorum
-
-Example:  N = 3, R = 2
-Read must obtain responses from at least 2 replicas.
-```
-
-**Goal:** Increase the likelihood of returning the latest data while maintaining availability in a replicated system.
+**Apache Cassandra** reads at `QUORUM` level contact `⌊N/2⌋ + 1` replicas (for `N=3`, that's 2). A write at `QUORUM` with the same N guarantees the read sees at least one replica that participated in the write — the standard Dynamo-quorum trade-off for tunable consistency.
 
 ---
 
 
 ## 5.15 Quorum Writes
 
-### What is a quorum write?
+### Overview
 
-A quorum write is a write operation that is considered successful only after a minimum number of replicas acknowledge the write.
+You do not need every branch office to stamp a form before it counts — just enough signatures that any future audit will find a copy. A **quorum write** succeeds after **W** replicas acknowledge, not all **N**, so the system stays available when some replicas are slow or down while still leaving enough copies for safe reads.
 
-Instead of waiting for all replicas, the system waits for a specified number of replicas called the **write quorum (W)**.
-
-Quorum write helps maintain consistency while allowing the system to tolerate replica failures.
-
-### Basic idea
-
-```text
-N = total number of replicas (replication factor)
-W = minimum replicas that must confirm the write
-```
-
-**Example:**
-
-```text
-N = 3   Replicas: R1, R2, R3
-W = 2   At least 2 replicas must ACK before success is returned
-```
-
-See [§5.11 Replication](#511-replication). Read side in [§5.14 Quorum Reads](#514-quorum-reads).
-
-### Architecture
-
-```mermaid
-flowchart TB
-    Client[Client] --> Req[Write request]
-    Req --> R1[Replica-1]
-    Req --> R2[Replica-2]
-    Req --> R3[Replica-3]
-    R1 --> Q{W ACKs?}
-    R2 --> Q
-    R3 --> Q
-    Q -->|quorum met| OK[Return success]
-```
-
-### Write flow
-
-1. Client sends write request
-2. System forwards write to replicas
-3. Replicas store the data
-4. Replicas send acknowledgements
-5. When write quorum is reached, success is returned
-
-### Example
-
-```text
-N = 3, W = 2
-Write: UserID = 101, Name = Alice
-
-R1 → ACK
-R2 → ACK
-
-Quorum achieved → write succeeds
-R3 may update later
-```
-
-### Visualization
-
-```text
-                    Client
-                       |
-                Write request
-       --------------------------------
-       |              |              |
-      R1             R2             R3
-     ACK            ACK          Pending
-       |              |
-       ---------------
-              |
-        Quorum met
-              |
-      Return success
-```
-
-### Example with RF = 5
-
-```text
-Replicas: R1, R2, R3, R4, R5
-W = 3
-
-R1 → ACK, R2 → ACK, R3 → ACK
-Quorum achieved → write succeeds
-```
-
-### Failure scenario
-
-```text
-N = 3, W = 2
-R3 fails
-
-R1 → ACK
-R2 → ACK
-
-Write still succeeds because quorum is achieved.
-```
-
-### Quorum overlap
-
-Uses the same `R + W > N` rule as [§5.14 Quorum Reads](#514-quorum-reads) so writes and reads overlap on at least one replica.
-
-### Why not wait for all replicas?
-
-```text
-N = 5
-
-All replicas:  need R1, R2, R3, R4, R5
-              → one slow/unavailable replica delays the write
-
-Quorum:        W = 3 → only 3 ACKs required → write completes faster
-```
-
-### Example
-
-```text
-N = 3, W = 2
-Write: Balance = 500
-
-R1 → ACK
-R2 → ACK
-R3 → no response
-
-Write succeeds — quorum achieved.
-```
-
-### Benefits
-
-- Tolerates replica failures
-- Improves availability
-- Does not require all replicas to respond
-- Supports distributed databases
-- Increases probability that future reads see recent writes
-
-### Challenges
-
-- Multiple replicas must be updated
-- More network communication required
-- Additional coordination needed
-- Higher write latency than a single-replica write
-- Quorum management adds complexity
-
-### Quorum write vs all-replica write
-
-| | All-replica write | Quorum write |
-|---|-------------------|--------------|
-| **Success when** | Every replica ACKs | Enough replicas ACK (W) |
-| **N = 5 example** | Need 5 ACKs | Need only W ACKs (e.g. 3) |
-
-### Summary
-
-Quorum write succeeds only after acknowledgements from a minimum number of replicas.
-
-```text
-N = replication factor
-W = write quorum
-R = read quorum
-
-Example:  N = 3, W = 2  →  write succeeds after 2 replica ACKs
-
-Common rule:  R + W > N
-```
-
-**Goal:** Maintain data consistency while allowing the system to continue operating when some replicas are slow or unavailable.
+Technically, the client or coordinator writes to all replicas but returns success after **W** ACKs. Remaining replicas catch up asynchronously. Paired with read quorum **R** where `R + W > N`, reads and writes overlap on at least one replica — the foundation of tunable consistency in Dynamo-style stores.
 
 ---
 
+### What problem it fixes
+
+Waiting for all **N** replicas blocks on the slowest node:
+
+```text
+N = 5, all must ACK → one slow replica delays every write
+W = 3 → write completes after any 3 fast ACKs
+```
+
+Quorum writes improve **availability** and **latency** while tolerating replica failure — if `N=3, W=2` and one replica is down, writes still succeed.
+
+---
+
+### What it does
+
+1. Client sends write to coordinator
+2. Coordinator forwards to all N replicas
+3. Replicas persist and ACK
+4. Coordinator returns success when W ACKs received
+5. Stragglers update eventually
+
+---
+
+### How it works — the architecture inside
+
+```mermaid
+flowchart LR
+    Client[Client] --> R1[Replica-1]
+    Client --> R2[Replica-2]
+    Client --> R3[Replica-3]
+    R1 --> Q{W ACKs?}
+    R2 --> Q
+    R3 --> Q
+    Q -->|yes| OK[Success]
+```
+
+**N = 3, W = 2:**
+
+```text
+Write: UserID = 101, Name = Alice
+R1 → ACK
+R2 → ACK
+R3 → pending
+
+Quorum met → success returned; R3 catches up later
+```
+
+**Failure tolerance:**
+
+```text
+N = 3, W = 2, R3 down
+R1 → ACK, R2 → ACK → write succeeds
+```
+
+**RF = 5, W = 3:** need any three of five ACKs.
+
+| | All-replica write | Quorum write |
+|---|-------------------|--------------|
+| **Success when** | Every replica ACKs | W replicas ACK |
+| **N = 5** | 5 ACKs required | e.g. 3 ACKs |
+
+**How to calculate:**
+
+**Given:** `N = 3`, target to survive 1 replica failure on write.
+
+**Step 1 — minimum W:**
+
+```text
+Live replicas needed = W
+Fault tolerance: W ≤ N - F
+For F = 1: W ≤ 2
+Choose W = 2 (minimum for 1 failure)
+```
+
+**Step 2 — pair with R for read freshness:**
+
+```text
+R + W > N
+R + 2 > 3
+R > 1  →  minimum R = 2
+```
+
+**Step 3 — consistency check:** with `N=3, W=2, R=2`, both quorums intersect in at least `2 + 2 - 3 = 1` replica — that replica must have the latest committed write.
+
+**Given:** `N = 5`, want to tolerate 2 failures on write.
+
+```text
+W ≤ N - F = 5 - 2 = 3   →  W = 3
+R + 3 > 5  →  R ≥ 3
+```
+
+**Sanity check:** `W = 1` returns fast but a read with `R = 1` may miss the write entirely — never use `W=1` with `R=1` when you need consistency.
+
+**Latency estimate:** if each replica ACK takes 5 ms p50, `W=3 of 5` waits for the third-fastest — roughly the 60th percentile of replica latency, not the sum.
+
+---
+
+### Pitfalls and design tips
+
+- **Hinted handoff / repair** — replicas that missed the write need anti-entropy; monitor pending write backlog.
+- **W + R > N is necessary, not sufficient** — concurrent writes to the same key still need versioning (vector clocks, LWW timestamps).
+- **ANY write level** — Cassandra `ONE` write is fast but unsafe with `ONE` read; match W and R to SLA.
+- **Durability vs availability** — raising W increases durability exposure on ACK; lowering W increases availability risk on read.
+- **Production starting point** — `N=3, W=2, R=2` for balanced AP with reasonable freshness; `LOCAL_QUORUM` in multi-DC.
+
+---
+
+### Real-world example
+
+**Amazon DynamoDB** uses `W`/`R` style consistency via read/write capacity on replicated storage nodes. A strongly consistent read in DynamoDB fetches from a quorum of replicas that includes the leader for that partition, ensuring you do not read a pre-write stale value — quorum mechanics behind the "consistent read" API flag.
+
+---
 
 ## 5.16 Distributed Transactions
 
-### What is a distributed transaction?
+### Overview
 
-A distributed transaction is a transaction that involves multiple independent systems, databases, services, or nodes and guarantees that all participating systems reach the same final outcome.
+Picture a travel booking where you pay for a flight, reserve a hotel, and rent a car. If the flight charges your card but the hotel is sold out, you want the whole trip cancelled — not a charge with no room. A **distributed transaction** is that same all-or-nothing guarantee stretched across separate databases and services that do not share one machine.
 
-**Outcome:**
+Technically, a distributed transaction coordinates multiple independent participants — payment, inventory, order services each with their own store — so they reach a single outcome: **commit everywhere** or **rollback everywhere**. A coordinator drives the protocol; participants vote and apply the decision. The goal is atomicity across system boundaries, not just inside one database.
 
-```text
-COMMIT everywhere   OR   ROLLBACK everywhere
-```
+---
 
-**Never:**
+### What problem it fixes
 
-```text
-Service-A → commit
-Service-B → rollback
-```
-
-That creates inconsistency.
-
-### Why do we need distributed transactions?
-
-**Single database transaction — transfer ₹100:**
+A single-database transfer is simple:
 
 ```text
 BEGIN
@@ -3041,43 +1659,52 @@ BEGIN
 COMMIT
 ```
 
-Everything happens inside one database.
-
-**Distributed system** — payment, wallet, inventory, and order services each with their own database. A single business operation may span multiple services.
-
-**Example — buy product:**
-
-1. Deduct money
-2. Reserve inventory
-3. Create order
-
-All three operations must succeed together.
-
-### Problem without distributed transactions
-
-**Scenario — buy iPhone:**
+In microservices, one business action may touch three separate stores:
 
 ```text
-Step 1: Payment success        ✓
-Step 2: Inventory failed       ✗
+Step 1: Payment deducts money     ✓
+Step 2: Inventory reserve fails   ✗
 
-Result: money deducted, no order → inconsistent
+Without coordination: money gone, no order — inconsistent state
 ```
 
-**Another example:**
+Distributed transactions prevent **partial updates** when a logical operation spans multiple systems. The invariant is strict:
 
 ```text
-Step 1: Wallet deducted        ✓
-Step 2: Order creation failed  ✗
+COMMIT everywhere   OR   ROLLBACK everywhere
 
-Customer loses money. Order does not exist.
+Never: Service-A commits while Service-B rolls back
 ```
 
-### Distributed transaction architecture
+---
+
+### What it does
+
+A distributed transaction wraps a multi-system operation in a single atomic unit:
+
+| Role | Responsibility |
+|------|----------------|
+| **Coordinator** | Starts the transaction, collects votes, decides commit or abort, notifies participants |
+| **Participant** | Executes local work, votes ready or not, applies the coordinator's final decision |
+
+**Transaction states:**
+
+| State | Meaning |
+|-------|---------|
+| **Started** | Transaction has begun |
+| **Prepared** | Participant validated work and is ready to commit |
+| **Committed** | Changes are permanent |
+| **Aborted** | Changes are discarded |
+
+Common protocols: two-phase commit (5.17) and three-phase commit (5.18). Consensus algorithms (Raft, Paxos) often replace classic 2PC in production metadata and configuration stores.
+
+---
+
+### How it works — the architecture inside
 
 ```mermaid
-flowchart TB
-    Client[Client] --> Txn[Transaction]
+flowchart LR
+    Client[Client] --> Txn[Coordinator]
     Txn --> Pay[Payment service]
     Txn --> Inv[Inventory service]
     Txn --> Ord[Order service]
@@ -3086,205 +1713,102 @@ flowchart TB
     Ord --> DBC[(Database-C)]
 ```
 
-Multiple databases participate.
-
-### Participants
-
-**A) Coordinator** — controls transaction execution.
-
-Responsibilities: start transaction, ask participants to prepare, decide commit/rollback, notify participants.
-
-**B) Participants** — services or databases involved (payment, inventory, order).
-
-### Transaction states
-
-| State | Meaning |
-|-------|---------|
-| **Started** | Transaction begins |
-| **Prepared** | Participant validated and ready to commit |
-| **Committed** | Changes permanently stored |
-| **Aborted** | Changes discarded |
-
-### Example: e-commerce order
-
-**Purchase product — price ₹1000**
-
-Services: payment, inventory, order.
+**E-commerce purchase — price ₹1000:**
 
 ```text
 Step 1: Payment deduct ₹1000
-Step 2: Reserve product
-Step 3: Create order
+Step 2: Reserve product in inventory
+Step 3: Create order record
 
-If all succeed → COMMIT
-Otherwise      → ROLLBACK
+All succeed → COMMIT across all three
+Any failure  → ROLLBACK across all three
 ```
 
-### Protocols
+The coordinator does not perform business logic itself; it orchestrates votes and the final decision. Participants hold locks or write-ahead state during the prepare phase so they can commit or undo once instructed.
 
-Distributed transactions are commonly implemented with:
-
-- [§5.17 Two Phase Commit](#517-two-phase-commit) — prepare, then commit or rollback
-- [§5.18 Three Phase Commit](#518-three-phase-commit) — adds pre-commit to reduce blocking
-
-### Distributed transactions in microservices
-
-```text
-Service-A (wallet)   Service-B (inventory)   Service-C (orders)
-
-Purchase flow: wallet deduct → inventory reserve → order create
-All services must agree on outcome.
+```mermaid
+flowchart LR
+    Start[Start txn] --> Prep[Prepare phase]
+    Prep --> Vote{All YES?}
+    Vote -->|Yes| Commit[Commit phase]
+    Vote -->|No| Abort[Rollback all]
+    Commit --> Done[Success]
+    Abort --> Done2[No partial state]
 ```
-
-### Challenges
-
-| Challenge | Issue |
-|-----------|-------|
-| **Network failures** | Messages lost; coordinator unreachable |
-| **Service failures** | Participant crashes |
-| **High latency** | Multiple network round trips |
-| **Scalability** | More participants → more coordination |
-| **Blocking** | Participants wait for coordinator |
-
-### Benefits
-
-- Strong consistency
-- Atomic execution
-- Prevents partial updates
-- Reliable multi-system operations
-- Maintains business correctness
-
-### Real-world examples
-
-| Domain | Participants |
-|--------|--------------|
-| **Banking** | Account-A database, Account-B database |
-| **E-commerce** | Payment, inventory, order |
-| **Travel booking** | Flight, hotel, payment |
-| **Payroll** | Salary, tax, bank |
-
-### Summary
-
-A distributed transaction involves multiple services, databases, or nodes.
-
-**Rule:** ALL commit OR ALL rollback.
-
-**Key components:** coordinator, participants.
-
-**Protocols:** [§5.17 Two Phase Commit](#517-two-phase-commit), [§5.18 Three Phase Commit](#518-three-phase-commit).
-
-**Advantages:** atomicity across systems, strong consistency.
-
-**Challenges:** blocking, failures, latency, coordination overhead.
-
-**Goal:** Keep multiple distributed systems in a consistent state while executing a single business operation.
 
 ---
 
+### Pitfalls and design tips
+
+- **Prefer sagas or outbox patterns** for most microservice flows — classic distributed transactions block on coordinator failure and add latency across every hop.
+- **Do not confuse** a local DB transaction inside one service with a cross-service distributed transaction; only the latter needs a coordinator protocol.
+- **2PC blocks participants** if the coordinator dies after prepare — design timeouts, recovery logs, or use consensus-backed transaction managers (Spanner, TiDB).
+- **Interview angle:** name the coordinator/participant roles and the all-commit-or-all-abort rule; mention that production often avoids 2PC across arbitrary HTTP services.
+- **Operational cost:** each participant adds a network round trip; more services mean higher tail latency and greater blast radius on coordinator failure.
+
+---
+
+### Real-world example
+
+**Bank transfer across two account databases:** Account-A lives on DB shard 1, Account-B on shard 2. A transfer coordinator (or the application's transaction manager) sends prepare to both shards. Each shard checks balance and locks rows. If both vote YES, the coordinator sends commit; if either votes NO (insufficient funds), both roll back. The customer never sees money leave one account without arriving in the other — the same invariant a single-database `BEGIN…COMMIT` provides, extended across shards.
+
+---
 
 ## 5.17 Two Phase Commit
 
-### What is two-phase commit (2PC)?
+### Overview
 
-Two-phase commit is the most common distributed transaction protocol.
+Two-phase commit (2PC) is like a group dinner where everyone confirms they can pay their share before anyone's card is charged. Phase 1 asks "are you ready?"; phase 2 says "charge everyone" or "cancel the whole bill." No one commits alone — the coordinator waits for unanimous readiness first.
 
-It consists of:
+Technically, **2PC** is the standard distributed transaction protocol with two rounds: **Prepare** (participants vote YES/NO) and **Commit** or **Rollback** (coordinator broadcasts the decision). It guarantees atomicity when all participants and the coordinator eventually recover, but it is vulnerable to **blocking** if the coordinator fails after prepare.
 
-- **Phase-1:** Prepare
-- **Phase-2:** Commit (or rollback)
+---
 
-See [§5.16 Distributed Transactions](#516-distributed-transactions) for when and why distributed transactions are needed.
+### What problem it fixes
 
-### Architecture
+Without a coordinated vote, services can diverge:
 
 ```text
-                Coordinator
-                     |
-       --------------------------------
-       |              |               |
-    Payment      Inventory        Order
+Payment → YES (money deducted locally)
+Inventory → NO (out of stock)
+
+Uncoordinated: payment might commit while inventory aborts
 ```
 
-Participants do not immediately commit.
+2PC ensures the coordinator collects votes before any participant makes changes permanent. If any participant votes NO, **everyone** rolls back — even nodes that were ready.
+
+---
+
+### What it does
+
+| Phase | Coordinator action | Participant action |
+|-------|-------------------|-------------------|
+| **Phase 1 — Prepare** | Send `PREPARE` | Validate operation, acquire locks, vote YES or NO |
+| **Phase 2 — Commit** | Send `COMMIT` if all YES; else `ROLLBACK` | Apply or undo local changes, release locks |
+
+Participants **do not commit independently**. They wait for the coordinator's phase-2 message.
+
+---
+
+### How it works — the algorithm inside
 
 ```mermaid
-flowchart TB
+flowchart LR
     C[Coordinator] --> Pay[Payment]
     C --> Inv[Inventory]
     C --> Ord[Order]
 ```
 
-### Phase-1: Prepare
-
-Coordinator sends **PREPARE**.
+**Success flow:**
 
 ```text
-                Coordinator
-                     |
-      -----------------------------------
-      |               |                 |
-   Payment       Inventory         Order
-```
+Prepare:
+  Payment   → YES (balance available)
+  Inventory → YES (stock available)
+  Order     → YES (can create order)
 
-Each participant checks:
-
-- Can I perform the operation?
-- Are resources available?
-- Any validation failures?
-
-- If ready → vote **YES**
-- Otherwise → vote **NO**
-
-### Prepare example
-
-```text
-Payment service    →  balance available?     YES
-Inventory service  →  stock available?       YES
-Order service      →  can create order?       YES
-
-Responses: Payment → YES, Inventory → YES, Order → YES
-```
-
-Coordinator receives all YES votes.
-
-### Phase-2: Commit
-
-Since all participants voted YES, coordinator sends **COMMIT**.
-
-```text
-                Coordinator
-                     |
-      -----------------------------------
-      |               |                 |
-   Payment       Inventory         Order
-     COMMIT        COMMIT         COMMIT
-```
-
-Changes become permanent.
-
-### Success flow
-
-```text
-Client
-   |
-   V
-Prepare request
-   |
-   V
-Payment → YES
-Inventory → YES
-Order → YES
-   |
-   V
-Commit request
-   |
-   V
-Payment commit
-Inventory commit
-Order commit
-   |
-   V
-Transaction success
+Commit:
+  Payment commit → Inventory commit → Order commit → success
 ```
 
 ```mermaid
@@ -3294,101 +1818,97 @@ flowchart LR
     C --> OK[Success]
 ```
 
-### Failure flow
+**Failure flow:**
 
 ```text
-Prepare request
+Prepare:
+  Payment → YES
+  Inventory → NO (out of stock)
+  Order → YES
 
-Payment → YES
-Inventory → NO
-Order → YES
-
-Coordinator decision: ROLLBACK
-
-Payment rollback
-Inventory rollback
-Order rollback
-
-Final result: no changes persist
+Coordinator decision: ROLLBACK all — no changes persist
 ```
 
-### Failure scenario 1
-
-```text
-Payment service   → YES
-Inventory service → NO (out of stock)
-
-Decision: ROLLBACK — everything undone
-```
-
-### Failure scenario 2
-
-```text
-Payment service   → YES
-Inventory service → YES
-Order service     → NO
-
-Decision: ROLLBACK
-
-Even though some services are ready, nothing is committed.
-```
-
-### Blocking problem in 2PC
+**The blocking problem:**
 
 ```text
 All participants vote YES
-Coordinator crashes before COMMIT
+Coordinator crashes before sending COMMIT
 
-Payment   → waiting
-Inventory → waiting
-Order     → waiting
+Payment, Inventory, Order → waiting indefinitely
 ```
 
-Participants cannot decide themselves. They remain blocked until the coordinator recovers.
+Participants cannot safely decide alone — they hold prepared state until the coordinator recovers. Three-phase commit (5.18) and consensus-based logs reduce but do not fully eliminate this trade-off in every deployment.
 
-This is called the **blocking problem**. [§5.18 Three Phase Commit](#518-three-phase-commit) attempts to reduce this.
+**How to calculate — minimum votes for commit:**
 
-### Summary
+```text
+Given: N participants (excluding coordinator)
 
-**Phase-1:** PREPARE — participants vote YES or NO.
+To commit in standard 2PC:
+  Required YES votes = N (unanimous — every participant must vote YES)
 
-**Phase-2:** COMMIT if all YES; ROLLBACK if any NO.
+Given: N = 3 participants
+  Payment YES, Inventory YES, Order YES → 3/3 → COMMIT
+  Any single NO → 0 tolerated → ROLLBACK
 
-**Risk:** coordinator failure after prepare leaves participants blocked.
+Round trips (approximate):
+  Phase 1: 1 broadcast + N responses = N + 1 messages
+  Phase 2: 1 broadcast + N acks     = N + 1 messages
+  Total: 2N + 2 messages minimum
+```
+
+For N = 3: 2×3 + 2 = **8 messages** minimum per transaction.
 
 ---
 
+### Pitfalls and design tips
+
+- **Blocking after prepare** is the classic 2PC weakness — plan coordinator HA (paired coordinators with shared log, or Paxos/Raft-backed TM).
+- **Do not use 2PC across unreliable WAN links** for user-facing latency-sensitive paths; consider sagas with compensating transactions instead.
+- **Idempotent commit/abort handlers** on participants — coordinators may retry phase-2 messages after recovery.
+- **Interview default:** draw Prepare → unanimous YES → Commit; mention blocking when coordinator dies post-prepare.
+- **Production:** XA transactions in databases, Java JTA, and some message brokers implement 2PC; many cloud-native stacks avoid it for cross-service calls.
+
+---
+
+### Real-world example
+
+**Java EE / JTA across two JDBC datasources:** An application server acts as coordinator. `@Transactional` business logic touches `DataSource-A` (orders) and `DataSource-B` (billing). At commit time, the transaction manager sends XA prepare to both databases. Both return XA_OK or XA_RBROLLBACK. Only on dual OK does the TM send commit to both — giving atomicity across two physical databases from application code that looks like a single transaction.
+
+---
 
 ## 5.18 Three Phase Commit
 
-### What is three-phase commit (3PC)?
+### Overview
 
-Three-phase commit is an extension of two-phase commit.
+Three-phase commit (3PC) adds a middle checkpoint to 2PC — like confirming "we're definitely going to pay" before anyone's card is actually charged. The extra round gives participants more information about the coordinator's intent, which can reduce indefinite blocking when timing assumptions hold.
 
-**Phases:**
+Technically, **3PC** extends 2PC with a **pre-commit** phase between prepare and commit: Prepare → Pre-commit → Commit. Participants learn the coordinator has decided to commit before the final commit step, so a minority partition can sometimes timeout and abort safely instead of waiting forever.
 
-1. Prepare
-2. Pre-commit
-3. Commit
+---
 
-**Goal:** Reduce blocking situations that occur in [§5.17 Two Phase Commit](#517-two-phase-commit).
+### What problem it fixes
 
-See [§5.16 Distributed Transactions](#516-distributed-transactions) for the broader context.
+In 2PC, if all participants vote YES and the coordinator crashes before `COMMIT`, participants remain **blocked** in prepared state with no safe local decision.
 
-### Flow
+3PC addresses this by making the coordinator's commit intention visible earlier. After pre-commit, participants know a commit is imminent; under **bounded network delay** assumptions, timeouts can break deadlocks that 2PC cannot.
 
-```text
-Coordinator
-      |
-      V
-Prepare
-      |
-      V
-Pre-commit
-      |
-      V
-Commit
-```
+---
+
+### What it does
+
+| Phase | Purpose |
+|-------|---------|
+| **1 — Prepare** | Same as 2PC: participants vote YES/NO |
+| **2 — Pre-commit** | Coordinator signals commit intent; participants acknowledge |
+| **3 — Commit** | Final commit (or abort if earlier phase failed) |
+
+Extra round trip compared to 2PC, exchanged for reduced blocking risk in theory.
+
+---
+
+### How it works — the algorithm inside
 
 ```mermaid
 flowchart LR
@@ -3396,546 +1916,279 @@ flowchart LR
     PC --> C[Commit]
 ```
 
-### How it helps
+```text
+Coordinator
+    → Prepare (collect votes)
+    → Pre-commit (broadcast intent if all YES)
+    → Commit (make permanent)
+```
 
-In 2PC, if all participants vote YES and the coordinator crashes before sending COMMIT, participants remain blocked.
+If the coordinator fails **after** pre-commit, participants that received pre-commit can eventually commit on timeout (under the protocol's synchrony assumptions). If it fails before pre-commit, participants abort.
 
-3PC adds a **pre-commit** phase so participants know the coordinator has decided to commit before the final commit step, reducing indefinite blocking when timing assumptions hold.
+**How to calculate — message count vs 2PC:**
 
-### Summary
+```text
+Given: N participants
 
-**3PC phases:** Prepare → Pre-commit → Commit.
+2PC messages ≈ 2N + 2
+3PC messages ≈ 3N + 3  (one extra round)
 
-**Compared to 2PC:** extra round trip, but aims to reduce the blocking problem after coordinator failure.
-
-**Note:** still assumes bounded network delay; production systems often use consensus protocols (Raft/Paxos) instead.
+For N = 5:
+  2PC ≈ 12 messages
+  3PC ≈ 18 messages  (+50% coordination overhead)
+```
 
 ---
 
+### Pitfalls and design tips
+
+- **3PC assumes bounded delay** — in real async networks (WAN, GC pauses), timeouts can cause incorrect aborts or duplicate commits without careful design.
+- **Rarely deployed raw** — production systems use Raft, Paxos, or Spanner's TrueTime instead of textbook 3PC across arbitrary nodes.
+- **Know it for interviews** — explain the blocking problem in 2PC and how pre-commit helps; then note why Raft won in practice.
+- **Extra latency** on every transaction — the third phase is not free; only justified when blocking cost exceeds round-trip cost.
+
+---
 
 ## 5.19 Distributed Locking
 
-### What is distributed locking?
+### Overview
 
-Distributed locking is a mechanism used to ensure that only one process, service, or machine can access or modify a shared resource at a time in a distributed system.
+A distributed lock is a "talking stick" for a cluster — only the holder may change a shared resource, and everyone else must wait. Local mutexes work inside one process; when three servers can all withdraw from the same bank balance, you need a lock everyone agrees on.
 
-**Goal:** Prevent multiple distributed nodes from performing conflicting operations simultaneously.
+Technically, **distributed locking** provides mutual exclusion across processes, services, or machines via a central or consensus-backed lock service. The pattern is acquire → perform work → release, often with **TTL leases** so crashed holders cannot block the resource forever.
 
-### Why is distributed locking needed?
+---
 
-**Single server** — Thread-1 and Thread-2 use a local mutex/lock.
+### What problem it fixes
 
-**Distributed system** — Server-A, Server-B, Server-C may all try to update the same resource. Local locks cannot coordinate across machines. A **distributed lock** is required.
-
-### Problem without distributed locking
-
-**Example — bank balance ₹1000:**
+**Race without a lock:**
 
 ```text
-Server-A: withdraw ₹500  →  reads 1000  →  1000 - 500 = 500
-Server-B: withdraw ₹700  →  reads 1000  →  1000 - 700 = 300
+Server-A: read balance 1000 → withdraw 500 → write 500
+Server-B: read balance 1000 → withdraw 700 → write 300
+
+Both read 1000 concurrently → final balance wrong (lost update)
 ```
 
-Final balance may become incorrect. This is a **race condition**.
+**Inventory oversell:** two users buy the last item; both servers see stock = 1 and both succeed without coordination.
 
-### Basic idea
+---
 
-Before modifying a resource:
-
-1. Acquire lock
-2. Perform operation
-3. Release lock
+### What it does
 
 ```text
 Acquire lock → Modify resource → Release lock
 ```
 
-Only one owner can hold the lock at a time.
-
-### Architecture
+| Concept | Role |
+|---------|------|
+| **Lock manager** | Grants, tracks, and revokes ownership |
+| **Lock owner** | Single holder at a time |
+| **TTL / lease** | Auto-expire if owner crashes |
+| **Mutual exclusion** | Only one writer (or reader, for RW locks) at a time |
 
 ```mermaid
-flowchart TB
+flowchart LR
+    U[Unlocked] --> A[Acquire]
+    A --> L[Locked — work]
+    L --> R[Release]
+    R --> U
+```
+
+---
+
+### How it works — the architecture inside
+
+```mermaid
+flowchart LR
     LS[Lock service] --> SA[Server-A]
     LS --> SB[Server-B]
     LS --> SC[Server-C]
 ```
 
-Servers request locks from a central locking system.
-
-### Example
-
-**Shared resource:** product inventory, available stock = 1. Two users buy simultaneously.
-
-**Without lock:** Server-A and Server-B both purchase → both may succeed → **overselling**.
-
-**With lock:** Server-A acquires lock; Server-B waits → only one purchase succeeds.
-
-### Lock acquisition
+**Inventory example — stock = 1:**
 
 ```text
-Server-A → request lock → lock available → grant lock
-
-Server-A → acquire lock → lock granted
+Server-A: acquire lock ✓ → update 1→0 → release ✓
+Server-B: acquire lock ✓ → read stock 0 → reject purchase ✓
 ```
 
-### Lock contention
+**Lease-based lock:**
 
 ```text
-Server-A → lock owner
-Server-B → waiting
-Server-C → waiting
+Lock valid until T + 30s
+Owner must renew (heartbeat) to keep working
+Crash → lease expires → another server can acquire
 ```
 
-Server-B requests lock while Server-A holds it → denied or wait. Only one owner exists.
-
-### Lock release
-
-```text
-Server-A → release lock → lock available
-```
-
-Another server can acquire it.
-
-### Lock life cycle
-
-```text
-Unlocked → acquire lock → locked → perform work → release lock → unlocked
-```
-
-```mermaid
-flowchart LR
-    U[Unlocked] --> A[Acquire]
-    A --> L[Locked]
-    L --> W[Perform work]
-    W --> R[Release]
-    R --> U
-```
-
-### Lock with expiration (TTL)
-
-**Problem:** server acquires lock, then crashes — lock never released.
-
-**Solution:** TTL (time to live).
-
-```text
-Lock duration = 30 seconds
-If owner crashes → after 30 seconds lock auto-expires
-```
-
-### Example using inventory
-
-```text
-Stock = 1
-
-Server-A: acquire lock ✓ → update 1→0 ✓ → release lock ✓
-Server-B: acquire lock ✓ → check stock 0 → purchase rejected ✓
-```
-
-Correct result.
-
-### Lease-based lock
-
-A lease is a lock with an expiration time.
-
-```text
-Lock valid until 12:00:30 PM
-If not renewed before expiration, ownership is lost
-
-Acquire lease → perform work → renew lease → continue
-```
-
-### Distributed lock manager
-
-A lock manager maintains lock ownership.
-
-**Responsibilities:** grant lock, reject lock, track owner, manage expiration, release lock.
-
-```text
-             Lock manager
-                    |
-       ----------------------------
-       |             |            |
-      S1            S2           S3
-```
-
-### Common use cases
-
-| Use case | Purpose |
-|----------|---------|
-| **Inventory management** | Prevent overselling |
-| **Payment processing** | Avoid duplicate payments |
-| **Schedulers** | Ensure only one server runs a job |
-| **Leader election** | Only one node becomes leader — see [§5.24 Leader Election](#524-leader-election) |
-| **File processing** | Prevent multiple workers processing the same file |
-
-### Failure scenario
-
-```text
-Server-A acquires lock ✓
-Server-A crashes ✗
-
-Without expiration: lock remains forever
-With expiration:    lock expires → another server can proceed
-```
-
-### Benefits
-
-- Prevents race conditions
-- Protects shared resources
-- Ensures mutual exclusion
-- Avoids duplicate processing
-- Maintains consistency
-
-### Challenges
-
-- Additional network calls
-- Lock service can become a bottleneck
-- Deadlock risks
-- Lock expiration management
-- Failure handling complexity
-
-### Distributed lock vs database lock
-
-| | Database lock | Distributed lock |
-|---|---------------|------------------|
-| **Scope** | Inside a single database | Across multiple services, machines, and databases |
-
-### Summary
-
-Distributed locking ensures that only one distributed node can access or modify a shared resource at a time.
-
-```text
-Acquire lock → Perform operation → Release lock
-```
-
-**Key concepts:** lock owner, lock manager, lock expiration (TTL), lease, mutual exclusion.
-
-**Goal:** Prevent concurrent conflicting operations across multiple distributed systems.
+**Fencing tokens:** when an old leader's lease expires and a new leader acquires the lock, the storage layer rejects writes from the stale holder using monotonically increasing tokens — critical for split-brain scenarios (5.20).
 
 ---
 
+### Pitfalls and design tips
+
+- **Redis `SET key NX PX ttl`** — common but not consensus-safe alone; use Redlock only with eyes open, or prefer **etcd**, **ZooKeeper**, or **Consul** for correctness-critical locks.
+- **TTL too short** → work outlives lease → two holders; **TTL too long** → slow recovery after crash.
+- **Always pair locks with fencing** on the protected resource (DynamoDB conditional writes, ZooKeeper sequential nodes).
+- **Not a substitute for consensus** — locks control access; consensus picks cluster-wide decisions (leader, config).
+- **Deadlock risk** across resources — define lock ordering; use try-lock with timeout.
+- **Interview:** contrast DB row locks (single instance) vs distributed locks (cross-service).
+
+---
+
+### Real-world example
+
+**Kubernetes leader election for a controller:** Multiple controller replicas run, but only the leader processes work queue items. Each replica competes for a **Lease** object in etcd (`coordination.k8s.io/v1`). The winner renews the lease every few seconds; on crash, lease expires and another replica becomes leader within seconds — preventing duplicate pod scheduling or duplicate cron job runs.
+
+---
 
 ## 5.20 Split Brain
 
-### What is split brain?
+### Overview
 
-Split brain is a failure scenario in a distributed system where multiple nodes believe they are the leader (or primary) at the same time.
+Split brain is a cluster that develops two bosses after a network cut — like a company where the east and west offices each promote a CEO because neither can reach the other. Both sides keep making decisions, and when the network heals, their records conflict.
 
-As a result, independent groups of nodes continue operating separately and make conflicting decisions.
+Technically, **split brain** occurs when a network partition leaves multiple nodes believing they are the legitimate leader or primary. Each partition accepts writes independently, producing **divergent datasets** that are expensive or impossible to merge automatically.
 
-**Result:**
+---
 
-```text
-Multiple leaders + multiple sources of truth + data inconsistency
-```
+### What problem it fixes
 
-### Why is it called "split brain"?
+Split brain is not something you deploy — it is a **failure mode** you design against. Without quorum rules, minority partitions may elect a second leader and accept writes, violating the single-writer invariant replication depends on.
 
-**Originally:** one cluster, one leader.
+---
 
-**After network partition:** the cluster divides into multiple groups.
+### What it does
 
-```text
-Before:
-      Node-A (Leader)
-           |
-    -----------------
-    |       |       |
-  Node-B  Node-C  Node-D
+Prevention techniques ensure **at most one writable primary** per logical cluster epoch:
 
-After partition:
-  Group-1: Node-A, Node-B
-  Group-2: Node-C, Node-D
+| Technique | Mechanism |
+|-----------|-----------|
+| **Quorum / majority** | Only the partition holding > N/2 nodes may elect leader or accept writes |
+| **Fencing** | Storage rejects writes from superseded leaders via tokens or epoch numbers |
+| **Heartbeats** | Detect partition; trigger step-down when majority is lost |
+| **Consensus** | Raft/Paxos embed majority rules in leader election and commit |
 
-Both groups may think: "We are the active cluster."
-```
+---
 
-The cluster's "brain" is split.
-
-### How split brain occurs
-
-Most commonly caused by:
-
-- Network partition
-- Communication failures
-- Cluster isolation
-- Node connectivity issues
-
-```text
-                Leader
-                   |
-       ------------------------
-       |          |           |
-       B          C           D
-
-Network failure → Leader cannot reach C and D
-
-Group-1: Leader, B
-Group-2: C, D
-```
-
-### Network partition
-
-```text
-Before:  A (Leader) — all nodes communicate
-         / | \
-        B  C  D
-
-After:   A (Leader)     |     C
-         |              |     D
-         B         [network failure]
-
-Two isolated groups exist.
-```
-
-### Split brain scenario
-
-```text
-Group-1:  A (Leader), B
-Group-2:  C, D  — cannot see A, may assume leader failed → C becomes leader
-
-Now:  A → leader   AND   C → leader
-Two leaders exist simultaneously.
-```
-
-### Visualization
+### How it works — the architecture inside
 
 ```mermaid
-flowchart TB
-    subgraph Before[Before partition]
+flowchart LR
+    subgraph Before["Before partition"]
+        direction LR
         AL[A · Leader] --- B1[B]
         AL --- C1[C]
         AL --- D1[D]
     end
-    subgraph After[After partition]
-        subgraph G1[Group-1]
+    subgraph After["After partition"]
+        direction LR
+        subgraph G1["Group-1"]
             A2[A · Leader]
             B2[B]
         end
-        subgraph G2[Group-2]
+        subgraph G2["Group-2"]
             C2[C · Leader]
             D2[D]
         end
     end
+    Before ~~~ After
 ```
 
-Both sides think they are correct.
-
-### Problem caused by split brain
+**Write divergence:**
 
 ```text
-Leader-A:  update balance = 1000
-Leader-C:  update balance = 1500
+Leader-A (Group-1): balance = 1000
+Leader-C (Group-2): balance = 1500
 
-When connectivity returns — which is correct? 1000? 1500?
-Both clusters contain different data.
+Network heals → which value is correct?
 ```
 
-### Database example
+**Quorum rule — 5 nodes, majority = 3:**
 
 ```text
-Before partition:  Primary balance = 500, Replica balance = 500
-
-After partition:
-  Primary side → 600
-  Replica side → 700
-
-Two versions exist → data divergence.
+Partition: Group-1 (A, B, C) → 3 nodes → can operate
+           Group-2 (D, E)    → 2 nodes → must stop writes / step down
 ```
 
-### Multi-writer problem
+**How to calculate — quorum size:**
 
 ```text
-Group-1 accepts writes
-Group-2 accepts writes
+Given: N replicas (odd N preferred)
 
-User name:  Group-1 → Alice,  Group-2 → Alex
-After recovery → conflict exists.
+Quorum Q = floor(N / 2) + 1
+
+Examples:
+  N = 3 → Q = 2  (tolerates 1 failure)
+  N = 5 → Q = 3  (tolerates 2 failures)
+  N = 7 → Q = 4  (tolerates 3 failures)
+
+Maximum failures tolerated while maintaining quorum:
+  f = floor((N - 1) / 2)
+
+For N = 5, f = 2 — lose 3 nodes and no majority remains
 ```
 
-### Split brain in leader election
-
-Leader election systems need exactly one leader. See [§5.24 Leader Election](#524-leader-election).
+**Fencing after new election:**
 
 ```text
-Before:  Leader = A
-After partition:  A isolated; others elect Leader = C
-
-A thinks: "I am leader."
-C thinks: "I am leader."
-→ Split brain.
+Leader-A loses majority → cluster elects Leader-C with epoch 2
+Leader-A returns → storage rejects A's writes (epoch 1 < 2)
 ```
-
-### Detection
-
-Cluster monitors node connectivity, heartbeats, and leader status.
-
-```text
-Heartbeats:  A → B, A → C, A → D
-If heartbeats stop → nodes suspect failure or partition.
-```
-
-### Quorum to prevent split brain
-
-Only the partition holding a **majority** may elect a leader and accept writes. Minority partitions must stop.
-
-```text
-5 nodes: A B C D E — majority = 3
-
-Partition: Group-1 (A B C) → can operate
-           Group-2 (D E)    → cannot elect leader / must stop writes
-```
-
-Majority math and replica quorums: [§5.14](#514-quorum-reads), [§5.15](#515-quorum-writes). Election details: [§5.23 Raft](#523-raft).
-
-### Fencing
-
-Fencing prevents an old leader from continuing work. Related to [§5.19 Distributed Locking](#519-distributed-locking).
-
-```text
-Leader-A loses connectivity → cluster elects Leader-C
-Even if A returns, it cannot continue acting as leader — A is fenced off.
-```
-
-### Real-world example
-
-```text
-Distributed database: Node-A is leader
-Network partition → Node-C becomes leader
-Both accept writes → after recovery, different datasets exist
-Manual or automatic conflict resolution required.
-```
-
-### Effects of split brain
-
-- Multiple leaders
-- Data inconsistency
-- Conflicting writes
-- Lost updates
-- Corrupted state
-- Difficult recovery
-
-### Prevention techniques
-
-| Technique | How it helps |
-|-----------|--------------|
-| **Quorum** | Majority required for operation |
-| **Leader election** | Ensure only one valid leader — [§5.24](#524-leader-election) |
-| **Heartbeats** | Continuous node monitoring |
-| **Fencing tokens** | Prevent old leaders from acting |
-| **Consensus algorithms** | Raft, Paxos — [§5.22](#522-paxos), [§5.23](#523-raft) |
-
-### Summary
-
-Split brain occurs when a partitioned cluster has multiple nodes believing they are leader simultaneously.
-
-```text
-Group-1: A (Leader)    Group-2: C (Leader)
-→ Two leaders, two sources of truth, potential data inconsistency
-```
-
-**Common cause:** network partition.
-
-**Common solution:** quorum-based systems — only the partition with majority nodes remains active.
-
-**Goal:** Prevent multiple leaders and maintain a single, consistent view of the system.
 
 ---
 
+### Pitfalls and design tips
+
+- **Even replica counts** (2, 4) tie on split — prefer odd N or explicit tie-breaker.
+- **STONITH / fencing** is mandatory for shared-disk HA — without it, old primary can corrupt data on shared storage.
+- **Do not confuse** temporary unavailability (minority partition stops) with data loss — availability is traded for consistency during partition.
+- **Manual failover** without quorum checks is a common ops cause of split brain — automate with Raft/etcd or cloud-managed failover.
+- **Interview:** draw partition, two leaders, explain majority-only-writes; cite fencing tokens.
+
+---
+
+### Real-world example
+
+**PostgreSQL streaming replication without quorum:** Primary and standby lose connectivity; standby is promoted manually while primary still accepts writes (misconfigured `pg_ctl promote` during flaky network). Both sides diverge — classic split brain. Fix: use **Patroni** or **etcd-backed leader election** with explicit primary demotion and `pg_rewind` or rebuild for the loser.
+
+---
 
 ## 5.21 Consensus
 
-### What is consensus?
+### Overview
 
-Consensus is the process by which multiple distributed nodes agree on a single value, decision, or system state.
+Consensus is a committee vote that must end with everyone agreeing on the same minutes — even if some members leave the room or mail arrives late. Distributed nodes need the same guarantee for leader identity, configuration, and replicated log entries.
 
-Even if some nodes fail or network issues occur, all healthy nodes eventually agree on the same result.
+Technically, **consensus** is the process by which a set of nodes agree on a single value or ordered log despite crashes and network delays. Correct protocols satisfy **agreement** (all decide the same), **validity** (decided value was proposed), and **termination** (decision eventually reached when enough nodes are reachable).
 
-```text
-Many nodes → one agreed decision
-```
+---
 
-### Why is consensus needed?
-
-```text
-Distributed system: Node-A, Node-B, Node-C, Node-D, Node-E
-Each node has its own view of the system.
-```
+### What problem it fixes
 
 Without consensus:
 
-- Multiple leaders may exist
-- Different nodes may store different values
-- [Split brain](#520-split-brain) may occur
-- System becomes inconsistent
-
-Consensus ensures everyone agrees.
-
-### What do nodes need to agree on?
-
-| Decision type | Example question |
-|---------------|------------------|
-| **Leader election** | Who is the leader? — [§5.24](#524-leader-election) |
-| **Database update** | Which value is correct? |
-| **Configuration change** | Which configuration is active? |
-| **Transaction decision** | Commit or rollback? |
-
-### Example: leader election
-
-Without consensus, nodes may each claim leadership; with consensus, all agree on one leader (e.g. **Leader = C**). Protocol detail: [§5.24](#524-leader-election), [§5.23 Raft](#523-raft).
-
-### Example: database update
-
 ```text
-Current value: balance = 1000
-Node-A receives: balance = 1200
-Node-B receives: balance = 1500
+Node-A thinks Leader = A
+Node-B thinks Leader = B
+Node-C thinks Leader = C
 
-Consensus determines the official value.
-Final agreed state: balance = 1500 (or another agreed value)
-All nodes eventually converge.
+→ split brain, conflicting writes, inconsistent state
 ```
 
-### Consensus requirements
+Nodes must agree on: who is leader, which config version is active, whether to commit a transaction, what the next log entry is.
+
+---
+
+### What it does
 
 | Property | Meaning |
 |----------|---------|
-| **Agreement** | All healthy nodes agree on the same value |
-| **Validity** | Chosen value must be proposed by some node |
-| **Termination** | Nodes eventually reach a decision |
+| **Agreement** | All non-faulty nodes decide the same value |
+| **Validity** | Chosen value was proposed by some node |
+| **Termination** | Decision completes if majority is reachable |
 
-### Consensus visualization
-
-```text
-Before:
-  Node-A → X    Node-B → Y    Node-C → X    Node-D → Y
-
-Consensus process →
-
-After:
-  Node-A → X    Node-B → X    Node-C → X    Node-D → X
-
-Everyone agrees.
-```
-
-### Network failure scenario
-
-```text
-Nodes: A, B, C, D, E
-
-Partition:
-  Group-1: A B C
-  Group-2: D E
-
-Consensus ensures only one side can make decisions — helps prevent split brain.
-```
-
-See [§5.20 Split Brain](#520-split-brain).
-
-### Leader-based consensus
-
-Many systems elect a **leader** that proposes changes; followers acknowledge; a **majority** commits the decision. Full protocol walkthrough: [§5.23 Raft](#523-raft) (operations) and [§5.22 Paxos](#522-paxos) (classic two-phase accept).
+**Leader-based pattern (Raft, Multi-Paxos):**
 
 ```mermaid
 flowchart LR
@@ -3944,2222 +2197,1001 @@ flowchart LR
     M --> C[Commit]
 ```
 
-### Failure tolerance & partitions
-
-```text
-5 nodes, 2 failed → 3 remain → majority OK → consensus continues
-5 nodes, only 2 alive → no majority → decisions pause until quorum returns
-```
-
-Partition behavior (majority side only stays active): [§5.20 Split Brain](#520-split-brain).
-
-### Popular consensus algorithms
-
-| Algorithm | Notes |
-|-----------|-------|
-| **Raft** | Leader-based — election, log replication, majority voting — [§5.23](#523-raft) |
-| **Paxos** | Classic protocol — proposers, acceptors, learners — [§5.22](#522-paxos) |
-| **ZAB** | ZooKeeper Atomic Broadcast — used in Apache ZooKeeper; atomic broadcast and consensus |
-
-### Consensus vs quorum
-
-| | Quorum | Consensus |
-|---|--------|-----------|
-| **What** | Minimum number of nodes required to proceed | Agreement on a specific decision or value |
-| **Example** | 5 nodes → need 3 responses | All active nodes agree: Leader = Node-C |
-
-Quorum is often used to achieve consensus.
-
-### Consensus vs distributed locking
-
-| | Distributed locking | Consensus |
-|---|---------------------|-----------|
-| **Purpose** | Controls access to a resource | Makes a cluster-wide decision |
-| **Example** | Who can access the resource? | Who becomes leader? |
-
-See [§5.19 Distributed Locking](#519-distributed-locking).
-
-### Benefits
-
-- Prevents split brain
-- Maintains consistency
-- Enables reliable leader election
-- Supports fault tolerance
-- Provides a single agreed system state
-
-### Challenges
-
-- Network communication overhead
-- Increased latency
-- Complex implementation
-- Majority requirement
-- Handling node failures
-
-### Summary
-
-Consensus is the process by which distributed nodes agree on a single value, state, or decision.
-
-```text
-Nodes: A B C D E
-Decision: Leader = C
-After consensus: all nodes agree Leader = C
-```
-
-**Key concepts:** agreement, majority voting, quorum, leader election, fault tolerance.
-
-**Popular algorithms:** Raft ([§5.23](#523-raft)), Paxos ([§5.22](#522-paxos)), ZAB (ZooKeeper).
-
-**Goal:** Ensure distributed systems maintain a single, consistent view of critical decisions despite failures and network issues.
-
 ---
 
+### How it works — the architecture inside
 
-## 5.22 Paxos
-
-> **Interview:** Paxos is the classic **consensus** protocol (proposers, acceptors, learners, majority quorums). Correct but hard to implement. New systems usually use **[§5.23 Raft](#523-raft)** — same idea, clearer leader-based structure. Mention Paxos when discussing Google Chubby, Spanner, or early ZooKeeper.
-
-### What is Paxos?
-
-Paxos is a distributed consensus algorithm that enables multiple nodes in a distributed system to agree on a single value even when some nodes fail.
-
-```text
-Many nodes → one agreed value
-```
-
-Paxos solves the consensus problem. See [§5.21 Consensus](#521-consensus).
-
-### Why Paxos is needed
-
-```text
-Distributed system: A, B, C, D, E
-
-Nodes may fail, recover, experience network issues, or receive different messages.
-Despite these problems, all nodes must agree on the same decision.
-```
-
-Example — leader election: Leader = C; all nodes must agree on this result.
-
-### Core idea
-
-Paxos ensures only one value is chosen. Even if multiple nodes propose different values, eventually one value wins and becomes the agreed value.
-
-```text
-Node-A proposes Leader = A
-Node-B proposes Leader = B
-Paxos guarantees only one value is accepted.
-```
-
-### Roles in Paxos
-
-Paxos defines three logical roles:
-
-1. **Proposer** — suggests a value
-2. **Acceptor** — votes on proposals
-3. **Learner** — discovers the final chosen value
-
-### Proposer
-
-A proposer suggests a value.
-
-```text
-Propose: Leader = A   or   Balance = 1000
-```
-
-A proposer tries to get its value accepted.
-
-### Acceptor
-
-Acceptors vote on proposals and determine which proposal becomes chosen.
-
-```text
-Acceptors: A1, A2, A3, A4, A5
-Majority agreement is required.
-```
-
-### Learner
-
-Learners discover the final chosen value.
-
-```text
-Chosen value: Leader = C
-Learners receive this and update their state.
-```
-
-### Architecture
-
-```text
-                Proposer
-                    |
-                    V
-          ---------------------
-          |     Acceptors     |
-          ---------------------
-           |    |    |    |
-           V    V    V    V
-               Learners
-```
-
-```mermaid
-flowchart TB
-    P[Proposer]
-    P --> A1[A1]
-    P --> A2[A2]
-    P --> A3[A3]
-    P --> A4[A4]
-    A1 --> L[Learners]
-    A2 --> L
-    A3 --> L
-    A4 --> L
-```
-
-### Proposal number
-
-Every proposal has a unique proposal number.
-
-```text
-Proposal #1 → Leader = A
-Proposal #2 → Leader = B
-
-Higher numbers are newer:  #100 > #50  →  #100 has higher priority
-```
-
-### Two phases of Paxos
-
-| Phase | Name |
-|-------|------|
-| **Phase 1** | Prepare |
-| **Phase 2** | Accept |
-
-### Phase 1: Prepare
-
-Proposer sends `PREPARE(N)` where N = proposal number.
-
-```text
-Example: PREPARE(100) sent to acceptors
-
-Proposer ---- Prepare(100) ----> A1
-         ---- Prepare(100) ----> A2
-         ---- Prepare(100) ----> A3
-```
-
-### Acceptor response
-
-If the proposal number is greater than any previously seen proposal, the acceptor replies **Promise**.
-
-```text
-Prepare(100):
-  A1 → Promise
-  A2 → Promise
-  A3 → Promise
-
-Acceptors promise not to accept smaller proposal numbers in the future.
-```
-
-### Majority requirement
-
-```text
-5 acceptors: A1 A2 A3 A4 A5
-Majority: 3
-
-A1 → Promise, A2 → Promise, A3 → Promise  →  majority achieved → proposer proceeds
-```
-
-### Phase 2: Accept
-
-Proposer sends `ACCEPT(N, VALUE)`.
-
-```text
-Example: Accept(100, Leader=A)
-
-Proposer ---- Accept ----> A1
-         ---- Accept ----> A2
-         ---- Accept ----> A3
-```
-
-### Acceptor decision
-
-```text
-Acceptors receive: Accept(100, Leader=A)
-
-A1 → Accepted
-A2 → Accepted
-A3 → Accepted
-
-Majority accepted → value becomes chosen.
-```
-
-### Learning phase
-
-```text
-Chosen value: Leader = A
-Learners receive notification → all nodes update state → final agreement: Leader = A
-```
-
-### Complete flow
-
-```text
-Step 1: Proposer creates proposal
-Step 2: Prepare(N)
-Step 3: Acceptors send Promise
-Step 4: Majority promises received
-Step 5: Accept(N, Value)
-Step 6: Majority accept
-Step 7: Value chosen
-
-Prepare → Promise → Accept → Accepted → Chosen value
-```
-
-```mermaid
-flowchart LR
-    Prep[Prepare] --> Prom[Promise]
-    Prom --> Acc[Accept]
-    Acc --> Acpt[Accepted]
-    Acpt --> Chosen[Chosen value]
-```
-
-### Example
-
-```text
-5 acceptors: A1 A2 A3 A4 A5
-Proposal #100: Leader = B
-
-Prepare(100):  A1 → Promise, A2 → Promise, A3 → Promise  →  majority
-Accept(100, B): A1 → Accepted, A2 → Accepted, A3 → Accepted
-Chosen value: Leader = B
-```
-
-### Competing proposers
-
-```text
-Proposer-1: Proposal #100, Leader = A
-Proposer-2: Proposal #200, Leader = B
-
-200 > 100 → Proposal #200 eventually wins.
-Higher proposal numbers dominate.
-```
-
-### Failure tolerance
-
-```text
-5 acceptors: A1 A2 A3 A4 A5
-Failures: A4, A5 failed
-Remaining: A1 A2 A3 → majority still exists → consensus continues
-```
-
-### When Paxos stops working
-
-```text
-5 acceptors, need majority = 3
-Available: A1, A2 only (2 nodes)
-Majority unavailable → consensus cannot be reached
-```
-
-### Characteristics
-
-- Majority-based consensus
-- Fault tolerant
-- Handles node failures and message delays
-- Guarantees a single chosen value
-- No split-brain decisions — see [§5.20 Split Brain](#520-split-brain)
-
-### Challenges
-
-- Difficult to understand
-- Complex implementation
-- Many message exchanges
-- High coordination overhead
-- Hard to debug
-
-### Multi-Paxos
-
-Basic Paxos decides **one** value (e.g. Leader = A).
-
-For continuous operations, systems use **Multi-Paxos** — repeatedly runs Paxos efficiently for many decisions.
-
-### Paxos vs Raft
-
-| | Paxos | Raft |
-|---|-------|------|
-| **Age / style** | Older, more theoretical | Designed to be easier to understand |
-| **Adoption** | Chubby, Spanner, early ZooKeeper | etcd, Consul, CockroachDB, TiKV |
-| **Shared goals** | Consensus, leader election, fault tolerance | Same |
-
-Details: [§5.23 Raft](#523-raft).
-
-### Summary
-
-Paxos allows multiple nodes to agree on a single value.
-
-```text
-Roles:     Proposer, Acceptor, Learner
-Phases:    Prepare → Accept
-Majority:  (N/2) + 1  (5 acceptors → need 3)
-```
-
-**Guarantees:** one chosen value, consensus despite failures, prevention of conflicting decisions.
-
-**Goal:** Enable reliable consensus in distributed systems even when nodes fail or networks become unreliable.
-
----
-
-
-## 5.23 Raft
-
-### What is Raft?
-
-Raft is a distributed consensus algorithm designed to allow multiple nodes in a distributed system to agree on the same sequence of operations.
-
-It provides:
-
-- Consensus
-- Leader election
-- Log replication
-- Fault tolerance
-
-```text
-Many nodes → one leader → one consistent state
-```
-
-See [§5.21 Consensus](#521-consensus). Alternative: [§5.22 Paxos](#522-paxos).
-
-### Why Raft is needed
-
-```text
-Distributed system: Node-A, Node-B, Node-C, Node-D, Node-E
-
-Nodes can fail, recover, become unreachable, or receive delayed messages.
-Despite failures, all nodes must agree on the same state.
-```
-
-Example: Leader = Node-C — all nodes agree.
-
-### Core idea
-
-Raft simplifies consensus by electing a leader. All changes go through the leader; followers do not independently decide values.
-
-```text
-          Leader
-             |
-      -----------------
-      |       |       |
-      F1      F2      F3
-
-Leader coordinates the cluster.
-```
-
-```mermaid
-flowchart TB
-    L[Leader]
-    L --- F1[Follower F1]
-    L --- F2[Follower F2]
-    L --- F3[Follower F3]
-```
-
-### Raft node states
-
-A node can be in one of three states:
-
-1. **Follower**
-2. **Candidate**
-3. **Leader**
-
-```mermaid
-stateDiagram-v2
-    [*] --> Follower
-    Follower --> Candidate: election timeout
-    Candidate --> Leader: majority votes
-    Candidate --> Follower: discover higher term
-    Leader --> Follower: discover higher term
-    Leader --> Follower: new leader elected
-```
-
-### Follower
-
-Default state.
-
-**Responsibilities:**
-
-- Receive requests from leader
-- Receive heartbeats
-- Replicate logs
-- Vote in elections
-
-Followers do not initiate updates.
-
-### Leader
-
-Leader manages the cluster.
-
-**Responsibilities:**
-
-- Accept client requests
-- Replicate logs
-- Send heartbeats
-- Coordinate consensus
-
-Only one leader should exist in a term.
-
-### Candidate
-
-Temporary state during leader election. A follower becomes a candidate when it does not hear from a leader for some time.
-
-```text
-Follower → Candidate → Leader
-                  or → Follower
-```
-
-### Term
-
-A term is a logical time period in Raft.
-
-```text
-Term 1: Leader = A
-Term 2: Leader = C
-Term 3: Leader = B
-
-Each election creates a new term.
-Only one leader should exist per term.
-```
-
-### Heartbeats
-
-Leader periodically sends heartbeats.
-
-**Purpose:** prove leader is alive; prevent new elections.
-
-```text
-             Leader
-                |
-      --------------------
-      |        |         |
-      V        V         V
-     F1       F2        F3
-  Heartbeat Heartbeat Heartbeat
-```
-
-### Leader failure
-
-```text
-Before: Leader = A, Followers B C D E
-Leader crashes → followers stop receiving heartbeats → election begins
-```
-
-### Election timeout
-
-Followers wait for heartbeats. If timeout occurs: Follower → Candidate.
-
-```text
-Follower → no heartbeat → timeout → Candidate
-```
-
-### Leader election
-
-Candidate requests votes.
-
-```text
-Candidate = C
-Requests "Vote for me" sent to A, B, D, E
-```
-
-### RequestVote
-
-```text
-Candidate C sends RequestVote
-
-          Candidate-C
-                |
-      --------------------
-      |        |         |
-      V        V         V
-      A        B         D
-
-Responses: Vote, Vote, Vote
-```
-
-```mermaid
-sequenceDiagram
-    participant C as Candidate C
-    participant B as Node B
-    participant D as Node D
-    C->>B: RequestVote
-    C->>D: RequestVote
-    B-->>C: Grant vote
-    D-->>C: Grant vote
-```
-
-### Majority voting
-
-```text
-5 nodes: A B C D E
-Majority: 3
-
-Votes: A → C, B → C, D → C
-Total votes: 3 → majority achieved → C becomes leader
-```
-
-### Leader election example
-
-```text
-Cluster: A B C D E
-Leader A crashes → C becomes candidate
-
-Votes:  A → offline, B → C, C → C, D → C, E → no vote
-Votes received: 3 → Leader = C
-```
-
-See [§5.24 Leader Election](#524-leader-election).
-
-### Log replication
-
-Leader receives updates, stores them in its log, then replicates to followers.
-
-```text
-Example: balance = 1000
-
-           Leader
-              |
-      ----------------
-      |      |       |
-      V      V       V
-      F1     F2      F3
-```
-
-### Log entry
-
-```text
-Index 1: Create User
-Index 2: Update Balance
-Index 3: Create Order
-
-Leader and followers maintain logs.
-```
-
-### Replication process
-
-```text
-Step 1: Client sends request
-Step 2: Leader appends log entry
-Step 3: Leader sends entry to followers
-Step 4: Followers acknowledge
-Step 5: Majority acknowledgement reached
-Step 6: Entry committed
-```
-
-```mermaid
-sequenceDiagram
-    participant C as Client
-    participant L as Leader
-    participant F1 as Follower 1
-    participant F2 as Follower 2
-    C->>L: update balance = 1000
-    L->>L: append log entry
-    L->>F1: AppendEntries
-    L->>F2: AppendEntries
-    F1-->>L: ack
-    F2-->>L: ack
-    Note over L: majority → commit
-    L-->>C: OK
-```
-
-### AppendEntries RPC
-
-Leader sends **AppendEntries** containing:
-
-- Term
-- Previous log index
-- Previous log term
-- New entries
-
-Used for log replication and heartbeats.
-
-### Commit rule
-
-A log entry becomes committed when a majority of nodes store it.
-
-```text
-5 nodes → need 3 nodes
-Leader + Follower-1 + Follower-2 store entry → majority → entry committed
-```
-
-### Log consistency
-
-```text
-Leader:   Index 1, Index 2, Index 3
-Follower: Index 1, Index 2
-
-Leader sends missing entries → follower catches up → logs become identical
-```
-
-### Network partition
+**Partition behavior:**
 
 ```text
 5 nodes: A B C D E
 
 Partition:
-  Group-1: A B C  →  majority (3) → can continue
-  Group-2: D E    →  cannot elect leader
-
-Split brain prevented.
+  Group-1: A B C (majority 3) → can decide
+  Group-2: D E (minority 2)  → cannot commit new values
 ```
 
-See [§5.20 Split Brain](#520-split-brain).
+**Consensus vs quorum vs distributed lock:**
 
-### Failure tolerance
+| | Quorum | Consensus | Distributed lock |
+|---|--------|-----------|------------------|
+| **What** | Minimum responses to proceed | Agreement on a specific value | Exclusive access to a resource |
+| **Example** | Need 3 of 5 acks | All agree Leader = C | Only one job runner |
+
+Quorum is often a **building block** inside consensus (Raft commit rule, Paxos accept majority).
+
+**How to calculate — fault tolerance:**
 
 ```text
-5 nodes, need majority = 3
-Failures: D, E failed
-Remaining: A B C → consensus continues
+Given: N nodes, quorum Q = floor(N/2) + 1
+
+Consensus can proceed while at least Q nodes are reachable:
+  Minimum alive nodes = Q
+
+For N = 5, Q = 3:
+  2 failures OK (3 alive)
+  3 failures → no quorum → cluster pauses (no split-brain writes)
 ```
 
-### When Raft stops working
+**Popular algorithms:**
 
-```text
-5 nodes, need majority = 3
-Alive: A B only (2 nodes)
-Majority unavailable → cluster cannot commit new entries
-```
-
-### Characteristics
-
-- Leader-based consensus
-- Majority voting
-- Log replication
-- Fault tolerance
-- Strong consistency
-- Prevents split brain
-
-### Raft vs Paxos
-
-| | Raft | Paxos |
-|---|------|-------|
-| **Understandability** | Easier to understand | More theoretical, harder to implement |
-| **Structure** | Leader-centric, structured workflow | Proposer/acceptor/learner |
-| **Shared goal** | Consensus | Consensus |
-
-Details: [§5.22 Paxos](#522-paxos).
-
-### Summary
-
-Raft is a distributed consensus algorithm based on leader election and log replication.
-
-```text
-Node states:  Follower, Candidate, Leader
-Components:   Leader election, heartbeats, log replication, majority voting
-Key RPCs:     RequestVote, AppendEntries
-Concepts:     Term, commit index
-Majority:     (N / 2) + 1
-```
-
-**Goal:** Ensure all nodes agree on the same ordered sequence of operations despite failures, crashes, and network partitions.
+| Algorithm | Typical use |
+|-----------|-------------|
+| **Raft** | etcd, Consul, CockroachDB, TiKV |
+| **Paxos** | Chubby, Spanner, early ZooKeeper |
+| **ZAB** | Apache ZooKeeper atomic broadcast |
 
 ---
 
+### Pitfalls and design tips
 
-## 5.24 Leader Election
+- **Consensus ≠ every operation** — use it for metadata, leader election, and small critical state; not for every user write at web scale.
+- **Minority partition stops** — by design; do not "fix" by allowing dual writes.
+- **Even numbers of voters** complicate ties — use odd membership or weighted votes.
+- **Interview:** state agreement, validity, termination; default to Raft for explainability.
+- **Latency:** every committed entry needs majority round trips — colocate voters when possible.
 
-### What is leader election?
+---
 
-Leader election is the process of selecting one node from a group of distributed nodes to act as the leader.
+### Real-world example
 
-The selected leader coordinates important operations for the cluster.
+**etcd cluster (Raft) storing Kubernetes API state:** Three or five etcd members run Raft. When you `kubectl apply`, the API server proposes a change to the Raft log. The leader replicates to a majority; once committed, all members apply the same key update. Scheduler and controllers all read consistent cluster state — leader identity and object versions come from one agreed log.
 
-```text
-Many nodes → one leader
-```
+---
 
-### Why is leader election needed?
+## 5.22 Paxos
 
-```text
-Distributed system: Node-A, Node-B, Node-C, Node-D, Node-E
-```
+### Overview
 
-**Without leader election:**
+Paxos is the original parliamentary procedure for computers — propose a motion, collect promises from a majority of voters, then bind them to one outcome. Even competing proposers with different ideas eventually converge on a single chosen value.
 
-- Multiple leaders may exist
-- Nodes may make conflicting decisions
-- [Split brain](#520-split-brain) can occur
-- Data inconsistency may happen
+Technically, **Paxos** is a family of consensus protocols where **proposers** suggest values, **acceptors** vote in two phases (Prepare, Accept), and **learners** observe the chosen result. A value is decided when a majority of acceptors accept the same proposal.
 
-**With leader election:** one node becomes leader; all nodes agree on that leader.
+---
 
-### What does a leader do?
+### What problem it fixes
 
-| Responsibility | Examples |
-|----------------|----------|
-| Accept client requests | Single write coordinator |
-| Coordinate writes | Ordered updates |
-| Manage replication | [§5.12 Leader–Follower](#512-leader-follower-replication) |
-| Coordinate consensus | [§5.21 Consensus](#521-consensus) |
-| Schedule cluster operations | Job assignment, metadata |
-| Maintain cluster state | Authoritative view |
+Multiple nodes may propose different values simultaneously:
 
 ```text
-                Leader
-                   |
-      --------------------------
-      |            |           |
-      V            V           V
-   Follower     Follower    Follower
+Proposer-1: Leader = A
+Proposer-2: Leader = B
+
+Without Paxos: conflicting leaders
+With Paxos: exactly one value chosen per slot
 ```
 
-### Leader-based system
+---
 
-```text
-                Leader
-                   |
-       -------------------------
-       |           |           |
-       V           V           V
-      N1          N2          N3
+### What it does
 
-Writes: Client → Leader
-Reads:  Client → Leader (or followers)
-```
+**Roles:**
 
-### When is leader election triggered?
+| Role | Function |
+|------|----------|
+| **Proposer** | Initiates proposals with increasing proposal numbers |
+| **Acceptor** | Votes; promises not to accept older numbers |
+| **Learner** | Learns the chosen value once majority accepts |
 
-| Trigger | What happens |
-|---------|----------------|
-| **Cluster startup** | No leader exists → election starts |
-| **Leader failure** | Current leader crashes → new election |
-| **Network partition** | Leader unreachable → election may occur |
-| **Leader step-down** | Current leader voluntarily leaves |
+**Two phases:**
 
-### Leader failure example
+| Phase | Message | Outcome |
+|-------|---------|---------|
+| **Prepare** | `PREPARE(N)` | Acceptors return Promise if N is highest seen |
+| **Accept** | `ACCEPT(N, value)` | Majority Accepted → value chosen |
 
-```text
-Before: Leader = A, Followers B C D E
-A crashes → followers stop receiving leader messages → election begins
-```
+---
 
-### Election mechanics (see Raft)
-
-Raft is the usual reference implementation:
-
-```text
-Follower → (no heartbeat / timeout) → Candidate → RequestVote → majority → Leader
-```
-
-| Topic | Canonical section |
-|-------|-------------------|
-| Heartbeats, AppendEntries | [§5.23 Raft](#523-raft) |
-| RequestVote, terms, split vote | [§5.23 Raft](#523-raft) |
-| Majority rule `(N/2)+1` | [§5.14](#514-quorum-reads) / [§5.21 Consensus](#521-consensus) |
-| Partition + minority side | [§5.20 Split Brain](#520-split-brain) |
+### How it works — the algorithm inside
 
 ```mermaid
-stateDiagram-v2
-    [*] --> Follower
-    Follower --> Candidate: election timeout
-    Candidate --> Leader: majority votes
-    Candidate --> Follower: higher term / split vote retry
-    Leader --> Follower: superseded
+flowchart LR
+    Prep[Prepare N] --> Prom[Promise majority]
+    Prom --> Acc[Accept N, value]
+    Acc --> Chosen[Value chosen]
 ```
 
-### Split vote
+**Example — 5 acceptors, need majority 3:**
 
 ```text
-5 nodes: A→B, B→B, C→C, D→C, E→no vote → B=2, C=2 → no majority → retry with new term
+Prepare(100):  A1 Promise, A2 Promise, A3 Promise → majority
+Accept(100, Leader=B): A1 Accepted, A2 Accepted, A3 Accepted
+Chosen: Leader = B
 ```
 
-### Network partition
+**Competing proposers:**
 
 ```text
-Group-1 (A B C): majority → can elect leader
-Group-2 (D E):   no majority → cannot elect leader (split brain prevented)
+Proposal #100 (Leader=A) in flight
+Proposal #200 (Leader=B) arrives — higher number wins promises
+#200 proceeds; #100 aborted
 ```
 
-### Leader election using consensus
+**Multi-Paxos:** run Paxos repeatedly for a sequence of log slots — basis for replicated state machines.
 
-Consensus systems perform elections using majority voting.
-
-**Examples:** [Raft](#523-raft), [Paxos](#522-paxos)
-
-Only one leader should be elected at a time.
-
-### Leader lease
-
-A leader may hold leadership for a specific time period.
+**How to calculate — Paxos majority:**
 
 ```text
-Leader valid until: 12:00:30 PM
-Leadership must be renewed before expiration.
+Given: N acceptors
+
+Majority M = floor(N / 2) + 1
+
+N = 5 → M = 3
+Failures tolerated in accept phase: N - M = 2
+
+Prepare and Accept each need M responses:
+  Minimum messages per decision (simplified): 2M proposer→acceptor + M acceptor→proposer
+  For N=5, M=3: at least 6 request + 3 response paths per successful slot
 ```
-
-### Leader step-down
-
-A leader may voluntarily relinquish leadership — e.g. when it learns a newer term exists.
-
-```text
-Leader A steps down → A becomes follower → new election occurs
-```
-
-### Characteristics
-
-- Single active leader
-- Majority-based election
-- Heartbeat monitoring
-- Automatic recovery
-- Failure handling
-- Cluster coordination
-
-### Benefits
-
-- Centralized coordination
-- Simplified decision making
-- Prevents conflicting updates
-- Supports consensus algorithms
-- Helps avoid split brain
-
-### Challenges
-
-- Leader can become a bottleneck
-- Election causes temporary unavailability
-- Network partitions complicate elections
-- Requires majority availability
-- Additional coordination overhead
-
-### Summary
-
-Leader election selects one node to coordinate a distributed system.
-
-```text
-Leader fails → election starts → candidates request votes
-→ majority achieved → new leader elected
-```
-
-**Key concepts:** leader, follower, candidate, heartbeat, election timeout, majority voting.
-
-**Formula:** majority = (N / 2) + 1
-
-**Goal:** Ensure exactly one node coordinates the cluster at any given time while maintaining consistency and fault tolerance.
 
 ---
 
+### Pitfalls and design tips
 
-## 5.25 Lamport Clocks
+- **Hard to implement correctly** — production uses tested libraries (Chubby, log device internals), not hand-rolled Single-Paxos.
+- **Interview:** mention Paxos for Google Chubby/Spanner lineage; explain Raft as the teachable alternative.
+- **Livelock risk** with dueling proposers — Multi-Paxos elects a stable leader proposer.
+- **Learners** may lag; do not serve reads from learners without linearizability guarantees.
+- **One value per instance** in basic Paxos — chain many instances for a full replicated log.
 
-### What are Lamport clocks?
+---
 
-Lamport clocks are logical clocks used in distributed systems to determine the ordering of events.
+### Real-world example
 
-They help answer: *Which event happened before another event?* — without relying on synchronized physical clocks.
+**Google Chubby (lock service):** Chubby uses Paxos (via Multi-Paxos) to replicate its small, critical dataset across a few replicas per cell. Clients use Chubby for coarse-grained locks, leader election, and reliable metadata. The replicated log ensures all replicas agree on lock holders and sequence numbers — a production Paxos deployment predating Raft's popularity.
 
-**Goal:** establish event ordering across distributed nodes.
+---
 
-### Why are Lamport clocks needed?
+## 5.23 Raft
 
-```text
-Distributed system: Node-A, Node-B, Node-C
-Each node has its own local clock.
-```
+### Overview
 
-Physical clocks may drift, be unsynchronized, or show different times — so physical time cannot always be trusted to determine event order.
+Raft is Paxos with a designated speaker — one leader handles all proposals, followers copy the leader's notebook, and elections pick a new speaker when the leader goes quiet. The rules are explicit enough to implement from the paper.
 
-Lamport clocks provide logical ordering.
+Technically, **Raft** achieves consensus through **leader election**, **log replication**, and **majority commit**. Each node is a follower, candidate, or leader; terms act as logical clocks; the leader's log is the source of truth for new entries.
 
-### Basic idea
+---
 
-Every node maintains a logical counter.
+### What problem it fixes
 
-```text
-Node-A clock = 5
-Node-B clock = 12
-Node-C clock = 8
-
-The counter increases whenever events occur.
-```
-
-### Events
-
-Examples that receive a logical timestamp:
-
-- Send message
-- Receive message
-- Database update
-- Request processing
-- Transaction execution
-
-### Lamport clock rules
-
-| Rule | When | Action |
-|------|------|--------|
-| **Rule 1** | Before executing any event | `Clock = Clock + 1` |
-| **Rule 2** | When sending a message | Attach current clock value |
-| **Rule 3** | When receiving a message | `Clock = Max(LocalClock, ReceivedClock) + 1` |
-
-These three rules define Lamport clocks.
-
-### Rule 1: internal event
+Distributed nodes need one ordered history of operations:
 
 ```text
-Node-A: clock = 5
-Internal event occurs → clock = 6
-
-Every local event increments the clock.
+Without Raft: divergent logs, ambiguous leader, split brain
+With Raft: one leader per term, committed entries identical on majority
 ```
 
-### Rule 2: send message
+---
 
-```text
-Node-A: clock = 10
-Before sending: clock++ → clock = 11
-Message sent with timestamp = 11
+### What it does
 
-Node-A (clock = 11) ---- Message(11) ----> Node-B
-```
+| Component | Purpose |
+|-----------|---------|
+| **Leader election** | `RequestVote` RPCs; majority grants leadership |
+| **Log replication** | `AppendEntries` carries new log entries and heartbeats |
+| **Commit rule** | Entry committed once stored on majority |
+| **Terms** | Monotonic epoch; stale leaders step down |
 
-### Rule 3: receive message
-
-```text
-Node-B: current clock = 15, received timestamp = 11
-
-Calculation: Max(15, 11) + 1 = 16
-New clock: 16
-```
-
-### Simple example
-
-```text
-Initial: A = 0, B = 0
-
-Event-1: A performs local event → A = 1
-Event-2: A sends message → A = 2, message timestamp = 2
-Event-3: B receives message → B = Max(0, 2) + 1 = 3
-
-Final: A = 2, B = 3
-```
-
-### Visualization
-
-```text
-Node-A                    Node-B
-Clock=0                   Clock=0
-  | Event → A=1
-  | Send → A=2
-  |-------------------->
-                          Receive → B=3
-```
+**Node states:**
 
 ```mermaid
-sequenceDiagram
-    participant A as Node-A
-    participant B as Node-B
-    A->>A: local event, clock=1
-    A->>A: send prep, clock=2
-    A->>B: message timestamp=2
-    B->>B: receive, clock=Max(0,2)+1=3
+flowchart LR
+    F[Follower] -->|timeout| Cand[Candidate]
+    Cand -->|majority votes| L[Leader]
+    Cand -->|higher term| F
+    L -->|higher term| F
 ```
-
-### Another example
-
-```text
-Initial: A = 5, B = 8
-A sends message → A = 6, timestamp = 6
-B receives → B = Max(8, 6) + 1 = 9
-Final: A = 6, B = 9
-```
-
-### Happened-before relation
-
-Lamport introduced the **happened-before** relation, written **A → B** — meaning event A happened before event B.
-
-```text
-Send message → receive message
-Send always happens before receive.
-```
-
-### Example of happened-before
-
-```text
-Node-A: Event-1 — send message
-Node-B: Event-2 — receive message
-
-Relationship: Event-1 → Event-2
-Lamport timestamps preserve this ordering.
-```
-
-### Message ordering
-
-```text
-Node-A: event timestamp = 10 → message sent
-Node-B: receive timestamp = 11
-Ordering: 10 < 11 → receive occurred after send
-```
-
-### Multiple nodes
-
-```text
-Nodes: A, B, C
-Clocks: A = 4, B = 7, C = 3
-
-Each node independently maintains its own logical clock.
-Messages synchronize ordering information.
-```
-
-### Concurrent events
-
-```text
-Node-A: event timestamp = 10
-Node-B: event timestamp = 10
-No messages exchanged → events may be concurrent
-```
-
-Lamport clocks cannot determine whether one actually happened before the other.
-
-### Limitation
-
-Lamport clocks guarantee:
-
-```text
-If A → B  then  Timestamp(A) < Timestamp(B)
-```
-
-However:
-
-```text
-Timestamp(A) < Timestamp(B)  does NOT always mean  A → B
-```
-
-Causality cannot always be inferred. For concurrency detection, use [§5.26 Vector Clocks](#526-vector-clocks).
-
-### Example of limitation
-
-```text
-Node-A: event timestamp = 5
-Node-B: event timestamp = 8
-No communication between nodes
-
-Even though 5 < 8, it does not mean Event-A happened before Event-B.
-Events may be independent.
-```
-
-### Use cases
-
-- Distributed databases
-- Event ordering
-- Distributed logs
-- Replication systems
-- Consensus protocols
-- Message processing systems
-
-### Benefits
-
-- Simple implementation
-- No synchronized clocks required
-- Preserves causal ordering of messages
-- Low overhead
-- Works in distributed environments
-
-### Challenges
-
-- Cannot fully capture causality
-- Cannot identify concurrent events
-- Provides partial ordering only
-- Less expressive than vector clocks — [§5.26](#526-vector-clocks)
-
-### Lamport clock vs physical clock
-
-| | Physical clock | Lamport clock |
-|---|----------------|---------------|
-| **Basis** | Actual time (e.g. 10:30:05 AM) | Logical counter (e.g. timestamp = 25) |
-| **Problems** | Clock drift, synchronization issues | Partial ordering only |
-| **Provides** | Wall-clock time | Logical event ordering |
-
-### Lamport clock vs vector clock
-
-| | Lamport clock | Vector clock |
-|---|---------------|--------------|
-| **Structure** | Single counter per node (e.g. A = 15) | Multiple counters (e.g. [A=5, B=3, C=7]) |
-| **Concurrency** | Cannot detect | Can identify concurrency |
-
-Details: [§5.26 Vector Clocks](#526-vector-clocks).
-
-### Summary
-
-Lamport clocks order events in distributed systems using logical counters.
-
-```text
-Rules:
-  1. Increment before every event
-  2. Send timestamp with messages
-  3. On receive: Clock = Max(LocalClock, ReceivedClock) + 1
-
-Guarantee: If Event-A happened before Event-B, then Timestamp(A) < Timestamp(B)
-```
-
-**Key purpose:** provide logical ordering of distributed events without relying on synchronized physical clocks.
 
 ---
 
+### How it works — the algorithm inside
 
-## 5.26 Vector Clocks
-
-### What are vector clocks?
-
-Vector clocks are logical clocks used in distributed systems to determine:
-
-- Event ordering
-- Causal relationships
-- Concurrent events
-
-They extend [Lamport clocks](#525-lamport-clocks) by providing more complete causality information.
-
-**Goal:** determine whether A happened before B, B happened before A, or A and B happened concurrently.
-
-### Why vector clocks are needed?
-
-Lamport clocks guarantee `A → B` implies `timestamp(A) < timestamp(B)`, but **not** the converse — they cannot detect concurrency. Vector clocks fix that. See [§5.25 Lamport Clocks](#525-lamport-clocks).
-
-### Basic idea
-
-Instead of one logical counter, each node maintains a vector of counters.
+**Leader election:**
 
 ```text
-Nodes: A, B, C
-Vector format: [A, B, C]
-
-Example [3, 5, 2]:
-  A has seen 3 events from A
-  B has seen 5 events from B
-  C has seen 2 events from C
+Cluster: A B C D E — Leader A crashes
+Followers miss heartbeats → C becomes candidate
+Votes: B→C, C→C, D→C → 3/5 majority → C is leader
 ```
 
-### Initial state
+**Log replication:**
 
 ```text
-Nodes: A, B, C
-Initial vectors: A = [0,0,0], B = [0,0,0], C = [0,0,0]
-All counters start at zero.
-```
-
-### Rule 1: local event
-
-When a node performs a local event, increment its own counter.
-
-```text
-Node-A: before [0,0,0] → local event → after [1,0,0]
-Only A's counter changes.
-
-Node-B: before [0,0,0] → local event → after [0,1,0]
-Only B's component increases.
-```
-
-### Rule 2: send message
-
-Before sending a message: increment local counter; attach entire vector clock.
-
-```text
-Node-A: before [1,0,0]
-Send message → after increment [2,0,0]
-Message carries [2,0,0]
-```
-
-### Rule 3: receive message
-
-When receiving a message:
-
-1. Take element-wise maximum
-2. Increment own counter
-
-```text
-NewVector[i] = Max(Local[i], Received[i])
-Then increment receiver's own entry.
-```
-
-### Receive example
-
-```text
-Node-A sends [2,0,0]
-Node-B current vector [0,1,0]
-
-Element-wise max: Max([0,1,0], [2,0,0]) = [2,1,0]
-Increment B counter → [2,2,0]
-Final: B = [2,2,0]
-```
-
-### Visualization
-
-```text
-Node-A: [1,0,0] → local event → [2,0,0]
-              |
-              | message [2,0,0]
-              V
-Node-B: [0,1,0] → merge [2,1,0] → increment B → [2,2,0]
+Client → Leader: update balance = 1000
+Leader appends entry at index N
+Leader → followers: AppendEntries
+Majority ack → entry committed → apply to state machine → OK to client
 ```
 
 ```mermaid
 flowchart LR
-    E1["Event A: 1,0"] --> E2["Event B: 1,1"]
-    E3["Event C: 0,1"] --> E2
-    E1 -.concurrent.- E3
+    C[Client write] --> L[Leader append]
+    L --> F1[Follower 1 ack]
+    L --> F2[Follower 2 ack]
+    F1 --> Maj[Majority]
+    F2 --> Maj
+    Maj --> Commit[Commit + respond]
 ```
 
-### Complete example
+**Network partition:**
 
 ```text
-Initial: A = [0,0,0], B = [0,0,0], C = [0,0,0]
-
-Event-1: A local event → A = [1,0,0]
-Event-2: A sends message → A = [2,0,0]
-Event-3: B receives → merge [2,1,0], increment → B = [2,2,0]
-
-Final: A = [2,0,0], B = [2,2,0], C = [0,0,0]
+Group-1: A B C (3) → elects leader, commits
+Group-2: D E (2)   → cannot elect → no new commits (split brain prevented)
 ```
 
-### Happened-before relation
+**Log consistency:** if follower is behind, leader sends missing entries until logs match, then replicates new ones.
 
-For two vectors V1 and V2, **V1 happened before V2** if:
-
-- Every component in V1 ≤ corresponding component in V2, **and**
-- At least one component is strictly smaller
-
-### Example: V1 before V2
+**How to calculate — Raft commit quorum:**
 
 ```text
-V1 = [1,2,0],  V2 = [2,3,0]
+Given: N Raft peers (leader counts as voter)
 
-1 ≤ 2,  2 ≤ 3,  0 ≤ 0  — at least one strictly smaller
-Therefore V1 → V2
+Commit quorum Q = floor(N / 2) + 1
+
+Leader replicates to itself + needs Q-1 follower acks (leader included in count)
+
+For N = 5, Q = 3:
+  Leader + any 2 followers → entry committed
+
+Maximum simultaneous failures tolerated: floor((N-1)/2)
+  N=5 → 2 failures OK, 3 failures → no commits
 ```
-
-### Another example
-
-```text
-V1 = [2,1,0],  V2 = [5,4,0]
-2 ≤ 5,  1 ≤ 4,  0 ≤ 0  →  V1 happened before V2
-```
-
-### Concurrent events
-
-Two events are **concurrent** if neither vector dominates the other.
-
-```text
-V1 = [3,1,0],  V2 = [1,4,0]
-
-3 > 1  but  1 < 4  — no vector is completely larger
-Result: concurrent events
-```
-
-### Visualization of concurrency
-
-```text
-Node-A: Event-A [3,1,0]
-Node-B: Event-B [1,4,0]
-No communication — events occurred independently → concurrency detected
-```
-
-### Comparison with Lamport clocks
-
-| | Lamport | Vector |
-|---|---------|--------|
-| **Structure** | Single counter | Per-node vector |
-| **Concurrency** | Cannot detect | Can detect |
-
-Full Lamport treatment: [§5.25](#525-lamport-clocks).
-
-### Storage overhead
-
-```text
-For N nodes: vector size = N
-
-10 nodes → vector length 10
-100 nodes → vector length 100
-
-As cluster size grows, vectors become larger.
-```
-
-### Use cases
-
-- Distributed databases
-- Conflict detection — [§5.13 Multi-Leader Replication](#513-multi-leader-replication)
-- Replication systems
-- Event synchronization
-- Distributed storage
-- Version tracking
-
-### Benefits
-
-- Captures causality
-- Detects concurrent events
-- Preserves event ordering
-- No synchronized clocks needed
-- More accurate than Lamport clocks
-
-### Challenges
-
-- Higher storage overhead
-- Larger messages
-- More memory usage
-- Complex comparison logic
-- Difficult at very large scale
-
-### Vector clock comparison rules
-
-| Case | Condition | Meaning |
-|------|-----------|---------|
-| **1** | V1 < V2 (dominates) | V1 happened before V2 |
-| **2** | V2 < V1 | V1 happened after V2 |
-| **3** | Neither dominates | Concurrent |
-
-### Summary
-
-Vector clocks track causality between events in distributed systems.
-
-```text
-Representation: [A, B, C, ...]
-
-Rules:
-  1. Local event — increment own counter
-  2. Send message — increment counter and send vector
-  3. Receive message — element-wise max, then increment receiver counter
-```
-
-**Advantages:** event ordering, causality tracking, concurrency detection.
-
-**Main difference from Lamport clocks:** Lamport = ordering only; vector = ordering + concurrency detection.
-
-**Goal:** Determine whether distributed events are causally related or occurred independently.
 
 ---
 
+### Pitfalls and design tips
 
-## 5.27 Gossip Protocol
+- **Leader bottleneck** — all writes go through leader; consider sharding (multiple Raft groups) for throughput.
+- **Follower reads** are stale unless you implement lease-reads or read-index protocol.
+- **Split votes** on election — randomize election timeout to reduce repeated ties.
+- **etcd, Consul, CockroachDB, TiKV** — default real-world Raft references for interviews.
+- **Joint consensus** needed for membership changes — never change N in one atomic step without configuration change protocol.
 
-### What is gossip protocol?
+---
 
-Gossip protocol is a decentralized communication mechanism used in distributed systems where nodes periodically exchange information with a small number of other nodes.
+### Real-world example
 
-Information spreads through the cluster similarly to how rumors spread among people.
+**CockroachDB range replication:** Each data range runs its own Raft group (typically 3 or 5 replicas). A write to a key routes to the range leader; the leader proposes a Raft entry; on majority commit, the write is durable and visible at a chosen consistency level. Range splits add new Raft groups — consensus at scale via many small Raft clusters, not one global log.
 
-**Goal:** spread information across the entire cluster without central coordination.
+---
 
-### Why is it called gossip?
+## 5.24 Leader Election
+
+### Overview
+
+Leader election is picking one captain for the ship so the crew does not steer in opposite directions. In software, exactly one node coordinates writes, replication, and sometimes client requests while others stand by.
+
+Technically, **leader election** selects one node from a membership set to act as coordinator. Triggers include cluster startup, leader crash, network partition, or voluntary step-down. Raft's `RequestVote` and heartbeats are the canonical modern implementation.
+
+---
+
+### What problem it fixes
 
 ```text
-Human gossip:
-  Person-A → Person-B → Person-C → Person-D → everyone knows
-
-Distributed systems:
-  Node-A → Node-B → Node-C → Node-D → entire cluster learns
+Without election: multiple nodes accept writes → conflicts, split brain
+With election: one leader, followers replicate or forward
 ```
 
-### Basic idea
+---
 
-Instead of sending updates to every node directly, each node communicates with only a few random nodes. Over time the information propagates to all nodes.
+### What it does
 
-```text
-Node-A knows something → A → B → D → E → C → eventually every node learns it
+| Leader responsibility | Examples |
+|----------------------|----------|
+| Accept client writes | Single write path |
+| Replicate log | Leader–follower replication |
+| Send heartbeats | Suppress spurious elections |
+| Coordinate operations | Job scheduling, metadata updates |
+
+```mermaid
+flowchart LR
+    Client[Client] --> Leader[Leader]
+    Leader --> F1[Follower]
+    Leader --> F2[Follower]
+    Leader --> F3[Follower]
 ```
 
-### Architecture
+**Triggers:**
+
+| Event | Response |
+|-------|----------|
+| Cluster startup | Election until leader emerges |
+| Leader failure | Followers timeout → new election |
+| Partition | Majority side elects; minority waits |
+| Step-down | Voluntary resignation → new term |
+
+---
+
+### How it works — the algorithm inside
+
+**Raft election sequence:**
 
 ```text
-                Node-A
-               /      \
-              V        V
-         Node-B      Node-C
-            |            |
-            V            V
-         Node-D      Node-E
-             \        /
-              V      V
-               Node-F
+Follower → (no heartbeat within election timeout) → Candidate
+Candidate → RequestVote to all peers
+Majority grants vote → Candidate becomes Leader
+Leader → periodic AppendEntries (heartbeats)
+```
 
-Information spreads gradually.
+**Split vote:**
+
+```text
+5 nodes: votes split B=2, C=2 → no majority
+→ increment term, randomized backoff, retry
+```
+
+**Leader lease (conceptual):**
+
+```text
+Leadership valid for lease interval L
+Must renew via heartbeats before L expires
+Followers reject stale leader after lease + clock skew budget
+```
+
+**How to calculate — election majority:**
+
+```text
+Given: N voting nodes
+
+Votes required = floor(N / 2) + 1
+
+N = 5 → need 3 votes (candidate may vote for itself → 2 others)
+
+Election timeout guidance (implementation):
+  Random timeout in [150ms, 300ms] per follower (etcd defaults vary)
+  Heartbeat interval < min election timeout (e.g. 50ms heartbeat, 150ms+ election)
+```
+
+---
+
+### Pitfalls and design tips
+
+- **Flapping leadership** — tune heartbeat vs election timeout; ensure network stability.
+- **Prefer odd voter count** — avoids tie votes at exactly half membership.
+- **Do not run two leaders** even briefly — use fencing on storage when promoting standbys.
+- **Kubernetes Lease API** and **etcd elections** — concrete APIs to cite in interviews.
+- **Read scaling:** followers serve reads only with explicit staleness bounds or read-index.
+
+---
+
+### Real-world example
+
+**Consul server leader election:** Consul servers run Raft. One server is leader; others are followers. Service catalog writes and ACL changes go through the leader. Clients discover the leader via health checks; on leader loss, followers hold election within one to two election timeouts — typically sub-second with tuned LAN settings — restoring a single write coordinator.
+
+---
+
+## 5.25 Lamport Clocks
+
+### Overview
+
+Lamport clocks are ticket numbers at a conference — every action gets the next number, and when you receive someone else's number you bump yours higher. You cannot prove real-world time, but you can prove "this happened before that" when messages link events.
+
+Technically, a **Lamport clock** is a per-node integer counter advanced on local events and synchronized on message send/receive. If event A **happened-before** event B (written A → B), then Lamport(A) < Lamport(B). The converse is false — equal or lesser timestamps do not prove causality.
+
+---
+
+### What problem it fixes
+
+Physical clocks drift and are unsynchronized:
+
+```text
+Node-A wall clock: 10:00:01.002
+Node-B wall clock: 10:00:00.998
+
+You cannot order events by wall clock reliably
+```
+
+Distributed systems need **logical ordering** for logs, conflict resolution hints, and debugging — without NTP perfection.
+
+---
+
+### What it does
+
+Every node maintains counter `Clock`. Three rules:
+
+| Rule | When | Action |
+|------|------|--------|
+| **1** | Local event | `Clock = Clock + 1` |
+| **2** | Send message | Increment, attach timestamp to message |
+| **3** | Receive message | `Clock = max(Local, Received) + 1` |
+
+---
+
+### How it works — the algorithm inside
+
+```text
+Initial: A = 0, B = 0
+
+Event-1: A local event        → A = 1
+Event-2: A sends message      → A = 2, message carries 2
+Event-3: B receives message   → B = max(0, 2) + 1 = 3
 ```
 
 ```mermaid
-flowchart TB
+flowchart LR
+    A1[A: local → 1] --> A2[A: send → 2]
+    A2 --> B3[B: recv → 3]
+```
+
+**Happened-before (→):** send → receive is causal; Lamport timestamps respect this order.
+
+**Concurrent events — limitation:**
+
+```text
+A: event timestamp 10 (no message to B)
+B: event timestamp 8
+
+10 > 8 does NOT imply A → B — events may be independent
+```
+
+Lamport clocks **cannot detect concurrency** — use vector clocks (5.26) when that matters.
+
+**How to calculate — receive rule:**
+
+```text
+Given: Local clock L, received timestamp R
+
+After receive:
+  New clock = max(L, R) + 1
+
+Example 1: L = 15, R = 11 → max(15,11)+1 = 16
+Example 2: L = 5,  R = 12 → max(5,12)+1  = 13
+```
+
+---
+
+### Pitfalls and design tips
+
+- **Do not use Lamport time as wall clock** — it is a partial order, not UTC.
+- **Conflict resolution:** "higher timestamp wins" with Lamport alone can pick arbitrary winner for concurrent writes — unsafe without application merge logic.
+- **Dynamo-style systems** often pair vector clocks or version vectors for concurrency detection.
+- **Low overhead** — one integer per node; good for logging and metrics ordering.
+- **Interview:** state the three rules and the one-way guarantee (→ implies <, not reverse).
+
+---
+
+### Real-world example
+
+**Amazon Dynamo (early versioning):** Dynamo nodes attach version information to writes for eventual consistency and conflict detection. While Dynamo popularized vector clocks for concurrent write detection, Lamport-style logical ordering appears in related systems for operation ordering in replication logs where strict wall-clock sync is unavailable across data centers.
+
+---
+
+## 5.26 Vector Clocks
+
+### Overview
+
+A vector clock is a scoreboard with one column per player — you see not just your score but everyone's latest known score. Comparing full vectors tells you whether one event definitely came first, or whether two events happened in parallel worlds.
+
+Technically, a **vector clock** is an array of counters (one per node). Updates follow send/receive rules like Lamport, but comparison uses **dominance**: V1 → V2 if every component of V1 ≤ V2 and at least one is strictly less. Incomparable vectors mean **concurrent** events.
+
+---
+
+### What problem it fixes
+
+Lamport timestamps can order concurrent events arbitrarily:
+
+```text
+Lamport: if TS(A) < TS(B), you might think A → B
+Reality: A and B may be concurrent (no causal link)
+```
+
+Vector clocks detect concurrency for conflict resolution in multi-leader and offline-first systems.
+
+---
+
+### What it does
+
+For nodes A, B, C, vector format `[A, B, C]`:
+
+| Rule | Action |
+|------|--------|
+| **Local event** | Increment own component |
+| **Send** | Increment own component; attach full vector |
+| **Receive** | Element-wise max with received vector; increment own component |
+
+**Comparison outcomes:**
+
+| Relation | Condition |
+|----------|-----------|
+| V1 before V2 | All V1[i] ≤ V2[i], at least one strict < |
+| V1 after V2 | V2 before V1 |
+| Concurrent | Neither dominates |
+
+---
+
+### How it works — the algorithm inside
+
+```text
+Initial: A=[0,0,0], B=[0,0,0]
+
+A local event     → A=[1,0,0]
+A sends           → A=[2,0,0], message carries [2,0,0]
+B receives        → max([0,1,0],[2,0,0])=[2,1,0] → increment B → [2,2,0]
+```
+
+**Concurrent example:**
+
+```text
+V1 = [3,1,0]  (event on A)
+V2 = [1,4,0]  (event on B)
+
+3 > 1 but 1 < 4 → neither dominates → concurrent
+```
+
+```mermaid
+flowchart LR
+    EA["Event A: 3,1,0"] -.concurrent.- EB["Event B: 1,4,0"]
+```
+
+**How to calculate — dominance check:**
+
+```text
+V1 = [2, 1, 0]
+V2 = [2, 3, 0]
+
+Compare each dimension:
+  2 ≤ 2 ✓, 1 < 3 ✓, 0 ≤ 0 ✓, at least one strict → V1 → V2
+
+V3 = [3, 1, 0] vs V4 = [1, 4, 0]:
+  3 > 1 but 1 < 4 → not all ≤ → concurrent
+```
+
+**Storage cost:**
+
+```text
+Vector size = N nodes
+
+10 nodes  → 10 integers per version
+100 nodes → 100 integers — impractical at huge scale; use dotted version vectors or shrink strategies
+```
+
+---
+
+### Pitfalls and design tips
+
+- **Does not scale to thousands of nodes** — use version vectors with pruning, or CRDTs for specific data types.
+- **Sibling conflicts** in CouchDB/Riak require application merge (merge function, LWW only if business allows).
+- **Clock size in messages** grows with cluster — batch or compress for WAN replication.
+- **Interview:** contrast Lamport (one int, no concurrency) vs vector (array, detects concurrency).
+- **Riak, Cassandra lightweight transactions, CouchDB** — cite vector or dotted version clocks in conflict scenarios.
+
+---
+
+### Real-world example
+
+**Riak sibling objects:** Two clients update the same key concurrently on different replicas. Each write carries a vector clock. On read, if neither clock dominates the other, Riak returns **siblings** — multiple values — and the application merges them (e.g. union of shopping cart items). Vector clocks made the concurrency visible instead of silently picking a loser.
+
+---
+
+## 5.27 Gossip Protocol
+
+### Overview
+
+Gossip spreads news the way rumors do — you tell two friends, they each tell two more, and soon the whole town knows without a central bulletin board. No single node phones everyone; work is spread across random pairwise chats.
+
+Technically, a **gossip protocol** is decentralized epidemic dissemination: each node periodically exchanges state with a small random subset of peers. Membership changes, failure suspicions, and metadata propagate with **eventual** cluster-wide consistency, tolerating node loss and avoiding O(N²) broadcast.
+
+---
+
+### What problem it fixes
+
+Central membership servers become bottlenecks and single points of failure. Full broadcast to N nodes per update costs O(N) per event — expensive at thousands of nodes.
+
+Gossip achieves **scalable propagation** with bounded per-node fan-out.
+
+---
+
+### What it does
+
+```text
+Step 1: Node learns new information (failure, join, config)
+Step 2: Select k random peers
+Step 3: Exchange state (push, pull, or push-pull)
+Step 4: Peers repeat → entire cluster learns eventually
+```
+
+| Model | Behavior |
+|-------|----------|
+| **Push** | Sender pushes updates to peers |
+| **Pull** | Receiver asks peers for newer state |
+| **Push-pull** | Both — most practical (compare versions, sync diffs) |
+
+---
+
+### How it works — the architecture inside
+
+```text
+Cluster: A B C D E — only A knows "Node-X failed"
+
+Round 1: A → B           → {A,B} know
+Round 2: A → C, B → D    → {A,B,C,D} know
+Round 3: C → E           → all know
+```
+
+```mermaid
+flowchart LR
     A[Node-A] --> B[Node-B]
     A --> C[Node-C]
     B --> D[Node-D]
     C --> E[Node-E]
-    D --> F[Node-F]
-    E --> F
 ```
 
-### How gossip works
+**Failure detection via gossip:**
 
 ```text
-Step 1: A node receives new information
-Step 2: It selects one or more random peers
-Step 3: Information is shared
-Step 4: Receiving nodes repeat the process
-Step 5: Eventually all nodes receive the update
+A expects heartbeats from C → silence → A marks C suspect
+A gossips "C suspect" → B, D learn → corroboration → C marked down
 ```
 
-### Simple example
+**How to calculate — epidemic spread rounds:**
 
 ```text
-Cluster: A B C D E
-Only A knows: Server-X failed
+Given: N nodes, each gossips to k peers per round (idealized epidemic model)
 
-Round 1: A → B           → known: A B
-Round 2: A → C, B → D    → known: A B C D
-Round 3: C → E           → known: A B C D E
+Rounds to reach most nodes ≈ log(N) / log(k)  (order of magnitude)
 
-Entire cluster informed.
+Example: N = 1024, k = 2
+  Rounds ≈ log₂(1024) / log₂(2) = 10/1 ≈ 10 rounds
+
+Example: N = 10,000, k = 3
+  Rounds ≈ log(10000)/log(3) ≈ 4/0.477 ≈ 9 rounds
+
+Real systems add redundancy (multiple gossip targets per interval) for faster convergence under packet loss.
 ```
 
-### Visualization
-
-```text
-Round 0: A
-Round 1: A ---> B
-Round 2: A ---> C,  B ---> D
-Round 3: C ---> E
-All nodes know the update.
-```
-
-### Gossip cycles
-
-Information spreads in rounds.
-
-```text
-Round-1: A → B
-Round-2: B → C
-Round-3: C → D
-Round-4: D → E
-Each round expands knowledge.
-```
-
-### Membership information
-
-Nodes often gossip alive nodes, failed nodes, new joins, and cluster topology.
-
-```text
-Node-C crashes → Node-A learns → gossip spreads "C is down"
-→ eventually all nodes know
-```
-
-See [§5.28 Membership Protocols](#528-membership-protocols).
-
-### Failure detection
-
-```text
-Node-A expects updates from Node-C → no updates received
-→ Node-A suspects failure → information gossiped throughout cluster
-```
-
-### Failure detection example
-
-```text
-Node-C fails → Node-A detects → A → B → D → E
-Message: "Node-C is unreachable" → entire cluster becomes aware
-```
-
-### Push model
-
-Node-A has information and sends updates to peers.
-
-```text
-Node-A ---- Update ----> B
-       ---- Update ----> C
-```
-
-Information is pushed outward.
-
-### Pull model
-
-Nodes ask peers for updates.
-
-```text
-Node-B ---- Request ----> A
-A sends missing information
-```
-
-Information is pulled.
-
-### Push-pull model
-
-Combination of both — node A sends updates; node B requests updates. Most practical systems use push-pull.
-
-### Example of push-pull
-
-```text
-Node-A: version = 10
-Node-B: version = 8
-
-A shares version 10; B requests missing updates → both synchronized
-```
-
-### Information propagation
-
-```text
-100 nodes, each gossips to 2 random peers
-Information spreads exponentially → eventually all nodes receive it
-```
-
-### Benefits
-
-- No central coordinator
-- Highly scalable
-- Fault tolerant
-- Decentralized
-- Efficient information spreading
-- Handles dynamic clusters well
-
-### Challenges
-
-- Temporary inconsistency
-- Information propagation delay
-- Duplicate messages
-- Additional network traffic
-- No immediate global visibility
-
-### Gossip vs broadcast
+**Gossip vs broadcast:**
 
 | | Broadcast | Gossip |
 |---|-----------|--------|
-| **Pattern** | One node sends to every node (A → B,C,D,E,F,G) | A → B → D → F → G — gradual spread |
-| **Cost** | Network cost grows quickly | More scalable |
-
-### Gossip vs heartbeat
-
-| | Heartbeat | Gossip |
-|---|-----------|--------|
-| **Purpose** | Direct liveness signal (A → B) | Cluster-wide information dissemination |
-| **Spread** | Point-to-point | A → B → C → D across the cluster |
-
-See [§5.24 Leader Election](#524-leader-election) (leader heartbeats).
-
-### Use cases
-
-- Cluster membership management — [§5.28](#528-membership-protocols)
-- Failure detection
-- Distributed databases
-- Service discovery
-- Peer-to-peer systems
-- Distributed caches
-- State synchronization
-
-### Example system flow
-
-```text
-Node-X fails
-  → Node-A detects failure
-  → A gossips to B
-  → B gossips to C
-  → C gossips to D
-  → entire cluster learns failure
-```
-
-### Characteristics
-
-- Decentralized communication
-- Peer-to-peer information exchange
-- Random node selection
-- Eventual cluster-wide propagation
-- Scalable failure detection
-- Eventual consistency
-
-### Summary
-
-Gossip protocol spreads information across distributed systems without a central coordinator.
-
-```text
-Node receives information
-  → shares with random peers
-  → peers repeat process
-  → entire cluster learns information
-```
-
-**Common uses:** membership management, failure detection, service discovery, state synchronization.
-
-**Key idea:** information spreads the way rumors spread through a social network.
-
-**Goal:** efficiently distribute information across large distributed systems without relying on a central coordinator.
+| **Fan-out** | O(N) per source | O(k) per node per round |
+| **Latency** | One hop | O(log N) rounds |
+| **Coordinator** | Required | None |
 
 ---
 
+### Pitfalls and design tips
+
+- **Eventual consistency window** — not all nodes know immediately; design APIs for stale membership tolerance.
+- **Duplicate and out-of-order messages** — use version numbers or hashes per key; idempotent merge.
+- **SWIM protocol** (memberlist) — production failure detection with gossip; cite HashiCorp Serf, Cassandra gossip.
+- **Separate gossip from leader heartbeats** — Raft heartbeats are point-to-point; gossip is for wide membership sync.
+- **Anti-entropy rate** — tune gossip interval vs convergence SLA; faster gossip = more bandwidth.
+
+---
+
+### Real-world example
+
+**Apache Cassandra gossip:** Each node gossips endpoint state (up/down, load, schema version) to 1–3 peers every second. Failure detection uses phi accrual over gossiped heartbeats — no central registry. When a node joins, its state epidemically spreads; operators see cluster membership converge within seconds without a dedicated membership server.
+
+---
 
 ## 5.28 Membership Protocols
 
-### What are membership protocols?
+### Overview
 
-Membership protocols are mechanisms used in distributed systems to track which nodes are currently part of the cluster and which nodes have failed, joined, or left.
+A membership protocol is the cluster's attendance sheet — who is in the room, who left early, and who stopped answering texts. Every node needs a reasonably current list to route requests, form quorums, and stop sending work to the dead.
 
-**Goal:** maintain an accurate view of cluster membership.
-
-```text
-Cluster: A, B, C, D, E
-
-Membership protocol determines:
-  - Which nodes are alive
-  - Which nodes are down
-  - Which nodes joined
-  - Which nodes left
-```
-
-### Why are membership protocols needed?
-
-Distributed systems are dynamic. Nodes may join, leave, crash, or recover.
-
-Without membership management, nodes would not know the current state of the cluster.
-
-```text
-Node-C crashes — if other nodes do not know:
-  requests may continue being sent to C → failures increase
-```
-
-### Cluster membership view
-
-Every node maintains a membership list.
-
-```text
-Membership list: A, B, C, D, E
-Each node knows current active members.
-```
-
-### Membership events
-
-| Event | What happens |
-|-------|----------------|
-| **Node join** | New node enters cluster |
-| **Node leave** | Node gracefully exits |
-| **Node failure** | Node crashes unexpectedly |
-| **Node recovery** | Failed node returns |
-
-### Node join example
-
-```text
-Initial: A, B, C
-Node-D joins → updated membership: A, B, C, D
-All nodes eventually learn about D.
-```
-
-### Node leave example
-
-```text
-Initial: A, B, C, D
-Node-D leaves gracefully → updated membership: A, B, C
-Cluster removes D.
-```
-
-### Node failure example
-
-```text
-Initial: A, B, C, D
-Node-C crashes → updated membership: A, B, D
-Node-C marked failed.
-```
-
-### Membership architecture
-
-```text
-               Cluster
-                   |
-      -------------------------
-      |           |           |
-      V           V           V
-      A           B           C
-       \         / \         /
-        \       /   \       /
-         \     /     \     /
-              D       E
-
-Each node participates in membership management.
-```
-
-### Membership list
-
-```text
-Node-A view:
-+----------------+
-| Node | Status  |
-+----------------+
-| A    | Alive   |
-| B    | Alive   |
-| C    | Alive   |
-| D    | Alive   |
-+----------------+
-
-Membership list stores cluster state.
-```
-
-### Heartbeats & failure detection
-
-Nodes send periodic **heartbeats** (or gossip liveness). Missed heartbeats → **Suspect** → verification → **Failed** → membership list updated.
-
-```text
-Alive → (missed heartbeats) → Suspect → (confirmed) → Failed
-```
-
-Propagation across the cluster often uses [§5.27 Gossip Protocol](#527-gossip-protocol). Leader heartbeats in Raft: [§5.23](#523-raft). Election triggers: [§5.24 Leader Election](#524-leader-election).
-
-### Membership states
-
-| State | Meaning |
-|-------|---------|
-| **Alive** | Node functioning normally |
-| **Suspect** | Possible failure |
-| **Failed** | Failure confirmed |
-| **Left** | Gracefully exited |
-
-### Centralized membership
-
-A dedicated server maintains membership.
-
-```text
-          Membership Server
-                   |
-      -------------------------
-      |           |           |
-      V           V           V
-      A           B           C
-
-Nodes ask central server for membership.
-```
-
-**Advantages:** simple design, easy management.
-
-**Limitations:** single point of failure, scalability limits.
-
-### Decentralized membership
-
-No central server — all nodes participate; membership information is shared among peers.
-
-```text
-A ----- B
-| \   / |
-|  \ /  |
-|   X   |
-|  / \  |
-| /   \ |
-C ----- D
-```
-
-### Gossip-based membership
-
-Most modern systems use [gossip protocols](#527-gossip-protocol) to propagate join/leave/failure updates (see round-by-round example in [§5.27](#527-gossip-protocol)).
-
-```text
-Node-C fails → A detects → gossip A→B→D→E → all nodes mark C failed
-```
-
-### Benefits
-
-- Tracks active nodes
-- Detects failures
-- Supports node joins and leaves
-- Enables cluster coordination
-- Supports service discovery
-
-### Challenges
-
-- False failure detection
-- Network partitions — [§5.20 Split Brain](#520-split-brain)
-- Delayed propagation
-- Membership inconsistency
-- Additional network traffic
-
-### Membership vs service discovery
-
-| | Membership | Service discovery |
-|---|------------|-------------------|
-| **Tracks** | Cluster nodes (A, B, C, D) | Services (Payment, Inventory, Order) |
-| **Relationship** | Membership often supports service discovery | |
-
-### Real-world usage
-
-| System type | What membership tracks |
-|-------------|------------------------|
-| **Distributed databases** | Database nodes |
-| **Distributed caches** | Cache servers |
-| **Consensus systems** | Voting members — [§5.21 Consensus](#521-consensus) |
-| **Container platforms** | Cluster machines |
-
-### Summary
-
-Membership protocols manage which nodes belong to a distributed system.
-
-**Responsibilities:** detect joins, detect leaves, detect failures, maintain membership lists, propagate cluster state.
-
-**Common techniques:** heartbeats, failure detection, [gossip protocols](#527-gossip-protocol), membership lists.
-
-**Membership states:** Alive, Suspect, Failed, Left.
-
-**Goal:** provide every node with an up-to-date view of the cluster so the distributed system can operate correctly despite joins, leaves, and failures.
+Technically, **membership protocols** track **join**, **leave**, **failure**, and **recovery** of nodes. Each member maintains a view (membership list) updated via heartbeats, gossip, or a coordination service. States typically progress Alive → Suspect → Failed.
 
 ---
 
+### What problem it fixes
+
+```text
+Node-C crashes — if others still think C is alive:
+  requests to C fail repeatedly
+  quorums miscount available voters
+  load balancers send traffic to a ghost
+```
+
+Dynamic clusters (autoscaling, rolling deploys) constantly change membership; static config files rot within minutes.
+
+---
+
+### What it does
+
+| Event | Membership update |
+|-------|-------------------|
+| **Join** | Add node; propagate to cluster |
+| **Graceful leave** | Remove node; stop routing |
+| **Failure** | Mark suspect then failed after missed signals |
+| **Recovery** | Re-admit with new epoch or replaced identity |
+
+**Typical states:**
+
+| State | Meaning |
+|-------|---------|
+| **Alive** | Node responding normally |
+| **Suspect** | Missed heartbeats; not yet confirmed down |
+| **Failed** | Confirmed unreachable |
+| **Left** | Graceful departure |
+
+---
+
+### How it works — the architecture inside
+
+```mermaid
+flowchart LR
+    subgraph Centralized["Centralized"]
+        direction LR
+        MS[Membership server] --> A1[Node A]
+        MS --> B1[Node B]
+    end
+    subgraph Decentralized["Decentralized gossip"]
+        direction LR
+        A2[Node A] --- B2[Node B]
+        B2 --- C2[Node C]
+        C2 --- D2[Node D]
+        A2 --- D2
+    end
+    Centralized ~~~ Decentralized
+```
+
+**Heartbeat failure path:**
+
+```text
+Alive → (missed heartbeats) → Suspect → (corroboration / timeout) → Failed
+Gossip propagates Failed state to all members
+```
+
+**Centralized vs decentralized:**
+
+| Style | Pros | Cons |
+|-------|------|------|
+| **Central server** | Simple, consistent view | SPOF, scale limits |
+| **Gossip (decentralized)** | Scalable, fault tolerant | Temporary view divergence |
+
+Membership feeds **service discovery** (which nodes exist) but is not the same as discovering API endpoints for Payment vs Inventory services.
+
+---
+
+### Pitfalls and design tips
+
+- **False positives** during GC pauses or network blips — use suspect state and phi accrual before marking failed.
+- **Network partition** can create competing membership views — pair with quorum for decisions (5.20).
+- **Symmetric partition:** both sides may mark the other failed — design merge rules on heal.
+- **SWIM, Consul gossip, Cassandra, Kubernetes Endpoints** — real mechanisms to name.
+- **Graceful leave** (`decommission`) avoids false failure storms during deploys.
+
+---
+
+### Real-world example
+
+**HashiCorp Serf (SWIM + gossip):** Serf runs an agent on each node, gossiping membership and health. When a node fails health checks, Serf marks it failed and emits events; Consul uses Serf for LAN membership so catalog nodes match reality. Operators drain a node with `leave` before shutdown — membership removes it cleanly without a false failure alert.
+
+---
 
 ## 5.29 Sharding, Bucketing & Partitioning
 
-**Capstone** of the placement track (§5.1–§5.10) — combines [§5.2 Sharding](#52-sharding), in-DB [§5.4 Range Partitioning](#54-range-partitioning), and schema-as-bucket isolation for PostgreSQL-style OLTP.
+### Overview
 
-### Objective
+Imagine a national library system: branches in different cities (sharding), separate reading rooms per neighborhood inside each branch (bucketing), and dated shelf sections replaced wholesale when archives rotate (partitioning). Together they keep any single shelf from holding a hundred million books.
 
-This pattern explains:
+Technically, this **three-layer pattern** combines **sharding** (spread across physical DB instances), **bucketing** (schema-per-tenant-group isolation inside a logical database), and **range partitioning** (sub-tables inside each bucket for fast retention). A **control plane** routes each customer to exactly one bucket on one physical instance.
 
-- **Why** sharding + bucketing + partitioning is needed
-- **How** it is designed
-- **How** it works at runtime
-- **What** rules must be followed in production
+---
 
-### Problem statement (why this system exists)
+### What problem it fixes
 
-We are building a system that handles:
-
-- Millions of customers
-- Continuous writes (events, updates, logs)
-- Frequent reads (APIs, indexing, reporting)
-- Heavy deletes (retention policies, cleanup jobs)
-- Periodic full reindex / bulk replay
-
-Without design, one table (`index_events`) growing 1M → 100M rows causes:
+One monolithic `index_events` table growing from 1M to 100M rows causes:
 
 | Symptom | Root cause |
 |---------|------------|
-| Slow INSERT | Every insert updates larger indexes; more disk I/O |
-| Slow SELECT | Large working set; even indexed queries degrade |
-| Slow DELETE | Row-by-row delete; vacuum/bloat overhead |
-| Painful maintenance | Reindex, vacuum lock or throttle production |
-| Reindex / replay breaks SLA | Millions of writes in hours overload one node |
+| Slow INSERT | Larger indexes per insert |
+| Slow SELECT | Huge working set |
+| Slow DELETE | Row-by-row delete, vacuum bloat |
+| Painful maintenance | Reindex locks production |
+| Reindex SLA miss | Bulk replay overloads one node |
 
-### What is the three-layer pattern?
+---
+
+### What it does
 
 | Layer | Purpose | Typical implementation |
 |-------|---------|------------------------|
-| **Sharding** | Spread load across machines | Multiple DB instances (PhDB) |
-| **Bucketing** | Isolate tenant/customer groups | Schema per bucket inside a logical DB |
-| **Partitioning** | Keep individual tables fast | Range (or hash) sub-tables inside each bucket |
+| **Sharding (PhDB)** | Scale across machines | Multiple PostgreSQL instances |
+| **Bucketing** | Tenant isolation | Schema per bucket in one LoDB |
+| **Partitioning** | Keep tables small | Range partitions inside bucket |
 
 ```text
-Sharding      → SCALE       (many machines)
-Bucketing     → ISOLATION   (customer groups)
-Partitioning  → PERFORMANCE (manageable tables, fast retention)
+Customer → Bucket (schema) → LoDB → PhDB (shard)
+Inside bucket: range partitions for events/logs
+Control plane: entity_buckets + buckets tables route every request
 ```
 
 **Mental model:**
 
 ```text
-Customer → Bucket → Schema → LoDB (logical DB) → PhDB (physical DB)
+PhDB = country · LoDB = state · Schema (bucket) = city · Customer = resident
 ```
 
-**Analogy:** PhDB = country · LoDB = state · Schema (bucket) = city · Customer = resident
+---
 
-```mermaid
-flowchart TB
-    subgraph PhDB1["PhDB-1 (PostgreSQL instance)"]
-        LoDB1[installbase_db]
-        LoDB1 --> B1[bucket_0001 schema]
-        LoDB1 --> B2[bucket_0002 schema]
-    end
-    subgraph PhDB2["PhDB-2"]
-        LoDB2[installbase_db]
-        LoDB2 --> B3[bucket_0003 schema]
-    end
-    B1 --> P1[events_p1..pN partitions]
-    CP[(Control plane / metadata)] -->|routes| B1
-    CP --> B3
-```
-
-### Layer 1 — Physical DB (PhDB) / sharding
-
-The actual PostgreSQL **instance or cluster** (CPU, memory, disk). Often **primary + replica** per instance for HA.
-
-```text
-PhDB-1 (Server A)    PhDB-2 (Server B)
-```
-
-See [§5.2 Sharding](#52-sharding).
-
-### Layer 2 — Logical DB (LoDB)
-
-Application-facing database: `CREATE DATABASE installbase_db;` — connection string usually targets LoDB, not raw instance name.
-
-### Layer 3 — Bucket (= schema)
-
-Each bucket is a **namespace** with identical table structure, holding a **disjoint subset of customers**:
-
-```sql
-CREATE SCHEMA bucket_0001;
--- same tables in every bucket: customer, events, ...
-```
-
-**Distribution example** (1M customers, ~100k per bucket):
-
-```text
-bucket_0001 → customers 1–100k      on PhDB-1
-bucket_0002 → customers 100k–200k   on PhDB-1
-bucket_0003 → customers 200k–300k   on PhDB-2
-```
-
-### Layer 4 — Partitioning (inside bucket)
-
-High-volume tables (events, logs) use **range partitioning** within the bucket:
-
-```sql
-CREATE TABLE events (
-  id BIGINT,
-  data TEXT
-) PARTITION BY RANGE (id);
-
--- P1: 0–1M, P2: 1M–2M, P3: 2M–3M ...
-```
-
-PostgreSQL routes inserts to the correct child partition; queries with range predicates **prune** irrelevant partitions. See [§5.4 Range Partitioning](#54-range-partitioning).
-
-### Shared-nothing rules
-
-1. **All data for one customer lives in exactly one bucket** — never split a customer across buckets.
-2. **No cross-bucket joins** in the hot path.
-
-```sql
--- Allowed (single bucket)
-SELECT * FROM bucket_0003.customer WHERE id = 'CUST_101';
-
--- Avoid (cross-bucket — slow, breaks scale)
--- JOIN bucket_0001.customer WITH bucket_0005.orders
-```
-
-Cross-shard queries need **scatter-gather**, **denormalization**, or an **analytics pipeline** — not OLTP SQL joins.
-
-### Control plane (metadata)
-
-A small **routing catalog** (often a separate lightweight DB) answers: *where is this customer?*
-
-**`buckets` — where buckets live and capacity:**
-
-```sql
-CREATE TABLE buckets (
-  bucket_id        INT PRIMARY KEY,
-  db_instance_id   TEXT NOT NULL,      -- e.g. 'PhDB-2'
-  space_left       INT NOT NULL DEFAULT 1000000,
-  privileged       BOOLEAN NOT NULL DEFAULT FALSE,
-  is_active        BOOLEAN NOT NULL DEFAULT TRUE,
-  bucket_schema    TEXT               -- e.g. 'bucket_0003'
-);
-```
-
-**`entity_buckets` — customer → bucket (most important routing table):**
-
-```sql
-CREATE TABLE entity_buckets (
-  entity_id   TEXT PRIMARY KEY,
-  bucket_id   INT REFERENCES buckets(bucket_id)
-);
-```
-
-```text
-CUST_101 → bucket_0002
-CUST_202 → bucket_0005
-```
-
-Use a sequence (`seq_bucket`) for new bucket IDs. This is your **shard map** — equivalent to Vitess topology or DynamoDB partition metadata.
-
-### Read flow
-
-```mermaid
-sequenceDiagram
-    participant API
-    participant Meta as Control plane
-    participant DB as PhDB + LoDB
-    API->>Meta: entity_id = CUST_101
-    Meta->>Meta: SELECT bucket_id, db_instance_id
-    API->>DB: CONNECT installbase_db
-    API->>DB: SET search_path TO bucket_0002
-    API->>DB: SELECT ... WHERE id = CUST_101
-```
-
-```text
-Step 1: Lookup entity_buckets → bucket_id
-Step 2: Lookup buckets → db_instance_id, bucket_schema
-Step 3: Connect to target PhDB / LoDB
-Step 4: SET search_path TO bucket_000X (PostgreSQL)
-Step 5: Execute query
-```
-
-**Important:** If mapping **not found** on read → return empty / not found. **Do not** auto-assign a bucket on read.
-
-### Write flow (new customer)
-
-```text
-Step 1: Check entity_buckets — exists?
-Step 2: If no → assign bucket (see below), insert mapping
-Step 3: Connect + SET search_path
-Step 4: Insert / update business data
-Step 5: Decrement space_left on bucket (or recompute periodically)
-```
-
-### Bucket assignment (even distribution)
-
-```sql
-SELECT bucket_id
-FROM buckets
-WHERE space_left > 0 AND privileged = FALSE AND is_active = TRUE
-ORDER BY space_left DESC
-LIMIT 1;
-```
-
-If none available → **create new bucket** (pick least-loaded PhDB, `CREATE SCHEMA`, run DDL, register in `buckets`).
-
-Prefer buckets with the **most remaining capacity** (`ORDER BY space_left DESC`) to avoid hotspots.
-
-### Bucket creation
-
-```text
-Step 1: Choose least-loaded PhDB (by bucket count or disk/CPU)
-Step 2: nextval('seq_bucket') → new bucket_id
-Step 3: CREATE SCHEMA bucket_XXXX + create all tables (migrations)
-Step 4: Insert row in buckets; ready for assignments
-```
-
-Run DDL via **migration job**, not user-facing API.
-
-### Partition lifecycle (inside bucket)
+### How it works — the architecture inside
 
 ```mermaid
 flowchart LR
-    Inserts[Inserts to active partition] --> Monitor[Monitor sequence / size]
-    Monitor --> Create[Scheduler creates next partition]
-    Monitor --> Drop[Drop oldest after data move]
-    Drop --> Move[Move unprocessed rows to latest]
+    subgraph PhDB1["PhDB-1"]
+        direction LR
+        LoDB1[installbase_db] --> B1[bucket_0001]
+        LoDB1 --> B2[bucket_0002]
+        B1 --> P1[events partitions]
+    end
+    subgraph PhDB2["PhDB-2"]
+        direction LR
+        LoDB2[installbase_db] --> B3[bucket_0003]
+    end
+    CP[Control plane] -->|routes| B1
+    CP --> B3
+```
+
+**Shared-nothing rules:**
+
+1. All data for one customer lives in **exactly one bucket** — never split a customer across buckets.
+2. **No cross-bucket joins** on the hot path.
+
+```sql
+-- Allowed
+SELECT * FROM bucket_0003.customer WHERE id = 'CUST_101';
+
+-- Avoid on hot path
+-- JOIN bucket_0001.customer WITH bucket_0005.orders
+```
+
+**Control plane tables:**
+
+```sql
+CREATE TABLE buckets (
+  bucket_id INT PRIMARY KEY,
+  db_instance_id TEXT NOT NULL,
+  space_left INT NOT NULL DEFAULT 1000000,
+  bucket_schema TEXT,
+  is_active BOOLEAN NOT NULL DEFAULT TRUE
+);
+
+CREATE TABLE entity_buckets (
+  entity_id TEXT PRIMARY KEY,
+  bucket_id INT REFERENCES buckets(bucket_id)
+);
+```
+
+**Read flow:**
+
+```text
+1. Lookup entity_buckets → bucket_id
+2. Lookup buckets → db_instance_id, bucket_schema
+3. Connect to PhDB / LoDB
+4. SET search_path TO bucket_000X
+5. Execute query
+
+If mapping not found on read → return not found (never auto-assign on read)
+```
+
+**Write flow (new customer):**
+
+```text
+1. Check entity_buckets — exists?
+2. If no → assign bucket with most space_left, insert mapping
+3. SET search_path → insert business data
+4. Decrement space_left (or recompute periodically)
+```
+
+**Bucket assignment:**
+
+```sql
+SELECT bucket_id FROM buckets
+WHERE space_left > 0 AND is_active = TRUE
+ORDER BY space_left DESC LIMIT 1;
+```
+
+**Partition lifecycle:**
+
+```mermaid
+flowchart LR
+    Inserts[Inserts to active partition] --> Monitor[Monitor size / sequence]
+    Monitor --> Create[Scheduler adds next partition]
+    Monitor --> Drop[DROP oldest after row move]
 ```
 
 ```text
-Step 1: Inserts land in current range partition
-Step 2: Monitor ID sequence or row count
-Step 3: Background scheduler adds future partitions (keep 2+ empty reserve)
-Step 4: Before DROP old partition → move unprocessed rows to latest partition
-Step 5: DROP TABLE old partition — O(metadata), not O(rows)
+DROP partition → O(metadata), not O(rows)
+DELETE millions of rows → vacuum storm, index bloat
 ```
 
-**Full reindex / replay scenario:**
+**How to calculate — partition provisioning:**
 
 ```text
-1. Read master data
-2. Bulk insert into events (may hit 2× row count during migration)
-3. Process / index
-4. Drop old partitions when cutover complete
+Given: active_partitions = 10, reserve = 2
+
+total_partitions ≈ (2 × active_partitions) + reserve
+                 = (2 × 10) + 2 = 22 provisioned
+
+Plan disk for 2× active data during reindex / bulk replay
 ```
 
-**Why partition + DROP beats DELETE:**
+**How to calculate — shard and node sizing (1,000 TB, ~1 KB/row):**
 
 ```text
-DELETE millions of rows → vacuum storm, index bloat, long locks
-DROP partition           → instant, predictable
-```
+Given:
+  Total data = 1,000 TB
+  Target shard size = 2 TB per primary
 
-**Partition count formula:**
+Primary shards = 1,000 / 2 = 500 shards
+Replication factor RF = 3
+Physical storage = 1,000 × 3 = 3,000 TB
 
-```text
-total_partitions ≈ (2 × active_partitions) + reserve_partitions
-Example: 10 active → 20 + 2 = 22 provisioned
-```
+Usable disk per node = 10 TB - 2 OS - 1 reserve = 7 TB
+Nodes ≈ 3,000 / 7 ≈ 429 nodes (round up for headroom)
 
-Plan for **2× active data** during reindex, replay, or bulk import.
-
-### Combined stack (final picture)
-
-```text
-PhDB-2
-└── installbase_db (LoDB)
-    ├── bucket_0003 (schema)
-    │   ├── customer
-    │   └── events → events_p1, events_p2, ... (range partitions)
-    └── bucket_0004
-        └── ...
-```
-
-| Concern | Layer that solves it |
-|---------|---------------------|
-| Machine limits | Sharding (PhDB) |
-| Tenant isolation | Bucketing (schema) |
-| Table size / retention | Partitioning (range + DROP) |
-| Routing | Control plane (`entity_buckets`) |
-
-### Production rules
-
-| Practice | Reason |
-|----------|--------|
-| Partition creation in **scheduler** | Avoid API latency spikes and lock contention |
-| **Locks** around bucket creation / partition DDL | Prevent duplicate bucket IDs or half-created schemas |
-| Monitor `space_left`, partition fill rate, vacuum | Early warning before insert failures |
-| **Privileged** buckets | Dedicated enterprise tenants — excluded from shared pool assignment |
-| `search_path` per request | Wrong schema = wrong tenant data (critical security bug) |
-
-### Pitfalls
-
-| Pitfall | Consequence | Mitigation |
-|---------|-------------|------------|
-| Missing `search_path` | Cross-tenant data leak or wrong reads | Set schema in connection/session middleware |
-| Uneven bucket fill | One PhDB overloaded | `space_left` + least-loaded PhDB on create |
-| No reserve partitions | Insert fails during spike | Pre-create 2+ empty partitions |
-| Large partitions never dropped | Storage and query decay | Rolling window + DROP not DELETE |
-| Cross-bucket joins in API | Latency, distributed tx pain | Denormalize; async aggregation |
-| Auto-assign bucket on read | Phantom tenants, routing corruption | Assign only on explicit create/write |
-| Partition DDL in API | Timeouts under load | Background scheduler only |
-| Ignoring 2× during reindex | Disk full mid-migration | Size for double active set |
-
-### Shard vs partition (one-line mental model)
-
-| Term | Where it lives | Purpose |
-|------|----------------|---------|
-| **Shard** | Different DB instance / machine | Horizontal scale across servers |
-| **Partition** | Inside one DB instance | Query speed + easy retention (DROP) |
-
-```text
-Machine 1 → Shard 1 → orders_2024_01_0 .. orders_2024_01_7
-Machine 2 → Shard 2 → orders_2024_01_0 .. orders_2024_01_7
-```
-
-They are **combined** at petabyte scale: shard for machine limits, partition for table size.
-
-### Worked sizing — 1,000 TB at ~1 KB/row
-
-```text
-Total data     = 1,000 TB
-Target shard   = 2 TB per primary  → 500 primary shards
-RF = 3         → 3,000 TB physical storage
-
-Node usable disk (10 TB - 2 OS - 1 reserve) = 7 TB
-Nodes needed   = 3,000 / 7 ≈ 429 nodes (round up for headroom)
-
-Partition strategy per shard (avoid hotspots):
-  Level 1: monthly range partition (12/year)
-  Level 2: hash(user_id) % 8 sub-buckets
+Partition strategy per shard (avoid hot month):
+  Monthly range × hash(user_id) % 8
   → 12 × 8 = 96 partitions per year per shard
 ```
 
-### Worked sizing — 100 billion rows, 100 shards
+**How to calculate — rows per partition (100B rows, 100 shards):**
 
 ```text
 Rows per shard = 100B / 100 = 1B rows/shard
 
-Monthly only:     1B / 12 ≈ 83M rows/month  (risk: hot month)
+Monthly only:     1B / 12 ≈ 83M rows/month  (hotspot risk)
 Monthly + hash×8: 1B / 96 ≈ 10.4M rows/partition  (safer)
 
-Disk per server: 10 TB - OS 2 TB - logs/backup 1 TB = 7 TB usable
-Plan shards so primary data + indexes + 2× headroom fits usable disk
+Usable disk per server = 10 - 2 OS - 1 logs = 7 TB
+Size shards so primary + indexes + 2× headroom fits 7 TB
 ```
 
-Rebalancing when shards skew: [§5.7 Rebalancing](#57-rebalancing).
+| Concern | Layer |
+|---------|-------|
+| Machine limits | Sharding (PhDB) |
+| Tenant isolation | Bucketing (schema) |
+| Table size / retention | Partitioning (DROP) |
+| Routing | Control plane |
 
-### When to use
+**Shard vs partition:**
 
-- Millions of customers or entities with **per-entity locality** (all rows for customer X together)
-- Continuous writes + heavy deletes (retention) + periodic **full reindex**
-- PostgreSQL (or similar) where **schema-per-tenant** is acceptable vs database-per-tenant cost
-- Team can operate **control plane** + automated bucket/partition jobs
-
-### Summary
-
-Sharding, bucketing, and partitioning work together so data is **distributed**, customers are **isolated**, and tables stay **operationally small**.
-
-```text
-Customer → Bucket (schema) → LoDB → PhDB (shard)
-Inside bucket: range partitions for events/logs + DROP for retention
-Control plane: entity_buckets + buckets tables route every request
-```
-
-**Hard rules:** one customer per bucket; no cross-bucket joins on hot path; never auto-assign bucket on read; partition DDL in scheduler only.
-
-**Goal:** Scale OLTP past single-table limits while keeping retention, reindex, and tenant isolation manageable in production.
+| Term | Where | Purpose |
+|------|-------|---------|
+| **Shard** | Different DB instance | Horizontal scale across servers |
+| **Partition** | Inside one instance | Query prune + instant retention |
 
 ---
+
+### Pitfalls and design tips
+
+- **Wrong `search_path`** → cross-tenant data leak — set schema in connection middleware every request.
+- **Uneven bucket fill** → one PhDB overloaded — `ORDER BY space_left DESC` and least-loaded instance on new bucket creation.
+- **No reserve partitions** → insert fails during spike — pre-create 2+ empty partitions via scheduler only.
+- **Partition DDL in API** → timeouts — background migration job with locks against duplicate bucket IDs.
+- **Auto-assign bucket on read** → phantom tenants — assign only on explicit create/write.
+- **Cross-bucket joins in OLTP** → scatter-gather pain — denormalize or async analytics pipeline.
+- **Privileged buckets** for enterprise tenants — exclude from shared pool assignment query.
+
+---
+
+### Real-world example
+
+**PostgreSQL multi-tenant SaaS (1M customers, ~100k per bucket):** Ten PostgreSQL instances (PhDB) each host multiple schemas (`bucket_0001` … `bucket_0010`) inside `installbase_db`. The control plane maps `CUST_101` → `bucket_0002` on PhDB-1. High-volume `events` tables are range-partitioned by ID inside each schema; nightly jobs `DROP` partitions older than 90 days instead of `DELETE` millions of rows — keeping inserts fast and retention predictable while reindex jobs bulk-load into fresh partitions sized for 2× temporary row count.
+
 
 [<- Back to master index](../README.md)

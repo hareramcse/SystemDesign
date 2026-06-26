@@ -129,9 +129,20 @@ You retain full control over patches, kernel tuning, and runtime versions — an
 
 ---
 
-### Real-world example: gaming server fleet
+### Pitfalls and design tips
 
-A multiplayer game studio runs dedicated game servers on Google Compute Engine. Each match spins up a VM from a golden image with the game binary pre-installed. When a region's player count drops overnight, instances terminate and billing stops. The team chose IaaS over PaaS because they need custom kernel modules and low-level network tuning for UDP game traffic.
+- **IaaS is not "no ops"** — you patch the OS, harden SSH, manage AMIs, and tune security groups; the provider SLA covers the facility, not your misconfiguration.
+- **When PaaS fits better** — standard HTTP APIs with no kernel modules; IaaS wins for UDP tuning, GPU drivers, or custom networking (game servers, HFT).
+- **Instance type lock-in** — vertical resize often requires stop/start; prefer autoscaling groups over one oversized VM.
+- **Cost surprise** — EBS, egress, NAT gateway, and idle Elastic IPs bill separately from compute hours.
+- **Production:** EC2 + ASG + ALB, GCE MIG, Azure VMSS; golden AMIs via Packer or image pipelines.
+- **Interview angle:** draw the responsibility split — guest OS and above is always yours on IaaS.
+
+---
+
+### Real-world example: Agones game servers on GKE
+
+**Agones** (Google's open-source game-server orchestrator on Kubernetes) provisions dedicated game-server pods on GKE node pools — but the underlying pattern is IaaS: teams need custom UDP networking, kernel tuning, and per-match isolation. Studios such as Ubisoft and Supersonic have published GKE + Agones architectures where matchmakers scale node pools and game-server pods independently. IaaS (or Kubernetes on IaaS) wins over PaaS when you need non-standard network paths and OS-level control for real-time UDP.
 
 ---
 
@@ -214,6 +225,17 @@ Request arrives → platform routes to healthy instance → auto-scales replicas
 5. Managed Postgres add-on provisions a database with backups — no VM to administer.
 
 The team never SSHs into a server; all changes flow through code and platform config.
+
+---
+
+### Pitfalls and design tips
+
+- **Platform constraints** — no custom kernel modules, limited background workers, capped request duration; read App Service / Heroku limits before committing.
+- **Vendor coupling** — platform-specific bindings (Azure Storage SDK wired to App Service) complicate migration; prefer 12-factor config externalized to env vars.
+- **When IaaS wins** — legacy monoliths, exotic runtimes, or compliance requiring full OS control.
+- **Staging slots / preview apps** — use platform-native blue-green (App Service slots, Heroku pipelines) instead of hand-rolled VM swaps.
+- **Production:** Azure App Service, Google App Engine, Heroku, Render; managed Postgres add-ons for small teams.
+- **Hidden cost:** outbound bandwidth and add-on databases often exceed base dyno/compute pricing.
 
 ---
 
@@ -313,9 +335,20 @@ flowchart LR
 
 ---
 
-### Real-world example: Salesforce CRM
+### Pitfalls and design tips
 
-A sales organization adopts Salesforce instead of hosting CRM on internal servers. Reps log in via browser; the vendor ships new features quarterly without IT install packages. Admins configure pipelines and permissions; customer account data lives in Salesforce's multi-tenant cloud. The company trades deep code customization for zero infrastructure ops and instant global access.
+- **Data portability** — exporting years of CRM or ERP data at contract end is painful; negotiate API/export terms upfront.
+- **Customization ceiling** — deep product logic belongs in your code, not forced into SaaS workflow hacks.
+- **Shared fate** — vendor outages affect all tenants; read published status pages and SLAs, not assumed five-nines.
+- **Compliance is shared** — GDPR/HIPAA obligations remain yours even when the vendor is "certified."
+- **When not SaaS** — core differentiator, air-gapped environments, or sub-millisecond on-prem latency requirements.
+- **Production:** Salesforce, Workday, Slack, Microsoft 365 — evaluate tenant isolation model (org ID vs dedicated instance).
+
+---
+
+### Real-world example: Salesforce multi-tenant CRM
+
+Salesforce runs a **multi-tenant SaaS** CRM: each customer org shares the same application release train (three major seasonal updates per year documented on trust.salesforce.com). Admins configure objects, flows, and roles in Setup; end users access via browser or mobile with no on-prem install. Customer data is logically isolated per org ID in shared infrastructure — the trade-off is limited low-level customization versus zero server patching and global availability SLAs published by the vendor.
 
 ---
 
@@ -379,6 +412,22 @@ Cold start:  no running instance → platform loads runtime + code → higher fi
 Warm start:  existing instance reused → execute immediately → lower latency
 ```
 
+**How to calculate:** Lambda monthly compute (order-of-magnitude):
+
+```text
+Given: 10,000 invocations/month at peak, 200 ms average duration, 512 MB memory
+
+GB-seconds per invoke = (512 / 1024) GB x 0.2 s = 0.1 GB-s
+Monthly GB-seconds     = 10,000 x 0.1 = 1,000 GB-s
+
+AWS Lambda compute (example tier): ~0.0000166667 USD per GB-s
+Compute cost ~ 1,000 x 0.0000166667 ~ 0.017 USD/month (compute only)
+
+Add: ~0.20 USD per 1M requests -> 10,000 requests ~ 0.002 USD
+Total ~ 0.02 USD/month at this volume — compare to 2x t3.small 24/7 (~30+ USD/month each)
+Sanity check: steady high traffic quickly makes reserved VMs cheaper than per-invocation pricing.
+```
+
 Functions should be **stateless** — no in-memory state carried between invocations; persist data externally.
 
 #### Scaling comparison
@@ -412,6 +461,17 @@ flowchart LR
 5. First request after idle period hits a cold start (~200 ms extra); subsequent requests on warm instances are fast.
 
 Persistent metadata lives in DynamoDB; the function holds no local state between runs.
+
+---
+
+### Pitfalls and design tips
+
+- **Cold starts** — idle functions pay latency on first invoke; provisioned concurrency or minimum instances trade cost for steady p99.
+- **Timeout ceilings** — AWS Lambda max 15 minutes; long ETL belongs on Batch/Fargate, not FaaS.
+- **VPC-attached Lambda** — adds ENI setup latency and NAT cost; use only when RDS/ElastiCache require private access.
+- **When VMs win** — steady high QPS, WebSockets with long connections, or workloads needing local disk persistence.
+- **Production:** AWS Lambda + API Gateway, Azure Functions, Google Cloud Functions, Cloudflare Workers (edge).
+- **State externalized** — DynamoDB, S3, Redis; never rely on `/tmp` or memory between invocations.
 
 ---
 
@@ -507,9 +567,20 @@ flowchart LR
 
 ---
 
-### Real-world example: streaming service region map
+### Pitfalls and design tips
 
-A video platform deploys encoding pipelines and CDN origins in `us-east-1`, `eu-west-1`, and `ap-northeast-1`. Indian subscribers stream from Mumbai edge caches backed by ap-south-1 origin storage. When us-east-1 experienced a partial API outage, playback continued in Europe and Asia because those regions run independent control planes — only North American users needed failover routing.
+- **Service availability varies** — new AWS services launch in `us-east-1` first; verify every dependency exists in your target region before architecture sign-off.
+- **Cross-region egress is expensive** — replicate data deliberately; do not stream logs across regions by default.
+- **Data residency** — region choice is a legal decision (GDPR, RBI, China) not only latency.
+- **When single region suffices** — internal tools, early MVP, or users in one geography with multi-AZ HA.
+- **Production:** pick primary + DR region early; document which resources are regional vs global (IAM, Route 53, CloudFront).
+- **Failover needs rehearsal** — DNS TTL and health-check failover must be tested; "we have two regions" is not DR until proven.
+
+---
+
+### Real-world example: multi-region video origins
+
+Netflix-style architectures place **origin storage** in multiple AWS regions (e.g. `us-east-1`, `eu-west-1`, `ap-northeast-1`) and front playback with a CDN (CloudFront/Akamai) that caches segments at edge PoPs. A user in Mumbai hits a local edge cache; cache misses pull from the nearest origin bucket in `ap-south-1` or `ap-southeast-1`. When `us-east-1` S3 API errors spiked during a 2021 regional event, European and Asian playback continued because origins and control planes are regional — only North American miss traffic needed rerouting to `us-west-2`.
 
 ---
 
@@ -601,6 +672,17 @@ AZ-1 fails → promote replica in AZ-2 → applications reconnect via same regio
 3. ALB stops routing to AZ-1; AZ-2 instances absorb full traffic.
 4. RDS multi-AZ promotes the standby in AZ-2; DNS endpoint unchanged for apps.
 5. Users experience brief errors during drain; service recovers without manual failover.
+
+---
+
+### Pitfalls and design tips
+
+- **AZ labels are logical** — `1a` in two accounts may map to different physical buildings; spread across AZs, not just names.
+- **Cross-AZ traffic bills** — RDS multi-AZ and Kafka replication incur per-GB charges in many clouds.
+- **Quorum systems want 3 AZs** — etcd, ZooKeeper, and Raft clusters prefer odd counts across failure domains.
+- **When single AZ is OK** — dev/test only; production databases and Kubernetes control planes should span AZs.
+- **Production:** ALB/NLB with cross-zone load balancing; RDS Multi-AZ or Aurora with replicas in separate AZs.
+- **Correlated failures happen** — software bugs and misconfigurations can take all AZs; multi-region still matters for region-wide events.
 
 ---
 
@@ -721,9 +803,20 @@ Async: Write → Region A → success response (Region B catches up later)
 
 ---
 
-### Real-world example: global banking API
+### Pitfalls and design tips
 
-A bank deploys payment APIs in `ap-south-1`, `eu-central-1`, and `us-east-1` to satisfy data-residency rules. Indian account data never leaves Mumbai; EU accounts stay in Frankfurt. A global traffic manager routes each customer to their home region. When ap-south-1 degraded during a monsoon-related utility issue, Indian traffic failed over to a warm standby in Singapore for read-only balance checks while writes queued — RPO of 30 seconds on async replication, RTO under five minutes.
+- **Active-active is hard** — conflict resolution, cart merges, and idempotency keys are mandatory; do not assume "replicate and forget."
+- **Async replication implies RPO > 0** — document acceptable data loss windows; synchronous cross-region writes add latency.
+- **Split-brain risk** — use fencing, leader election, or single-write-region patterns during failover.
+- **When multi-region is overkill** — single region + multi-AZ covers most AZ-level failures at lower cost.
+- **Production:** Route 53 latency/failover routing, AWS Global Accelerator, Cloud CDN for static assets.
+- **Global databases** — Spanner, DynamoDB Global Tables, CockroachDB trade cost and consistency models for simpler multi-region writes.
+
+---
+
+### Real-world example: multi-region payments with data residency
+
+HSBC and similar global banks document **active-active or active-passive regions** per jurisdiction — EU payment traffic stays in EU regions (`eu-central-1`, `eu-west-1`) to satisfy GDPR, while US traffic uses `us-east-1`. Route 53 or Azure Traffic Manager health-checks regional API gateways; on regional impairment, DNS shifts to a pre-provisioned secondary region. Writes replicate asynchronously (typical RPO of seconds to minutes); read-only failover paths are tested in game days. Cross-region writes are avoided for accounts bound to a home region — routing is per-customer, not global anycast.
 
 ---
 
@@ -832,7 +925,31 @@ Outbound patch:     private VM → NAT gateway → IGW → internet
 4. RDS Postgres in a second private subnet accepts port 5432 only from the app security group.
 5. App servers pull Docker images via NAT gateway; no inbound internet path to apps or database.
 
+**How to calculate:** usable host addresses in a subnet:
+
+```text
+Given: VPC 10.0.0.0/16, private subnet 10.0.2.0/24
+
+Hosts in a /24 = 2^(32-24) - 2 (network + broadcast in classic model) = 254 usable IPs
+AWS reserves 5 addresses per subnet (first four + last) -> plan ~251 assignable in a /24
+
+A /16 VPC has 2^(32-16) = 65,536 addresses — enough for large fleets
+If you expect 500 pods + 50 nodes on VPC CNI, budget >=550 IPs in the pod subnet, not a /28
+Sanity check: carve /20 or larger per AZ for busy Kubernetes pod subnets.
+```
+
 A misconfigured security group is the most common exposure vector — not the VPC boundary itself.
+
+---
+
+### Pitfalls and design tips
+
+- **IP exhaustion on VPC CNI** — one IP per pod; a `/24` pod subnet holds ~251 assignable addresses, not thousands of pods.
+- **NAT gateway cost** — one NAT per AZ for HA adds hundreds of dollars/month plus egress; consider VPC endpoints for S3/DynamoDB.
+- **Security groups are stateful; NACLs are stateless** — debugging "works one way" often means missing return path on NACL.
+- **Peering is non-transitive** — Aâ†”B and Bâ†”C does not connect Aâ†”C; use Transit Gateway or mesh for many VPCs.
+- **When default VPC is OK** — experiments only; production deserves explicit CIDR planning and private subnets.
+- **Production:** three-tier layout (public LB, private app, private DB); no IGW route on database subnets.
 
 ---
 
@@ -948,6 +1065,17 @@ The web server needs a public IP (or sits behind a load balancer with one). The 
 
 ---
 
+### Pitfalls and design tips
+
+- **Public subnet â‰  must have public IP** — route to IGW enables outbound; assign public IPs only where needed.
+- **PrivateLink vs peering** — PrivateLink exposes a service without full VPC routing mesh; peering shares entire CIDRs.
+- **DNS split-horizon** — Route 53 private hosted zones resolve internal names only inside the VPC.
+- **LB idle timeout vs app keep-alive** — ALB default 60s can clip long HTTP connections; align with server timeouts.
+- **Production:** ALB in public subnets, apps in private, AWS VPC endpoints for S3/ECR to avoid NAT hairpin.
+- **IPv6 dual-stack** — plan early if mobile clients or regulators expect v6; subnet and SG rules must match.
+
+---
+
 ### Real-world example
 
 An e-commerce company runs its storefront on AWS. The architecture uses a **VPC** with three subnets across two availability zones:
@@ -1056,6 +1184,17 @@ Copy 1 (server A) + Copy 2 (server B) + Copy 3 (server C)
 | **Hot** | Daily reads/writes | Higher storage, lower access cost | Website assets, active app data |
 | **Warm** | Monthly access | Moderate | Quarterly reports |
 | **Cold** | Yearly or rare | Low storage, higher retrieval | Compliance archives, old backups |
+
+---
+
+### Pitfalls and design tips
+
+- **Egress dominates at scale** — serving video from S3 cross-region costs more than storage; put CloudFront or regional origins close to users.
+- **Block volumes are AZ-local** — EBS attaches only in the same AZ; snapshots restore to any AZ but take time.
+- **Object LIST is not instantaneous** — massive buckets need prefix design; do not treat S3 like a POSIX directory tree.
+- **11 nines durability â‰  backup** — accidental deletes and ransomware need versioning, Object Lock, or cross-account replication.
+- **When object vs block** — media/logs/backups â†’ object; database/VM disk â†’ block; shared POSIX â†’ managed file (EFS, Filestore).
+- **Production:** S3 Intelligent-Tiering or lifecycle rules; gp3 EBS; monitor request rate throttling on hot prefixes.
 
 ---
 
@@ -1207,6 +1346,17 @@ Some engines support storage auto-scaling when disk usage crosses a threshold.
 
 ---
 
+### Pitfalls and design tips
+
+- **Connection storms** — RDS max_connections is finite; use RDS Proxy, PgBouncer, or application pooling.
+- **Failover blip** — DNS endpoint updates in seconds but apps must retry; set TCP keepalive and pool validation queries.
+- **Replica lag** — async read replicas serve stale data; route only read-tolerant queries to replicas.
+- **Vendor extensions** — Aurora, AlloyDB, Cosmos APIs differ from vanilla Postgres/MySQL; migration cost is real.
+- **When self-managed** — exotic extensions, kernel tuning, or license constraints the managed service blocks.
+- **Production:** RDS Multi-AZ, Cloud SQL HA, read replicas for reporting; test restore from backup quarterly.
+
+---
+
 ### Real-world example
 
 A SaaS company runs its multi-tenant application on **Amazon RDS for PostgreSQL**. Developers define schemas and run migrations through their CI pipeline. They connect via a connection pooler to the RDS endpoint.
@@ -1336,17 +1486,34 @@ Cooldown:  300 seconds after each action
 
 They are complementary — neither replaces the other.
 
+**How to calculate:** instances needed for target CPU:
+
+```text
+Given: 4 instances at 85% average CPU, target 60%, min 2, max 20
+
+Desired instances ~ current x (current CPU / target CPU)
+                 ~ 4 x (85 / 60) ~ 4 x 1.42 ~ 5.7 -> round up to 6 instances
+
+After scale-out, expect CPU ~ 4 x 85% / 6 ~ 57% if load is unchanged
+Sanity check: if CPU stays high after adding nodes, the bottleneck is DB or locks — not CPU.
+```
+
 ---
 
-### Real-world example
+### Pitfalls and design tips
 
-An online ticketing platform uses autoscaling groups behind an Application Load Balancer. Baseline policy: minimum 2 instances, maximum 50, scale out when average CPU exceeds 60% for 3 minutes.
+- **Scale-in terminates instances** — use connection draining on ALB and graceful shutdown hooks so in-flight requests finish.
+- **CPU-only policies miss queue depth** — add custom metrics (SQS depth, request rate) for worker tiers.
+- **Cooldown vs responsiveness** — short cooldown reacts fast but flaps; long cooldown saves money but lags spikes.
+- **Minimum size sets floor cost** — `min=2` means two instances 24/7 even at midnight.
+- **Production:** target tracking scaling on ALB request count per target; pair ASG with scheduled scaling for known events.
+- **HPA + Cluster Autoscaler** — application autoscaling and node autoscaling are complementary layers ([11.34](#1134-hpa), [11.35](#1135-cluster-autoscaler)).
 
-When a major artist announces a tour, traffic jumps from 200 to 15,000 requests per second within minutes. Autoscaling launches additional instances; the load balancer registers them as they pass health checks. Response times stay under 200 ms throughout the on-sale window.
+---
 
-Two hours later, traffic subsides. After the 10-minute scale-in cooldown, excess instances terminate. The nightly bill reflects only the capacity used during the spike — not 50 servers running 24/7.
+### Real-world example: Ticketmaster-style on-sale
 
-When one instance fails a health check, autoscaling terminates it and launches a replacement before the load balancer routes significant traffic to a dead node.
+High-traffic ticket on-sales are a documented use case for AWS Auto Scaling behind an ALB. Baseline policy: `min=2`, `max=50`, scale out when average CPU > 60% for 3 minutes (or on ALB `RequestCountPerTarget`). When a major on-sale opens, request rate can jump orders of magnitude in minutes — ASG launches instances; ALB registers them after health checks pass. AWS case studies describe staying under ~200 ms p95 during these spikes when pre-warmed AMIs and RDS read capacity are aligned. After the sale, scale-in cooldown (e.g. 10 minutes) removes excess instances so the fleet does not run at peak size overnight.
 
 ---
 
@@ -1460,6 +1627,17 @@ One image → Container A (running web) + Container B (running worker)
 ```
 
 Both containers share the same read-only image layers but have separate writable layers and process spaces.
+
+---
+
+### Pitfalls and design tips
+
+- **Docker Desktop â‰  production runtime** — EKS/GKE nodes run containerd; test images against containerd in CI.
+- **Root in container â‰ˆ root on host** — run as non-root `USER`, drop capabilities, read-only root filesystem where possible.
+- **`:latest` tag drift** — pin digests or immutable version tags in Kubernetes manifests.
+- **When VMs still win** — Windows workloads without container support, hardware dongles, or strict per-VM licensing.
+- **Production:** BuildKit cache mounts, multi-stage builds, scan images in CI (Trivy, ECR scanning).
+- **Compose for dev, Kubernetes for prod** — do not run Compose in production without an orchestration story.
 
 ---
 
@@ -1586,6 +1764,17 @@ Registry → pull image → kubelet tells runtime → pod on cluster node
 
 ---
 
+### Pitfalls and design tips
+
+- **dockershim removed** — Kubernetes 1.24+ requires CRI-native runtimes (containerd, CRI-O); do not depend on Docker inside kubelet.
+- **CRI is the contract** — kubelet talks CRI; swapping runtimes should not require app changes.
+- **RuntimeClass** — select gVisor/Kata for untrusted multi-tenant workloads needing stronger isolation than namespaces alone.
+- **OOM at cgroup limit** — kernel kills the container process; Kubernetes restarts the pod — fix memory limits, not just JVM heap.
+- **Production:** containerd on EKS/GKE/AKS; `crictl` for node debugging, not `docker` on workers.
+- **Image pull policy `IfNotPresent` vs `Always`** — stale local cache on `:latest` causes mysterious version skew.
+
+---
+
 ### Real-world example
 
 A Kubernetes cluster on AWS EKS uses **containerd** as its runtime on every worker node. When a deployment rolls out a new version:
@@ -1704,6 +1893,17 @@ Deploy 1.1; rollback = redeploy 1.0 (still available)
 | **Startup** | Seconds (when pulled) | Seconds | Minutes |
 | **Mutability** | Immutable | Writable layer for runtime changes | Mutable or templated |
 | **Kernel** | Shares host kernel | Shares host kernel | Includes/boots own kernel |
+
+---
+
+### Pitfalls and design tips
+
+- **Secrets baked into layers** — remain in registry history forever; use runtime Secrets or build-args only for non-secret build metadata.
+- **Digest pinning** — `image@sha256:...` guarantees deploy content; tags can be overwritten.
+- **Multi-arch manifests** — build `linux/amd64` and `arm64` for Graviton/Apple Silicon nodes with `docker buildx`.
+- **When to use distroless/scratch** — smaller attack surface; no shell for debugging — sidecar debug tools instead.
+- **Production:** private registry (ECR, GCR, Harbor) with retention and vulnerability scanning policies.
+- **SBOM in CI** — supply-chain audits expect SPDX/CycloneDX attached to released images.
 
 ---
 
@@ -1842,6 +2042,17 @@ Registry and host store Layer 1 and Layer 2 once. Pulling v1.1 downloads only th
 
 ---
 
+### Pitfalls and design tips
+
+- **Instruction order drives cache** — copy `package.json` and install deps before `COPY . .` so code edits do not bust dependency layers.
+- **Large single RUN layers** — invalidate cache on any line change; group apt installs, clean caches in same layer.
+- **Layer sharing breaks** — divergent base tags (`node:20` vs `node:20-alpine`) duplicate storage on nodes.
+- **Writable layer grows unbounded** — logs in container FS fill disk; log to stdout or volumes.
+- **Production:** `.dockerignore` excludes `node_modules`, `.git`; use BuildKit `--mount=type=cache` for package managers.
+- **Squash sparingly** — loses layer sharing across images; prefer multi-stage slim finals.
+
+---
+
 ### Real-world example
 
 A CI pipeline builds twenty microservices, all `FROM eclipse-temurin:17-jre-alpine`. Each service Dockerfile copies its JAR as the final layer. The base JRE layer is identical across all twenty images.
@@ -1966,6 +2177,17 @@ Runtime → unshare/create PID ns → network ns → mount ns → UTS ns → IPC
 | **Kernel exploit impact** | Can affect all containers on host | Contained within guest (mostly) |
 
 Namespaces isolate **visibility**; they do not limit **resource consumption**. A container with no cgroup limits can still use 100% CPU — it just cannot see other containers while doing so.
+
+---
+
+### Pitfalls and design tips
+
+- **Namespaces do not network-isolate by default** — add NetworkPolicy (Calico/Cilium) for east-west firewalling.
+- **ResourceQuota without LimitRange** — pods with no requests slip through and starve neighbors.
+- **Cluster-scoped objects** — Nodes, PersistentVolumes, ClusterRoles are not namespace-bound; RBAC still applies.
+- **When one namespace is OK** — small dev clusters; production usually splits by team, env, or tenant.
+- **Production:** `kube-system` for platform addons only; avoid running app workloads there.
+- **`kube-public` / `default`** — do not treat `default` as production; explicit namespaces per service.
 
 ---
 
@@ -2105,6 +2327,17 @@ With limit:    cgroup cpu quota → container throttled at 2 cores equivalent
 
 ---
 
+### Pitfalls and design tips
+
+- **requests â‰  limits** — Burstable QoS can be CPU-throttled to limits; Guaranteed QoS needs requests = limits.
+- **CPU limits cause latency cliffs** — CFS quota throttling shows up as tail latency; consider requests without tight CPU caps for latency-sensitive apps.
+- **Memory limit OOM kills the whole container** — JVM and Go runtimes need headroom above heap settings.
+- **`pids.max`** — fork bombs hit cgroup process limits before node PID exhaustion — set explicitly for untrusted code.
+- **Production:** always set requests and limits; validate with `kubectl top pod` vs cgroup metrics.
+- **cgroup v2** — modern distros unify hierarchy; memory and IO controllers behave differently than v1 — test upgrades.
+
+---
+
 ### Real-world example
 
 A multi-tenant SaaS platform runs customer workloads on shared Kubernetes nodes. Each customer's deployment specifies:
@@ -2124,12 +2357,6 @@ The container runtime creates cgroups enforcing the 2 GiB memory hard limit. Whe
 During a batch job spike, the platform's cluster autoscaler adds nodes, but cgroups ensure that even before new nodes arrive, existing workloads cannot steal each other's reserved CPU shares. Platform engineers tune weights so critical payment pods get higher CPU shares than best-effort analytics jobs.
 
 A post-mortem on a pre-cgroup bare-metal era outage noted one tenant's fork bomb exhausted the host PID table. Today, `pids.max` in the cgroup stops the bomb at 200 processes, leaving the node healthy for everyone else.
-
-# Chapter 11 — Sections 11.19–11.27
-
-Kubernetes workloads and networking resources.
-
----
 
 ## 11.19 Kubernetes
 
@@ -2236,6 +2463,17 @@ flowchart LR
 3. The Deployment controller creates or updates a ReplicaSet; the Scheduler assigns new pods to nodes with enough CPU and memory.
 4. kubelet pulls the image and starts containers; kube-proxy registers the Service endpoints.
 5. Ingress rules route external HTTP traffic to the Service; users hit the new version as old pods are replaced one at a time.
+
+---
+
+### Pitfalls and design tips
+
+- **Complexity tax** — small teams may drown in YAML sprawl; GitOps (Flux, Argo CD) and managed control planes reduce toil.
+- **Not every workload belongs** — stateful legacy, Windows GUI apps, or hard real-time may stay on VMs.
+- **Control plane HA** — run etcd/API server across AZs or use EKS/GKE managed control plane.
+- **When Compose suffices** — single-host dev; Kubernetes pays off at multi-service, multi-node scale.
+- **Production:** EKS, GKE, AKS; pin Kubernetes versions; test upgrades in non-prod quarterly.
+- **Platform team** — RBAC, quotas, NetworkPolicy, and admission webhooks are day-one concerns, not afterthoughts.
 
 ---
 
@@ -2355,6 +2593,17 @@ flowchart LR
 
 ---
 
+### Pitfalls and design tips
+
+- **Do not deploy bare Pods** — use Deployments/StatefulSets so controllers recreate failed pods.
+- **Sidecar pattern cost** — every sidecar multiplies resources per pod; avoid packing too many containers in one pod.
+- **Shared network namespace** — port conflicts between containers; coordinate `localhost` bindings.
+- **Pod IP is ephemeral** — clients must use Services, not pod IPs.
+- **Production:** one main app container per pod unless true sidecar (proxy, log shipper, mesh).
+- **PodDisruptionBudget** — protect voluntary evictions during node drains and cluster upgrades.
+
+---
+
 ### Real-world example: service mesh proxy
 
 An e-commerce API runs one container per pod in production. After adopting **Istio**, each pod template gains an **Envoy sidecar** container. App traffic to `payment-service` goes through localhost to Envoy, which handles mTLS, retries, and metrics. Because both containers share the network namespace, no extra Service is needed for app→proxy traffic. Resource requests are set on **both** containers so the Scheduler reserves enough CPU and memory for the pair.
@@ -2466,6 +2715,17 @@ flowchart LR
 
 ---
 
+### Pitfalls and design tips
+
+- **No rolling updates** — changing pod template in-place does not safely roll; use Deployments.
+- **Selector is immutable** — changing labels requires a new ReplicaSet object.
+- **Orphan pods** — pods with matching labels but not owned by RS cause confusing counts.
+- **When raw ReplicaSet** — learning/dev only; production always goes through Deployment.
+- **Production:** `kubectl scale deployment`, not `replicaset`; revision history lives on Deployment.
+- **Interview angle:** ReplicaSet maintains count; Deployment owns rollout strategy and history.
+
+---
+
 ### Real-world example: legacy controller before Deployment
 
 An internal tool still applied raw ReplicaSet YAML in a dev cluster: `replicas: 2`, `image: tool:v1`. When a developer scaled to `replicas: 5`, two pods became five within a minute. Updating the image required manually deleting the ReplicaSet and creating a new one — brief downtime. The team migrated to **Deployments** so `kubectl set image` triggers rolling updates and `kubectl rollout undo` restores the previous ReplicaSet. ReplicaSets still exist in the cluster; they are just managed by Deployments rather than edited directly.
@@ -2571,6 +2831,17 @@ flowchart LR
 3. Readiness probes gate traffic — new pods receive requests only when healthy.
 4. If error rate spikes, `kubectl rollout undo deployment/myapi` shifts traffic back to v1 pods.
 5. Old ReplicaSet stays at `replicas: 0` for quick rollback or history cleanup.
+
+---
+
+### Pitfalls and design tips
+
+- **`maxUnavailable` / `maxSurge` trade-offs** — zero `maxUnavailable` needs spare capacity; high `maxSurge` speeds deploy but spikes resource use.
+- **Readiness â‰  liveness** — readiness removes pod from Service endpoints; liveness restarts container — misconfigured liveness causes restart loops.
+- **Rollout stuck** — failing readiness on new pods pauses rollout; `kubectl rollout status` and events are first debug steps.
+- **Recreate strategy** — brief downtime acceptable for schema migrations that break old/new coexistence.
+- **Production:** RollingUpdate default; set `revisionHistoryLimit`; use `kubectl rollout undo` tested in staging.
+- **Immutable fields** — some pod spec changes require new ReplicaSet; changing only env may still trigger full roll.
 
 ---
 
@@ -2681,6 +2952,17 @@ flowchart LR
 3. Frontend uses env `BACKEND_URL=http://backend-svc.default.svc.cluster.local:8080`.
 4. CoreDNS resolves the name to the Service VIP; kube-proxy forwards to one of three endpoints.
 5. One backend pod is killed during a rollout; Endpoints drop it and add the new pod — frontend needs no change.
+
+---
+
+### Pitfalls and design tips
+
+- **ClusterIP is cluster-internal only** — external users need LoadBalancer, NodePort, or Ingress.
+- **Selector mismatch** — Service with no matching pods silently drops traffic; check Endpoints object.
+- **kube-proxy modes** — iptables vs IPVS vs eBPF (Cilium) change connection behavior at scale.
+- **Headless Service (`clusterIP: None`)** — required for StatefulSet stable DNS (`pod-0.service`).
+- **Production:** ClusterIP for east-west; one Ingress or Gateway for north-south HTTP.
+- **ExternalName** — CNAME only; no port mapping — good for external SaaS aliases, not TCP proxying.
 
 ---
 
@@ -2800,6 +3082,17 @@ flowchart LR
 
 ---
 
+### Pitfalls and design tips
+
+- **Ingress resource alone does nothing** — you must install an Ingress Controller (nginx, Traefik, AWS LBC).
+- **Classic Ingress is HTTP/S only** — TCP/UDP needs NLB Service or Gateway API `TCPRoute`.
+- **Annotation sprawl** — nginx vs AWS LBC annotations differ; standardize on one controller per cluster.
+- **TLS** — cert-manager + Let's Encrypt automates renewal; do not commit private keys to Git.
+- **Production:** AWS Load Balancer Controller on EKS; nginx-ingress on bare metal; consider Gateway API for new clusters.
+- **One Ingress per hostname class** — reduces blast radius vs monolithic mega-Ingress YAML.
+
+---
+
 ### Real-world example: multi-tenant SaaS hostnames
 
 A B2B platform gives each customer a subdomain: `acme.app.com`, `globex.app.com`. One Ingress uses a wildcard TLS cert (`*.app.com`) and routes all hosts to the same `tenant-router` Service, which resolves tenant from the `Host` header. Static assets use path rule `/assets` → `cdn-svc`. The team migrated from three separate LoadBalancer Services (saving ~$60/month per LB on AWS) to one ALB via the AWS Load Balancer Controller. Non-HTTP workloads (gRPC over TCP, Redis) stay on ClusterIP or dedicated NLBs — not through Ingress.
@@ -2913,6 +3206,17 @@ flowchart LR
 
 ---
 
+### Pitfalls and design tips
+
+- **PVC binds to AZ** — pod reschedule after node loss must stay in same AZ or volume cannot attach.
+- **Ordered rollout is slow** — `pod-0` must be Ready before `pod-1` starts; plan maintenance windows.
+- **Not all stateful apps belong** — managed RDS/Kafka often beats self-hosted StatefulSet for ops-heavy data stores.
+- **Deleting StatefulSet does not delete PVCs** — orphaned disks bill silently; use `persistentVolumeClaimRetentionPolicy`.
+- **Production:** headless Service + `volumeClaimTemplates`; Operators (Strimzi, Zalando Postgres) for day-2 ops.
+- **Stable network ID** — `pod-name.service-name` DNS; apps must use this, not pod IP.
+
+---
+
 ### Real-world example: Kafka on Kubernetes
 
 A streaming team runs Apache Kafka with a StatefulSet (or Strimzi operator, which creates StatefulSets). Each broker is `kafka-0`, `kafka-1`, `kafka-2` with a 500Gi PVC on fast SSD. Clients and other brokers connect to `kafka-1.kafka-headless.kafka.svc:9092`. Rolling updates set `partition` and `podManagementPolicy` carefully so brokers restart one at a time. Attempting Kafka as a Deployment failed in their POC — broker IDs and log directories did not survive rescheduling; StatefulSet plus PVCs fixed data locality and rack awareness labels.
@@ -3012,6 +3316,17 @@ flowchart LR
 3. Cluster Autoscaler adds a fourth worker for pending app pods → DaemonSet immediately schedules Fluent Bit there.
 4. A node is drained and removed → its Fluent Bit pod terminates with the node.
 5. Rolling update to Fluent Bit v2 replaces pods node by node without a central "replicas" setting.
+
+---
+
+### Pitfalls and design tips
+
+- **Runs on every node** — including control plane nodes unless taints block; use tolerations deliberately.
+- **Bad DaemonSet image** — affects entire fleet; canary node pool before rolling DaemonSet updates.
+- **Resource limits mandatory** — log agents without limits have caused node-wide CPU starvation.
+- **When Deployment is wrong** — per-node agents (logs, metrics, CNI) need DaemonSet, not `replicas: N`.
+- **Production:** Fluent Bit/Fluentd, node-exporter, Datadog agent, Cilium/Calico agents as DaemonSets.
+- **Cluster Autoscaler interaction** — new nodes automatically get DaemonSet pods scheduled.
 
 ---
 
@@ -3127,6 +3442,17 @@ flowchart LR
 
 ---
 
+### Pitfalls and design tips
+
+- **Completed pods clutter etcd** — set `ttlSecondsAfterFinished` or periodic Job cleanup CronJob.
+- **`completions` vs `parallelism`** — parallel workers must coordinate work (queue, indexed job) to avoid duplicate processing.
+- **Indexed Jobs** — `completionIndex` partitions work deterministically across pods.
+- **When CronJob instead** — recurring schedule; Job for one-off or CI-triggered batch.
+- **Production:** `backoffLimit`, `activeDeadlineSeconds`, `restartPolicy: OnFailure` on pod template.
+- **Do not use Job for long-running servers** — Deployment keeps pods alive; Job exits on success.
+
+---
+
 ### Real-world example: image thumbnail batch
 
 A media company processes uploaded images with a Job: `completions: 50`, `parallelism: 10`, each pod pulling item IDs from a Redis queue until the queue is empty. Fifty successful pod exits mark the Job complete; HPA is irrelevant — throughput is bounded by parallelism and worker count. They use **CronJob** for hourly small batches and one-off **Job** manifests for large backfills after a product launch. Failed Jobs with `ttlSecondsAfterFinished: 86400` auto-clean pods after one day to avoid etcd clutter. User-facing `thumbnail-api` stays a Deployment; only the batch processor is a Job.
@@ -3231,6 +3557,17 @@ flowchart LR
 
 ---
 
+### Pitfalls and design tips
+
+- **Schedules are UTC by default** — document timezone explicitly (`CRON_TZ` or UTC conversion) for on-call handoffs.
+- **`concurrencyPolicy: Forbid`** — skips overlapping runs; right for backups that must not stack.
+- **`startingDeadlineSeconds`** — controls catch-up after control plane downtime; too large causes surprise duplicate runs.
+- **Suspend field** — pause CronJob during migrations without deleting the schedule definition.
+- **Production:** backup CronJobs with Forbid; export metrics on last successful Job timestamp.
+- **Not for complex DAGs** — Airflow, Argo Workflows, or Step Functions for multi-step dependencies.
+
+---
+
 ### Real-world example: SaaS log retention
 
 A multi-tenant SaaS platform runs a CronJob every six hours that deletes log partitions older than 90 days. `concurrencyPolicy: Forbid` prevents two cleanup Jobs from competing for the same tables. `successfulJobsHistoryLimit: 3` keeps recent Job records for debugging without cluttering etcd. Alerts fire on `CronJob` → `Job` → `Failed` so on-call knows a scheduled maintenance window was missed.
@@ -3325,6 +3662,17 @@ flowchart LR
 
 ---
 
+### Pitfalls and design tips
+
+- **Not for secrets** — passwords in ConfigMap are visible in etcd plain text; use Secret or External Secrets.
+- **Updates do not hot-reload** — mounted ConfigMaps sync eventually (~minutes); env vars need pod restart.
+- **1 MiB size limit** — split large configs or use init containers + volumes.
+- **When volume vs env** — files allow app-side reload watchers; env is simpler but static until restart.
+- **Production:** `kubectl rollout restart` after ConfigMap change; Helm values â†’ ConfigMap templates.
+- **Immutable ConfigMaps** — `immutable: true` prevents accidental key deletion and improves kubelet sync performance.
+
+---
+
 ### Real-world example: feature flags for a checkout service
 
 An e-commerce team stores `ENABLE_BNPL=true` and `CART_TIMEOUT_SECONDS=900` in a ConfigMap mounted as `/config/features.env`. Product toggles BNPL for a holiday sale by editing the ConfigMap and running `kubectl rollout restart`. Because flags are not secrets, ConfigMap is the right object; payment-provider API keys live in a separate Secret.
@@ -3413,6 +3761,17 @@ flowchart LR
 2. The Ingress references `secretName: tls-cert` for HTTPS termination.
 3. Before expiry, cert-manager renews and updates the Secret; the Ingress controller reloads certs.
 4. Application database credentials live in a separate `Opaque` Secret mounted only to the app Deployment.
+
+---
+
+### Pitfalls and design tips
+
+- **Base64 is not encryption** — anyone with etcd or API read access sees values; enable encryption at rest.
+- **Env vars leak** — visible in `/proc` and crash dumps; prefer volume mounts for credentials.
+- **Rotation requires restart** — unless app watches mounted files; plan rolling restarts into rotation runbooks.
+- **When External Secrets** — Vault, AWS Secrets Manager, GCP Secret Manager synced by ESO operator at scale.
+- **Production:** Sealed Secrets or SOPS for Git-stored manifests; RBAC least privilege on `get secrets`.
+- **docker-registry Secret** — `imagePullSecrets` on ServiceAccount for private ECR/GCR without node-wide creds.
 
 ---
 
@@ -3519,6 +3878,17 @@ flowchart LR
 2. Scheduler filters nodes in zones without capacity, then scores for even spread.
 3. Each pod binds to a node in a distinct zone — one zone failure leaves two replicas serving traffic.
 4. A new pod with a 4 CPU request stays Pending until a node with 4 free CPUs exists or Cluster Autoscaler provisions one.
+
+---
+
+### Pitfalls and design tips
+
+- **Pending â‰  always need nodes** — check taints, affinity, resource requests, and PVC topology before scaling cluster.
+- **Requests drive scheduling** — pods with no CPU/memory requests pack optimistically and then get OOM-throttled.
+- **Topology spread** — `topologySpreadConstraints` beat naive anti-affinity for zone balance.
+- **Custom schedulers** — GPU sharing (NVIDIA device plugin), batch (Volcano), or bin-packing plugins for special cases.
+- **Production:** pod priority and preemption for critical tiers; Descheduler evicts mis-placed pods over time.
+- **Manual `nodeName`** — debugging only; bypasses scheduler filters.
 
 ---
 
@@ -3635,6 +4005,17 @@ flowchart LR
 
 ---
 
+### Pitfalls and design tips
+
+- **Odd member count** — etcd quorum needs 3 or 5 members; 2-node etcd loses quorum on any failure.
+- **Latency sensitive** — SSD/NVMe, low RTT between members; do not put etcd on burstable instances.
+- **Backup before upgrade** — snapshot etcd (`etcdctl snapshot save`) before Kubernetes minor version bumps.
+- **When managed control plane** — EKS/GKE/AKS operate etcd; customers do not SSH to masters.
+- **Defrag and compaction** — large event rates bloat etcd; monitor `etcd_db_total_size_in_bytes`.
+- **Never run app pods on control plane nodes** — taint `node-role.kubernetes.io/control-plane:NoSchedule` exists for a reason.
+
+---
+
 ### Real-world example: control-plane HA on AWS EKS
 
 A production EKS cluster runs etcd as managed control plane (AWS operates the Raft cluster). The customer's responsibility is backing up application data and understanding that rebuilding the control plane without etcd snapshots means recreating all object definitions from Git (GitOps). Platform engineers store every manifest in a repo so etcd content is reproducible even though AWS handles etcd availability and encryption at rest.
@@ -3736,6 +4117,17 @@ flowchart LR
 
 ---
 
+### Pitfalls and design tips
+
+- **Operator bugs are cluster-wide** — test Operator upgrades in staging; pin Operator version like cluster version.
+- **CRD versioning** — `v1alpha1` â†’ `v1` migrations need conversion webhooks or manual object edits.
+- **When Helm is enough** — stateless apps without day-2 reconciliation loops do not need an Operator.
+- **Webhook failures block API** — validating/mutating webhooks for CRDs must be HA; failurePolicy matters.
+- **Production:** cert-manager, prometheus-operator, Strimzi (Kafka), Crossplane; leader-elected Operator replicas.
+- **Level-triggered reconciliation** — Operator watches desired CR state and fixes drift continuously, unlike one-shot Helm hooks.
+
+---
+
 ### Real-world example: Strimzi Kafka Operator
 
 An event-streaming team installs the Strimzi Operator and declares a `Kafka` CR with three brokers and ZooKeeper (or KRaft) settings. The Operator generates StatefulSets, listeners, TLS certificates, and `KafkaTopic` CRs for topic management. When broker pod `kafka-1` is deleted, the Operator recreates it with the same persistent volume. Topic partition rebalancing and rolling broker updates are handled by the Operator rather than a runbook.
@@ -3777,6 +4169,18 @@ HPA:
 **Enforces bounds** — never below `minReplicas` or above `maxReplicas`.
 
 **Waits before acting** — scale-up and scale-down stabilization windows prevent thrashing on brief spikes.
+
+**How to calculate:** HPA desired replicas (CPU):
+
+```text
+Given: currentReplicas = 2, average CPU utilization = 90%, target = 60%
+
+desiredReplicas = ceil(2 x (90 / 60)) = ceil(2 x 1.5) = ceil(3.0) = 3
+
+HPA patches Deployment to 3 replicas; expect average CPU ~ 90% x 2/3 ~ 60% if load is flat
+Respect minReplicas and maxReplicas — result is clamped to that range
+Sanity check: if metrics show 90% but pods are throttled by low limits, fix limits before trusting HPA.
+```
 
 **Does not add nodes** — if the cluster lacks capacity, new pods stay Pending until Cluster Autoscaler ([11.35](#1135-cluster-autoscaler)) provisions nodes.
 
@@ -3833,9 +4237,20 @@ flowchart LR
 
 ---
 
-### Real-world example: e-commerce product catalog
+### Pitfalls and design tips
 
-A retailer's catalog API uses HPA on custom metric `http_requests_per_second` exported via Prometheus Adapter. `minReplicas: 4` across two zones for baseline HA; `maxReplicas: 80` for sale events. Scale-up stabilization is 0s for fast response; scale-down stabilization is 300s so brief lulls do not kill pods still finishing requests. Costs track traffic shape instead of peak-provisioned static capacity.
+- **Metrics Server required** — CPU/memory HPA needs metrics-server or equivalent; custom metrics need Prometheus Adapter or KEDA.
+- **Unset limits break CPU %** — HPA CPU utilization is `% of request`; missing requests make metrics meaningless.
+- **Does not add nodes** — Pending pods after HPA scale-up need Cluster Autoscaler ([11.35](#1135-cluster-autoscaler)).
+- **When KEDA** — scale on queue length, Kafka lag, or cloud metrics; supports scale-to-zero patterns.
+- **Production:** configure `behavior` scale-up/down stabilization; avoid scaling on memory unless app is memory-bound.
+- **Flapping** — too-aggressive scale-down kills pods still draining; use `minReplicas` floor for HA.
+
+---
+
+### Real-world example: HPA with Prometheus Adapter
+
+The **Kubernetes Prometheus Adapter** exposes custom metrics (e.g. `http_requests_per_second`) to the HPA API. Retailers often run `minReplicas: 4` across zones for HA and `maxReplicas: 80` for sale events, with `behavior.scaleUp.stabilizationWindowSeconds: 0` for fast scale-out and `scaleDown: 300` to avoid flapping. The HPA formula still applies to custom metrics the same way as CPU — current replicas times (current metric / target metric), clamped to min/max.
 
 ---
 
@@ -3940,9 +4355,20 @@ flowchart LR
 
 ---
 
-### Real-world example: GKE production node pools
+### Pitfalls and design tips
 
-A fintech workload on GKE runs two node pools: a stable "system" pool (fixed size) and an "apps" pool with `min=3`, `max=30` managed by Cluster Autoscaler. HPA scales payment API pods on request latency. During market open, both HPA and Cluster Autoscaler engage; overnight, node count returns near minimum while HPA holds baseline replicas on fewer, fuller nodes — cutting compute cost without sacrificing burst capacity.
+- **Ignores affinity-only Pending** — CA scales on resource deficit, not when pod demands GPU node that does not exist.
+- **Scale-down is slow** — cordon, drain, pod rescheduling take minutes; do not expect instant node removal.
+- **`min` node group size** — sets cost floor; rightsizing instance types matters as much as node count.
+- **Local storage blocks eviction** — pods with `emptyDir` or local PV may pin nodes; annotate safe-to-evict where appropriate.
+- **Production:** align node pool instance types with pod resource histogram; separate pools for system vs workload.
+- **Over-provisioned pools fight CA** — manual `desiredSize` changes conflict with autoscaler; let CA own desired count.
+
+---
+
+### Real-world example: GKE Cluster Autoscaler node pools
+
+Google documents **GKE Cluster Autoscaler** resizing node pools when pods are unschedulable due to insufficient CPU/memory. A typical SaaS setup uses separate pools (`general` vs `compute-optimized`); HPA scales API Deployments; pending pods trigger CA to grow the matching pool. Scale-down respects PodDisruptionBudgets and skips nodes with local storage. The `cluster-autoscaler.kubernetes.io/safe-to-evict: "true"` annotation on short-lived pods helps CA consolidate workloads before removing nodes.
 
 ---
 

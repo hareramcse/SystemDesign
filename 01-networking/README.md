@@ -1,1762 +1,519 @@
-﻿# 1. Networking
-
-> Status: **Documented** — master reference
+# 1. Networking
 
 [<- Back to master index](../README.md)
 
-## Sub-topics
-
-| # | Sub-topic | Status |
-|---|-----------|--------|
-| 1.1 | [OSI Model](#11-osi-model) | Done |
-| 1.2 | [TCP/IP](#12-tcpip) | Done |
-| 1.3 | [TCP Handshake](#13-tcp-handshake) | Done |
-| 1.4 | [UDP](#14-udp) | Done |
-| 1.5 | [MTU](#15-mtu) | Done |
-| 1.6 | [IP Addressing/Subnetting](#16-ip-addressingsubnetting) | Done |
-| 1.7 | [CIDR](#17-cidr) | Done |
-| 1.8 | [DNS](#18-dns) | Done |
-| 1.9 | [DNS Resolution](#19-dns-resolution) | Done |
-| 1.10 | [HTTP/HTTPS](#110-httphttps) | Done |
-| 1.11 | [SSL/TLS](#111-ssltls) | Done |
-| 1.12 | [HTTP/2 & HTTP/3](#112-http2-http3) | Done |
-| 1.13 | [QUIC](#113-quic) | Done |
-| 1.14 | [Keep-Alive Connections](#114-keep-alive-connections) | Done |
-| 1.15 | [Forward & Reverse Proxy](#115-forward-reverse-proxy) | Done |
-| 1.16 | [NAT](#116-nat) | Done |
-| 1.17 | [VPN](#117-vpn) | Done |
-| 1.18 | [Unicast, Broadcast, Multicast & Anycast](#118-unicast-broadcast-multicast--anycast) | Done |
-| 1.19 | [CDN](#119-cdn) | Done |
-| 1.20 | [Load Balancer](#120-load-balancer) | Done |
-| 1.22 | [SSE, Polling & WebSockets](#122-sse-polling--websockets) | Done |
-
 ---
 
-This chapter is a **networking reference for system design**: protocol layers, transport (TCP/UDP/QUIC), IP addressing, DNS, HTTP/TLS, and edge infrastructure (CDN, load balancers, proxies).
+## Sub-topics
+
+| # | Sub-topic |
+|---|-----------|
+| 1.1 | [OSI Model](#11-osi-model) |
+| 1.2 | [TCP/IP](#12-tcpip) |
+| 1.3 | [TCP Handshake](#13-tcp-handshake) |
+| 1.4 | [UDP](#14-udp) |
+| 1.5 | [MTU](#15-mtu) |
+| 1.6 | [IP Addressing/Subnetting](#16-ip-addressingsubnetting) |
+| 1.7 | [CIDR](#17-cidr) |
+| 1.8 | [DNS](#18-dns) |
+| 1.9 | [DNS Resolution](#19-dns-resolution) |
+| 1.10 | [HTTP/HTTPS](#110-httphttps) |
+| 1.11 | [SSL/TLS](#111-ssltls) |
+| 1.12 | [HTTP/2 & HTTP/3](#112-http2--http3) |
+| 1.13 | [QUIC](#113-quic) |
+| 1.14 | [Keep-Alive Connections](#114-keep-alive-connections) |
+| 1.15 | [Forward & Reverse Proxy](#115-forward--reverse-proxy) |
+| 1.16 | [NAT](#116-nat) |
+| 1.17 | [VPN](#117-vpn) |
+| 1.18 | [Unicast, Broadcast, Multicast & Anycast](#118-unicast-broadcast-multicast--anycast) |
+| 1.19 | [CDN](#119-cdn) |
+| 1.20 | [Load Balancer](#120-load-balancer) |
+| 1.22 | [SSE, Polling & WebSockets](#122-sse-polling--websockets) |
 
 ---
 
 ## 1.1 OSI Model
 
-The **OSI (Open Systems Interconnection) Model** is a conceptual framework that explains how data travels from one computer to another over a network.
+### Overview
 
-Think of it as a package delivery process. When you send a message from your laptop or mobile phone, many things happen behind the scenes before that message reaches the destination. The OSI model divides these responsibilities into **7 layers** so that each layer has a specific job.
+Imagine mailing a package: you write the letter, seal it, label it, hand it to a courier, and the courier drives it through roads until it reaches the right building and the right apartment. The **OSI (Open Systems Interconnection) model** is the same idea for computers — it splits “send data over a network” into **seven layers**, each with one job, so hardware vendors, OS vendors, and app developers can work independently.
 
-Data moves from **Layer 7 down to Layer 1** on the sender side and then from **Layer 1 up to Layer 7** on the receiver side.
+Technically, OSI is a **reference model** (not a single protocol stack on the wire). On the sender, application data moves **down** from Layer 7 to Layer 1; each layer adds its own header or transforms the payload. On the receiver, bits move **up** from Layer 1 to Layer 7; each layer strips or processes its part until the application sees the original message.
 
----
+### What problem it fixes
 
-### Layer 7 — Application Layer
+Without a shared layer model, every team would reinvent “where does encryption go?” or “who assigns ports?” Debugging would be guesswork — is the bug in the browser, the Wi‑Fi driver, or the router? OSI gives a **common vocabulary** for teaching, troubleshooting, and mapping real protocols (HTTP, TCP, IP, Ethernet) to responsibilities.
 
-**Purpose:**  
-This is the layer closest to the end user. It provides network services directly to applications.
+### What it does
 
-**Examples:** HTTP, HTTPS, DNS, SMTP, FTP, gRPC
+OSI defines seven layers, from user-facing applications down to physical signals:
 
-**What happens here?**
+| Layer | Name | Primary job | Common protocols / tech |
+|-------|------|-------------|-------------------------|
+| 7 | Application | Services for apps | HTTP, DNS, SMTP, gRPC |
+| 6 | Presentation | Format, encrypt, compress | TLS, JSON, Protobuf, GZIP |
+| 5 | Session | Manage conversation lifecycle | TLS session, WebSocket session |
+| 4 | Transport | End-to-end delivery to a port | TCP, UDP |
+| 3 | Network | Logical addressing and routing | IP, ICMP |
+| 2 | Data link | Delivery inside one LAN segment | Ethernet, Wi‑Fi, MAC addresses |
+| 1 | Physical | Bits on wire / fiber / radio | Cables, NICs, radio |
 
-When you open a browser and type:
+**IP address** identifies the machine; **port** (Layer 4) identifies the application on that machine (e.g. `192.168.1.10:5432` → PostgreSQL).
 
-```text
-https://google.com
+### How it works — the architecture inside
+
+Data **encapsulates** on the way down and **de-encapsulates** on the way up. A browser request to `https://google.com` touches every layer:
+
+```mermaid
+flowchart LR
+    L7[Layer 7 HTTP request] --> L6[Layer 6 TLS encrypt]
+    L6 --> L5[Layer 5 session]
+    L5 --> L4[Layer 4 TCP segment + port 443]
+    L4 --> L3[Layer 3 IP packet + addresses]
+    L3 --> L2[Layer 2 Ethernet frame + MAC]
+    L2 --> L1[Layer 1 bits on link]
+    L1 --> Net[Internet path]
+    Net --> R1[Receiver L1 to L7 reverse]
 ```
 
-The browser creates an HTTP request.
-
-When you send an email, the email client creates an SMTP request.
-
-When you send a WhatsApp message, the application creates a request that needs to be sent over the network.
-
-This layer only cares about: *"What information do I want to send?"*
-
-It does not care about routing, IP addresses, cables, or packet delivery.
-
-**Real-world analogy:** You write a letter and decide what message should be written inside it.
-
----
-
-### Layer 6 — Presentation Layer
-
-**Purpose:**  
-Convert data into a format that both systems can understand.
-
-**Responsibilities:** Data formatting, serialization, encryption, decryption, compression, decompression
-
-**Examples:** JSON, XML, Protocol Buffers (Protobuf), TLS encryption, GZIP compression
-
-**What happens here?**
-
-Suppose your application wants to send:
-
-```text
-Hello World
-```
-
-The presentation layer may:
-
-- Convert text into bytes
-- Compress the data
-- Encrypt the data
-
-After encryption, anybody intercepting the traffic cannot easily read the message.
-
-**Real-world analogy:** Before sending a letter, you may translate it into another language or lock it inside a secure box.
-
----
-
-### Layer 5 — Session Layer
-
-**Purpose:**  
-Manage communication sessions between two systems.
-
-**Responsibilities:** Create connection sessions, maintain active sessions, resume interrupted sessions, terminate sessions
-
-**Examples:** WebSocket session, TLS session, gRPC stream
-
-**What happens here?**
-
-Suppose two systems are continuously exchanging messages. The session layer manages:
-
-- Connection start
-- Connection maintenance
-- Connection recovery
-- Connection termination
-
-**Real-world analogy:** A phone call — someone starts the call, both people keep talking, the call remains active, eventually the call ends.
-
----
-
-### Layer 4 — Transport Layer
-
-**Purpose:**  
-Ensure data reaches the correct application and reaches reliably when required.
-
-**Protocols:** TCP, UDP
-
-**Responsibilities:** Reliable delivery, error handling, flow control, port management, packet sequencing
-
-#### TCP (Transmission Control Protocol)
-
-TCP focuses on **reliability**.
-
-**Features:**
-
-- Guaranteed delivery
-- Ordered delivery
-- Retransmission of lost packets
-- Error detection
-
-**Example:**
-
-```text
-Packet 1 → Delivered
-Packet 2 → Lost
-TCP detects the loss and sends Packet 2 again.
-```
-
-**Used by:** HTTP, HTTPS, database connections, banking applications, payment systems
-
-**Real-world analogy:** A courier service that requires a delivery confirmation.
-
-#### UDP (User Datagram Protocol)
-
-UDP focuses on **speed**.
-
-**Features:**
-
-- No delivery guarantee
-- No retransmission
-- No ordering guarantee
-- Lower overhead
-
-**Used by:** Video streaming, online gaming, voice calls, DNS queries
-
-**Real-world analogy:** Making an announcement through a loudspeaker — you simply broadcast the message and do not wait for confirmation.
-
-#### Ports
-
-Ports identify which application should receive the data.
-
-| Port | Application |
-|------|-------------|
-| 80 | HTTP |
-| 443 | HTTPS |
-| 3306 | MySQL |
-| 5432 | PostgreSQL |
-| 6379 | Redis |
-
-**IP address** identifies the machine. **Port** identifies the application running on that machine.
-
-**Example:**
-
-```text
-192.168.1.10:3306
-
-Machine:      192.168.1.10
-Application:  MySQL
-```
-
----
-
-### Layer 3 — Network Layer
-
-**Purpose:**  
-Find the destination system and determine the path to reach it.
-
-**Main protocol:** IP (Internet Protocol)
-
-**Responsibilities:** Logical addressing, routing, path selection
-
-**Examples:** `192.168.1.10`, `10.0.0.5`, `8.8.8.8`
-
-**What happens here?**
-
-When data needs to travel from Bangalore to Mumbai — or even India to the USA — routers determine the best route.
-
-Routers only care about:
-
-- Source IP
-- Destination IP
-
-They do not care whether the data contains an HTTP request, email, image, or video. Their only job is: *"Where should I send this packet next?"*
-
-**Real-world analogy:** Courier company deciding which city or warehouse the package should move through.
-
----
-
-### Layer 2 — Data Link Layer
-
-**Purpose:**  
-Deliver data within the local network.
-
-**Technologies:** Ethernet, Wi-Fi
-
-**Main identifier:** MAC address (e.g. `AA:BB:CC:DD:EE:FF`)
-
-**Responsibilities:** Local communication, frame creation, MAC addressing, error detection within local network
-
-**Devices:** Network switches
-
-**What happens here?**
-
-Suppose multiple devices are connected to the same office network. The switch checks: *Which device owns this MAC address?* Then forwards the frame to the correct device.
-
-**Real-world analogy:**
-
-- **IP address** → apartment address
-- **MAC address** → specific person living in that apartment
-
----
-
-### Layer 1 — Physical Layer
-
-**Purpose:**  
-Physically transmit data.
-
-**Examples:** Network cables, fiber optics, wireless radio signals, network cards
-
-**Responsibilities:** Transmit bits; convert bits into electrical signals, light signals, or radio signals
-
-At this layer there is no HTTP, TCP, UDP, IP, or JSON. Everything becomes **0 and 1**.
-
-**Example:**
-
-```text
-01001010
-10101011
-11100001
-```
-
-**Real-world analogy:** Roads, cables, and transportation infrastructure used to physically move packages.
-
----
-
-### How a Google request travels
-
-| Step | What happens |
-|------|--------------|
-| 1 | User enters `https://google.com` |
-| 2 | **Application layer** creates HTTP request |
-| 3 | **Presentation layer** encrypts request using TLS |
-| 4 | **Session layer** manages the communication session |
-| 5 | **Transport layer** uses TCP and breaks data into segments |
-| 6 | **Network layer** adds source and destination IP addresses |
-| 7 | **Data link layer** adds source and destination MAC addresses |
-| 8 | **Physical layer** converts everything into electrical / light / radio signals |
-| 9 | Data travels through switches, routers, ISPs, and internet backbone networks |
-| 10 | Google receives the data |
-| 11 | The process happens in **reverse order** until Google's application receives the HTTP request |
+**Layer highlights (sender perspective):**
+
+- **Application (7):** Browser builds `GET /` with `Host: google.com`. Cares about *what* to send, not routing.
+- **Presentation (6):** TLS encrypts the HTTP bytes; optional compression (e.g. gzip) may apply to content.
+- **Session (5):** TLS and long-lived connections (WebSocket, gRPC streams) manage start, resume, and teardown of the conversation.
+- **Transport (4):** TCP segments data, assigns source/destination ports, guarantees order and retransmission. UDP would skip connection setup and reliability.
+- **Network (3):** IP adds source and destination IP addresses. Routers read only this layer to forward toward the next hop.
+- **Data link (2):** On the local subnet, switches use MAC addresses (`AA:BB:CC:DD:EE:FF`) in Ethernet frames. ARP maps IP → MAC on LANs.
+- **Physical (1):** NIC converts frames to electrical, optical, or RF signals — raw 0s and 1s.
+
+| Step | Layer | What happens |
+|------|-------|--------------|
+| 1 | 7 | User enters `https://google.com`; browser creates HTTP request |
+| 2 | 6 | TLS encrypts request bytes |
+| 3 | 5 | TLS session established / reused |
+| 4 | 4 | TCP breaks payload into segments, port 443 |
+| 5 | 3 | IP headers: client IP → Google server IP |
+| 6 | 2 | Frame with source/destination MAC on local link |
+| 7 | 1 | Signals leave the NIC |
+| 8 | — | Routers/switches forward along path |
+| 9 | 1–7 | Google’s stack processes layers **in reverse** |
+
+### Pitfalls and design tips
+
+- **OSI is a teaching model; the Internet runs TCP/IP (four layers).** In interviews, map OSI layers to TCP/IP rather than claiming OSI is “what runs on the wire.”
+- **Layers 5 and 6 are often merged in practice.** Modern stacks fold presentation (TLS) and session into the application or transport implementation.
+- **Don’t debug only at Layer 7.** A “slow website” might be DNS (app), TLS handshake (presentation), TCP retransmits (transport), or Wi‑Fi loss (physical).
+- **Routers operate at Layer 3; switches at Layer 2.** Firewalls and NAT often sit at 3–4 boundary — know where your policy applies.
+
+### Real-world example
+
+**Chrome loading `https://www.google.com` over home Wi‑Fi:**
+
+1. **L7:** Chrome issues an HTTP/2 `GET` for `/`.
+2. **L6:** TLS 1.3 encrypts the request (certificate verified against the OS trust store).
+3. **L4:** TCP connects to `142.250.x.x:443` (after DNS). Segments carry encrypted HTTP/2 frames.
+4. **L3:** Packets carry your laptop’s private IP and Google’s public IP; your home router NATs the source.
+5. **L2/L1:** Wi‑Fi radio sends Ethernet frames to the access point; ISP routers take over at Layer 3 onward.
+6. Google’s edge terminates TLS, HTTP server handles the request, response travels back up the stack on your laptop.
+
+If TLS fails, you see a certificate error (L6). If TCP fails, “connection timed out” (L4). If DNS fails, “server not found” before any packet leaves (effectively L7 dependency). The layer model tells you which tool to use (`curl -v`, `tcpdump`, `ping`, browser devtools).
 
 ---
 
 ## 1.2 TCP/IP
 
-The **TCP/IP Model** is the practical networking model used on the Internet today.
+### Overview
 
-While the OSI model has 7 layers, the TCP/IP model simplifies networking into **4 layers**.
+If OSI is the textbook floor plan of a building, **TCP/IP** is the building people actually live in — the **four-layer model** used on the Internet today. Every website, mobile app, API call, and cloud service ultimately packages data as application bytes, transport segments, IP packets, and link-layer frames.
 
-Every website, mobile application, cloud service, API call, database connection, email, and video stream on the Internet relies on the TCP/IP model.
+TCP/IP merges OSI’s top three layers into one **Application** layer and the bottom two into **Network Access**. It focuses on what is implemented in Linux, Windows, routers, and cloud VPCs: HTTP over TCP over IP over Ethernet/Wi‑Fi.
 
-The TCP/IP model focuses on how data is **actually transmitted** over networks rather than describing networking responsibilities in a highly theoretical manner.
+### What problem it fixes
 
----
+Early networks used many incompatible stacks. TCP/IP provides a **minimal, interoperable** set of layers that scale from a laptop on Wi‑Fi to global backbone routers. It separates “reach this host” (IP), “reach this process” (TCP/UDP ports), and “what the app means” (HTTP, DNS, etc.) so each concern can evolve independently.
 
-### TCP/IP model layers
+### What it does
 
-```text
-Application Layer
-Transport Layer
-Internet Layer
-Network Access Layer
-```
+| TCP/IP layer | Maps from OSI | Role |
+|--------------|---------------|------|
+| Application | 7, 6, 5 | Protocols apps use: HTTP, DNS, SMTP, SSH, gRPC |
+| Transport | 4 | TCP (reliable, connection-oriented) or UDP (fast, connectionless); ports |
+| Internet | 3 | IP addressing, routing; ICMP diagnostics; ARP on local subnet |
+| Network Access | 2, 1 | MAC, frames, physical transmission (Ethernet, Wi‑Fi, fiber) |
 
-Data travels from the **top layer to the bottom layer** on the sender side and from the **bottom layer to the top layer** on the receiver side.
+**Encapsulation** — each layer wraps the layer above:
 
----
+| Layer | Payload structure |
+|-------|---------------------|
+| Application | HTTP request body and headers |
+| Transport | `[TCP header | HTTP data]` |
+| Internet | `[IP header | TCP header | HTTP data]` |
+| Network Access | `[MAC header | IP header | TCP header | HTTP data]` |
 
-### Layer 4 — Application Layer
+The receiver **de-encapsulates** in reverse: strip MAC → strip IP → strip TCP → deliver to the application.
 
-**Purpose:**  
-This layer contains all protocols and services that applications use to communicate over a network.
-
-**Examples:** HTTP, HTTPS, DNS, SMTP, POP3, IMAP, FTP, SSH, WebSocket, gRPC
-
-**What happens here?**
-
-Suppose you open a browser and visit:
-
-```text
-https://google.com
-```
-
-The browser creates an HTTP request.
-
-Suppose you send an email — the email client creates an SMTP request.
-
-Suppose you send a WhatsApp message — the application creates a request that must be transmitted to another device.
-
-This layer focuses on: *What information should be sent?*
-
-It does not care about: IP addresses, routing, packets, cables, or wireless signals.
-
-**Real-world analogy:** You write a letter and decide what information should be sent.
-
----
-
-### Layer 3 — Transport Layer
-
-**Purpose:**  
-Provide communication between applications running on different machines.
-
-**Main protocols:** TCP, UDP
-
-**Responsibilities:** Reliable communication, flow control, error detection, segmentation, port management
-
-#### TCP (Transmission Control Protocol)
-
-**Purpose:** Reliable communication.
-
-**Features:**
-
-- Connection-oriented
-- Guaranteed delivery
-- Ordered delivery
-- Acknowledgement mechanism
-- Retransmission of lost packets
-
-**How TCP works:**
-
-1. Connection established
-2. Data sent
-3. Receiver acknowledges receipt
-4. Sender transmits next data
-
-If a packet is lost, the sender automatically retransmits it.
-
-**Example:**
-
-```text
-Packet 1 → Received
-Packet 2 → Lost
-Packet 3 → Received
-
-TCP detects Packet 2 is missing and sends it again.
-```
-
-**Applications using TCP:** HTTP, HTTPS, database connections, banking systems, payment systems, file transfers
-
-**Real-world analogy:** Registered courier service — the sender expects confirmation that the package was delivered.
-
-#### TCP three-way handshake
-
-Before sending data, TCP establishes a connection.
-
-| Step | Message | Meaning |
-|------|---------|---------|
-| 1 | Client → **SYN** | "Can we communicate?" |
-| 2 | Server → **SYN + ACK** | "Yes, I received your request and I am ready." |
-| 3 | Client → **ACK** | "Great, let's start communication." |
-
-Connection is now established. This process is called the **three-way handshake**.
-
-#### UDP (User Datagram Protocol)
-
-**Purpose:** Fast communication.
-
-**Features:**
-
-- Connectionless
-- No delivery guarantee
-- No acknowledgement
-- No retransmission
-- Lower overhead
-
-**How UDP works:** Sender sends data. No confirmation is expected.
-
-**Applications using UDP:** Video streaming, voice calls, online gaming, DNS
-
-**Real-world analogy:** Public announcement system — you announce something and do not wait to verify whether everyone heard it.
-
-#### Ports
-
-**Purpose:** Identify which application should receive incoming data.
-
-| Port | Application |
-|------|-------------|
-| 80 | HTTP |
-| 443 | HTTPS |
-| 22 | SSH |
-| 3306 | MySQL |
-| 5432 | PostgreSQL |
-| 6379 | Redis |
-
-**Example:**
-
-```text
-192.168.1.10:3306
-
-IP Address:   192.168.1.10
-Port:         3306
-Application:  MySQL
-```
-
-Think of it like:
-
-- **Apartment building** → IP address
-- **Apartment number** → port
-
----
-
-### Layer 2 — Internet Layer
-
-**Purpose:**  
-Move packets from one network to another and find the destination machine.
-
-**Main protocol:** IP (Internet Protocol)
-
-**Supporting protocols:** ICMP, ARP, IGMP
-
-**Responsibilities:** Logical addressing, routing, packet forwarding
-
-#### IP address
-
-**Purpose:** Uniquely identify a machine on a network.
-
-**Examples:** `192.168.1.10`, `10.0.0.5`, `8.8.8.8`
-
-Think of an IP address as a postal address — without an address, a package cannot be delivered.
-
-#### Routers
-
-**Purpose:** Forward packets between networks.
-
-Routers examine source IP and destination IP, then decide: *What is the next best path?*
-
-Routers do not care about HTTP, JSON, images, videos, or database queries. They only care about: *Where should this packet go next?*
-
-#### ICMP (Internet Control Message Protocol)
-
-**Purpose:** Network diagnostics and error reporting.
-
-**Examples:** Ping, traceroute
-
-**Common messages:** Destination unreachable, time exceeded, echo request, echo reply
-
-**Example:** `ping google.com` uses ICMP internally.
-
-#### ARP (Address Resolution Protocol)
-
-**Purpose:** Convert IP address into MAC address.
-
-**Example:** For IP `192.168.1.50` — before sending data inside a local network, the machine must know: *What MAC address belongs to this IP?* ARP helps discover that information.
-
----
-
-### Layer 1 — Network Access Layer
-
-**Purpose:**  
-Handle communication within the local network and physically transmit data.
-
-This layer combines **OSI Layer 1 (Physical)** and **OSI Layer 2 (Data Link)**.
-
-**Technologies:** Ethernet, Wi-Fi, fiber, cable networks
-
-**Responsibilities:** MAC addressing, frame creation, error detection, signal transmission
-
-#### MAC address
-
-**Purpose:** Identify a physical network device.
-
-**Example:** `AA:BB:CC:DD:EE:FF`
-
-Every network card has a MAC address.
-
-Think of:
-
-- **IP address** = house address
-- **MAC address** = specific person inside that house
-
-#### Switches
-
-**Purpose:** Forward frames within the same local network.
-
-The switch checks the destination MAC address, then forwards traffic to the correct device. Switches do not use IP addresses for forwarding decisions.
-
-#### Physical transmission
-
-Data eventually becomes binary bits:
-
-```text
-01010101
-10110011
-11001010
-```
-
-These bits are transmitted through network cables, fiber optics, or Wi-Fi radio signals.
-
-At this stage there is no HTTP, TCP, UDP, or IP — only bits moving through a physical medium.
-
----
-
-### How a web request travels
-
-User enters:
-
-```text
-https://google.com
-```
-
-| Step | What happens |
-|------|--------------|
-| 1 | **Application layer** creates HTTP request |
-| 2 | **Transport layer** creates TCP connection using three-way handshake |
-| 3 | **Transport layer** breaks data into segments |
-| 4 | **Internet layer** adds source and destination IP addresses |
-| 5 | **Network access layer** adds MAC addresses |
-| 6 | Data is converted into electrical, optical, or wireless signals |
-| 7 | Traffic passes through switches and routers |
-| 8 | Google receives the packet |
-| 9 | Google processes layers in reverse order |
-| 10 | Google returns the response |
-
----
-
-### Encapsulation
-
-Each layer adds its own information.
-
-| Layer | What is added |
-|-------|----------------|
-| Application | HTTP request |
-| Transport | `[TCP Header + HTTP Data]` |
-| Internet | `[IP Header + TCP Header + HTTP Data]` |
-| Network Access | `[MAC Header + IP Header + TCP Header + HTTP Data]` |
-
-This process is called **encapsulation**.
+### How it works — the architecture inside
 
 ```mermaid
-flowchart BT
-    D["HTTP data"] --> T["TCP segment"]
-    T --> I["IP packet"]
-    I --> M["Ethernet frame"]
-    M --> W["Bits on wire"]
+flowchart LR
+    App[Application HTTP DNS] --> Trans[Transport TCP UDP]
+    Trans --> Net[Internet IP ICMP]
+    Net --> Link[Network Access MAC frame]
+    Link --> Wire[Physical bits]
 ```
 
----
+**Transport — TCP vs UDP (summary):**
 
-### De-encapsulation
+| | TCP | UDP |
+|---|-----|-----|
+| Connection | 3-way handshake first | Send immediately |
+| Delivery | Guaranteed, ordered | Best effort |
+| Overhead | Higher (ACKs, windows) | 8-byte header |
+| Typical use | HTTP, DB, payments | DNS, VoIP, QUIC base |
 
-On the receiver side:
+**Internet layer:** IP addresses identify endpoints. Routers forward based on destination IP only — they do not parse HTTP. **ICMP** supports `ping` and “destination unreachable.” **ARP** resolves IP → MAC on the local LAN before the first hop.
 
-1. **Network access layer** removes MAC header
-2. **Internet layer** removes IP header
-3. **Transport layer** removes TCP header
-4. **Application layer** receives original data
+**Network access:** Switches forward by MAC within one broadcast domain. Combined physical + data link handles framing and signal.
 
-This process is called **de-encapsulation**.
+**Web request walkthrough** (`https://google.com`):
 
----
+| Step | Layer | Action |
+|------|-------|--------|
+| 1 | Application | Build HTTP request |
+| 2 | Transport | TCP 3-way handshake to port 443 |
+| 3 | Transport | Segment HTTP into TCP payloads |
+| 4 | Internet | Add client/server IP headers |
+| 5 | Network Access | Frame with MAC; transmit on link |
+| 6 | — | Switches and routers along path |
+| 7 | Receiver | De-encapsulate; TLS + HTTP handle response |
 
-### OSI vs TCP/IP
+```mermaid
+flowchart LR
+    D[HTTP data] --> T[TCP segment]
+    T --> I[IP packet]
+    I --> F[Ethernet frame]
+    F --> B[Bits on wire]
+```
 
-| | OSI Model | TCP/IP Model |
-|---|-----------|--------------|
-| Layers | 7 layers | 4 layers |
-| Nature | Theoretical model — used for learning networking concepts | Practical model — actually used on the Internet |
+**OSI vs TCP/IP mapping:**
 
 | OSI | TCP/IP |
 |-----|--------|
-| Layer 7, 6, 5 (Application, Presentation, Session) | **Application Layer** |
-| Layer 4 (Transport) | **Transport Layer** |
-| Layer 3 (Network) | **Internet Layer** |
-| Layer 2 + Layer 1 (Data Link + Physical) | **Network Access Layer** |
+| Application + Presentation + Session | Application |
+| Transport | Transport |
+| Network | Internet |
+| Data Link + Physical | Network Access |
+
+### Pitfalls and design tips
+
+- **“TCP/IP” means the whole stack**, not only TCP — DNS often uses UDP; IP is always involved for routed traffic.
+- **NAT lives at the Internet/Transport boundary** (typical home router): rewrites IP/port so many private hosts share one public IP — breaks end-to-end assumptions for inbound connections unless port forwarding or IPv6 is used.
+- **Don’t confuse ARP (LAN) with DNS (global names).** ARP: “who owns 192.168.1.1?” DNS: “what IP is google.com?”
+- **Default choice for new app APIs:** TCP (HTTP/HTTPS or gRPC). UDP when latency beats loss (media, gaming) or for DNS-sized messages.
+
+### Real-world example
+
+**A REST call from a Kubernetes pod to a service:**
+
+1. App container sends `GET http://payments.default.svc.cluster.local/health` (Application).
+2. Cluster DNS returns a ClusterIP; kube-proxy or CNI routes to a backend pod IP (still Application + OS resolver).
+3. TCP connects to port 8080; kernel segments the HTTP request (Transport).
+4. IP packets use pod CIDR → node routing → possibly overlay (VXLAN/wire) (Internet).
+5. veth/bridge/Ethernet on the node delivers frames (Network Access).
+
+If the Service IP works but a pod IP fails, you suspect routing or network policy (Layer 3/4), not JSON parsing (Layer 7). `tcpdump -i any host <ip> and port 8080` shows whether TCP segments leave the pod.
 
 ---
 
 ## 1.3 TCP Handshake
 
-Before a client and server can exchange any data, they must establish a TCP connection.
+### Overview
 
-The **TCP three-way handshake** is the process used to:
+Before two programs can exchange bytes reliably over TCP, they need a short phone call: “Are you there?” “Yes.” “Good, let’s talk.” The **TCP three-way handshake** (SYN → SYN-ACK → ACK) establishes that both sides are alive, exchanges **initial sequence numbers (ISNs)**, negotiates options, and allocates kernel state for the connection.
 
-1. Verify both sides are reachable
-2. Exchange Initial Sequence Numbers (ISN)
-3. Negotiate TCP options and capabilities
-4. Allocate resources for the connection
+Technically, the handshake is pure TCP control segments — no application data yet (except optional **TCP Fast Open** cookie data). Only after both ends reach **ESTABLISHED** does HTTP, PostgreSQL wire protocol, or any other app protocol send payload on that socket.
 
-Only after the handshake completes can application data flow.
+### What problem it fixes
 
----
+IP delivers packets to a host, not to a specific in-order byte stream. TCP must know both sides’ starting sequence numbers to detect loss, duplication, and reordering. The handshake also prevents old duplicate SYNs from instantiating spurious connections and gives a place to negotiate **MSS**, **window scaling**, **SACK**, and timestamps.
 
-### Why do we need a handshake?
+### What it does
 
-Imagine making a phone call.
+| Step | Sender → Receiver | Flags / fields | Meaning |
+|------|-------------------|----------------|---------|
+| 1 | Client → Server | SYN, Seq = client ISN (e.g. 1000) | “Open connection; my sequence starts at 1000.” |
+| 2 | Server → Client | SYN+ACK, Seq = server ISN (e.g. 5000), Ack = 1001 | “Ack your SYN; my sequence starts at 5000.” |
+| 3 | Client → Server | ACK, Ack = 5001 | “Ack your SYN; connection open.” |
 
-```text
-You:     "Hello, can you hear me?"
-Friend:  "Yes, I can hear you."
-You:     "Great, let's talk."
+**States during handshake:**
+
+| Step | Client state | Server state |
+|------|--------------|--------------|
+| After SYN | `SYN_SENT` | `LISTEN` → `SYN_RECEIVED` |
+| After SYN-ACK | `SYN_SENT` | `SYN_RECEIVED` |
+| After final ACK | `ESTABLISHED` | `ESTABLISHED` |
+
+```mermaid
+flowchart LR
+    C1[Client SYN] --> S1[Server SYN-ACK]
+    S1 --> C2[Client ACK]
+    C2 --> OK[ESTABLISHED both sides]
 ```
 
-Similarly, TCP first verifies that both client and server can communicate before sending actual data.
+**Closing** uses a **four-way** exchange (FIN → ACK → FIN → ACK). The side that sends the first FIN eventually enters **TIME_WAIT** (often 60–120 seconds) so delayed segments cannot poison a later connection reusing the same quad (src IP, src port, dst IP, dst port).
 
----
+**Sequence numbers and ACKs:** If the client sends bytes 1000–1099, the server ACKs **1100** (“next byte I expect”). Loss of byte 1001–1099 leaves ACK stuck at 1001 until retransmit.
 
-### Step 1 — SYN
+**Options negotiated in handshake:**
 
-**Client sends:**
+| Option | Purpose |
+|--------|---------|
+| MSS | Max TCP payload per segment (often 1460 on Ethernet) — avoids IP fragmentation |
+| Window scaling | Extends receive window beyond 64 KB for high-BDP links |
+| SACK | Retransmit only missing segments, not everything after a gap |
+| Timestamps | RTT measurement, better loss detection |
+| TCP Fast Open | Send data in SYN after prior cookie — saves ~1 RTT |
 
-```text
-SYN
-Seq = 1000
-```
+**SYN queue vs accept queue:** Half-open connections (`SYN_RECEIVED`) sit in the **SYN queue**; fully established sockets waiting for `accept()` sit in the **accept queue**. Backlog tuning (`somaxconn`, `tcp_max_syn_backlog`) matters under load.
 
-**Meaning:**
-
-```text
-Hello Server,
-I want to establish a TCP connection.
-My starting sequence number is 1000.
-```
-
-**State:**
-
-| Side | State |
-|------|-------|
-| Client | `SYN_SENT` |
-| Server | `LISTEN` |
-
----
-
-### Step 2 — SYN-ACK
-
-**Server responds:**
-
-```text
-SYN + ACK
-Seq = 5000
-Ack = 1001
-```
-
-**Meaning:**
-
-```text
-I received your SYN.
-My starting sequence number is 5000.
-I expect your next byte starting from 1001.
-```
-
-**State:**
-
-| Side | State |
-|------|-------|
-| Client | `SYN_SENT` |
-| Server | `SYN_RECEIVED` |
-
----
-
-### Step 3 — ACK
-
-**Client sends:**
-
-```text
-ACK
-Ack = 5001
-```
-
-**Meaning:**
-
-```text
-I received your sequence number.
-I expect your next byte starting from 5001.
-```
-
-**State:**
-
-| Side | State |
-|------|-------|
-| Client | `ESTABLISHED` |
-| Server | `ESTABLISHED` |
-
-Connection is now fully open.
-
----
-
-### Visual flow
+### How it works — the architecture inside
 
 ```mermaid
 sequenceDiagram
     participant C as Client
     participant S as Server
-    C->>S: SYN
-    S->>C: SYN-ACK
-    C->>S: ACK
-    Note over C,S: Connection established
+    C->>S: SYN Seq=1000
+    S->>C: SYN-ACK Seq=5000 Ack=1001
+    C->>S: ACK Ack=5001
+    Note over C,S: Data transfer begins
 ```
+
+**Ephemeral ports:** Clients use temporary high ports (e.g. 52344). Rough capacity:
+
+```text
+Available ephemeral ports ≈ 28,000
+TIME_WAIT duration       ≈ 60 s
+Sustainable new conn/s   ≈ 28,000 / 60 ≈ 466/s per client IP
+```
+
+Beyond that, errors like `Cannot assign requested address` appear — common when load generators omit `TIME_WAIT` reuse settings or connection pooling.
+
+**SYN flood:** Attacker sends many SYNs without final ACK; server fills `SYN_RECEIVED` slots. **SYN cookies** encode state in the SYN-ACK sequence number and allocate full state only after valid ACK.
+
+**Keep-alive and pooling:** HTTP/1.1 `Connection: keep-alive` reuses one TCP connection for many requests. Database pools (HikariCP, pgBouncer) keep dozens of TCP connections open instead of handshake-per-query.
+
+### Pitfalls and design tips
+
+- **Every new TCP connection costs ~1 RTT** (sometimes 2–3 with TLS) — pool connections for DB and service meshes.
+- **TIME_WAIT on the active closer is normal** — don’t disable it blindly; fix port exhaustion with more client IPs, pooling, or `tcp_tw_reuse` where appropriate and understood.
+- **Load balancers must handle SYN before backends** — SYN flood targets the LB’s SYN queue first.
+- **Interview tip:** Distinguish **connection established** (kernel `ESTABLISHED`) from **accepted by app** (blocked in accept queue until a thread calls `accept()`).
+
+### Real-world example
+
+**nginx terminating HTTPS for thousands of short API requests:**
+
+Without keep-alive, each `GET /api/v1/status` pays TCP handshake (~20–50 ms on cross-region links) plus TLS. With `keepalive_timeout 65` and HTTP/1.1, the same client reuses one socket for hundreds of requests — CPU and latency drop sharply.
+
+A Java service using **HikariCP** to PostgreSQL opens a fixed pool (e.g. 20 TCP connections at startup). Each query borrows a connection — no per-query SYN/SYN-ACK/ACK. Under burst traffic, watch `ESTABLISHED` count and accept-queue drops (`ss -ltn`) on the database; if the app is slow to `accept()`, the accept queue fills even though the handshake succeeded.
 
 ---
-
-### What is Initial Sequence Number (ISN)?
-
-Every TCP connection starts with a random sequence number.
-
-**Example:**
-
-```text
-Client ISN = 1000
-Server ISN = 5000
-```
-
-TCP uses sequence numbers to:
-
-- Track transmitted bytes
-- Detect missing packets
-- Detect duplicate packets
-- Reorder packets
-- Acknowledge received data
-
-Without sequence numbers, TCP reliability would not be possible.
-
----
-
-### Why sequence numbers are important
-
-Suppose packets arrive like this:
-
-```text
-Packet 1
-Packet 3
-Packet 2
-```
-
-**Without sequence numbers:** Receiver cannot determine correct order.
-
-**With sequence numbers:**
-
-```text
-Seq = 1000
-Seq = 1001
-Seq = 1002
-```
-
-Receiver can correctly reorder the packets.
-
----
-
-### What is Acknowledgement (ACK)?
-
-ACK means: *"I successfully received the data."*
-
-**Example:**
-
-Client sends:
-
-```text
-Seq = 1000
-Length = 100 bytes
-```
-
-Server replies:
-
-```text
-Ack = 1100
-```
-
-**Meaning:** *"I received everything up to byte 1099. Please send byte 1100 next."*
-
-ACKs are the foundation of TCP reliability.
-
----
-
-### What happens if a packet is lost?
-
-**Example:**
-
-```text
-Packet 1000 → Received
-Packet 1001 → Lost
-Packet 1002 → Received
-```
-
-Receiver sends:
-
-```text
-Ack = 1001
-```
-
-**Meaning:** *"I am still waiting for packet 1001."*
-
-Sender retransmits packet 1001. This mechanism guarantees reliable delivery.
-
----
-
-### TCP options negotiated during handshake
-
-The handshake is not only for connection establishment. Client and server also exchange supported capabilities.
-
-#### MSS (Maximum Segment Size)
-
-Defines maximum payload size per TCP packet.
-
-**Example:** `MSS = 1460 bytes`
-
-**Purpose:** Avoid fragmentation and improve efficiency.
-
-#### Window scaling
-
-Allows larger TCP receive windows.
-
-**Important for:** High bandwidth networks, long-distance communication, cloud environments
-
-Without window scaling, TCP throughput becomes limited.
-
-#### SACK (Selective Acknowledgement)
-
-**Example:**
-
-```text
-Received: 1, 2, 4, 5
-Missing:  3
-```
-
-**Without SACK:** Sender may retransmit 3, 4, 5
-
-**With SACK:** Receiver says *"I already have 4 and 5. Only resend 3."*
-
-**Result:** Less network traffic and faster recovery.
-
-#### Timestamps
-
-Used for:
-
-- RTT measurement
-- Better retransmission decisions
-- Detecting old packets
-
-#### TCP Fast Open
-
-**Normal TCP:** Handshake first → data second
-
-**TCP Fast Open:** Client may send data with SYN
-
-**Benefit:** Saves approximately one RTT
-
----
-
-### TCP state transitions
-
-**Client side:**
-
-```text
-CLOSED
-  |
-  V
-SYN_SENT
-  |
-  V
-ESTABLISHED
-  |
-  V
-FIN_WAIT
-  |
-  V
-TIME_WAIT
-  |
-  V
-CLOSED
-```
-
-**Server side:**
-
-```text
-LISTEN
-  |
-  V
-SYN_RECEIVED
-  |
-  V
-ESTABLISHED
-  |
-  V
-CLOSE_WAIT
-  |
-  V
-CLOSED
-```
-
-#### Important states
-
-| State | Meaning |
-|-------|---------|
-| **LISTEN** | Server waiting for incoming connections (e.g. web server on port 443) |
-| **SYN_SENT** | Client sent SYN and is waiting for response |
-| **SYN_RECEIVED** | Server received SYN and sent SYN-ACK; waiting for final ACK |
-| **ESTABLISHED** | Connection fully open; application data can flow |
-| **TIME_WAIT** | Connection closed but temporarily retained — prevents delayed packets from affecting future connections |
-
----
-
-### Connection termination (four-way handshake)
-
-| Opening a connection | Closing a connection |
-|----------------------|------------------------|
-| SYN | FIN |
-| SYN-ACK | ACK |
-| ACK | FIN |
-| | ACK |
-
-#### Closing process
-
-| Step | Message | Meaning |
-|------|---------|---------|
-| 1 | Client → **FIN** | "I am done sending data." |
-| 2 | Server → **ACK** | "I received your FIN." (Server may still send remaining data.) |
-| 3 | Server → **FIN** | "I am done sending data too." |
-| 4 | Client → **ACK** | "I received your FIN." Connection closed. |
-
-```mermaid
-sequenceDiagram
-    participant C as Client
-    participant S as Server
-    C->>S: FIN
-    S->>C: ACK
-    S->>C: FIN
-    C->>S: ACK
-    Note over C: TIME_WAIT
-```
-
----
-
-### What is TIME_WAIT?
-
-After the final ACK is sent, the active closer enters **TIME_WAIT**.
-
-**Typical duration:** 60–120 seconds
-
-**Purpose:**
-
-1. Ensure final ACK reaches peer
-2. Prevent delayed packets from entering future connections
-
-#### Why TIME_WAIT exists
-
-Imagine:
-
-1. Connection A closes
-2. A delayed packet from Connection A is still traveling through the network
-3. Immediately after closing, Connection B starts using the same ports
-
-**Without TIME_WAIT:** Old packet may enter the new connection → data corruption
-
-**TIME_WAIT prevents this.**
-
----
-
-### What are ephemeral ports?
-
-Temporary client-side ports assigned by the operating system.
-
-**Examples:** `49152`, `52344`, `60001`
-
-```text
-Client:  10.0.0.1:52344
-Server:  10.0.0.2:443
-
-52344 is the ephemeral port.
-```
-
-#### Ephemeral port exhaustion
-
-Suppose:
-
-```text
-Available ephemeral ports = 28,000
-TIME_WAIT duration        = 60 seconds
-
-Maximum sustainable new connections:
-28,000 / 60 ≈ 466 connections/sec
-```
-
-Beyond this, the system may fail to create new connections.
-
-**Typical error:** `Cannot assign requested address`
-
----
-
-### What is a SYN flood attack?
-
-Attacker repeatedly sends:
-
-```text
-SYN
-SYN
-SYN
-SYN
-```
-
-But never sends the final ACK.
-
-Server keeps waiting in `SYN_RECEIVED`. Thousands of half-open connections consume memory and resources. Eventually legitimate users cannot connect.
-
-#### What are SYN cookies?
-
-Defense against SYN flood attacks.
-
-**Normal behavior:** Server allocates memory after receiving SYN.
-
-**With SYN cookies:** Server stores no state initially. Connection information is encoded inside the SYN-ACK sequence number. Memory is allocated only after receiving the final ACK.
-
-**Benefit:** Protects server resources during SYN flood attacks.
-
----
-
-### SYN queue vs accept queue
-
-Common system design interview question.
-
-#### SYN queue
-
-**Contains:** Half-open connections
-
-**State:** `SYN_RECEIVED` — handshake not completed yet
-
-#### Accept queue
-
-**Contains:** Fully established connections
-
-**State:** `ESTABLISHED` — waiting for application to call `accept()`
-
-#### Example
-
-Handshake completed → connection established → application thread is busy → connection waits in **accept queue** until application accepts it.
-
----
-
-### Why keep-alive exists
-
-**Without keep-alive:**
-
-```text
-Request 1 → New TCP connection
-Request 2 → New TCP connection
-Request 3 → New TCP connection
-```
-
-Every request pays handshake cost.
-
-**With keep-alive:**
-
-```text
-One TCP connection
-
-Request 1
-Request 2
-Request 3
-
-Connection reused.
-```
-
-**Benefits:** Lower latency, lower CPU usage, fewer handshakes
-
----
-
-### Why connection pooling exists
-
-**Used by:** Databases, microservices, HTTP clients
-
-**Bad:**
-
-```text
-Open TCP → Execute Query → Close TCP
-(repeated thousands of times)
-```
-
-**Good:**
-
-```text
-Create 10–50 TCP connections
-Reuse them repeatedly
-```
-
-**Benefits:** Reduced latency, reduced CPU overhead, better throughput, fewer connection storms
-
----
-
-
 
 ## 1.4 UDP
 
-**UDP (User Datagram Protocol)** is a lightweight transport layer protocol that focuses on **speed** rather than reliability.
+### Overview
 
-Unlike TCP, UDP does not establish a connection before sending data.
+**UDP (User Datagram Protocol)** is the “loudspeaker” of transport protocols: send a message once, don’t wait for applause. There is no connection setup, no automatic retry, and no ordering — which makes it **faster and lighter** than TCP when you can tolerate or handle loss yourself.
 
-| | TCP | UDP |
-|---|-----|-----|
-| Focus | Reliable but slower | Fast but unreliable |
+UDP adds only an 8-byte header (ports, length, checksum) and hands datagrams to IP. Applications — or newer protocols like **QUIC** — add reliability, encryption, and multiplexing on top when needed.
 
----
+### What problem it fixes
 
-### TCP vs UDP
+TCP’s guarantees cost RTTs, CPU, and buffer memory. Real-time video, voice, and live game state prefer **fresh data over old retransmitted data**. DNS questions are tiny request/response pairs where a full TCP handshake would dominate latency. UDP gives a minimal multiplexing layer (ports) without imposing connection state on the OS.
 
-#### TCP
+### What it does
 
-- Connection-oriented
-- Uses 3-way handshake
-- Guarantees delivery
-- Guarantees packet ordering
-- Retransmits lost packets
-- Higher overhead
-- More latency
+| Property | TCP | UDP |
+|----------|-----|-----|
+| Connection | Required (handshake) | None |
+| Reliability | Yes | No |
+| Ordering | Yes | No |
+| Flow / congestion control | Built in | None |
+| Header size | ≥ 20 bytes | 8 bytes |
+| Typical ports | 80, 443, 5432 | 53 (DNS), 123 (NTP), QUIC |
 
-**Examples:** HTTP, HTTPS, database connections, file transfers
+Sender transmits datagrams; receiver may get them out of order, duplicated, or not at all. **Checksum** catches some corruption; there is no recovery beyond app logic.
 
-#### UDP
+### How it works — the architecture inside
 
-- Connectionless
-- No handshake
-- No delivery guarantee
-- No ordering guarantee
-- No retransmission
-- Very low overhead
-- Lower latency
-
-**Examples:** Video streaming, voice calls, online gaming, DNS
-
----
-
-### How UDP works
-
-Client sends:
-
-```text
-Packet A
-Packet B
-Packet C
+```mermaid
+flowchart LR
+    App[Application payload] --> UDP[UDP header ports length]
+    UDP --> IP[IP packet]
+    IP --> Link[Frame to destination]
 ```
 
-UDP simply sends the packets. It does **not** check:
+**Why UDP is faster:** Skips handshake, ACK processing, ordered reassembly, retransmission timers, and congestion control — less kernel work per message.
 
-- Whether packets arrived
-- Whether packets arrived in order
-- Whether packets were lost
+**When loss is acceptable:**
 
-**UDP's philosophy:** *"I sent the packet. My job is done."*
+| Scenario | Behavior on loss |
+|----------|------------------|
+| Video frame | Skip frame; show next |
+| Game position | Use latest coordinates |
+| Voice packet | Brief gap vs stall |
+| DNS query | App retries or tries another resolver |
 
----
+**Application-level reliability on UDP:** **QUIC** (HTTP/3) adds streams, encryption, loss recovery, and 0-RTT resumption on top of UDP so OS kernels stay unchanged. **RTP** carries media with sequence numbers for jitter buffers.
 
-### Why is UDP faster?
-
-TCP performs many extra operations:
-
-- Connection establishment
-- ACK processing
-- Packet ordering
-- Retransmissions
-- Flow control
-- Congestion control
-
-UDP skips all of these.
-
-**Result:** Less CPU usage, less memory usage, lower latency, higher throughput
-
----
-
-### No handshake
-
-**TCP:**
-
-```text
-SYN → SYN-ACK → ACK
-(then data transfer starts)
-```
-
-**UDP:**
-
-```text
-Send packet
-```
-
-That's it. No connection setup cost.
-
----
-
-### No acknowledgements
-
-**TCP:**
-
-```text
-Sender:   Packet 1000
-Receiver: ACK 1001
-```
-
-Sender knows packet arrived.
-
-**UDP:**
-
-```text
-Sender: Packet 1000
-(no ACK — sender never knows whether packet arrived)
-```
-
----
-
-### No retransmission
-
-**TCP:** Lost packet → sender retransmits
-
-**UDP:** Lost packet → packet is gone forever. No retransmission occurs.
-
----
-
-### No ordering guarantee
-
-Suppose sender transmits: Packet 1, Packet 2, Packet 3
-
-Receiver may receive: Packet 2, Packet 3, Packet 1
-
-UDP does not fix the order. Application must handle ordering if needed.
-
----
-
-### Why would anyone use UDP?
-
-Because in some situations **speed is more important than perfect reliability**.
-
-**Example — video call:**
-
-If one video frame is lost:
-
-- **Bad:** Wait for retransmission
-- **Good:** Skip the frame and continue
-
-Humans usually won't notice a single missing frame. But they **will** notice a 2-second delay.
-
----
-
-### Use case: Online gaming
-
-Player position updates:
-
-```text
-Player A: X = 100
-Next:     X = 101
-Next:     X = 102
-```
-
-If update 101 is lost, latest update (102) is enough. Retransmitting old position data is often useless. Therefore UDP is preferred.
-
----
-
-### Use case: Video streaming
-
-Imagine watching a live cricket match.
-
-If one frame is lost:
-
-- **Better:** Skip frame and continue
-- **Worse:** Pause video waiting for retransmission
-
-This is why many streaming technologies use UDP internally.
-
----
-
-### Use case: Voice calls
-
-During a call: Packet 1, Packet 2, Packet 3
-
-If Packet 2 is lost, most users prefer:
-
-```text
-Packet 1 → (small audio gap) → Packet 3
-```
-
-Rather than: pause conversation and wait for retransmission.
-
-Therefore UDP is preferred.
-
----
-
-### Use case: DNS
-
-When browser requests `google.com`, DNS request is typically sent using UDP.
-
-**Reason:** Request is very small. Response is very small. Using TCP handshake would add unnecessary overhead.
-
----
-
-### UDP header
-
-UDP header is very small. Only contains:
-
-- Source port
-- Destination port
-- Length
-- Checksum
-
-**Size:** 8 bytes
-
-**TCP header:** Minimum 20 bytes (often larger because of options)
-
-**Result:** UDP packets have lower protocol overhead.
-
----
-
-### UDP ports
-
-Like TCP, UDP also uses ports.
+**Common UDP ports:**
 
 | Port | Service |
 |------|---------|
 | 53 | DNS |
-| 67 | DHCP |
-| 68 | DHCP client |
+| 67/68 | DHCP |
 | 123 | NTP |
-| 161 | SNMP |
-
-**Example:**
-
-```text
-192.168.1.10:54321
-              |
-           UDP port
-```
-
----
-
-### Does UDP have flow control?
-
-**No.**
-
-TCP automatically slows down when receiver or network is overloaded. UDP does not.
-
-If sender sends too fast, receiver may drop packets. Application must handle this.
-
----
-
-### Does UDP have congestion control?
-
-**No.**
-
-TCP adjusts transmission rate based on network conditions. UDP sends packets regardless of congestion.
-
-Applications using UDP often implement their own congestion handling.
-
----
-
-### Can UDP be made reliable?
-
-**Yes.** Applications can implement reliability themselves.
-
-Add:
-
-- Sequence numbers
-- ACKs
-- Retransmissions
-- Ordering logic
-
-Many modern protocols do exactly this.
-
-**Examples:** QUIC, RTP, custom gaming protocols
-
----
-
-### QUIC (important interview topic)
-
-**HTTP/3 uses QUIC.** QUIC runs on top of UDP.
-
-**Why?** UDP allows protocol innovation without changing operating systems.
-
-QUIC adds:
-
-- Reliability
-- Encryption
-- Multiplexing
-- Faster connection setup
-
-**Result:** HTTP/3 is built on UDP rather than TCP.
-
----
-
-### When to use TCP
-
-Use TCP when **data loss is unacceptable**.
-
-**Examples:** Banking, payments, databases, file transfers, REST APIs, microservices
-
-**Rule:** Reliability > speed
-
----
-
-### When to use UDP
-
-Use UDP when **low latency is more important than perfect reliability**.
-
-**Examples:** Video streaming, voice calls, online gaming, DNS, live broadcasting
-
-**Rule:** Speed > reliability
-
----
-
-
-
-## 1.5 MTU
-
-**MTU (Maximum Transmission Unit)** is the maximum amount of data that can be transmitted in a single network packet over a network interface without fragmentation.
-
-In simple words: MTU defines the **largest packet size** that can travel through a network in one piece.
-
----
-
-### Simple analogy
-
-Imagine a road that allows trucks carrying a maximum load of 1000 kg.
-
-| Shipment | Result |
-|----------|--------|
-| 800 kg | One truck is enough |
-| 1500 kg | Shipment must be split across multiple trucks |
-
-Similarly:
-
-| Data size | Result |
-|-----------|--------|
-| Data size ≤ MTU | One packet |
-| Data size > MTU | Data must be fragmented into multiple packets |
-
----
-
-### Common MTU values
-
-| Network | MTU |
-|---------|-----|
-| Ethernet | 1500 bytes |
-| Jumbo frames | 9000 bytes |
-| PPPoE | 1492 bytes |
-| VPN networks | Often 1300–1400 bytes |
-| Cloud networks | Typically 1500 bytes |
-
----
-
-### What does MTU include?
-
-MTU refers to the **entire IP packet size**.
-
-**Example:** MTU = 1500 bytes
-
-Inside those 1500 bytes:
-
-```text
-IP Header     = 20 bytes
-TCP Header    = 20 bytes
-Payload       = 1460 bytes
-
-Total: 20 + 20 + 1460 = 1500 bytes
-```
-
----
-
-### MTU vs MSS
-
-Many people confuse MTU and MSS.
-
-| | MTU | MSS (Maximum Segment Size) |
-|---|-----|----------------------------|
-| Meaning | Maximum IP packet size | Maximum TCP payload size |
-| Includes | Entire packet (headers + data) | Actual application data only |
-
-**Formula:**
-
-```text
-MSS = MTU - IP Header - TCP Header
-```
-
-**Example:**
-
-```text
-MTU         = 1500
-IP Header   = 20 bytes
-TCP Header  = 20 bytes
-MSS         = 1460 bytes
-```
-
----
-
-### Visual representation
-
-```text
-MTU = 1500 bytes
-
-+--------------------+
-| IP Header  20B     |
-+--------------------+
-| TCP Header 20B     |
-+--------------------+
-| Payload    1460B   |
-+--------------------+
-
-Total = 1500 bytes
-```
-
----
-
-### What happens when data is larger than MTU?
-
-Suppose MTU = 1500 bytes and application sends 5000 bytes.
-
-Network cannot send 5000 bytes as a single packet. It must split the data.
-
-**Example:**
-
-```text
-Packet 1 = 1500 bytes
-Packet 2 = 1500 bytes
-Packet 3 = 1500 bytes
-Packet 4 = remaining bytes
-```
-
-This process is called **fragmentation**.
-
----
-
-### What is fragmentation?
-
-Fragmentation means breaking a large packet into smaller packets so that each packet fits within the MTU limit.
-
-**Example:**
-
-```text
-Original packet: 4000 bytes
-MTU:             1500 bytes
-
-Result:
-  Fragment 1
-  Fragment 2
-  Fragment 3
-```
-
-Receiver later reassembles them.
-
----
-
-### Why is fragmentation bad?
-
-Fragmentation introduces:
-
-- Additional CPU overhead
-- Additional memory usage
-- More network overhead
-- Higher latency
-- Higher packet loss probability
-
-**Example:**
-
-| | Packets |
-|---|---------|
-| Original | 1 packet |
-| After fragmentation | 3 packets |
-
-If even **one fragment** is lost, the entire packet may need retransmission.
-
-Therefore fragmentation is generally avoided.
-
----
-
-### Path MTU
-
-Data usually travels through multiple networks.
-
-```text
-Laptop → Wi-Fi router → ISP → Internet → Cloud server
-```
-
-Each network may support a different MTU.
-
-**Example:**
-
-```text
-Network A = 1500
-Network B = 1400
-Network C = 1300
-
-Effective MTU = 1300
-```
-
-Because packets must fit through every network segment. This smallest supported MTU is called **path MTU**.
-
----
-
-### Path MTU Discovery (PMTUD)
-
-**Purpose:** Discover the largest packet size that can travel through the entire network path without fragmentation.
-
-**How it works:**
-
-1. Sender initially sends large packets
-2. If a router cannot forward them, router responds: *"Packet too big"*
-3. Sender reduces packet size
-4. Eventually sender finds the optimal MTU
-
-This process is called **Path MTU Discovery (PMTUD)**.
-
-#### Example
-
-```text
-Client MTU        = 1500
-Server MTU        = 1500
-Intermediate VPN  = 1400
-
-Client sends 1500-byte packet → VPN cannot forward it
-Router responds: Packet too big
-Client reduces to 1400-byte packet → transmission succeeds
-```
-
----
-
-### Why MTU matters in system design
-
-#### Large MTU
-
-| Pros | Cons |
-|------|------|
-| Fewer packets | Larger retransmissions |
-| Less protocol overhead | Higher impact if packet is lost |
-| Better throughput | |
-
-#### Small MTU
-
-| Pros | Cons |
-|------|------|
-| Less impact from packet loss | More packets |
-| Better compatibility | More headers, more CPU overhead |
-
----
-
-### Jumbo frames
-
-| | Standard Ethernet | Jumbo frames |
-|---|-------------------|--------------|
-| MTU | 1500 bytes | 9000 bytes |
-
-**Benefits:** Fewer packets, lower CPU overhead, higher throughput
-
-**Commonly used in:** Data centers, storage networks, high-speed internal networks
-
-**Requirement:** Every device on the path must support jumbo frames.
-
----
+| 443 | QUIC (HTTP/3) over UDP |
+
+### Pitfalls and design tips
+
+- **UDP “unreliable” does not mean “fire and forget” for production** — you need app-level timeouts, retries, or codecs that conceal loss.
+- **No congestion control** — high-rate UDP can starve TCP on shared links; QUIC implements its own congestion control.
+- **Large DNS responses switch to TCP** — if truncation (TC bit) occurs, resolver retries on TCP 53.
+- **Default for APIs:** TCP/HTTP unless you measure that loss tolerance and latency requirements favor UDP or QUIC.
+- **Firewall/NAT:** UDP has no “connection” — stateful firewalls track pseudo-flows by IP/port/time; short DNS queries behave differently from long QUIC sessions.
 
 ### Real-world example
 
-Suppose application needs to send **1 MB** of data.
+**Zoom-style voice and DNS on the same laptop:**
 
-| MTU | Effect |
-|-----|--------|
-| 1500 bytes | Many packets required |
-| 9000 bytes | Much fewer packets required |
+1. **Voice (RTP/SRTP over UDP):** Microphone audio is packetized every 20 ms. If packet 37 is lost, the jitter buffer plays packet 36 then 38 — a 20 ms glitch beats waiting 200 ms for TCP-style retransmit.
+2. **DNS (UDP port 53):** Resolver sends ~30-byte query `A api.stripe.com`; authoritative reply is often &lt; 512 bytes. Single round trip, no handshake. If the response is large (many records), resolver retries with TCP.
 
-**Result with jumbo frames:** Lower CPU usage, better throughput, higher efficiency
+**HTTP/3 (Google, Cloudflare, major CDNs):** Browser speaks QUIC on UDP/443. First visit: crypto + transport setup in fewer round trips than TCP+TLS; later requests multiplex streams without TCP head-of-line blocking between them — still UDP at the bottom, reliability inside QUIC.
 
 ---
 
+## 1.5 MTU
 
+### Overview
+
+**MTU (Maximum Transmission Unit)** is the size limit of a single packet on a link — like a bridge with a max truck weight. If your payload is bigger than the path allows, something must **split** (fragment) or **shrink** the packet.
+
+For IPv4 Ethernet, **MTU is typically 1500 bytes** for the entire IP packet (headers + payload). TCP avoids IP fragmentation by negotiating **MSS** (maximum segment size) — usually **1460 bytes** of application data after 20-byte IP and 20-byte TCP headers.
+
+### What problem it fixes
+
+Links differ: Ethernet 1500, VPN tunnels 1400 or less, jumbo frames 9000 in data centers. Without a agreed maximum, oversized packets are dropped or fragmented, wasting CPU and increasing loss sensitivity (lose one fragment, lose whole datagram). MTU and MSS alignment keep throughput predictable.
+
+### What it does
+
+| Concept | Meaning |
+|---------|---------|
+| MTU | Max **IP packet** size on an interface (headers + payload) |
+| MSS | Max **TCP payload** per segment — excludes IP and TCP headers |
+| Path MTU | Smallest MTU along the full route |
+| PMTUD | Sender discovers path MTU via “packet too big” ICMP |
+
+**Common MTU values:**
+
+| Network | MTU (bytes) |
+|---------|-------------|
+| Ethernet | 1500 |
+| PPPoE | 1492 |
+| Many VPNs | 1300–1400 |
+| Jumbo frames (DC) | 9000 |
+
+**Fragmentation:** If IP must send 5000 bytes and path MTU is 1500, the packet splits into fragments. Loss of **any** fragment forces whole-packet retransmit — why TCP prefers smaller segments via MSS instead.
+
+### How it works — the architecture inside
+
+```mermaid
+flowchart LR
+    App[5000 byte app write] --> TCP[TCP splits by MSS 1460]
+    TCP --> IP[IP packets max 1500]
+    IP --> Path{Path MTU OK?}
+    Path -->|yes| Deliver[Forward]
+    Path -->|no| ICMP[ICMP Fragmentation Needed]
+    ICMP --> Shrink[Sender lowers size PMTUD]
+```
+
+**Packet layout at MTU 1500:**
+
+```text
++------------------+
+| IP header   20 B |
++------------------+
+| TCP header  20 B |
++------------------+
+| Payload   1460 B |
++------------------+
+Total IP packet = 1500 bytes
+```
+
+**How to calculate — MSS from MTU:**
+
+- **Given:** MTU = 1500, IP header = 20 B, TCP header = 20 B (no options)
+- **Formula:** `MSS = MTU − IP header − TCP header`
+- **Steps:** `MSS = 1500 − 20 − 20 = 1460` bytes payload per segment
+- **Sanity check:** `20 + 20 + 1460 = 1500` — fits one Ethernet frame without IP fragmentation
+
+**Path MTU example:**
+
+```text
+Laptop MTU 1500 → ISP 1500 → VPN 1400 → Server 1500
+Effective path MTU = 1400
+```
+
+Sender that ignores VPN gets ICMP “Fragmentation Needed” (type 3, code 4); TCP lowers MSS or IP layer reduces packet size (PMTUD).
+
+| MTU choice | Tradeoff |
+|------------|----------|
+| Larger (jumbo 9000) | Fewer packets, higher throughput; all hops must support it |
+| Smaller (VPN-safe 1400) | More headers per byte; safer through tunnels |
+
+**How to calculate — packets for 1 MB transfer:**
+
+- **Given:** Data = 1,048,576 bytes, MSS ≈ 1460 bytes payload per segment
+- **Segments:** `1,048,576 / 1460 ≈ 718` TCP segments (plus headers on wire)
+- **With jumbo MSS ≈ 8960:** `1,048,576 / 8960 ≈ 117` segments — fewer interrupts on NIC
+
+### Pitfalls and design tips
+
+- **PMTUD breaks if ICMP is filtered** — classic “works on LAN, hangs on VPN” bug; set explicit MSS clamp on VPN interfaces or use TCP MSS adjustment.
+- **Don’t enable jumbo frames on only some switches** — silent drops or fragmentation surprises.
+- **UDP apps must size themselves** — no MSS negotiation; large UDP without fragmentation support gets dropped.
+- **Cloud:** AWS/GCP/Azure default 1500; overlay networks may need testing with `ping -M do -s <size>`.
+
+### Real-world example
+
+**Corporate laptop on OpenVPN or WireGuard accessing an internal API:**
+
+Default laptop thinks MTU 1500. VPN encapsulation adds headers; effective tunnel MTU ~1400. Full-size TCP segments hit the tunnel, ICMP “too big” should trigger MSS reduction. If the corporate firewall **blocks ICMP**, PMTUD fails — TCP sends large packets, they black-hole, HTTPS hangs after SYN.
+
+Fix: set interface MTU to 1400 on the VPN client or MSS clamp at the gateway. `ping -f -l 1472` (Windows) or `ping -M do -s 1472` (Linux) toward the server finds the largest size without fragmentation — add 28 bytes for IP+ICMP headers to infer path MTU.
+
+---
 
 ## 1.6 IP Addressing/Subnetting
 
-**IP (Internet Protocol) address** is a logical address assigned to a device on a network.
+### Overview
 
-**Purpose:**
+An **IP address** is a device’s logical “street address” on a network — routers use it to forward packets toward the right neighborhood and host. **Subnetting** splits one large address block into smaller networks so HR, finance, and production don’t share one flat broadcast domain.
 
-- Identify a device uniquely within a network
-- Allow devices to communicate
-- Help routers forward packets to the correct destination
+**IPv4** uses 32 bits, written as four octets (`192.168.1.10`). **Public** addresses are globally routable; **private** ranges (`10/8`, `172.16/12`, `192.168/16`) are reused behind NAT inside homes and cloud VPCs.
 
-**Think of it as:**
+### What problem it fixes
 
-- **House address** = IP address
-- Without a house address, a courier cannot deliver a package
-- Without an IP address, data cannot reach a device
+Flat networks do not scale: thousands of hosts on one LAN generate broadcast storms, weak security boundaries, and routing tables that cannot summarize cleanly. Subnetting allocates **right-sized** address space per team or tier (web, app, database) and keeps traffic local where possible.
 
----
+### What it does
 
-### IP address structure (IPv4)
+- **Uniquely identify** a host within a routing domain (with NAT, private IPs repeat in different VPCs).
+- **Separate network prefix from host suffix** via subnet mask or CIDR (e.g. `/24` → 24 bits network, 8 bits host).
+- **Reserve** first address (network) and last (broadcast) in each subnet — not assignable to hosts.
 
-**IPv4 address = 32 bits**
-
-**Example:** `192.168.1.10`
-
-**Actually stored as:**
-
-```text
-11000000.10101000.00000001.00001010
-```
-
-IPv4 consists of 4 octets:
-
-```text
-192 . 168 . 1 . 10
- |     |    |    |
-8bit  8bit 8bit 8bit
-
-Total: 8 + 8 + 8 + 8 = 32 bits
-```
-
----
-
-### Public vs private IP
-
-#### Public IP
-
-- Used on the Internet
-- Must be globally unique
-- **Example:** `8.8.8.8`
-- Public IPs are assigned by ISPs
-
-#### Private IP
-
-- Used inside internal networks
-- Not routable on the Internet
-
-**Private ranges:**
+**Private IPv4 ranges (RFC 1918):**
 
 | Range |
 |-------|
@@ -1764,881 +521,322 @@ Total: 8 + 8 + 8 + 8 = 32 bits
 | `172.16.0.0` – `172.31.255.255` |
 | `192.168.0.0` – `192.168.255.255` |
 
-**Examples:** `192.168.1.10`, `10.0.0.5`
+**Default gateway:** Host sends off-subnet traffic to the router (e.g. laptop `192.168.1.10/24`, gateway `192.168.1.1`).
 
-Most home Wi-Fi networks use private IPs.
+### How it works — the architecture inside
 
----
-
-### Why do we need subnetting?
-
-Suppose a company has **5000 employees**.
-
-**Without subnetting:** Everyone belongs to one huge network.
-
-**Problems:**
-
-- Too much broadcast traffic
-- Poor performance
-- Harder management
-- Security challenges
-
-**Solution:** Divide one large network into smaller networks. This process is called **subnetting**.
-
----
-
-### What is a subnet?
-
-**Subnet** = sub network — a smaller network created from a larger network.
-
-**Example — company network `192.168.0.0/16` divided into:**
-
-| Department | Subnet |
-|------------|--------|
-| HR | `192.168.1.0/24` |
-| Finance | `192.168.2.0/24` |
-| IT | `192.168.3.0/24` |
-| Sales | `192.168.4.0/24` |
-
-Each department gets its own network.
-
----
-
-### Network part vs host part
-
-Every IP address consists of:
-
-```text
-Network portion + Host portion
+```mermaid
+flowchart LR
+    Host[192.168.1.10] -->|same subnet| Local[192.168.1.50 direct ARP]
+    Host -->|other subnet| GW[Default gateway 192.168.1.1]
+    GW --> Router[Routes to 10.0.0.0/8 etc]
 ```
 
-**Example:** `192.168.1.10/24`
+**`192.168.1.10/24` breakdown:**
 
 | Part | Value |
 |------|-------|
-| Network | `192.168.1` |
-| Host | `10` |
+| Network | `192.168.1.0` |
+| Host | `.10` |
+| Mask | `255.255.255.0` (= `/24`) |
+| Broadcast | `192.168.1.255` |
+| Usable hosts | `.1` – `.254` (254 hosts) |
 
-**Meaning:** Network = which network? Host = which device inside that network?
+**How to calculate — usable hosts:**
 
----
+- **Given:** CIDR `/24` → host bits = 32 − 24 = 8
+- **Formula:** `usable hosts = 2^host_bits − 2`
+- **Steps:** `2^8 = 256`; minus network and broadcast → **254 usable**
+- **Sanity check:** `/30` has 2^2 − 2 = **2** hosts — common for point-to-point router links
 
-### What is a subnet mask?
-
-Subnet mask determines which bits belong to **network** and which belong to **host**.
-
-**Example:**
-
-```text
-IP Address:    192.168.1.10
-Subnet Mask:   255.255.255.0
-
-Binary:
-11111111.11111111.11111111.00000000
-
-First 24 bits = Network
-Last 8 bits   = Host
-```
-
----
-
-### CIDR notation
-
-**Example:** `192.168.1.0/24` means 24 bits for network, 8 bits for hosts.
-
-**CIDR** = Classless Inter-Domain Routing
-
-Instead of writing `255.255.255.0`, we write `/24`.
-
-| Subnet mask | CIDR |
-|-------------|------|
-| `255.0.0.0` | `/8` |
-| `255.255.0.0` | `/16` |
-| `255.255.255.0` | `/24` |
-| `255.255.255.128` | `/25` |
-
-CIDR simply tells how many bits belong to the network.
-
----
-
-### Most common CIDR blocks
-
-#### /8
-
-```text
-Network bits = 8
-Host bits    = 24
-Total addresses = 2^24 = 16,777,216
-```
-
-#### /16
-
-```text
-Network bits = 16
-Host bits    = 16
-Total addresses = 2^16 = 65,536
-```
-
-#### /24
-
-```text
-Network bits = 24
-Host bits    = 8
-Total addresses = 2^8 = 256
-Usable hosts    = 254
-```
-
----
-
-### Why only 254 usable hosts in /24?
-
-**Example:** `192.168.1.0/24`
-
-**Total addresses:** 256
-
-**Reserved:**
-
-| Address | Role |
-|---------|------|
-| `192.168.1.0` | Network address |
-| `192.168.1.255` | Broadcast address |
-
-**Usable:** `192.168.1.1` to `192.168.1.254` → **254 hosts**
-
----
-
-### Network address
-
-First address of subnet.
-
-**Example:** `192.168.1.0/24` → network address is `192.168.1.0`
-
-Represents the entire network. Cannot be assigned to devices.
-
----
-
-### Broadcast address
-
-Last address of subnet.
-
-**Example:** `192.168.1.0/24` → broadcast address is `192.168.1.255`
-
-Used to send packets to all devices in the subnet. Cannot be assigned to devices.
-
----
-
-### How to calculate hosts?
-
-**Formula:**
-
-```text
-2^(Host Bits) - 2
-```
-
-**Why minus 2?** One network address + one broadcast address.
-
-| CIDR | Host bits | Calculation | Usable hosts |
-|------|-----------|-------------|--------------|
-| /24 | 8 | 2^8 - 2 = 256 - 2 | **254** |
-| /25 | 7 | 2^7 - 2 = 128 - 2 | **126** |
-| /26 | 6 | 2^6 - 2 = 64 - 2 | **62** |
-
----
-
-### Common CIDR interview values
-
-| CIDR | Addresses | Usable hosts |
+| CIDR | Host bits | Usable hosts |
 |------|-----------|--------------|
-| /24 | 256 | 254 |
-| /25 | 128 | 126 |
-| /26 | 64 | 62 |
-| /27 | 32 | 30 |
-| /28 | 16 | 14 |
-| /29 | 8 | 6 |
+| /24 | 8 | 254 |
+| /25 | 7 | 126 |
+| /26 | 6 | 62 |
+| /27 | 5 | 30 |
+
+**Subnetting example — split `192.168.1.0/24` into four `/26` subnets** (borrow 2 host bits → `/26`):
+
+| Subnet | Host range | Broadcast |
+|--------|------------|-----------|
+| `192.168.1.0/26` | `.1` – `.62` | `.63` |
+| `192.168.1.64/26` | `.65` – `.126` | `.127` |
+| `192.168.1.128/26` | `.129` – `.190` | `.191` |
+| `192.168.1.192/26` | `.193` – `.254` | `.255` |
+
+### Pitfalls and design tips
+
+- **Plan for growth** — exhausting a `/24` in production forces painful renumbering or overlay hacks.
+- **AWS/GCP: one subnet = one AZ** for many designs; don’t stretch the same L2 across regions.
+- **Broadcast domains vs security groups** — subnetting alone is not a firewall; pair with ACLs/SG/NACLs.
+- **Interview:** Know `/24`, `/26`, `/30` cold; explain why `.0` and `.255` are reserved in IPv4 subnets.
+
+### Real-world example
+
+**AWS VPC design for a three-tier web app:**
+
+```text
+VPC: 10.0.0.0/16  (65,536 addresses)
+
+10.0.1.0/24   public subnets  — ALB, NAT gateway (AZ-a)
+10.0.2.0/24   public subnets  — ALB, NAT (AZ-b)
+10.0.10.0/24  private app     — ECS/EKS pods (AZ-a)
+10.0.20.0/24  private app     — (AZ-b)
+10.0.100.0/24 database        — RDS subnet group (no direct internet route)
+```
+
+Web tasks in `10.0.10.0/24` reach RDS on `10.0.100.0/24` via route tables and security groups — not public IPs. NAT in public subnets gives outbound internet for patches without inbound exposure to app tiers. Each `/24` yields 254 private IPs — enough for hundreds of ENIs per AZ with room for AWS reserved addresses.
 
 ---
-
-### Subnetting example
-
-**Network:** `192.168.1.0/24`  
-**Need:** 4 subnets → borrow 2 host bits → new CIDR: **/26**
-
-#### Subnet 1 — `192.168.1.0/26`
-
-```text
-Hosts:     192.168.1.1  to  192.168.1.62
-Broadcast: 192.168.1.63
-```
-
-#### Subnet 2 — `192.168.1.64/26`
-
-```text
-Hosts:     192.168.1.65  to  192.168.1.126
-Broadcast: 192.168.1.127
-```
-
-#### Subnet 3 — `192.168.1.128/26`
-
-```text
-Hosts:     192.168.1.129  to  192.168.1.190
-Broadcast: 192.168.1.191
-```
-
-#### Subnet 4 — `192.168.1.192/26`
-
-```text
-Hosts:     192.168.1.193  to  192.168.1.254
-Broadcast: 192.168.1.255
-```
-
----
-
-### Default gateway
-
-Devices communicate outside their subnet through a router.
-
-**Example:**
-
-```text
-Laptop:          192.168.1.10
-Router:          192.168.1.1
-Default Gateway: 192.168.1.1
-```
-
-If destination is outside the local network, the packet goes to the router.
-
----
-
-### Routing example
-
-```text
-Source:      192.168.1.10
-Destination: 10.0.0.20
-```
-
-Different subnet → laptop sends packet to **default gateway** → router forwards packet to destination network.
-
----
-
-### Why subnetting is important
-
-**Benefits:**
-
-- Reduces broadcast traffic
-- Improves performance
-- Better security isolation
-- Easier network management
-- Efficient IP allocation
-
----
-
-### Cloud example (AWS / Azure / GCP)
-
-```text
-VPC: 10.0.0.0/16
-
-Subnets:
-  10.0.1.0/24   Public subnet
-  10.0.2.0/24   Public subnet
-  10.0.10.0/24  Private subnet
-  10.0.20.0/24  Database subnet
-```
-
-This is subnetting in real-world cloud environments.
-
----
-
-
 
 ## 1.7 CIDR
 
-**CIDR (Classless Inter-Domain Routing)** is a method used to define how many bits of an IP address belong to the **network** portion and how many belong to the **host** portion.
+### Overview
 
-CIDR was introduced to solve the inefficiency and wastage of IP addresses caused by the older Class A, B, and C networking system.
+**CIDR (Classless Inter-Domain Routing)** writes network size as a **prefix length** after a slash — `10.0.0.0/16` means the first 16 bits are the network, the rest are hosts. It replaced rigid **Class A/B/C** sizing so you can allocate **just enough** addresses instead of wasting an entire Class B for 500 machines.
 
-Today, almost all modern networks use CIDR.
+CIDR also enables **route aggregation** (supernetting): many contiguous `/24` blocks advertised as one `/22`, shrinking Internet routing tables.
 
----
+### What problem it fixes
 
-### Why CIDR was introduced
+Classful networking wasted space — a company needing 1,000 IPs got 65,534 (Class B) or struggled with 254 (Class C). Internet routers faced exploding table sizes when every small network announced separately. CIDR flexibly sizes networks and summarizes routes for scalability.
 
-Before CIDR, networks used fixed classes.
+### What it does
 
-| Class | Subnet mask | CIDR | Hosts |
-|-------|-------------|------|-------|
-| A | `255.0.0.0` | `/8` | 16,777,214 |
-| B | `255.255.0.0` | `/16` | 65,534 |
-| C | `255.255.255.0` | `/24` | 254 |
+- **Notation:** `network_address/prefix` — prefix = count of leading 1-bits in the mask.
+- **Equivalence:** `/24` = mask `255.255.255.0`; `/16` = `255.255.0.0`.
+- **Aggregation:** `192.168.0.0/24` through `192.168.3.0/24` → summarize as `192.168.0.0/22`.
 
-**Problem:** Suppose a company needs **1000 IP addresses**.
+| CIDR | Mask | Usable IPv4 hosts |
+|------|------|-------------------|
+| /16 | 255.255.0.0 | 65,534 |
+| /23 | 255.255.254.0 | 510 |
+| /24 | 255.255.255.0 | 254 |
+| /26 | 255.255.255.192 | 62 |
 
-| Class | Issue |
-|-------|-------|
-| Class C | 254 hosts — too small |
-| Class B | 65,534 hosts — too large |
+### How it works — the architecture inside
 
-Huge waste of IP addresses.
-
-**CIDR solved this** by allowing flexible network sizes.
-
----
-
-### How CIDR works
-
-CIDR uses the format:
-
-```text
-IP Address / Prefix Length
+```mermaid
+flowchart LR
+    Need[Need 500 hosts] --> Pick[Choose /23 510 addresses]
+    Pick --> VPC[Assign 10.1.0.0/23]
+    VPC --> Sub[Split into /24 subnets]
+    Sub --> RT[Route tables per subnet]
 ```
 
-**Example:** `192.168.1.0/24`
+**`192.168.1.10/24` in binary terms:**
 
-| Part | Value |
-|------|-------|
-| IP address | `192.168.1.0` |
-| Network bits | 24 |
-| Host bits | 32 - 24 = **8** |
+- 32-bit address; first **24 bits** fixed for network (`192.168.1`), last **8 bits** for host (`.10`).
+- All hosts with same /24 prefix are on-link without a router.
 
----
+**How to calculate — pick CIDR for N hosts:**
 
-### Understanding `/24`
+- **Given:** Need at least 500 assignable hosts
+- **Find host bits:** Need `2^h − 2 ≥ 500` → `2^9 − 2 = 510` → **9 host bits**
+- **Prefix:** `32 − 9 = /23`
+- **Result:** One `/23` block (e.g. `10.10.0.0/23`) provides 510 usable IPs
+- **Sanity check:** `/24` only gives 254 — too small; `/22` gives 1022 — works but wastes more space
 
-**IPv4 address = 32 bits**
-
-**Example:** `192.168.1.10`
-
-**Binary:**
-
-```text
-11000000.10101000.00000001.00001010
-```
-
-**CIDR `/24` means:**
-
-- First **24 bits** belong to network
-- Last **8 bits** belong to host
-
-**Visualization — `192.168.1.10/24`:**
-
-| Portion | Value |
-|---------|-------|
-| Network | `192.168.1` |
-| Host | `10` |
-
----
-
-### CIDR vs subnet mask
-
-CIDR and subnet mask represent the **same thing**.
-
-| CIDR | Subnet mask |
-|------|-------------|
-| `/24` | `255.255.255.0` |
-| `/16` | `255.255.0.0` |
-| `/8` | `255.0.0.0` |
-
----
-
-### Common CIDR values
-
-| CIDR | Subnet mask | Usable hosts |
-|------|-------------|--------------|
-| /8 | `255.0.0.0` | 16,777,214 |
-| /16 | `255.255.0.0` | 65,534 |
-| /24 | `255.255.255.0` | 254 |
-| /25 | `255.255.255.128` | 126 |
-| /26 | `255.255.255.192` | 62 |
-| /27 | `255.255.255.224` | 30 |
-| /28 | `255.255.255.240` | 14 |
-| /29 | `255.255.255.248` | 6 |
-| /30 | `255.255.255.252` | 2 |
-
----
-
-### Why is CIDR important?
-
-CIDR allows networks to allocate **exactly** the number of IPs they need.
-
-**Example — need 500 IPs:**
-
-| Approach | Allocation | Hosts |
-|----------|------------|-------|
-| Old way | `/16` | 65,534 — wasteful |
-| CIDR | `/23` | 510 — much more efficient |
-
----
-
-### CIDR aggregation (supernetting)
-
-CIDR is also used to combine multiple networks into a single route.
-
-**Four networks:**
+**Aggregation example:**
 
 ```text
 192.168.0.0/24
 192.168.1.0/24
 192.168.2.0/24
 192.168.3.0/24
+→ aggregate to 192.168.0.0/22 (one routing table entry)
 ```
 
-**Can be summarized as:**
+### Pitfalls and design tips
 
-```text
-192.168.0.0/22
-```
+- **CIDR math errors cause overlaps** — overlapping VPC peering CIDRs break routing; plan address space globally for multi-VPC accounts.
+- **Smaller prefix number = bigger network** — `/16` is larger than `/24` (common interview trap).
+- **IPv6 uses CIDR everywhere** — `/64` per LAN is standard; don’t subnet IPv6 like IPv4 without understanding SLAAC and ND.
+- **Cloud quotas:** AWS default VPC `/16`; carving many `/28` leaves room but watch ENI/IP limits per subnet.
 
-**Benefits:** Smaller routing tables, faster routing decisions, less memory consumption
+### Real-world example
 
----
+**GCP custom VPC for a startup expecting ~400 microservices:**
 
-### Why route aggregation matters
+Engineer chooses **`10.20.0.0/22`** (1022 usable IPs) instead of `/16` to avoid peering conflicts with a partner’s `10.0.0.0/16`. Inside:
 
-Imagine the Internet.
+- `10.20.0.0/24` — GKE nodes (AZ-a)
+- `10.20.1.0/24` — GKE nodes (AZ-b)
+- `10.20.2.0/25` — managed Redis/Memcached (62 hosts max — enough for managed service endpoints)
 
-**Without aggregation:** Millions of individual routes — routers would require enormous routing tables.
-
-**With CIDR aggregation:** Many smaller routes become one larger route.
-
-**Result:** Better scalability of the Internet.
-
----
-
-### CIDR in cloud (AWS / Azure / GCP)
-
-Very common interview topic.
-
-**Example VPC:** `10.0.0.0/16` → **65,534** hosts
-
-**Create subnets:**
-
-| Subnet | Purpose |
-|--------|---------|
-| `10.0.1.0/24` | Application servers |
-| `10.0.2.0/24` | API servers |
-| `10.0.10.0/24` | Databases |
-| `10.0.20.0/24` | Cache layer |
-
-CIDR determines how many IPs are available in each subnet.
+When connecting to on-prem via Cloud VPN, they advertise **`10.20.0.0/22` as one route** to the corporate router — four `/24`-sized pieces, one BGP entry. If they had announced each `/24` separately, on-prem table noise grows; aggregation keeps ops simple.
 
 ---
-
-
 
 ## 1.8 DNS
 
-**DNS (Domain Name System)** is the Internet's phonebook.
+### Overview
 
-Its primary job is to translate a human-readable domain name into an IP address.
+**DNS (Domain Name System)** is the Internet’s phonebook: you type `stripe.com`, your computer needs `104.18.x.x` (or similar) to open a TCP connection. DNS maps **human-readable names** to **records** — mostly IP addresses, but also mail servers, aliases, and verification strings.
 
-**Example:**
+The system is **hierarchical and distributed** — root servers know TLDs (`.com`), TLD servers know authoritative nameservers for registered domains, and authoritative servers hold the actual records your admin configured.
 
-```text
-google.com  →  142.250.xxx.xxx
+### What problem it fixes
+
+People cannot memorize IPv4/IPv6 addresses for every service. Services also **change IPs** (failover, CDN, scaling); DNS provides a stable name with updatable records. Without DNS, TLS certificate hostnames, email routing (MX), and CDN steering by geography would not work at human scale.
+
+### What it does
+
+- **Resolves** queries: `A` (IPv4), `AAAA` (IPv6), `CNAME` (alias), `MX` (mail), `TXT` (SPF, DKIM, verification), `NS` (delegation).
+- **Caches** answers at browser, OS, and recursive resolver using **TTL** (time to live).
+- **Transports** most queries over **UDP port 53**; falls back to **TCP 53** for large responses or zone transfers.
+- **Supports** traffic management — multiple A records, geo DNS, low TTL for migrations.
+
+**Hierarchy (simplified):**
+
+```mermaid
+flowchart LR
+    Root[Root .] --> TLD[TLD .com]
+    TLD --> Auth[Authoritative ns.google.com]
+    Auth --> Rec[A AAAA CNAME records]
 ```
 
-Humans remember names. Computers communicate using IP addresses. DNS acts as the translator between the two.
+### How it works — the architecture inside
 
----
+| Record | Purpose | Example |
+|--------|---------|---------|
+| A | Name → IPv4 | `api.example.com → 203.0.113.10` |
+| AAAA | Name → IPv6 | `api.example.com → 2001:db8::1` |
+| CNAME | Alias → another name | `www.example.com → example.com` |
+| MX | Mail server priority + host | `example.com → 10 mail.example.com` |
+| TXT | Opaque text | SPF, domain verification |
+| NS | Delegates zone | `example.com → ns1.cloudflare.com` |
 
-### Why do we need DNS?
+**Caching:** Resolver stores `(name, type) → answer` until TTL expires. Short TTL (60 s) speeds cutover during migrations; long TTL (3600 s) reduces load and latency.
 
-Imagine if DNS did not exist. To visit Google, you would need to remember `142.250.193.78`. To visit YouTube: `142.250.193.110`. To visit Amazon: `54.239.28.85`.
+**CDN / geo routing:** Same name returns different A records based on resolver location — user in Mumbai may get an edge IP in India, user in Virginia a US edge IP.
 
-This would be extremely difficult.
+**DNS load balancing:** Multiple A records for `api.company.com` rotate across app servers — crude distribution without a hardware LB (health checks are limited compared to L7 LB).
 
-Instead, we use:
+### Pitfalls and design tips
 
-```text
-google.com
-youtube.com
-amazon.com
-```
+- **DNS is not a real-time failover system** — cached old IPs persist until TTL expires; pair with health-checked LB or anycast for fast failover.
+- **CNAME at apex** (`example.com` root) historically problematic — use ALIAS/ANAME at provider (Route 53, Cloudflare) or host apex on provider anycast.
+- **High TTL during incidents** slows rollback — lower TTL **before** planned migrations.
+- **DNSSEC** adds authenticity; without it, cache poisoning is a risk on hostile networks — understand your resolver’s DNSSEC validation.
+- **Private zones** (Route 53 Private Hosted Zone, internal BIND) split horizons — `db.prod.internal` resolves differently inside VPC vs public internet.
 
-DNS converts these names into IP addresses.
+### Real-world example
 
----
+**Cloudflare as authoritative DNS for `shop.example.com`:**
 
-### Simple analogy
+1. Registrar NS records point to Cloudflare nameservers.
+2. Admin sets `A` record `shop` → origin IP, proxied (orange cloud) so traffic flows through Cloudflare’s edge.
+3. `CNAME` `www` → `shop.example.com`.
+4. `TXT` records publish SPF and DKIM for SendGrid email.
+5. TTL on shop record 300 s — during origin migration, they lower to 60 s, change A to new load balancer IP; within minutes most resolvers pick up the new address.
 
-Suppose you want to call a friend.
-
-You know: **Hareram**  
-But your phone needs: **+91XXXXXXXXXX**
-
-```text
-Phone contact list:
-
-Hareram  →  +91XXXXXXXXXX
-```
-
-Similarly:
-
-```text
-google.com  →  142.250.xxx.xxx
-```
-
-DNS works like a contact book for the Internet.
-
----
-
-### DNS hierarchy
-
-```text
-                Root (.)
-                     |
-         -------------------------
-         |           |           |
-        .com        .org        .net
-         |
-     google.com
-         |
-    DNS Records
-```
-
-This hierarchical structure allows DNS to scale globally.
-
-Four server roles exist in the system — **recursive resolver**, **root**, **TLD**, and **authoritative**.
-
----
-
-### Common DNS record types
-
-#### A record
-
-Maps domain name to **IPv4** address.
-
-```text
-google.com = 142.250.193.78
-```
-
-#### AAAA record
-
-Maps domain name to **IPv6** address.
-
-```text
-google.com = 2404:6800:4007::200e
-```
-
-#### CNAME record
-
-Alias record.
-
-```text
-www.google.com  →  google.com
-```
-
-Useful when multiple names point to the same service.
-
-#### MX record
-
-**Mail Exchange** record — defines mail servers.
-
-```text
-gmail.com  →  MX: mail.google.com
-```
-
-Used for email delivery.
-
-#### TXT record
-
-Stores text-based information.
-
-**Common uses:** SPF, DKIM, domain verification
-
-#### NS record
-
-**Name Server** record — specifies authoritative DNS servers.
-
-```text
-google.com  →  ns1.google.com, ns2.google.com
-```
-
----
-
-### What is DNS caching?
-
-DNS lookups are expensive. To improve performance, results are cached.
-
-**Caching locations:** Browser, operating system, resolver
-
-**Benefits:** Faster lookups, lower latency, reduced DNS traffic
-
----
-
-### TTL (Time To Live)
-
-Every DNS record has **TTL**.
-
-**Example:** `TTL = 300 seconds` → cache this result for **5 minutes**. After expiration, perform lookup again.
-
----
-
-### DNS over UDP
-
-Most DNS queries use **UDP port 53**.
-
-**Reason:** Small request, small response — faster than TCP.
-
----
-
-### When does DNS use TCP?
-
-Used when:
-
-- Response is too large
-- Zone transfer occurs
-- DNSSEC responses are large
-
-**Port:** TCP 53
-
----
-
-### DNS and CDN
-
-Modern CDNs use DNS heavily.
-
-| User location | `cdn.example.com` resolves to |
-|---------------|-------------------------------|
-| India | Mumbai CDN server |
-| USA | Virginia CDN server |
-
-DNS helps route users to the nearest server.
-
----
-
-### DNS load balancing
-
-**Example:** `api.company.com`
-
-DNS may return:
-
-```text
-10.0.0.1
-10.0.0.2
-10.0.0.3
-```
-
-Traffic distributed across multiple servers. This is called **DNS load balancing**.
-
----
-
-### Common DNS failures
-
-| Failure | Result |
-|---------|--------|
-| **DNS server down** | Domain cannot be resolved |
-| **Incorrect DNS record** | Traffic routed incorrectly |
-| **High TTL** | Changes take longer to propagate |
-| **DNS cache poisoning** | Users redirected to malicious sites |
+Stripe’s public API hostname resolves via their CDN/DNS setup — clients never hardcode IPs; certificate validates `api.stripe.com` while backends shift. That separation is why payment SDKs use hostnames, not fixed IPv4 literals.
 
 ---
 
 ## 1.9 DNS Resolution
 
-When you enter `https://google.com`, the browser needs an **IP address**. This section covers **how** that lookup happens — cache by cache, server by server.
+### Overview
 
----
+Typing `https://google.com` triggers a **lookup chain**: your browser asks “what IP is this?” — first locally, then a **recursive resolver**, which may walk the global DNS tree (root → TLD → authoritative) until it gets an answer. The result is cached at each layer so the next visit is nearly instant.
 
-### DNS resolution flow
+Resolution is iterative behind the scenes: the resolver does the legwork; your laptop usually sends one **recursive** query and receives one answer.
 
-User enters:
+### What problem it fixes
 
-```text
-https://google.com
-```
+Applications should not embed IP addresses that change hourly. Resolution bridges human names to current infrastructure addresses while minimizing repeated full-tree walks via **multi-tier caching** and **TTL**.
 
-Browser needs an **IP address**. The DNS lookup process begins.
+### What it does
 
----
+1. Check **browser cache** (Chrome DNS cache).
+2. Check **OS cache** (`systemd-resolved`, Windows DNS client).
+3. Query **recursive resolver** (ISP, `8.8.8.8`, `1.1.1.1`, corporate BIND).
+4. Resolver queries **root** → **TLD** (`.com`) → **authoritative** for the domain.
+5. Answer returned; cached per TTL; browser opens TCP to the IP.
 
-### Step-by-step DNS lookup
+**Server roles:**
 
-#### Step 1 — Browser cache
+| Role | Job |
+|------|-----|
+| Recursive resolver | Asks on behalf of client; caches |
+| Root | Points to TLD servers |
+| TLD | Points to domain’s authoritative NS |
+| Authoritative | Returns actual records |
 
-Browser first checks: *"Do I already know Google's IP?"*
-
-If found → return IP immediately. No DNS request needed.
-
-#### Step 2 — Operating system cache
-
-If browser cache misses → check OS DNS cache (Windows DNS cache, Linux DNS cache).
-
-If found → return IP.
-
-#### Step 3 — Local DNS resolver
-
-If OS cache misses → request sent to:
-
-- ISP DNS server, or
-- Google DNS (`8.8.8.8`), or
-- Cloudflare DNS (`1.1.1.1`)
-
-This is called a **recursive resolver**.
-
-#### Step 4 — Root DNS server
-
-Resolver asks: *"Who knows about `.com` domains?"*
-
-Root server responds: *"I don't know `google.com`, but I know who manages `.com`"* → returns **`.com` TLD name servers**.
-
-#### Step 5 — TLD server
-
-**TLD** = Top Level Domain (`.com`, `.org`, `.net`, `.io`, `.in`)
-
-Resolver asks: *"Who knows `google.com`?"*
-
-TLD responds: *"These are Google's authoritative name servers."*
-
-#### Step 6 — Authoritative name server
-
-Resolver asks: *"What is the IP address of `google.com`?"*
-
-Authoritative server responds:
-
-```text
-google.com = 142.250.xxx.xxx
-```
-
-#### Step 7 — Return to browser
-
-Resolver caches the result → returns IP to browser → browser connects to `142.250.xxx.xxx` using TCP/UDP.
+### How it works — the architecture inside
 
 ```mermaid
-sequenceDiagram
-    participant B as Browser
-    participant R as Resolver
-    participant Root as Root DNS
-    participant TLD as TLD DNS
-    participant Auth as Authoritative DNS
-    B->>R: Query google.com
-    R->>Root: Lookup com TLD
-    Root-->>R: TLD servers
-    R->>TLD: Lookup google.com
-    TLD-->>R: Auth servers
-    R->>Auth: A record lookup
-    Auth-->>R: IP address
-    R-->>B: IP address
+flowchart LR
+    User[Browser] --> BC[Browser cache]
+    BC -->|miss| OS[OS cache]
+    OS -->|miss| Res[Recursive resolver]
+    Res --> Root[Root DNS]
+    Root --> TLD[TLD .com]
+    TLD --> Auth[Authoritative]
+    Auth --> IP[IP answer cached and returned]
 ```
 
----
+**CNAME chase:** Query `www.example.com` → CNAME `cdn.cloudfront.net` → second lookup for A on `cdn.cloudfront.net`. Each hop adds latency on full miss.
 
-### Visual flow
+**Cache latency (typical):**
 
-```text
-User
- |
-Browser Cache
- |
-OS Cache
- |
-Recursive Resolver
- |
-Root DNS
- |
-TLD DNS
- |
-Authoritative DNS
- |
-IP Address Returned
- |
-Website Connection
-```
+| Layer | Added latency |
+|-------|----------------|
+| Browser hit | ~0 ms |
+| OS hit | ~0–1 ms |
+| Resolver hit | ~1–20 ms |
+| Full iterative miss | ~20–150+ ms |
 
----
+**Happy Eyeballs:** Modern clients query **A** and **AAAA** and may race IPv6 vs IPv4. Broken AAAA (published but unroutable) causes noticeable delay before IPv4 succeeds — common pitfall during partial IPv6 rollouts.
 
-### Types of DNS servers (in the resolution path)
-
-| Server | Role in resolution |
-|--------|-------------------|
-| **Recursive resolver** | Receives your query, walks the tree, returns the final answer (Google DNS, Cloudflare, ISP DNS) |
-| **Root name server** | Points to the right TLD server (e.g. *"ask `.com` servers"*) |
-| **TLD name server** | Points to the domain's authoritative servers |
-| **Authoritative name server** | Returns the actual record (A, AAAA, CNAME, etc.) |
-
----
-
-### CNAME chase
-
-Resolution is not always one hop.
-
-**Example:**
-
-```text
-Query: www.example.com
-Answer: CNAME www.example.com → cdn.cloudfront.net
-Next:  new query for A record of cdn.cloudfront.net → 52.84.x.x
-```
-
-Each CNAME in the chain adds another lookup on a full cache miss.
-
----
-
-### Cache layers and latency
-
-| Cache layer hit? | Typical added latency |
-|------------------|----------------------|
-| Browser cache | ~0 ms |
-| OS cache | ~0–1 ms |
-| Recursive resolver cache | ~1–20 ms |
-| Full iterative lookup (cache miss) | ~20–150+ ms |
-
-**Worked example:**
-
-```text
-T+0s:   Full resolution → ~80 ms (recursive miss)
-T+10s:  Same host again → ~0 ms (OS cache hit)
-T+400s: TTL expired     → lookup again
-```
-
-
----
-
-### Happy eyeballs (IPv4 vs IPv6)
-
-Modern clients may query both **A** (IPv4) and **AAAA** (IPv6) records and race the connections.
-
-If **AAAA** is published but IPv6 routing is broken, the client may wait hundreds of milliseconds before falling back to IPv4.
-
----
-
-### Debugging commands
+**Debug commands:**
 
 ```bash
-dig api.example.com              # query via your configured resolver
-dig +trace api.example.com       # show full delegation path (iterative)
-dig @8.8.8.8 api.example.com   # query a specific recursive resolver
+dig api.example.com
+dig +trace api.example.com
+dig @8.8.8.8 api.example.com
 ```
 
+### Pitfalls and design tips
 
----
+- **Long CNAME chains** hurt cold-start latency — flatten to A/ALIAS at apex where possible.
+- **Stale OS cache after cutover** — `ipconfig /flushdns` or wait TTL; verify authoritative with `dig @ns1.yourprovider.com`.
+- **`/etc/hosts` overrides** — dev machines may bypass DNS entirely for test hostnames.
+- **Async DNS in apps** — block startup on resolver timeouts; use connection pooling with pre-resolved endpoints in k8s (ClusterIP avoids external DNS for internal names).
+- **Runbook — “DNS updated but clients see old IP”:** (1) `dig @authoritative` — correct? (2) `dig @8.8.8.8` — propagated? (3) local `dig` — flush OS cache.
 
-### Common resolution pitfalls
+### Real-world example
 
-| Pitfall | What happens |
-|---------|--------------|
-| Long CNAME chain | Extra latency per hop |
-| Stale OS cache after DNS change | Laptop still resolves old IP — flush cache or wait TTL |
-| Broken AAAA record | Happy eyeballs delay before IPv4 works |
-| Resolver timeout | Slow app startup — use async DNS, faster resolver |
-| `/etc/hosts` override | Short-circuits network — useful for local dev |
+**First visit to `https://www.google.com` on a home PC using Cloudflare `1.1.1.1`:**
 
-**Runbook — "DNS updated but clients still see old IP":**
+1. Browser cache miss (first visit).
+2. OS cache miss.
+3. PC sends UDP query to `1.1.1.1`: “A record for `www.google.com`?”
+4. Cloudflare resolver cache hit (common for Google) — if miss, resolver asks root → `.com` TLD → `google.com` authoritative; answer e.g. `142.250.80.x`, TTL 300.
+5. Resolver returns IP; OS caches; browser caches.
+6. Browser starts TCP+TLS to that IP; **SNI** carries `www.google.com` for certificate selection.
 
-1. `dig @authoritative-ns` — is the authoritative server correct?
-2. `dig @8.8.8.8` — has the recursive resolver picked it up?
-3. `dig` locally — is OS cache stale? Flush if needed.
+Second tab within TTL: step 3 never leaves the machine — **~0 ms DNS**. `dig +trace www.google.com` from a shell shows the full delegation for learning/debugging, separate from what the browser experiences on cache hit.
 
 ---
 
 ## 1.10 HTTP/HTTPS
 
-### HTTP
+### Overview
 
-**HTTP (Hypertext Transfer Protocol)** is an application-layer, request/response protocol. A client sends a **request** (method, path, headers, optional body); a server returns a **response** (status code, headers, body).
+**HTTP** is how browsers and APIs ask for things and get answers — a text-based (or binary in HTTP/2+) **request/response** protocol: method, path, headers, optional body in; status, headers, body out. It is **stateless**: each request stands alone unless cookies, tokens, or server sessions add memory.
 
-HTTP is **stateless** — each request is independent unless the application adds state (cookies, tokens, server-side sessions).
+**HTTPS** is HTTP inside **TLS** — same verbs and status codes, but bytes on the wire are encrypted and authenticated. `https://` on port 443 is the default for the public web and modern APIs.
 
-**Request example (HTTP/1.1):**
+### What problem it fixes
+
+Apps need a universal, firewall-friendly way to exchange documents (HTML, JSON, images) across heterogeneous clients and servers. HTTP standardizes methods and caching semantics. HTTPS fixes HTTP’s cleartext problem — passwords, cookies, and PII visible to anyone on the path — by adding confidentiality and integrity on top of TCP.
+
+### What it does
+
+**HTTP/1.1 request example:**
 
 ```http
 GET /api/users/42 HTTP/1.1
@@ -2648,7 +846,7 @@ Authorization: Bearer eyJhbG...
 Connection: keep-alive
 ```
 
-**Response example:**
+**Response:**
 
 ```http
 HTTP/1.1 200 OK
@@ -2658,622 +856,321 @@ Cache-Control: private, max-age=60
 {"id":42,"name":"Ada"}
 ```
 
-**HTTP methods:**
+**Methods (interview essentials):**
 
-| Method | Safe? | Idempotent? | Typical use |
-|--------|-------|-------------|-------------|
-| **GET** | Yes | Yes | Read resource |
-| **POST** | No | No | Create, actions |
-| **PUT** | No | Yes | Replace resource |
-| **PATCH** | No | No* | Partial update |
-| **DELETE** | No | Yes | Remove resource |
+| Method | Safe | Idempotent | Typical use |
+|--------|------|------------|-------------|
+| GET | Yes | Yes | Read |
+| POST | No | No | Create, actions |
+| PUT | No | Yes | Replace |
+| PATCH | No | No* | Partial update |
+| DELETE | No | Yes | Delete |
 
-**Status code classes:**
+**Status classes:** `2xx` success, `3xx` redirect/cache, `4xx` client fault, `5xx` server fault.
 
-| Class | Meaning | Examples |
-|-------|---------|----------|
-| **2xx** | Success | `200 OK`, `201 Created`, `204 No Content` |
-| **3xx** | Redirection | `301`, `302`, `304 Not Modified` |
-| **4xx** | Client error | `400`, `401`, `403`, `404`, `429` |
-| **5xx** | Server error | `500`, `502`, `503`, `504` |
-
-**Stateless sessions (application layer):**
+**State via cookies:**
 
 ```text
-POST /login  →  200 + Set-Cookie: session=xyz
-GET /profile + Cookie: session=xyz  →  server looks up session
-
-HTTP forgot Request 1; the cookie carries identity.
+POST /login → Set-Cookie: session=xyz
+GET /profile + Cookie: session=xyz → server loads session
 ```
 
----
-
-### HTTPS (HTTP Secure)
-
-**HTTPS = HTTP + TLS (Transport Layer Security)**
-
-HTTP provides communication between client and server. TLS adds:
-
-- **Encryption**
-- **Authentication**
-- **Integrity**
-
-Without HTTPS, data is sent in plain text. With HTTPS, data is encrypted before transmission.
-
----
-
-#### Why do we need HTTPS?
-
-Without HTTPS:
-
-- Passwords can be intercepted
-- Session cookies can be stolen
-- Sensitive information can be read
-- Data can be modified in transit
-
-HTTPS protects communication from attackers sitting between client and server. This attack is known as **Man-In-The-Middle (MITM)**.
-
----
-
-#### HTTPS request flow
-
-User opens:
-
-```text
-https://google.com
-```
-
-| Step | What happens |
-|------|--------------|
-| 1 | DNS lookup |
-| 2 | TCP handshake |
-| 3 | TLS handshake |
-| 4 | Secure HTTP communication |
+**HTTPS stack:**
 
 ```mermaid
-sequenceDiagram
-    participant B as Browser
-    participant D as DNS
-    participant S as Server
-    B->>D: Resolve domain
-    D-->>B: IP address
-    B->>S: TCP handshake
-    B->>S: TLS handshake
-    B->>S: Encrypted HTTP request
-    S-->>B: Encrypted HTTP response
+flowchart LR
+    DNS[DNS lookup] --> TCP[TCP handshake port 443]
+    TCP --> TLS[TLS handshake]
+    TLS --> HTTP[Encrypted HTTP request response]
 ```
 
----
+| Step | Action |
+|------|--------|
+| 1 | Resolve hostname |
+| 2 | TCP 3-way handshake |
+| 3 | TLS handshake (cert verify, session keys) |
+| 4 | HTTP request/response encrypted |
 
-#### What HTTPS protects
+**HTTPS protects:** payloads, cookies, path, headers (from passive eavesdroppers). **It does not hide:** destination IP, SNI hostname (in typical TLS 1.2/1.3 deployments), traffic volume/timing patterns.
 
-- Passwords
-- Credit card data
-- API tokens
-- Session cookies
-- Request/response payloads
+### How it works — the architecture inside
 
----
+Application layer sits on TCP (or QUIC for HTTP/3). **Keep-alive** reuses TCP for multiple HTTP transactions — critical for latency. **TLS** terminates at load balancer (edge TLS) or at app — affects certificate management and whether HTTP inside VPC is cleartext.
 
-#### What HTTPS does NOT hide
+```mermaid
+flowchart LR
+    Client[Browser] --> LB[Load balancer TLS terminate]
+    LB --> App[App server HTTP or HTTPS]
+```
 
-HTTPS does **not** completely hide:
+**Caching:** `Cache-Control`, `ETag`, `304 Not Modified` reduce bandwidth. **REST** conventions map resources to nouns and methods to verbs — still HTTP underneath.
 
-- Destination IP
-- Domain name (visible via SNI in most deployments)
-- Traffic volume
-- Traffic timing
+### Pitfalls and design tips
 
-**Network can know:** you visited `google.com`  
-**Network cannot see:** what you searched
+- **Mixed content** — HTTPS pages loading HTTP assets get blocked by browsers.
+- **TLS termination point** — LB terminates TLS, HTTP to backend must stay on private network; use mTLS for sensitive east-west traffic.
+- **POST is not idempotent** — retries need idempotency keys for payments (Stripe pattern).
+- **429 / 503** — signal backoff; clients should respect `Retry-After`.
+- **Default for new public APIs:** HTTPS only, HSTS enabled, TLS 1.2+ .
+
+### Real-world example
+
+**Stripe API client fetching `GET https://api.stripe.com/v1/customers/cus_123`:**
+
+1. Resolver returns Stripe anycast/CDN edge IP.
+2. TCP + TLS 1.3 handshake — client verifies cert for `api.stripe.com` against Mozilla/Apple trust store.
+3. Client sends encrypted HTTP GET with `Authorization: Bearer sk_live_...` header.
+4. Stripe returns `200` JSON body; `Cache-Control: no-cache` on sensitive resources.
+5. SDK may reuse connection (keep-alive) for subsequent pagination requests — one TLS session, many HTTP calls.
+
+A network sniffer on café Wi‑Fi sees only encrypted blobs and SNI to `api.stripe.com` — not the secret key or customer JSON — illustrating what HTTPS does and does not conceal.
 
 ---
 
 ## 1.11 SSL/TLS
 
-**HTTPS / TLS communication flow**
+### Overview
 
-**Actors:**
+**TLS (Transport Layer Security)**, still often called SSL, is the padlock in the browser: it proves you reached the real server (via **certificates** signed by a trusted **CA**), then encrypts everything after the handshake with symmetric **session keys**. HTTPS is HTTP running inside that encrypted tunnel.
 
-1. Browser / client
-2. Server (e.g. `google.com`)
-3. Certificate Authority (CA)
+Think of the CA as a passport office, the certificate as the passport, and the TLS handshake as showing the passport and agreeing on a one-time session code only you and the server know.
 
-TLS sits above TCP — TCP handshake completes first, then TLS runs before any HTTP bytes flow.
+### What problem it fixes
 
----
+On untrusted networks (Wi‑Fi, ISP paths), cleartext HTTP allows eavesdropping and tampering (**MITM**). TLS provides **confidentiality** (encryption), **integrity** (detect changes), and **authentication** (server identity via PKIX chain). Without it, cookies and credentials are trivially stolen.
 
-### Part 1: Certificate creation (one-time setup)
+### What it does
 
-#### Step 1 — Server generates keys
+**Certificate provisioning (offline, periodic):**
 
-Server creates:
+1. Server generates key pair (public + private).
+2. Server submits CSR to CA (Let’s Encrypt, DigiCert).
+3. CA validates domain control; signs certificate binding domain → public key.
+4. Server installs cert + private key; private key never leaves server.
 
-- Server public key
-- Server private key
+**Live connection:**
 
-**Important:**
+1. TCP established.
+2. **ClientHello** — TLS versions, ciphers, random.
+3. **ServerHello** + certificate + random.
+4. Client verifies cert chain to trusted root; checks hostname and expiry.
+5. Key exchange (ECDHE) establishes shared secret.
+6. Both derive **session keys**; symmetric encryption for HTTP records.
+7. Optional client certificates for mTLS in service meshes.
 
-- Public key can be shared
-- Private key always remains on the server
+| Key material | Who holds it | Role |
+|--------------|--------------|------|
+| CA private key | CA | Signs certificates |
+| CA public key | Client trust store | Verify CA signature |
+| Server public key | In certificate | Identity in handshake |
+| Server private key | Server only | Prove possession |
+| Session keys | Both sides (derived) | Bulk encrypt HTTP |
 
-#### Step 2 — Server requests certificate from CA
-
-Server sends **domain name** and **server public key** to the CA.
-
-#### Step 3 — CA issues certificate
-
-CA verifies domain ownership and creates a certificate.
-
-**Certificate contains:**
-
-- Domain name
-- Server public key
-- CA signature
-
-CA sends certificate back to the server.
-
-#### Important note
-
-Certificate is **not encrypted**.
-
-Think of it as: **identity card + trusted authority stamp**
-
-The CA signature proves: *"This public key belongs to this domain."*
+### How it works — the architecture inside
 
 ```mermaid
-sequenceDiagram
-    participant S as Server
-    participant CA as CA
-    S->>S: Generate key pair
-    S->>CA: CSR
-    CA->>CA: Verify domain
-    CA->>S: Signed certificate
+flowchart LR
+    subgraph Setup["Certificate setup one-time"]
+        direction LR
+        S1[Server key pair] --> CSR[CSR to CA]
+        CSR --> Cert[Signed certificate]
+    end
+    subgraph Live["Live HTTPS session"]
+        direction LR
+        CH[ClientHello] --> SH[ServerHello plus cert]
+        SH --> Verify[Client verifies chain]
+        Verify --> Keys[ECDHE session keys]
+        Keys --> Enc[Encrypted HTTP]
+    end
+    Setup ~~~ Live
 ```
-
----
-
-### Part 2: TLS handshake
-
-#### Step 4 — Client connects
-
-Client sends **Client Hello** containing:
-
-- Supported TLS versions
-- Security options
-- Client random value
-
-#### Step 5 — Server responds
-
-Server sends:
-
-- Server Hello
-- Certificate
-- Server random value
-
-#### Step 6 — Client verifies certificate
-
-Client already has trusted CA public keys.
-
-Client verifies:
-
-- Certificate is valid
-- Certificate is not expired
-- Domain name matches
-- CA signature is valid
-
-If verification succeeds, client trusts the server's public key.
 
 ```mermaid
 sequenceDiagram
     participant C as Client
     participant S as Server
     C->>S: ClientHello
-    S->>C: ServerHello and certificate
-    C->>C: Verify certificate
-    C->>S: Key exchange
-    Note over C,S: Derive session key
-    C->>S: Encrypted HTTP
-    S->>C: Encrypted HTTP
+    S->>C: ServerHello certificate
+    C->>C: Verify cert and hostname
+    C->>S: Key exchange material
+    Note over C,S: Derive matching session keys
+    C->>S: Encrypted HTTP request
+    S->>C: Encrypted HTTP response
 ```
 
----
+**Session keys are never sent on the wire** — both sides compute them from client random, server random, and ECDHE shared secret. New connection → new keys (forward secrecy when ephemeral DH is used).
 
-### Part 3: Server authentication
+**TLS 1.3** reduces round trips vs 1.2 (1-RTT handshake, 0-RTT resumption with replay tradeoffs). **SNI** carries virtual host name in cleartext during handshake — relevant for shared IP hosting and privacy discussions.
 
-At this point client knows the **server public key** from the trusted certificate.
+### Pitfalls and design tips
 
-The client must ensure: *"I am really talking to the owner of this public key."*
-
-The server proves this using the **server private key**. This confirms the server's identity.
-
----
-
-### Part 4: Session key creation
-
-**Goal:** Create one shared secret key that both client and server know. This key encrypts all communication.
-
-Both sides already have:
-
-- Client random value
-- Server random value
-- Shared secret
-
-Using these, both independently generate the **session key**.
-
-**Important:** Session key is **never sent across the network**. Both sides calculate it separately and end up with exactly the same key.
-
-#### Why random values are used
-
-```text
-Connection 1 → Session Key A
-Connection 2 → Session Key B
-Connection 3 → Session Key C
-```
-
-Every connection gets a unique session key.
-
----
-
-### Part 5: Encrypted communication
-
-Both client and server have the **same session key**.
-
-**Client request** — `GET /users` is encrypted before sending.
-
-**Server** decrypts using session key, processes request, encrypts response.
-
-**Client** decrypts response using the same key.
-
----
-
-### Who uses which key?
-
-| Key | Used by | Purpose |
-|-----|---------|---------|
-| **CA private key** | CA | Sign certificates |
-| **CA public key** | Client | Verify certificate signature |
-| **Server public key** | Client | Trust server identity |
-| **Server private key** | Server | Prove ownership of the certificate |
-| **Session key** | Client and server | Encrypt and decrypt all HTTPS traffic |
-
----
-
-### Complete flow in one view
-
-**Certificate setup:**
-
-```text
-Server → Request certificate → CA
-CA     → Signed certificate  → Server
-```
-
-**Live connection:**
-
-```text
-Client → Client Hello        → Server
-Server → Server Hello        → Client
-Server → Certificate         → Client
-Client → Verify certificate
-Client & Server → Create session key (independently)
-Client → Encrypted request   → Server
-Server → Encrypted response  → Client
-```
-
----
-
-### Final summary
-
-1. Server gets a certificate from a trusted CA
-2. Client verifies the certificate using the CA's public key
-3. Client trusts the server's public key contained in the certificate
-4. Server proves it owns the corresponding private key
-5. Client and server independently create the same session key
-6. All HTTPS communication is encrypted using the session key
-7. The session key is never transmitted over the network
-
----
-
-## 1.12 HTTP/2 & HTTP/3
-
----
-
-### Why was HTTP/2 introduced?
-
-HTTP/1.1 had several problems:
-
-- Multiple TCP connections required
-- Head-of-line (HOL) blocking
-- Duplicate headers in every request
-- Higher latency
-
-HTTP/2 was introduced to improve performance while still using **TCP**.
-
----
-
-### Why was HTTP/3 introduced?
-
-HTTP/2 solved many HTTP problems but still inherited **TCP limitations**.
-
-**Main issue:** Packet loss in one stream can block all other streams because TCP delivers data in order. This is called **TCP head-of-line blocking**.
-
-HTTP/3 was introduced to solve this using **QUIC over UDP**.
-
----
-
-### Protocol stack
-
-**HTTP/1.1:**
-
-```text
-HTTP → TCP → IP
-```
-
-**HTTP/2:**
-
-```text
-HTTP/2 → TCP → TLS → IP
-```
-
-**HTTP/3:**
-
-```text
-HTTP/3 → QUIC → UDP → IP
-```
-
-```mermaid
-flowchart TB
-    subgraph h1["HTTP/1.1"]
-        direction LR
-        a1[HTTP] --> b1[TCP] --> c1[IP]
-    end
-    subgraph h2["HTTP/2"]
-        direction LR
-        a2[HTTP/2] --> b2[TCP] --> c2[TLS] --> d2[IP]
-    end
-    subgraph h3["HTTP/3"]
-        direction LR
-        a3[HTTP/3] --> b3[QUIC] --> c3[UDP] --> d3[IP]
-    end
-```
-
----
-
-### Transport protocol
-
-| | HTTP/2 | HTTP/3 |
-|---|--------|--------|
-| Transport | **TCP** | **QUIC** (built on UDP) |
-
-This is the biggest difference.
-
----
-
-### Multiplexing
-
-**HTTP/2**
-
-Supports multiplexing. Multiple requests can use a **single TCP connection**.
-
-```text
-Request 1
-Request 2
-Request 3
-
-All travel simultaneously over one connection.
-```
-
-This removes the need for multiple TCP connections.
-
-**HTTP/3**
-
-Also supports multiplexing — but each stream is **independent**. A problem in one stream does not block other streams.
-
----
-
-### Head-of-line blocking
-
-**HTTP/2:** Application-level HOL blocking is solved. **TCP-level HOL blocking still exists.**
-
-**Example:** Stream A loses a packet → TCP waits for retransmission → Stream B and Stream C must also wait. **All streams are blocked.**
-
-**HTTP/3:** Uses QUIC. Each stream is independent.
-
-If Stream A loses a packet → **only Stream A waits** → Stream B and Stream C continue normally.
-
-**Result:** Better performance on unreliable networks.
-
-```mermaid
-flowchart LR
-    subgraph http2["HTTP/2"]
-        l2[Packet loss] --> blk[All streams blocked]
-    end
-    subgraph http3["HTTP/3"]
-        l3[Packet loss] --> one[Only that stream blocked]
-    end
-```
-
----
-
-### Connection establishment
-
-**HTTP/2**
-
-```text
-TCP handshake (SYN → SYN-ACK → ACK)
-        +
-TLS handshake (Client Hello → Server Hello → ...)
-```
-
-**HTTP/3**
-
-QUIC combines transport and security setup. **Fewer round trips.** Faster connection establishment.
-
----
-
-### Latency
-
-| | HTTP/2 | HTTP/3 |
-|---|--------|--------|
-| Setup cost | TCP handshake + TLS handshake | QUIC integrated with TLS 1.3 — faster setup |
-| Overall | Higher latency than HTTP/3 | **Lower latency** |
-
----
-
-### Packet loss handling
-
-**HTTP/2**
-
-Packet loss impacts the **entire TCP connection**. Performance drops significantly on mobile networks, Wi-Fi, and long-distance links.
-
-**HTTP/3**
-
-Packet loss affects **only the impacted stream**. Other streams continue processing. Better user experience.
-
----
-
-### Mobile networks
-
-| | HTTP/2 | HTTP/3 |
-|---|--------|--------|
-| Network change (Wi-Fi → mobile data) | May require reconnecting; noticeable degradation | Handles transitions better — connection can continue more smoothly |
-
-.
-
----
-
-### TLS support
-
-| | HTTP/2 | HTTP/3 |
-|---|--------|--------|
-| TLS versions | Typically TLS 1.2 or TLS 1.3 (separate from TCP) | **Always TLS 1.3** — built directly into QUIC |
-
----
-
-### Header compression
-
-| | HTTP/2 | HTTP/3 |
-|---|--------|--------|
-| Compression | **HPACK** — reduces header size | **QPACK** — improved version designed for QUIC |
-
----
+- **Expired or wrong-host certificates** — browsers hard-fail; automate renewal (ACME / cert-manager on Kubernetes).
+- **TLS termination + HTTP backend** — encrypt VPC links or accept risk on private networks only.
+- **0-RTT resumption** — replay risk for non-idempotent POST; disable or guard at app layer.
+- **Certificate pinning** in mobile apps — breaks when CDN rotates certs unless pins update with releases.
+- **Interview:** Distinguish **asymmetric** crypto (handshake) from **symmetric** (bulk data); know TLS sits above TCP, below HTTP.
 
 ### Real-world example
 
-Browser requests: `index.html`, `style.css`, `app.js`, `logo.png`
+**Let’s Encrypt + cert-manager on Kubernetes for `api.myapp.com`:**
 
-**HTTP/2**
+1. Ingress declares TLS host `api.myapp.com`.
+2. cert-manager creates ACME order; Let’s Encrypt HTTP-01 or DNS-01 challenge proves domain control.
+3. Issued cert stored as Kubernetes `Secret`; nginx ingress loads cert and private key.
+4. User visits `https://api.myapp.com` — browser receives Let’s Encrypt-signed cert, validates ISRG Root X1 chain preinstalled on OS.
+5. ECDHE key exchange; AES-GCM encrypts JSON API traffic.
+6. cert-manager renews at ~30 days before 90-day expiry — no manual ops.
 
-Single TCP connection. If the packet carrying `app.js` is lost, TCP pauses delivery — **other resources may also wait**.
+If an attacker presents a self-signed cert for `api.myapp.com`, verification fails at step 4 — browser blocks before any password or token is sent, which is TLS authentication doing its job.
 
-**HTTP/3**
+## 1.12 HTTP/2 & HTTP/3
 
-Single QUIC connection. If `app.js` packet is lost, **only the `app.js` stream waits** — other resources continue downloading. Page loads faster.
+### Overview
 
----
+Imagine upgrading a highway: first you add carpool lanes so many vehicles share one road instead of opening a new road per trip (HTTP/2), then you replace the single-lane bottleneck with separate lanes per vehicle so one stalled car does not block everyone behind it (HTTP/3). **HTTP/2** keeps TCP but multiplexes many requests on one connection and compresses headers. **HTTP/3** moves HTTP onto **QUIC over UDP**, eliminating TCP-level head-of-line blocking while keeping encryption and reliability.
 
-### When HTTP/3 shines
-
-Most beneficial on:
-
-- Mobile networks
-- High-latency networks
-- Unstable connections
-- Networks with packet loss
+Technically, HTTP/2 frames multiple streams inside one TLS-protected TCP connection, using **HPACK** header compression and server push (rarely used today). HTTP/3 maps the same HTTP semantics onto **QUIC**, which provides per-stream reliability, integrated **TLS 1.3**, faster handshakes, and connection migration across network changes. Browsers and CDNs increasingly prefer HTTP/3 on lossy mobile and long-RTT paths.
 
 ---
 
-### Advantages of HTTP/2
+### What problem it fixes
 
-- Multiplexing
-- Header compression (HPACK)
-- Single TCP connection
-- Reduced latency vs HTTP/1.1
-- Widely supported
+**HTTP/1.1** forced browsers to open many TCP connections (typically six per host) because pipelining was broken by head-of-line blocking at the application layer. Each connection paid a **TCP + TLS handshake** tax, and duplicate headers bloated every request.
 
----
+**HTTP/2** fixed application-level multiplexing and header waste but still rides **TCP**. One lost packet stalls the entire connection — all HTTP/2 streams wait even when their data was already received out of order.
 
-### Advantages of HTTP/3
-
-- Uses QUIC over UDP
-- No TCP head-of-line blocking
-- Faster connection setup
-- Better packet loss recovery
-- Better mobile performance
-- Lower latency
+**HTTP/3** fixes **transport-level head-of-line blocking** by making each stream independent inside QUIC, while reducing connection setup round trips.
 
 ---
 
+### What it does
 
-### Quick comparison
+| Version | Transport | Key capability |
+|---------|-----------|----------------|
+| HTTP/1.1 | TCP | One request/response per connection unless Keep-Alive |
+| HTTP/2 | TCP + TLS | Multiplexed streams, HPACK compression, single connection |
+| HTTP/3 | QUIC (UDP) + TLS 1.3 | Stream-isolated loss recovery, faster setup, connection migration |
+
+Both HTTP/2 and HTTP/3 let a browser fetch `index.html`, CSS, JS, and images concurrently over **one connection** — but only HTTP/3 isolates packet-loss impact to the affected stream.
+
+---
+
+### How it works — the architecture inside
+
+**Protocol stacks:**
+
+```text
+HTTP/1.1:  HTTP → TCP → IP
+HTTP/2:    HTTP/2 → TLS → TCP → IP
+HTTP/3:    HTTP/3 → QUIC (TLS 1.3 inside) → UDP → IP
+```
+
+```mermaid
+flowchart LR
+    subgraph H2["HTTP/2 stack"]
+        direction LR
+        a2[HTTP/2] --> b2[TLS] --> c2[TCP] --> d2[IP]
+    end
+    subgraph H3["HTTP/3 stack"]
+        direction LR
+        a3[HTTP/3] --> b3[QUIC] --> c3[UDP] --> d3[IP]
+    end
+    H2 ~~~ H3
+```
+
+**Multiplexing:** HTTP/2 interleaves binary frames from many streams on one TCP socket. HTTP/3 does the same at the QUIC layer, but retransmissions are scoped per stream.
+
+**Head-of-line blocking under packet loss:**
+
+```mermaid
+flowchart LR
+    subgraph HTTP2["HTTP/2 — TCP HOL blocking"]
+        direction LR
+        l2[Lost packet on JS stream] --> blk[All streams wait for TCP retransmit]
+    end
+    subgraph HTTP3["HTTP/3 — stream isolation"]
+        direction LR
+        l3[Lost packet on JS stream] --> one[Only JS stream waits]
+        l3 --> ok[CSS and HTML streams continue]
+    end
+    HTTP2 ~~~ HTTP3
+```
+
+**Connection establishment:** HTTP/2 typically requires TCP handshake (1 RTT) plus TLS 1.2/1.3 handshake (1–2 RTT). QUIC combines transport and TLS 1.3 setup — often **0–1 RTT** on repeat visits with session tickets.
+
+**Header compression:** HTTP/2 uses **HPACK** (static + dynamic tables). HTTP/3 uses **QPACK**, designed for QUIC's out-of-order delivery between control and data streams.
+
+---
+
+### Walkthrough: page load with a lost packet
+
+Browser requests four assets over one connection. A packet carrying a chunk of `app.js` is dropped on a mobile network.
+
+**HTTP/2:** TCP cannot deliver later bytes to the kernel until the gap is filled. Even though `style.css` frames arrived, the browser may not process them — **all four resources stall**.
+
+**HTTP/3:** QUIC retransmits only the `app.js` stream. `style.css`, `logo.png`, and `index.html` keep flowing. Time-to-interactive improves on high-loss links.
+
+---
+
+### Comparison table
 
 | Feature | HTTP/2 | HTTP/3 |
 |---------|--------|--------|
 | Transport | TCP | QUIC (UDP) |
 | Multiplexing | Yes | Yes |
 | HOL blocking | TCP level still exists | Eliminated at stream level |
-| TLS | Separate from TCP | Built-in (TLS 1.3) |
-| Connection setup | Slower | Faster |
-| Packet loss impact | Entire connection | Single stream only |
-| Mobile performance | Good | Better |
-| Latency | Lower than HTTP/1.1 | Lowest |
+| TLS | Separate handshake | Built into QUIC (TLS 1.3) |
+| Connection setup | TCP + TLS RTTs | Fewer RTTs; 0-RTT resumption possible |
+| Packet loss impact | Entire connection | Single stream |
+| Mobile / network handoff | Often reconnects | Connection migration via connection IDs |
+| Header compression | HPACK | QPACK |
+
+---
+
+### Pitfalls and design tips
+
+- **HTTP/3 is not always faster** — on clean datacenter links with low loss, HTTP/2 over TCP can match HTTP/3; gains show up on mobile, Wi-Fi, and cross-continent paths.
+- **UDP blocking** — some corporate firewalls rate-limit or block UDP; clients fall back to HTTP/2. Design observability to track alt-svc adoption.
+- **CPU cost** — QUIC runs in user space; at extreme QPS, TLS + QUIC can cost more CPU than kernel TCP — load-test before assuming "HTTP/3 = free win."
+- **Do not confuse layers** — HTTP/2 solved *application* multiplexing; only HTTP/3 addresses *TCP* HOL blocking.
+- **Server push** — largely deprecated; prefer preload hints (`Link: rel=preload`) or HTTP/3 push only when measured to help.
+- **Interview angle** — default answer for "why HTTP/3?" is **QUIC stream isolation + integrated TLS + faster handshake**, not "UDP is faster than TCP."
+
+---
+
+### Real-world example: Cloudflare and browser HTTP/3
+
+Cloudflare terminates HTTP/3 at the edge using QUIC. A user in Southeast Asia fetching a JS bundle from a US origin over HTTP/2 may stall all assets when one TCP segment is lost on a congested mobile hop. With HTTP/3, Cloudflare's edge serves multiplexed streams; loss on one asset does not block others. Chrome and Firefox negotiate HTTP/3 via **Alt-Svc** after an initial HTTP/2 connection, then reuse QUIC for subsequent requests — visible in DevTools as `h3`.
 
 ---
 
 ## 1.13 QUIC
 
-**QUIC (Quick UDP Internet Connections)** is a modern transport protocol developed by Google. It was created to overcome some of TCP's limitations and improve web performance.
+### Overview
 
-**HTTP/3 is built on top of QUIC.**
+Think of QUIC as rebuilding the reliability of TCP and the security of TLS into one engine that rides on UDP — like putting a smart conveyor belt (ordered delivery, retransmits, congestion control) inside a lightweight envelope the internet already delivers everywhere. **QUIC (Quick UDP Internet Connections)** was pioneered by Google and standardized as the transport for **HTTP/3**.
 
-Think of it as: **TCP + TLS + performance improvements** combined into a single protocol.
-
----
-
-### Why was QUIC created?
-
-HTTP/2 improved HTTP significantly but still used TCP.
-
-**Problem:** TCP suffers from head-of-line (HOL) blocking. If one packet is lost, TCP pauses delivery of subsequent packets until the lost packet is retransmitted — even unrelated streams must wait.
-
-**Result:** Higher latency and slower page loads.
-
-QUIC was designed to solve this.
+Technically, QUIC is a **user-space, encrypted, connection-oriented** protocol over UDP. It multiplexes independent **streams** with per-stream flow control, embeds **TLS 1.3** (encryption is mandatory), supports **connection migration** via connection IDs, and implements its own loss recovery and congestion control — giving HTTP a modern transport without TCP's cross-stream blocking.
 
 ---
 
-### QUIC vs TCP
+### What problem it fixes
 
-| | TCP | QUIC |
-|---|-----|------|
-| Base | Connection-oriented | Built on **UDP** |
-| Reliability | Yes | Yes |
-| Ordering | Ordered delivery (whole connection) | Ordered **per stream** |
-| TLS | Separate handshake | **TLS 1.3 built-in** |
-| HOL blocking | Yes | **No TCP-level HOL blocking** |
+TCP enforces **strict byte ordering across the entire connection**. Multiplexed HTTP/2 streams share that fate: one loss event blocks delivery of all subsequent bytes, even for unrelated resources.
+
+Separately, TCP + TLS historically required **multiple round trips** before application data flowed. On 100 ms RTT links, setup latency dominates small requests.
+
+QUIC fixes both: **per-stream reliability** (no TCP HOL blocking) and **combined cryptographic + transport setup** (fewer RTTs).
 
 ---
 
-### If QUIC uses UDP, how is it reliable?
+### What it does
 
-UDP itself is connectionless — no acknowledgements, no retransmissions, no ordering guarantees.
-
-**QUIC adds these features itself:**
-
-- Packet acknowledgements
-- Retransmissions
-- Flow control
-- Congestion control
-- Stream management
-
-```text
-UDP provides transport.
-QUIC implements reliability in user space.
-```
-
----
-
-### QUIC protocol stack
+- Provides **reliable, ordered delivery per stream** over UDP
+- Encrypts **all** payloads with TLS 1.3 integrated into the handshake
+- Multiplexes many bidirectional streams on one connection
+- Migrates connections when client IP changes (Wi-Fi → LTE) using **connection IDs**, not just 4-tuple
+- Implements congestion control, loss detection, and flow control analogous to modern TCP
 
 ```text
 HTTP/3 → QUIC → UDP → IP
@@ -3281,317 +1178,108 @@ HTTP/3 → QUIC → UDP → IP
 
 ---
 
-### Biggest benefit: no head-of-line blocking
+### How it works — the architecture inside
 
-Suppose browser downloads: `index.html`, `style.css`, `app.js`
-
-#### TCP (HTTP/2)
-
-If a packet from `app.js` is lost, TCP waits — `style.css` and `index.html` may also be delayed. **Entire connection is affected.**
-
-#### QUIC (HTTP/3)
-
-Each resource uses its own stream. If `app.js` packet is lost, **only the `app.js` stream waits** — `style.css` and `index.html` continue normally.
-
-**Result:** Faster page loading.
-
----
-
-### QUIC streams
-
-A QUIC connection contains multiple **independent streams**.
+**Reliability on top of UDP:** UDP alone is connectionless and unreliable. QUIC adds packet numbers, acknowledgements, retransmission timers, and stream state machines in user space — similar responsibilities to TCP, but scoped per stream.
 
 ```text
-Connection
- |
- |-- Stream 1 → HTML
- |-- Stream 2 → CSS
- |-- Stream 3 → JavaScript
- |-- Stream 4 → Images
+UDP:   datagram delivery, no ordering guarantee
+QUIC:  ACKs, retransmits, congestion control, stream multiplexing
 ```
 
-Each stream operates independently. Packet loss in one stream does not affect others.
-
----
-
-### Faster connection setup
-
-**HTTP/2**
+**Stream model:**
 
 ```text
-TCP handshake (SYN → SYN-ACK → ACK)
-        +
-TLS handshake (Client Hello → Server Hello → ...)
+QUIC Connection
+ ├── Stream 1 → index.html
+ ├── Stream 2 → style.css
+ ├── Stream 3 → app.js
+ └── Stream 4 → logo.png
 ```
 
-Multiple round trips required.
+Loss on Stream 3 triggers retransmit **only** for Stream 3. Streams 1, 2, and 4 advance independently.
 
-#### QUIC
+**Faster setup (conceptual):**
 
-TLS 1.3 is built directly into QUIC. Transport setup and security setup happen **together**.
+```text
+HTTP/2:  TCP handshake (1 RTT) + TLS handshake (1–2 RTT) → then HTTP
+QUIC:    Combined crypto + transport setup (often 1 RTT; 0-RTT resumption on repeat)
+```
 
-**Result:** Fewer round trips, lower latency.
+**Connection migration:** TCP identifies a connection by `(src IP, src port, dst IP, dst port)`. Change networks → connection breaks. QUIC tags packets with a **Connection ID**; endpoints can continue the same logical session across IP changes — critical for mobile clients.
 
----
-
-### Connection migration
-
-One unique feature of QUIC.
-
-**Example:** Phone on Wi-Fi → user switches to mobile data during a video call.
-
-| | TCP | QUIC |
-|---|-----|------|
-| Network change | Connection usually breaks; new connection often required | Connection can **continue** |
-
-QUIC identifies connections using **connection IDs** instead of relying only on IP addresses.
-
-**Result:** Better mobile experience.
-
----
-
-### Encryption
-
-| | TCP | QUIC |
-|---|-----|------|
-| Encryption | Optional — TLS added separately | **Mandatory** — TLS 1.3 built in |
-
-Every QUIC connection is encrypted.
+```mermaid
+flowchart LR
+    subgraph TCP["TCP — 4-tuple bound"]
+        direction LR
+        w[Wi-Fi IP] --> x[Connection breaks on handoff]
+    end
+    subgraph QUIC["QUIC — connection ID"]
+        direction LR
+        y[Wi-Fi] --> z[Same connection ID on LTE]
+    end
+    TCP ~~~ QUIC
+```
 
 ---
 
-### Congestion control
-
-Just like TCP, QUIC implements:
-
-- Congestion control
-- Flow control
-- Packet retransmission
-
-**Purpose:** Prevent network overload and maintain performance.
-
----
-
-### Why QUIC is faster
-
-1. **Fewer round trips** — transport and TLS setup combined
-2. **No TCP head-of-line blocking** — streams operate independently
-3. **Faster recovery** — packet loss impacts only the affected stream
-4. **Connection migration** — handles network changes smoothly
-
----
-
-### Real-world example
-
-You open `youtube.com`. Browser downloads HTML, CSS, JavaScript, images, video chunks.
-
-| | Behavior |
-|---|----------|
-| **TCP** | Packet loss may slow everything |
-| **QUIC** | Only the affected stream waits; other downloads continue |
-
-This improves page load time, video streaming, and mobile performance.
-
----
-
-### Disadvantages of QUIC
-
-- More complex implementation
-- Higher CPU usage compared to TCP
-- Some firewalls may block UDP traffic
-- Newer protocol — not as mature as TCP
-
----
-
-
-### Quick comparison
+### QUIC vs TCP
 
 | Feature | TCP | QUIC |
 |---------|-----|------|
-| Transport | TCP | UDP |
-| Reliable | Yes | Yes |
-| TLS | Separate | Built-in |
-| HOL blocking | Yes | No |
-| Multiplexing | Limited | Native |
-| Connection setup | Slower | Faster |
-| Connection migration | No | Yes |
-| Used by | HTTP/1, HTTP/2 | **HTTP/3** |
+| Base protocol | IP | UDP |
+| Reliability | Connection-wide ordered byte stream | Per-stream ordered delivery |
+| TLS | Separate layer (optional historically) | Mandatory TLS 1.3 built in |
+| Multiplexing | Limited (HTTP/2 shares one TCP pipe) | Native many streams |
+| HOL blocking on loss | Yes — whole connection | No — only affected stream |
+| Connection migration | No | Yes (connection IDs) |
+| Typical HTTP binding | HTTP/1.1, HTTP/2 | HTTP/3 |
 
 ---
 
+### Pitfalls and design tips
+
+- **Not "UDP = unreliable therefore faster"** — QUIC reintroduces reliability; the win is stream isolation and handshake integration, not skipping ACKs.
+- **Firewall and middlebox path** — UDP:443 may be throttled; always implement graceful fallback to TCP/HTTP/2.
+- **Higher CPU** — user-space processing and encryption per packet can exceed kernel TCP on small-payload workloads; profile at your QPS.
+- **0-RTT resumption** — reduces latency but has replay considerations; disable or restrict for non-idempotent operations.
+- **Maturity** — tooling (tcpdump alone is insufficient) needs QUIC-aware analyzers; debugging is harder than TCP.
+- **Interview angle** — QUIC is the transport; **HTTP/3 is the HTTP mapping on top**. Do not say "QUIC replaces HTTP."
+
+---
+
+### Real-world example: YouTube and Google services
+
+Google developed QUIC for YouTube and search, measuring faster video start and improved loss recovery on mobile networks. Modern Chrome uses HTTP/3 to Google properties when available. A phone switching from home Wi-Fi to LTE mid-playback benefits from connection migration — the QUIC session can survive where a TCP connection would reset, reducing rebuffering compared to tearing down and re-establishing TCP + TLS.
+
+---
 
 ## 1.14 Keep-Alive Connections
 
-**HTTP Keep-Alive** is a mechanism that allows multiple HTTP requests and responses to reuse the same TCP connection.
+### Overview
 
-Instead of creating a new TCP connection for every request, the existing connection remains open and is reused.
+Opening a TCP connection for every HTTP request is like hanging up and redialing a phone call for each sentence in a conversation. **HTTP Keep-Alive** (persistent connections) keeps the TCP socket open after a response so the next request reuses the same channel — avoiding repeated handshakes and teardowns.
 
-This is also called a **persistent connection**.
-
----
-
-### Why do we need Keep-Alive?
-
-Creating a TCP connection is expensive. Every new connection requires a TCP handshake:
-
-```text
-Client → SYN
-Server → SYN-ACK
-Client → ACK
-```
-
-This introduces:
-
-- Extra network latency
-- Additional CPU overhead
-- More memory usage
-- More network traffic
-
-Keep-Alive avoids paying this cost repeatedly.
+In HTTP/1.1, Keep-Alive is the default unless either side sends `Connection: close`. Combined with **connection pooling** in clients and service meshes, it is foundational to microservice latency and throughput — especially over HTTPS where TLS setup adds another full round-trip sequence.
 
 ---
 
-### Without Keep-Alive
+### What problem it fixes
 
-Suppose browser loads a webpage containing HTML, CSS, JavaScript, and a logo image.
+Each new TCP connection costs:
 
-For each resource:
+- **1 RTT** (or more) for the three-way handshake
+- Additional **TLS handshakes** on HTTPS (1–2 RTT)
+- CPU and memory for socket setup/teardown on client, load balancer, and server
+- Extra SYN/FIN traffic on the network
 
-```text
-Open TCP Connection → Request Resource → Receive Response → Close Connection
-```
-
-```text
-Connection 1 → HTML
-Connection 2 → CSS
-Connection 3 → JS
-Connection 4 → Image
-```
-
-**Result:** 4 TCP handshakes, 4 TCP teardowns — wasteful.
+Without Keep-Alive, loading a page with ten assets can trigger ten handshakes — most of the time is protocol overhead, not data transfer.
 
 ---
 
-### With Keep-Alive
+### What it does
 
-Browser opens **1 TCP connection**, then:
-
-```text
-Request HTML   → Response HTML
-Request CSS    → Response CSS
-Request JS     → Response JS
-Request Image  → Response Image
-```
-
-Same TCP connection reused.
-
-**Result:** Only 1 TCP handshake — much faster.
-
----
-
-### Visual comparison
-
-#### Without Keep-Alive
-
-```text
-Browser
-   |
-TCP Handshake
-   |
-Request 1 → Response 1 → Close
-
-Browser
-   |
-TCP Handshake
-   |
-Request 2 → Response 2 → Close
-
-Browser
-   |
-TCP Handshake
-   |
-Request 3 → Response 3 → Close
-```
-
-#### With Keep-Alive
-
-```text
-Browser
-   |
-TCP Handshake
-   |
-Request 1 → Response 1
-   |
-Request 2 → Response 2
-   |
-Request 3 → Response 3
-   |
-Close Connection
-```
-
----
-
-### Performance benefits
-
-1. **Lower latency** — TCP handshake performed only once
-2. **Less CPU usage** — fewer connections created and destroyed
-3. **Less network overhead** — fewer SYN and FIN packets
-4. **Better throughput** — more useful data transferred, less protocol overhead
-
----
-
-### Real-world example
-
-Suppose **RTT = 100ms**.
-
-**New TCP connection:**
-
-```text
-TCP Handshake = 100ms
-HTTP Request  = 100ms
-Total         ≈ 200ms
-```
-
-**10 separate requests without Keep-Alive:**
-
-```text
-10 × 200ms ≈ 2000ms
-```
-
-**With Keep-Alive:**
-
-```text
-Handshake paid once: 100ms
-10 requests:         10 × 100ms ≈ 1000ms
-Total:               ≈ 1100ms
-```
-
-Almost half the latency.
-
----
-
-### HTTP/1.0 vs HTTP/1.1
-
-| | HTTP/1.0 | HTTP/1.1 |
-|---|----------|----------|
-| Default | Connection closed after every request | **Keep-Alive enabled by default** |
-| Keep-Alive | Had to be explicitly enabled | Connections stay open unless explicitly closed |
-
-This significantly improved performance.
-
----
-
-### How long does connection stay open?
-
-Server does not keep connections forever. **Idle timeout** is configured — e.g. 30, 60, or 120 seconds.
-
-If no activity occurs, server closes the connection.
-
----
-
-### Keep-Alive header
-
-**HTTP/1.1 — keep connection open:**
+Keep-Alive leaves the transport connection open across multiple HTTP request/response cycles on the same socket. The server may close idle connections after a configured **timeout** (commonly 30–120 seconds).
 
 ```http
 GET /users HTTP/1.1
@@ -3599,540 +1287,269 @@ Host: api.company.com
 Connection: keep-alive
 ```
 
-**Close connection after response:**
+To force close after one response:
 
 ```http
 Connection: close
 ```
 
+| HTTP version | Default behavior |
+|--------------|------------------|
+| HTTP/1.0 | Closed unless `Connection: keep-alive` negotiated |
+| HTTP/1.1 | Persistent unless `Connection: close` |
+
 ---
 
-### Keep-Alive in microservices
+### How it works — the architecture inside
+
+```mermaid
+flowchart LR
+    subgraph Without["Without Keep-Alive"]
+        direction LR
+        u1[Handshake] --> r1[Request 1] --> c1[Close]
+        u2[Handshake] --> r2[Request 2] --> c2[Close]
+    end
+    subgraph With["With Keep-Alive"]
+        direction LR
+        u3[Handshake once] --> r3[Request 1] --> r4[Request 2] --> r5[Request 3] --> c3[Close when idle]
+    end
+    Without ~~~ With
+```
+
+**Connection pooling:** Libraries (OkHttp, Apache HttpClient, `net/http`, Envoy sidecars) maintain a pool of warm connections per host. Keep-Alive makes pooling effective — borrow a socket, send a request, return it to the pool.
+
+**Microservice chains:**
 
 ```text
 API Gateway → User Service → Order Service → Payment Service
 ```
 
-| | Behavior |
-|---|----------|
-| **Without Keep-Alive** | Each request creates a new TCP connection — large overhead |
-| **With Keep-Alive** | Services reuse existing connections |
+Without pooling, each hop opens a new TCP (+ TLS) connection per request. With Keep-Alive pools, internal RPC latency drops sharply at high QPS.
 
-**Benefits:** Lower latency, lower CPU consumption, better scalability
+**HTTP/2 note:** HTTP/2 still uses one long-lived connection but **multiplexes** streams concurrently. HTTP/1.1 + Keep-Alive typically processes requests sequentially per connection unless the client opens parallel connections.
 
 ---
 
-### Keep-Alive and connection pooling
+### How to calculate: latency savings
 
-Most applications use **connection pools** — Spring Boot, Apache HttpClient, OkHttp, Netty.
+**Given:** RTT = 100 ms, TLS not included (plain HTTP), 10 sequential requests.
 
-Instead of creating a connection every time, the pool maintains reusable connections.
-
-**Keep-Alive makes pooling possible.**
-
----
-
-### Keep-Alive and load balancers
+**Without Keep-Alive** — each request pays handshake + request/response:
 
 ```text
-Client → Load Balancer → Backend Server
+Per request ≈ 100 ms (handshake) + 100 ms (HTTP) = 200 ms
+10 requests  ≈ 10 × 200 ms = 2000 ms
 ```
 
-Persistent connections reduce TCP handshakes, TLS handshakes, and CPU usage — improving overall throughput.
-
----
-
-### Keep-Alive and HTTPS
-
-This is where Keep-Alive becomes even more valuable. HTTPS requires:
+**With Keep-Alive** — one handshake, then HTTP RTT per request:
 
 ```text
-TCP Handshake + TLS Handshake
+Handshake once = 100 ms
+10 requests    = 10 × 100 ms = 1000 ms
+Total          ≈ 1100 ms
 ```
 
-Both are expensive.
-
-| | Cost per request |
-|---|------------------|
-| **Without Keep-Alive** | Every request pays TCP setup + TLS setup |
-| **With Keep-Alive** | TCP setup once, TLS setup once — multiple requests reuse the secure connection |
-
-Huge performance improvement.
+**Sanity check:** ~45% reduction in this model; with TLS (extra 1–2 RTT per new connection), savings are even larger — often the dominant win for HTTPS APIs.
 
 ---
 
+### Pitfalls and design tips
 
-### Keep-Alive vs HTTP/2
-
-| | HTTP/1.1 + Keep-Alive | HTTP/2 |
-|---|----------------------|--------|
-| Connection | One connection reused | One connection reused |
-| Requests | Generally processed **sequentially** | Multiple requests processed **simultaneously** (multiplexing) |
-
-HTTP/2 still uses Keep-Alive but is much more efficient.
+- **Idle timeout mismatches** — client pool TTL longer than server/LB idle timeout causes mysterious `ECONNRESET` on reused sockets; align timeouts (client slightly below server).
+- **Load balancer stickiness** — persistent connections pin a client to one backend for the connection lifetime; combined with long Keep-Alive, load can skew until connections recycle.
+- **HTTP/1.1 head-of-line blocking** — one slow response blocks the next on the same connection; browsers open parallel connections (typically 6) as a workaround — HTTP/2 addresses this differently.
+- **Graceful shutdown** — draining a node requires stopping new Keep-Alive accepts and waiting for existing connections to finish or time out.
+- **Production defaults** — Nginx `keepalive_timeout`, ALB idle timeout (default 60 s), OkHttp `ConnectionPool` — tune explicitly for your traffic pattern.
+- **Interview angle** — Keep-Alive saves **connection setup**; it does not by itself enable **parallel** downloads on HTTP/1.1.
 
 ---
 
+### Real-world example: Spring Boot calling downstream REST APIs
+
+A Spring Boot service using **RestTemplate** or **WebClient** with a shared connection pool reuses TCP (+ TLS) sessions to a payment gateway. At 500 RPS, creating 500 new TLS connections per second would exhaust CPU on handshakes and inflate p99 latency. A pool of ~20 warm connections per downstream host cuts setup to near zero for most requests — the gateway sees stable long-lived sessions, and p99 drops from hundreds of milliseconds to tens.
+
+---
 
 ## 1.15 Forward & Reverse Proxy
 
-A **proxy** is an intermediary that sits between two parties and forwards requests and responses.
+### Overview
 
-Instead of client and server communicating directly:
+A proxy is a middlebox that speaks to one party on behalf of another — like a receptionist who screens visitors (reverse proxy) or a corporate travel desk that books flights for employees without revealing each person's desk number (forward proxy). **Forward proxies** sit near **clients** and forward outbound traffic. **Reverse proxies** sit in front of **servers** and accept inbound traffic on their behalf.
 
-```text
-Client → Proxy → Server
-```
-
-The proxy acts on behalf of either the **client** or the **server**.
+In system design, reverse proxies are everywhere: Nginx, Envoy, HAProxy, AWS ALB, and Cloudflare act as TLS terminators, load balancers, caches, and WAFs. Forward proxies appear in corporate egress filtering and some privacy/VPN-adjacent setups.
 
 ---
 
-### Why do we need a proxy?
+### What problem it fixes
 
-Common reasons:
+**Clients** need controlled internet access (block sites, log activity, cache downloads) without exposing every employee IP to the public internet.
 
-- Security
-- Access control
-- Caching
-- Load balancing
-- Anonymity
-- Traffic monitoring
-- Rate limiting
+**Servers** need a single public entry point that hides fragile backend topology, distributes load, terminates TLS centrally, and shields origins from direct exposure.
+
+Without proxies, every app server would need public IPs, certificate management, rate limiting, and DDoS filtering duplicated across the fleet.
 
 ---
 
-### Forward proxy
+### What it does
 
-#### What is it?
+| Proxy type | Sits in front of | Acts for | Internet sees |
+|------------|------------------|----------|---------------|
+| **Forward** | Clients | Client | Proxy IP as source |
+| **Reverse** | Servers | Server | Proxy IP as destination |
 
-A **forward proxy** sits in front of **clients** and acts on behalf of clients.
-
-The internet sees the proxy, not the actual client.
+**Forward proxy flow:**
 
 ```text
 Client → Forward Proxy → Internet Server
 ```
 
----
+Server logs show the **proxy's IP**, not the client's.
 
-#### How it works
-
-**Without proxy:**
+**Reverse proxy flow:**
 
 ```text
-Client → google.com
+Client → Reverse Proxy → Backend pool (App1, App2, App3)
 ```
 
-Server knows client's IP.
-
-**With forward proxy:**
-
-```text
-Client → Forward Proxy → google.com
-```
-
-Server sees **proxy IP**. Client IP is hidden.
-
----
-
-#### Real-world example
-
-Suppose a company blocks Facebook, YouTube, and Instagram.
-
-All employee traffic goes through a **corporate forward proxy**. The proxy can:
-
-- Allow websites
-- Block websites
-- Log requests
-- Scan downloads
-
----
-
-#### Benefits of forward proxy
-
-1. **Client anonymity** — server sees proxy IP instead of client IP
-2. **Access control** — block specific websites
-3. **Content filtering** — filter inappropriate content
-4. **Caching** — store frequently requested resources
-5. **Traffic monitoring** — track user activity
-
----
-
-#### Forward proxy example
-
-```text
-Home User → VPN / Corporate Proxy → google.com
-```
-
-`google.com` sees **proxy IP**, not user IP.
-
----
-
-#### Who knows about the proxy?
-
-| | Forward proxy |
-|---|---------------|
-| Client | **Knows** (configured) |
-| Server | Usually does not care |
-
-Think: **proxy representing the client**
-
-**Forward proxy:**
+Client believes it talks to `api.company.com`; backends may be private.
 
 ```mermaid
 flowchart LR
-    C[Client] --> P[Forward Proxy] --> W[Internet]
+    subgraph Forward["Forward proxy"]
+        direction LR
+        CF[Client] --> PF[Forward Proxy] --> W[Internet]
+    end
+    subgraph Reverse["Reverse proxy"]
+        direction LR
+        CR[Client] --> PR[Reverse Proxy] --> B1[Backend 1]
+        PR --> B2[Backend 2]
+    end
+    Forward ~~~ Reverse
 ```
 
-**Reverse proxy:**
-
-```mermaid
-flowchart LR
-    C[Client] --> P[Reverse Proxy] --> B1[Backend 1]
-    P --> B2[Backend 2]
-```
-
----
-
-### Reverse proxy
-
-#### What is it?
-
-A **reverse proxy** sits in front of **servers** and acts on behalf of servers.
-
-Clients communicate with the proxy. Clients may not know backend servers even exist.
+**SSL termination (reverse):**
 
 ```text
-Client → Reverse Proxy → Backend Servers
+Client --HTTPS--> Reverse Proxy --HTTP--> Internal service
 ```
 
----
-
-#### How it works
-
-Client requests `api.company.com`.
-
-Request first reaches the **reverse proxy**. Proxy forwards request to a **backend server**. Response returns through the proxy.
+The proxy owns certificates and cipher policy; backends run plain HTTP on a private network.
 
 ---
 
-#### Visual flow
+### How it works — the architecture inside
 
-```text
-Client
-   |
-Reverse Proxy
-   |
----------------------
-|         |         |
-Server1  Server2  Server3
-```
+**Forward proxy — corporate egress:** All employee browsers point at `proxy.corp.internal:8080`. Policy engine allows `github.com`, blocks social media, scans downloads, logs URLs. Google sees one NAT/proxy egress IP.
 
----
+**Reverse proxy — public API:** DNS for `api.company.com` resolves to the proxy VIP. Proxy applies WAF rules, terminates TLS, routes `/api/users` to the user service cluster, `/api/orders` to the order cluster (L7 routing), and caches static `GET` responses when configured.
 
-#### Benefits of reverse proxy
+**Who configures whom:**
 
-1. **Load balancing** — distributes traffic across multiple servers
-2. **Security** — backend servers hidden from clients
-3. **SSL termination** — handles HTTPS/TLS; backends may use plain HTTP internally
-4. **Caching** — serve cached responses
-5. **Rate limiting** — prevent abuse
-6. **DDoS protection** — filters malicious traffic
+| | Forward proxy | Reverse proxy |
+|---|---------------|---------------|
+| Configured by | Client / IT department | Server / platform team |
+| Server aware? | Usually transparent to origin | Origin expects proxy traffic |
+| Typical products | Squid, corporate gateways | Nginx, Envoy, HAProxy, ALB, Cloudflare |
 
 ---
 
-#### Real-world example
-
-When you access `https://amazon.com`, you are usually talking to a **load balancer / reverse proxy** — not directly to application servers.
-
-The proxy decides which backend server should handle the request.
-
----
-
-#### SSL termination
-
-```text
-Client
-   |
-HTTPS
-   |
-Reverse Proxy
-   |
-HTTP
-   |
-Backend Service
-```
-
-Proxy handles TLS handshake, certificate management, and encryption/decryption. Backend services stay simpler.
-
----
-
-#### Load balancing example
-
-```text
-Client Requests
-   |
-Reverse Proxy
-   |
--------------------------
-|          |           |
-App1       App2       App3
-```
-
-```text
-Request 1 → App1
-Request 2 → App2
-Request 3 → App3
-```
-
-Traffic distributed evenly. See algorithms above (including **consistent hashing** for cache shards).
-
----
-
-#### Common reverse proxy products
-
-- Nginx
-- HAProxy
-- Envoy
-- Traefik
-- Cloudflare
-- AWS ALB
-
----
-
-### Forward proxy vs reverse proxy
+### Forward vs reverse — comparison
 
 | Feature | Forward proxy | Reverse proxy |
 |---------|---------------|---------------|
-| Represents | **Client** | **Server** |
-| Placed in front of | Clients | Servers |
-| Hides | Client identity | Server identity |
-| Used by | Clients | Server owners |
-| Common uses | VPN, filtering | Load balancing |
-| Internet sees | Proxy IP | Proxy IP |
+| Represents | Client | Server |
+| Hides | Client identity | Backend topology |
+| Common uses | Filtering, logging, caching outbound | Load balancing, TLS, caching inbound |
+| Layer | Often HTTP/SOCKS (L7/L5) | L7 (ALB) or L4 (NLB) depending on product |
+
+---
+
+### Pitfalls and design tips
+
+- **Do not conflate with NAT** — NAT rewrites addresses at L3/L4 without understanding HTTP; proxies can inspect URLs, headers, and JWTs.
+- **Double proxy confusion** — `Client → Forward proxy → Reverse proxy → Server` happens in enterprises; debug TLS and `X-Forwarded-For` chains carefully.
+- **Trust forwarded headers** — backends should only trust `X-Forwarded-For` / `X-Real-IP` from known reverse proxies; otherwise clients can spoof.
+- **Forward proxy ≠ VPN** — forward HTTP proxy does not encrypt all device traffic by default; VPN tunnels do.
+- **Health checks** — reverse proxy must exclude draining nodes; forward proxy failures block all employee internet access — high availability matters.
+- **Interview angle** — "Nginx in front of three app servers" is a **reverse** proxy; "company proxy you configure in browser settings" is **forward**.
+
+---
+
+### Real-world example: Cloudflare as reverse proxy
+
+A SaaS app points DNS for `app.example.com` to Cloudflare. User TLS terminates at Cloudflare's edge (certificate managed there). Cloudflare caches static assets, applies DDoS protection, and forwards dynamic API calls to the origin over a secure tunnel or public IP. The origin never exposes its raw server IP to browsers — only Cloudflare's anycast addresses are attacked or scanned.
 
 ---
 
 ## 1.16 NAT
 
-**NAT (Network Address Translation)** is a technique used by routers, firewalls, and cloud gateways to translate one IP address into another.
+### Overview
 
-Most commonly:
+**NAT (Network Address Translation)** is the router trick that lets dozens of devices in your home share one public IP address — like an apartment building with one street address but many unit numbers inside. The router rewrites **private** source addresses to its **public** IP (and ports) on the way out, and reverses the mapping when responses return.
 
-```text
-Private IP → Public IP
-```
-
-This allows devices in a private network to access the internet using a **single public IP address**.
+IPv4 has only ~4.3 billion addresses; NAT plus **private ranges** (`10.x`, `172.16–31.x`, `192.168.x`) let billions of devices reach the internet without each holding a globally routable IP.
 
 ---
 
-### Why do we need NAT?
+### What problem it fixes
 
-IPv4 addresses are limited — **~4.3 billion** total.
-
-With billions of phones, laptops, servers, and IoT devices, we would quickly run out of public IPs if every device needed one.
-
-NAT solves this by allowing **many devices to share a single public IP**.
+Public IPv4 exhaustion would have blocked growth of home Wi-Fi, mobile carriers, and cloud private subnets. NAT conserves public addresses and provides a basic **default deny inbound** posture — internal hosts are not directly reachable from the internet unless explicitly forwarded.
 
 ---
 
-### Real-world example
+### What it does
 
-**Home Wi-Fi network:**
+On outbound traffic, the NAT device replaces:
 
 ```text
-Laptop  → 192.168.1.10
-Mobile  → 192.168.1.20
-TV      → 192.168.1.30
-
-Router public IP → 49.205.100.50
+Source: 192.168.1.10:5000  →  49.205.100.50:30001
 ```
 
-| | Behavior |
-|---|----------|
-| **Without NAT** | Each device needs a public IP |
-| **With NAT** | All devices share `49.205.100.50` |
+It stores the mapping in a **translation table**. Inbound packets to `49.205.100.50:30001` are rewritten back to `192.168.1.10:5000`.
 
-This is how most home networks work.
+**PAT (Port Address Translation / NAT overload)** — the common home-router form — multiplexes many private hosts onto **one** public IP using unique source port assignments.
 
 ---
 
-### How NAT works
-
-**Step 1** — Laptop sends request:
-
-```text
-Source IP      = 192.168.1.10
-Destination IP = google.com
-```
-
-**Step 2** — Router receives packet and replaces `192.168.1.10` with `49.205.100.50`
-
-**Step 3** — Google receives:
-
-```text
-Source IP = 49.205.100.50
-```
-
-Google has no idea the original device was `192.168.1.10`.
-
-**Step 4** — Response comes back to `49.205.100.50`. Router checks NAT table and forwards response to `192.168.1.10`.
+### How it works — the architecture inside
 
 ```mermaid
 sequenceDiagram
-    participant L as Laptop
+    participant L as Laptop 192.168.1.10
     participant R as Router NAT
     participant G as Internet
-    L->>R: Request from private IP
-    Note over R: Rewrite to public IP
-    R->>G: Forward request
-    G-->>R: Response to public IP
-    R-->>L: Forward to private IP
+    L->>R: SYN from 192.168.1.10:5000
+    Note over R: Map to 49.205.100.50:30001
+    R->>G: SYN from 49.205.100.50:30001
+    G-->>R: Response to 49.205.100.50:30001
+    R-->>L: Deliver to 192.168.1.10:5000
 ```
 
----
+**Translation table example:**
 
-### Visual flow
-
-```text
-Laptop (192.168.1.10)
-    |
-Home Router (NAT) — Public IP = 49.205.100.50
-    |
-Internet
-    |
-google.com
-```
-
----
-
-### NAT translation table
-
-Router maintains a mapping table:
-
-| Private IP | Port | Public IP | Port |
-|------------|------|-----------|------|
+| Private IP | Private port | Public IP | Public port |
+|------------|--------------|-----------|-------------|
 | 192.168.1.10 | 5000 | 49.205.100.50 | 30001 |
-| 192.168.1.20 | 5001 | 49.205.100.50 | 30002 |
+| 192.168.1.20 | 5000 | 49.205.100.50 | 30002 |
 | 192.168.1.30 | 5002 | 49.205.100.50 | 30003 |
 
-This allows many devices to share one public IP.
+**NAT types:**
 
----
+| Type | Mapping | Typical use |
+|------|---------|-------------|
+| Static NAT | 1 private IP ↔ 1 public IP | Legacy servers needing fixed public IP |
+| Dynamic NAT | Private IP ↔ pool of public IPs | Larger enterprises |
+| PAT (overload) | Many private IPs → one public IP + ports | Home routers, carrier CGNAT, cloud NAT gateways |
 
-### What is PAT?
+**Cloud pattern (AWS):** Instances in a private subnet (`10.0.2.0/24`) reach the internet via a **NAT Gateway** in a public subnet. Outbound package updates work; inbound connections to instances are blocked unless a load balancer or bastion is provisioned.
 
-**PAT (Port Address Translation)** — also called **NAT overload** — is the most common NAT implementation today.
-
-Instead of using only IP addresses, NAT uses **IP + port** to uniquely identify connections.
-
----
-
-### PAT example
-
-Three devices access Google simultaneously:
-
-```text
-Laptop → 192.168.1.10:5000
-Mobile → 192.168.1.20:5000
-TV     → 192.168.1.30:5000
-```
-
-Router translates to:
-
-```text
-49.205.100.50:30001
-49.205.100.50:30002
-49.205.100.50:30003
-```
-
-Now responses can be routed correctly.
-
----
-
-### Types of NAT
-
-#### 1. Static NAT
-
-One private IP ↔ one public IP — permanent mapping.
-
-```text
-192.168.1.10 ↔ 49.205.100.50
-```
-
-Used when a server must always have the same public IP.
-
-#### 2. Dynamic NAT
-
-Private IPs are mapped from a **pool** of public IPs:
-
-```text
-Private Network → Public IP Pool
-                  49.205.100.50
-                  49.205.100.51
-                  49.205.100.52
-```
-
-Mapping assigned dynamically.
-
-#### 3. PAT (NAT overload)
-
-Many private IPs → **one public IP** using different ports.
-
-Most common type. Used in home routers, offices, and cloud NAT gateways.
-
----
-
-### NAT in cloud
-
-**AWS example** — private subnet:
-
-```text
-10.0.2.10
-10.0.2.20
-```
-
-No public IPs assigned. Need internet access? Install a **NAT Gateway**:
-
-```text
-Private Servers → NAT Gateway → Internet
-```
-
-Servers can download packages, updates, and Docker images — but remain **inaccessible from the internet**.
-
----
-
-### Advantages of NAT
-
-1. **Conserves public IP addresses** — thousands of devices can share a few public IPs
-2. **Improves security** — private IPs are hidden from the internet
-3. **Easy network management** — internal addressing can change without affecting the internet
-4. **Cost savings** — fewer public IPs required
-
----
-
-### Limitations of NAT
-
-1. **Breaks end-to-end connectivity** — internet cannot directly reach private devices
-2. **Port exhaustion** — large number of connections may exhaust available ports
-3. **Extra processing** — router must maintain NAT table
-4. **Some protocols don't like NAT** — SIP, FTP, peer-to-peer apps often require additional configuration
-
----
-
-### NAT and port forwarding
-
-**Problem:** Internet cannot directly access `192.168.1.10`
-
-**Solution:** Port forwarding on the router:
+**Port forwarding:** Explicit rule on the router:
 
 ```text
 49.205.100.50:80 → 192.168.1.10:80
 ```
 
-Now internet users can access the internal server.
+Allows inbound internet traffic to an internal server.
 
 ---
 
@@ -4140,758 +1557,364 @@ Now internet users can access the internal server.
 
 | | NAT | Proxy |
 |---|-----|-------|
-| Layer | Network layer (L3/L4) | Application layer (L7) |
-| Changes | IP addresses and ports | Can inspect and modify HTTP/HTTPS requests |
+| OSI layer | L3/L4 (IP, port rewrite) | L7 for HTTP proxies (can read URLs) |
+| Visibility | Transparent to most apps | Client often explicitly configured |
+| Protocol awareness | None | Can cache, auth, route by path |
+
+---
+
+### Pitfalls and design tips
+
+- **Breaks end-to-end connectivity** — peer-to-peer games, WebRTC, SIP, and FTP often need STUN/TURN, ALG hacks, or explicit port forwarding.
+- **Port exhaustion** — high-connection-count servers behind PAT can exhaust the ~64k port space per public IP; carriers use **CGNAT** which adds another NAT layer.
+- **Logging and abuse attribution** — many users share one public IP; correlate by source port + timestamp in logs.
+- **IPv6 alternative** — IPv6 reduces need for NAT but NAT64/DNS64 still appear in mixed deployments.
+- **Cloud egress** — NAT Gateway is a bandwidth-charged hop; for high egress, architecture reviews consider IPv6, VPC endpoints, or proxy consolidation.
+- **Interview angle** — "private subnet internet access" in AWS → **NAT Gateway**, not Internet Gateway on the instance.
+
+---
+
+### Real-world example: home Wi-Fi to Google
+
+Three devices (`192.168.1.10–30`) browse simultaneously. The home router PATs all flows to `49.205.100.50` with distinct ephemeral ports. Google responds to the public IP; the router consults its table and delivers each response to the correct laptop or phone. No device needs its own public IPv4 lease from the ISP.
 
 ---
 
 ## 1.17 VPN
 
-**VPN (Virtual Private Network)** creates a secure, encrypted connection between your device and a VPN server over the public internet.
+### Overview
 
-Once connected, all your network traffic is routed through the VPN server.
+A **VPN (Virtual Private Network)** wraps your traffic in an encrypted tunnel from your device to a VPN endpoint — like sending letters inside a locked armored van across a public road. Outsiders see only van traffic between you and the VPN server; they cannot read the letters inside.
 
-```text
-Your Device
-    |
-Encrypted Tunnel
-    |
-VPN Server
-    |
-Internet
-```
-
-Traffic inside the tunnel is encrypted and protected.
+Enterprises use VPNs for **remote access** to private networks. Consumer VPNs market privacy and geo-shifting. In system design interviews, site-to-site and remote-access VPNs explain how engineers reach databases and admin panels without exposing them on the public internet.
 
 ---
 
-### Why do we need a VPN?
+### What problem it fixes
 
-VPNs are mainly used for:
+**Untrusted networks:** Coffee-shop Wi-Fi attackers can sniff unencrypted traffic. VPN encrypts payloads between client and VPN gateway.
 
-1. **Security** — protect data when using public Wi-Fi or untrusted networks
-2. **Remote access** — allow employees to securely access company resources from home
-3. **Privacy** — hide your real public IP address from websites
-4. **Connecting private networks** — connect two office networks securely over the internet
+**Remote workforce:** Employees need access to internal apps (`10.x` services, LDAP, internal APIs) as if they were on campus — without publishing those services to `0.0.0.0/0`.
+
+**Site interconnection:** Two offices link private RFC1918 networks over the public internet securely.
 
 ---
 
-### How VPN works
-
-**Without VPN:**
+### What it does
 
 ```text
-Laptop → Internet → google.com
+Device → Encrypted tunnel → VPN server → Destination (internet or corporate LAN)
 ```
 
-Google sees **your public IP address**.
+Websites see the **VPN server's public IP**, not the client's home IP. Corporate resources see the client as part of the private routing domain once authenticated.
 
-**With VPN:**
+**Remote access VPN:** `Employee laptop → VPN concentrator → Corporate network`
 
-```text
-Laptop → Encrypted VPN Tunnel → VPN Server → google.com
-```
+**Site-to-site VPN:** `Office A router ↔ IPsec tunnel ↔ Office B router`
 
-Google sees **VPN server IP address** instead of your real IP.
+---
+
+### How it works — the architecture inside
 
 ```mermaid
 flowchart LR
-    L[Laptop] -->|encrypted tunnel| V[VPN Server] --> I[Internet]
+    subgraph NoVPN["Without VPN"]
+        direction LR
+        L1[Laptop] --> I1[Internet] --> G1[google.com sees home IP]
+    end
+    subgraph VPN["With VPN"]
+        direction LR
+        L2[Laptop] -->|encrypted tunnel| V[VPN server] --> I2[Internet]
+        I2 --> G2[google.com sees VPN IP]
+    end
+    NoVPN ~~~ VPN
 ```
 
----
+**Tunnel encryption:** Payloads are encapsulated and encrypted (IPsec, OpenVPN, WireGuard, etc.) before crossing untrusted hops. Interceptors see ciphertext and tunnel endpoints only.
 
-### Simple example
-
-Suppose your ISP assigned `49.205.100.50` to your home network.
-
-You connect to a VPN server with IP `20.50.10.100`.
-
-When you browse `google.com`:
-
-| | What Google sees |
-|---|------------------|
-| **Without VPN** | `49.205.100.50` |
-| **With VPN** | `20.50.10.100` |
-
----
-
-### What is a VPN tunnel?
-
-A **VPN tunnel** is an encrypted communication channel between:
-
-```text
-Client Device ↔ VPN Server
-```
-
-All traffic passes through this secure tunnel. Anyone intercepting packets on the internet sees **encrypted data only**.
-
----
-
-### What does VPN encrypt?
-
-VPN encrypts traffic before sending it through the internet.
-
-```text
-Original:  Username = hareram, Password = mypassword
-Encrypted: Random unreadable encrypted data
-```
-
-This prevents attackers from reading sensitive information.
-
----
-
-### Common types of VPN
-
-#### 1. Remote access VPN
-
-Used by employees working from home.
-
-```text
-Employee Laptop → VPN Tunnel → Company Network
-```
-
-Employee can access internal applications, databases, and file servers.
-
-#### 2. Site-to-site VPN
-
-Used to connect entire office networks.
-
-```text
-Bangalore Office ↔ VPN Tunnel ↔ Mumbai Office
-```
-
-Both offices communicate securely.
-
----
-
-### VPN vs HTTPS
+**VPN vs HTTPS:**
 
 | | HTTPS | VPN |
 |---|-------|-----|
-| Protects | Browser ↔ website | Device ↔ VPN server |
-| Scope | Single site (e.g. Chrome ↔ `google.com`) | **All** device traffic — browser, databases, email, SSH |
+| Scope | Single site (browser ↔ server) | **All** device traffic (system-wide routing) |
+| Protects | That HTTP session | Everything routed into the tunnel |
+
+**VPN vs forward proxy:**
+
+| | VPN | Forward HTTP proxy |
+|---|-----|-------------------|
+| Encryption | Tunnel encrypts traffic | Proxy may not encrypt client-to-proxy hop |
+| Coverage | OS-level default route or split tunnel | Usually browser/app specific |
+| IP seen by sites | VPN egress IP | Proxy egress IP |
 
 ---
 
-### VPN vs proxy
+### Pitfalls and design tips
 
-| | VPN | Proxy |
-|---|-----|-------|
-| Encryption | **Yes** — encrypts traffic | Usually no encryption by default |
-| Scope | Entire device | Often application-specific |
-| Security | More secure | Mostly forwards traffic |
-| IP address | Changes visible IP | May hide IP (forward proxy) |
-
----
-
-### Does VPN make you completely anonymous?
-
-**No.**
-
-| | Reality |
-|---|---------|
-| VPN hides | Your IP from websites |
-| VPN provider | Can still see your traffic |
-| Websites | Can still track using cookies/accounts |
-| ISPs / governments | May know you are using a VPN |
-
-VPN **improves privacy** but does not provide complete anonymity.
+- **Not anonymous by default** — VPN provider, employer, and destination sites can still identify you (accounts, cookies, DNS leaks).
+- **Latency and throughput** — hairpinning through a distant VPN server hurts performance; choose region and split-tunnel policies deliberately.
+- **Split tunnel vs full tunnel** — full tunnel sends all traffic via VPN (safer, slower for public sites); split tunnel reduces load but risks data exfil paths.
+- **Trust the operator** — consumer VPN shifts trust from ISP to VPN vendor; enterprise VPN shifts operational burden to your security team.
+- **Replacing VPN for apps** — modern zero-trust (identity-aware proxies, device posture) reduces blanket VPN use; know the trade-off in interviews.
+- **Interview angle** — VPN provides **network-layer private reachability**; it is not a substitute for application auth or mTLS between services.
 
 ---
 
-### Advantages of VPN
+### Real-world example: corporate remote access
 
-- Secure communication
-- Safe use of public Wi-Fi
-- Remote access to company resources
-- Hides real IP address
-- Connects private networks securely
+A bank runs an internal HR portal at `https://hr.internal.corp` resolvable only on `10.0.0.0/8`. Remote employees connect via VPN; the client receives routes for corporate prefixes. DNS resolves `hr.internal.corp` to a private load balancer; traffic never hits the public internet unencrypted. Failed VPN auth means no route to internal subnets — default deny.
 
 ---
-
-### Disadvantages of VPN
-
-- Extra latency — traffic goes through VPN server
-- Encryption consumes CPU resources
-- VPN server can become a bottleneck
-- Requires trust in VPN provider
-
----
-
-### Real-world system design use case
-
-Company employees work from home.
-
-Instead of exposing databases and internal applications to the internet:
-
-```text
-Employee → VPN → Corporate Network
-```
-
-Only authenticated VPN users can access internal systems.
-
-This is one of the most common enterprise VPN use cases.
-
----
-
 
 ## 1.18 Unicast, Broadcast, Multicast & Anycast
 
----
+### Overview
 
-### The problem
+When one computer sends a packet, who should receive it? The four delivery models answer that question at internet scale. **Unicast** is one-to-one (a phone call). **Broadcast** is one-to-everyone on the local wire (shouting in a room). **Multicast** is one-to-a-subscribed group (a webinar only subscribers watch). **Anycast** is one-to-the-nearest-of-many replicas sharing the same address (the closest franchise branch takes your order).
 
-Suppose a device wants to send a packet.
-
-**Question:** Who should receive the packet?
-
-- One device?
-- All devices?
-- A specific group of devices?
-- The nearest available device?
-
-Different communication models exist for different use cases.
+Most application traffic you build — HTTP APIs, database connections, gRPC — is **unicast**. CDNs and public DNS lean on **anycast**. Live video inside ISPs sometimes uses **multicast**. **Broadcast** is mostly a LAN bootstrap mechanism (ARP, DHCP), not a global internet pattern.
 
 ---
 
-### 1. Unicast
+### What problem it fixes
 
-#### What is it?
+Different workloads need different fan-out economics:
 
-**Unicast** means: **one sender → one receiver**
+- Sending a personalized API response to one client → **unicast**
+- Discovering a router or assigning DHCP on a LAN → **broadcast**
+- Streaming identical market data to thousands of subscribed traders without N separate copies from source → **multicast**
+- Routing users to the closest healthy edge server without client-side region pickers → **anycast**
 
-This is the most common type of network communication.
+Picking the wrong model wastes bandwidth, adds latency, or breaks discovery.
 
-```text
-Client → Server
+---
+
+### What it does
+
+| Model | Delivery | Typical scope |
+|-------|----------|---------------|
+| **Unicast** | One sender → one receiver | Global — default for TCP/HTTP |
+| **Broadcast** | One sender → all hosts on L2 domain | Local subnet; routers do not forward globally |
+| **Multicast** | One sender → hosts that joined group | Often enterprise or ISP; limited on public internet |
+| **Anycast** | One sender → topologically nearest receiver among many | Global DNS, CDN edges, `8.8.8.8` |
+
+---
+
+### How it works — the architecture inside
+
+**Unicast:** Your laptop opens a TCP connection to one IP returned by DNS for `google.com`. Packets have a single destination address — classic client/server.
+
+**Broadcast:** ARP request: *"Who has `192.168.1.1`?"* sent to broadcast MAC `ff:ff:ff:ff:ff:ff`. Every host on the VLAN sees it; only the router answers. Routers block broadcast from crossing into the internet.
+
+**Multicast:** Hosts join group `239.x.x.x` via IGMP. Network switches replicate packets only to ports with interested receivers — source sends **one** stream; network duplicates where needed.
+
+**Anycast:** Multiple servers in Mumbai, Singapore, and London announce the **same IP** via BGP. Routing topology picks the nearest announcement. User in Bangalore reaches Mumbai; user in Frankfurt reaches London — same address, different physical machine.
+
+```mermaid
+flowchart LR
+    subgraph Models["Delivery models"]
+        direction LR
+        U[Unicast 1:1] --- B[Broadcast 1:all LAN]
+        B --- M[Multicast 1:group]
+        M --- A[Anycast 1:nearest]
+    end
 ```
 
-One source. One destination.
-
-#### Example
-
-When you open `https://google.com`, your browser sends requests to a specific Google server. This is unicast communication.
-
-#### Real-world use cases
-
-- Web browsing
-- REST APIs
-- Database connections
-- SSH
-- Email
-
-| Advantages | Disadvantages |
-|------------|---------------|
-| Simple, reliable, direct communication | If the same data must be sent to 1 million users, server sends it 1 million times — high bandwidth usage |
-
----
-
-### 2. Broadcast
-
-#### What is it?
-
-**Broadcast** means: **one sender → everyone on the network**
-
-Packet is delivered to all devices in the broadcast domain.
+**Anycast routing (conceptual):**
 
 ```text
-                 Device A
-                      |
-Sender ---------------+------------------
-          |           |           |
-       Device B    Device C    Device D
-```
-
-Everyone receives the packet.
-
-#### Example
-
-When your laptop joins a Wi-Fi network, it does not know who the router is. So it broadcasts: *"Who has IP 192.168.1.1?"*
-
-All devices receive the request. Router responds.
-
-#### Common use cases
-
-- ARP (Address Resolution Protocol)
-- DHCP discovery
-
-| Advantages | Disadvantages |
-|------------|---------------|
-| Easy device discovery; useful for local networks | Wastes bandwidth; every device processes packet; doesn't scale well |
-
-**Important:** Broadcast generally works only inside a local network. Routers typically do **not** forward broadcast traffic.
-
----
-
-### 3. Multicast
-
-#### What is it?
-
-**Multicast** means: **one sender → many interested receivers**
-
-Only devices that joined the multicast group receive the packet.
-
-```text
-                    Receiver A
+                    Mumbai POP
                          |
-Sender ------------------|
+User in Bangalore -------+
                          |
-                    Receiver B
+                    Singapore POP
+                         |
+                    London POP
 ```
 
-Devices not interested do **not** receive packets.
-
-#### Example
-
-**Live sports streaming** — 100,000 users watching the same match.
-
-| | Behavior |
-|---|----------|
-| **Without multicast** | Server sends 100,000 separate streams |
-| **With multicast** | Server sends **one** stream; network duplicates packets only where needed |
-
-#### Use cases
-
-- IPTV
-- Live video broadcasting
-- Stock market feeds
-- Financial trading systems
-- Online classrooms
-
-| Advantages | Disadvantages |
-|------------|---------------|
-| Saves bandwidth; efficient distribution; one transmission serves many users | Complex network support; not widely supported across internet; mostly used inside private networks |
-
-#### Multicast group
-
-Devices join a multicast group — e.g. `239.1.1.1`. Only members receive packets sent to that address.
+Both users query `8.8.8.8`; BGP sends each to the closest Google POP.
 
 ---
 
-### 4. Anycast
+### Comparison and system design relevance
 
-#### What is it?
-
-**Anycast** means: **one sender → nearest available receiver**
-
-Multiple servers share the **same IP address**. Network routing automatically chooses the nearest or best destination.
-
-```text
-                     Server (Mumbai)
-                           |
-User ----------------------|
-                           |
-                     Server (Singapore)
-                           |
-                     Server (London)
-```
-
-User reaches the nearest server.
-
-#### Example
-
-Cloudflare has servers in Mumbai, Singapore, London, and New York — all advertise the same anycast IP.
-
-| User location | Routed to |
-|---------------|-----------|
-| Bangalore | Mumbai |
-| Europe | London |
-
-Both users access the **same IP address**.
-
-#### Why is anycast powerful?
-
-Users automatically reach the closest server, lowest-latency server, or available server — without changing configuration.
-
-#### Real-world use cases
-
-- CDNs
-- DNS servers
-- Cloudflare
-- Google DNS (`8.8.8.8`)
-- AWS global services
-
-#### Example: Google DNS
-
-You configure `8.8.8.8`.
-
-**Question:** Which Google DNS server receives your request?
-
-**Answer:** Nearest available Google DNS server. This is **anycast**.
-
-| Advantages | Disadvantages |
-|------------|---------------|
-| Low latency, automatic failover, global scalability, better availability | Complex routing setup; harder troubleshooting |
-
----
-
-### Comparison
-
-| Communication type | Meaning |
-|--------------------|---------|
-| **Unicast** | One → one |
-| **Broadcast** | One → all |
-| **Multicast** | One → many (interested group) |
-| **Anycast** | One → nearest one |
-
-#### Visual comparison
-
-```text
-Unicast:    Sender → Receiver
-
-Broadcast:  Sender → All devices
-
-Multicast:  Sender → Interested group only
-
-Anycast:    Sender → Nearest server
-```
-
----
-
-### System design relevance
+| Type | Fan-out | Internet-scale? | Example |
+|------|---------|-----------------|---------|
+| Unicast | 1 copy | Yes | REST API, database |
+| Broadcast | All local | LAN only | ARP, DHCP discover |
+| Multicast | Subscribers only | Rare end-to-end | IPTV inside ISP |
+| Anycast | Nearest replica | Yes | Cloudflare, Google DNS, CDN |
 
 | Domain | Typical model |
 |--------|---------------|
-| Web applications | Mostly **unicast** |
-| Local network discovery | **Broadcast** |
-| Live streaming systems | May use **multicast** |
-| CDNs and DNS systems | Commonly **anycast** |
+| Web applications | Unicast |
+| LAN discovery | Broadcast |
+| Live streaming (efficient fan-out) | Multicast where supported |
+| Global DNS / CDN edges | Anycast |
 
 ---
 
+### Pitfalls and design tips
+
+- **Multicast on the public internet** — generally impractical; design fan-out with CDNs, edge caches, or application-level pub/sub (Kafka, SNS) instead.
+- **Broadcast storms** — misconfigured loops can flood VLANs; not a cloud VPC concern but matters on-prem.
+- **Anycast and state** — anycast to stateful services requires careful connection draining; TCP sessions do not migrate mid-flight if routing changes.
+- **Anycast troubleshooting** — `traceroute` to `8.8.8.8` differs by location; "which server answered?" depends on vantage point.
+- **Do not say "CDN uses multicast"** — most commercial CDNs unicast from edge caches; anycast gets users **to** the edge.
+- **Interview angle** — `8.8.8.8` is the classic **anycast** example; HTTP is **unicast**.
+
+---
+
+### Real-world example: Google Public DNS (`8.8.8.8`)
+
+Google advertises the same anycast prefix from hundreds of POPs worldwide. A query from Tokyo hits a Tokyo resolver; a query from São Paulo hits a South American POP. The user configures one memorable address; BGP and anycast handle proximity and automatic failover if a POP withdraws its announcement — no client-side region list required.
+
+---
 
 ## 1.19 CDN
 
-**CDN (Content Delivery Network)** is a geographically distributed network of servers that stores and delivers content closer to users.
+### Overview
 
-Its primary goals:
+A **CDN (Content Delivery Network)** is a geographically distributed set of cache servers that store copies of content close to users — like placing bookstore branches in every neighborhood instead of shipping every book from one central warehouse. Users hit a nearby **edge** node; latency drops and the **origin** server sees far less traffic.
 
-- Reduce latency
-- Increase speed
-- Reduce load on origin servers
-
-Think of a CDN as a **network of cache servers spread across the world**.
+CDNs cache static assets (images, JS, CSS, video segments) and sometimes cacheable API responses. They also absorb traffic spikes and provide DDoS scrubbing at the edge.
 
 ---
 
-### Why do we need a CDN?
+### What problem it fixes
 
-Suppose your application is hosted in **Mumbai, India**. Users access it from Bangalore, Delhi, London, New York, and Sydney.
+A single origin in `us-east-1` serving global users forces every request across long RTT paths (200–300 ms transcontinental). Viral traffic can overwhelm one data center. Large files (video, firmware) multiply egress cost and bandwidth at the origin.
 
-| | Behavior |
-|---|----------|
-| **Without CDN** | Every request travels to Mumbai — higher latency, slower page loads, increased backend load |
-| **With CDN** | Users served from nearest CDN location — faster responses, lower latency, better UX |
+CDN fixes **latency**, **scalability**, and **availability** by serving repeated content from edge POPs.
 
 ---
 
-### Real-world example
+### What it does
 
-Netflix stores a movie in a **US data center**. User is in **Bangalore**.
-
-| | Path |
-|---|------|
-| **Without CDN** | Bangalore user → US data center (long network journey) |
-| **With CDN** | Bangalore user → Bangalore CDN edge server (much faster) |
-
----
-
-### How CDN works
-
-User requests `https://cdn.company.com/logo.png`
-
-**Step 1** — DNS routes user to nearest CDN server
-
-**Step 2** — CDN checks cache: *"Do I already have `logo.png`?"*
-
-#### Case 1: Cache hit
-
-File exists in CDN. CDN returns file immediately. **Origin server is not contacted.**
-
-#### Case 2: Cache miss
-
-File not found. CDN fetches from origin, stores locally, returns response. Future requests become cache hits.
-
-**Cache hit:**
+1. User requests `https://cdn.example.com/logo.png`
+2. **DNS** (often anycast) routes to the nearest CDN edge
+3. Edge checks cache:
+   - **Hit** — return immediately; origin not contacted
+   - **Miss** — fetch from origin, store, respond; later requests hit cache
 
 ```mermaid
 flowchart LR
-    U[User] --> E[CDN Edge] --> R[Response]
+    subgraph Hit["Cache hit"]
+        direction LR
+        U1[User] --> E1[Edge] --> R1[Response]
+    end
+    subgraph Miss["Cache miss"]
+        direction LR
+        U2[User] --> E2[Edge] --> O[Origin] --> E2
+        E2 --> R2[Response]
+    end
+    Hit ~~~ Miss
 ```
 
-**Cache miss:**
-
-```mermaid
-flowchart LR
-    U[User] --> E[CDN Edge] --> O[Origin] --> E --> R[Response]
-```
-
----
-
-### Important terminologies
+**Key terms:**
 
 | Term | Meaning |
 |------|---------|
-| **Origin server** | Original server where content is stored — application server, S3 bucket, nginx |
-| **Edge server** | CDN server located close to users — Mumbai, Bangalore, London, Tokyo |
-| **POP (Point of Presence)** | Physical CDN location — e.g. Mumbai POP, Delhi POP, Singapore POP. Each POP contains multiple edge servers |
+| Origin | Source of truth — S3, app server, nginx |
+| Edge / POP | Regional cache cluster close to users |
+| Cache hit | Content served from edge |
+| Cache miss | Edge fetches from origin on first request |
 
 ---
 
-### What content can CDN cache?
+### How it works — the architecture inside
 
-**Best for static content:**
+**Typical placement:**
 
-- Images, CSS, JavaScript, videos, PDFs, fonts
+```text
+User → CDN edge → (on miss) → Origin / Load balancer → App → Database
+```
 
-**Sometimes dynamic content** — API responses, GraphQL responses, HTML pages — if caching rules permit.
+Static assets served at edge; dynamic auth/payment still reach origin.
 
----
-
-### CDN cache hit vs cache miss
-
-| | Cache hit | Cache miss |
-|---|-----------|------------|
-| Meaning | Content already exists in CDN | Content not present — CDN fetches from origin |
-| Latency | Fast | Higher on first request |
-| Origin load | None | Origin contacted |
-
----
-
-### Latency example
-
-User in Bangalore, origin server in US:
-
-| | Latency |
-|---|---------|
-| **Without CDN** | ~250ms |
-| **With CDN edge in Bangalore** | ~10ms |
-
-Huge improvement.
-
----
-
-### CDN benefits
-
-1. **Lower latency** — content served from nearby servers
-2. **Reduced origin load** — CDN handles many requests
-3. **Better scalability** — traffic distributed across many servers
-4. **Higher availability** — multiple edge locations
-5. **Improved user experience** — faster page loads
-
----
-
-### CDN and caching
-
-CDN relies heavily on caching.
+**Caching policy:** Origin response headers drive behavior:
 
 ```http
-Cache-Control: max-age=3600
+Cache-Control: public, max-age=3600
 ```
 
-Meaning: store response for **1 hour**. Future requests served directly from CDN.
+CDN may serve that object for one hour without revalidating.
+
+**Pull CDN (default):** Content stays on origin until first user request per edge POP triggers fetch-and-store. CloudFront, Cloudflare, Fastly behave this way for most sites.
+
+**Push CDN:** Large files (movie ISO, game patch) are **uploaded** to CDN storage proactively — no first-request penalty. Common for massive static releases.
+
+| | Pull CDN | Push CDN |
+|---|----------|----------|
+| Content enters CDN | On demand (miss) | Preloaded |
+| First user latency | Higher on cold POP | Low immediately |
+| Operational effort | Low | Higher — sync/upload pipeline |
+| Typical use | Websites, APIs with cache headers | Huge binaries, live event VOD seeding |
 
 ---
 
-### CDN and video streaming
+### How to calculate: latency improvement
 
-Platforms like Netflix, YouTube, and Prime Video use CDNs extensively.
+**Given:** User in Bangalore, origin in Virginia USA, RTT ≈ 250 ms one-way (simplified round trip ~250 ms for first byte), CDN edge in Bangalore RTT ~10 ms.
 
-Without CDN, millions of users would hit central servers — impossible to scale efficiently.
+**Without CDN:** Each asset fetch pays ~250 ms network RTT minimum → multi-asset page adds RTTs (or parallel connections).
 
----
+**With CDN on hit:** Edge RTT ~10 ms → **~25× lower network delay** for cached bytes.
 
-### CDN and system design
-
-Typical architecture:
-
-```text
-User → CDN → Load Balancer → Application Servers → Database
-```
-
-| Traffic type | Handled by |
-|--------------|------------|
-| Images, videos, static files | **CDN** |
-| Authentication, payments, business logic | **Backend services** |
+**Sanity check:** Dynamic uncacheable API calls still pay full origin RTT — CDN does not magic away database time.
 
 ---
 
-### CDN and DDoS protection
+### Pitfalls and design tips
 
-CDNs often provide rate limiting, traffic filtering, and DDoS protection. Malicious traffic is blocked **before** reaching backend servers.
-
----
-
-### Common CDN providers
-
-- Cloudflare
-- Akamai
-- Amazon CloudFront
-- Google Cloud CDN
-- Azure CDN
-- Fastly
+- **Cache invalidation** — version URLs (`app.v2.js`) or purge APIs; stale CSS breaks deployments silently.
+- **Do not CDN personalized responses** — `Set-Cookie` / `Authorization` content usually must not be shared across users; respect `Cache-Control: private`.
+- **HTTPS and custom domains** — certificate provisioning at edge; automate via ACME or provider APIs.
+- **Origin shield** — secondary cache layer reduces miss stampedes when many edges cold-fetch the same object.
+- **Dynamic site fallacy** — HTML that changes every request is a poor CDN fit; cache fragments or static assets instead.
+- **Interview angle** — pair CDN (static) with load balancer (dynamic); mention **cache key** design (URL, query string, `Vary` header).
 
 ---
 
-### When should we use a CDN?
+### Real-world example: Netflix Open Connect
 
-**Use CDN when application serves:**
-
-- Images, videos, static assets
-- Global traffic
-- Large downloads
-
-**Not very useful when:**
-
-- Users are in a single region
-- Content changes every request
-- Responses cannot be cached
-
----
-
-### Pull CDN vs push CDN
-
-The main difference: **who is responsible for putting content into the CDN?**
-
-#### 1. Pull CDN
-
-Most commonly used CDN model. Content remains on the **origin server**.
-
-When a user requests content:
-
-1. CDN checks cache
-2. If content exists → cache hit
-3. If not → cache miss
-4. CDN fetches from origin
-5. CDN stores in cache
-6. Future requests served from CDN
-
-**Flow (cache miss):**
-
-```text
-User → CDN → (cache miss) → Origin Server
-```
-
-**After first request:**
-
-```text
-User → CDN cache
-```
-
-**Example:** User requests `logo.png`. CDN does not have it — automatically fetches from origin and stores it. Next users receive it directly from CDN.
-
-| Advantages | Disadvantages |
-|------------|---------------|
-| Easy to configure | First request is slower (cache miss) |
-| No manual uploads to CDN | Origin receives traffic during cache misses |
-| Content automatically cached | |
-| Origin remains source of truth | |
-
-**Common examples:** Cloudflare, AWS CloudFront, Fastly, Akamai — most websites use pull CDN.
-
-#### 2. Push CDN
-
-Content is **proactively uploaded** to CDN servers before users request it.
-
-**Flow:**
-
-```text
-Origin Server → Push content → CDN
-
-Later: User → CDN (content already available)
-```
-
-**Example:** Company releases `movie.mp4` — uploaded to CDN in advance. When users request it, CDN serves immediately. **No cache miss.**
-
-| Advantages | Disadvantages |
-|------------|---------------|
-| No first-request penalty | More management effort |
-| Faster initial access | Need upload/synchronization process |
-| Good for large static files | Storage costs may be higher |
-| Predictable performance | |
-
-**When to use push CDN:** Video streaming, software downloads, large media files, frequently accessed static content.
-
----
-
-### Pull vs push CDN
-
-| Feature | Pull CDN | Push CDN |
-|---------|----------|----------|
-| Content loading | On demand | Preloaded |
-| Cache miss | Possible | Rare |
-| Setup | Simple | More complex |
-| Origin traffic | Higher | Lower |
-| First request | Slower | Faster |
-| Management | Minimal | More effort |
-| Most common | **Yes** | No |
+Netflix ships the Open Connect appliance program — CDN caches inside ISP networks. A viewer in Mumbai streams from a nearby cache filled with popular titles during off-peak **push**-style replication from origin. Playback starts with low RTT; ISP and Netflix reduce backbone transit. Uncached long-tail titles may still pull from upstream, but the majority of viewing hits local edge capacity.
 
 ---
 
 ## 1.20 Load Balancer
 
-A **load balancer** distributes incoming requests across multiple backend servers.
+### Overview
 
-Instead of clients directly contacting application servers:
+A **load balancer** is the traffic cop in front of a pool of application servers — directing each incoming request to a healthy backend so no single machine bears the entire load. If one server fails, the balancer stops sending work to it; users stay up on the survivors.
 
-```text
-Client
-   |
-Load Balancer
-   |
---------------------
-|        |         |
-App1     App2     App3
-```
-
-The load balancer decides which server should handle each request.
+Load balancers operate at **Layer 4** (TCP/UDP — IP and port) or **Layer 7** (HTTP — URL, headers, cookies). They terminate TLS, enforce rate limits, and support **session affinity** when needed.
 
 ---
 
-### Why do we need a load balancer?
+### What problem it fixes
 
-**Single server:**
-
-```text
-Client → Server
-```
-
-Problems: server can become overloaded, single point of failure, limited scalability.
-
-**With load balancer:**
-
-```text
-Client → Load Balancer → App1 / App2 / App3
-```
-
-Benefits: scalability, high availability, fault tolerance, better resource utilization.
+A single app server is a **single point of failure** and vertical scaling limit. Adding servers requires something to **distribute** requests, **detect** failures, and optionally **pin** sessions. Without a load balancer, clients would need to pick a server IP themselves — brittle and unmanageable.
 
 ---
 
-### What does a load balancer do?
-
-1. Distributes traffic
-2. Detects unhealthy servers
-3. Removes failed servers
-4. Supports SSL termination
-5. Supports rate limiting
-6. Supports sticky sessions
-7. Improves availability
-
----
-
-### Load balancer flow
+### What it does
 
 ```text
-Client → Load Balancer → App1 / App2 / App3
+Clients → Load balancer → App1 / App2 / App3
 ```
 
-Request arrives → load balancer selects a server → request forwarded → response returns through load balancer.
+Core responsibilities:
+
+1. **Distribute** traffic by algorithm (round robin, least connections, hash)
+2. **Health-check** backends (`GET /health` → remove on failure)
+3. **Terminate SSL** at the edge (optional)
+4. **Route** by path/host at L7 (`/api/users` vs `/api/orders`)
+5. **Rate-limit** and shed load before backends saturate
 
 ```mermaid
-flowchart TB
-    C[Client] --> LB[Load Balancer]
+flowchart LR
+    C[Clients] --> LB[Load balancer]
     LB --> A1[App 1]
     LB --> A2[App 2]
     LB --> A3[App 3]
@@ -4899,469 +1922,210 @@ flowchart TB
 
 ---
 
-### Types of load balancers
+### How it works — the architecture inside
 
-Load balancers are generally categorized by OSI layer.
+**Layer 4 (transport):** Forwards TCP connections based on IP/port without parsing HTTP. Fast, high throughput — AWS **NLB**, HAProxy TCP mode. Cannot route `/users` to a different service than `/orders` by URL alone.
 
-#### 1. Layer 4 load balancer
+**Layer 7 (application):** Terminates HTTP, inspects path/headers, may inject `X-Request-Id`. AWS **ALB**, Nginx, Envoy — supports content-based routing and WAF integration.
 
-Works at the **transport layer**. Uses IP address, TCP port, UDP port. Does **not** inspect HTTP data.
+**Algorithms:**
 
-**Example decision:** forward based on `192.168.1.10:8080` without looking at URL.
+| Algorithm | Behavior | When to use |
+|-----------|----------|-------------|
+| Round robin | Sequential rotation | Equal-capacity stateless servers |
+| Weighted round robin | More traffic to higher weight | Mixed instance sizes |
+| Least connections | Pick lowest active conn count | Long-lived requests, variable duration |
+| Least response time | Pick fastest responder | Latency-sensitive |
+| IP hash | `hash(client IP)` | Simple stickiness without cookies |
+| Consistent hash | Ring map by key | Distributed caches, minimal remap on node add/drop |
 
-**Examples:** AWS NLB, HAProxy (L4 mode)
-
-| Advantages | Disadvantages |
-|------------|---------------|
-| Very fast, low latency, high throughput | Cannot inspect HTTP requests; limited routing |
-
-#### 2. Layer 7 load balancer
-
-Works at the **application layer**. Can inspect URL, headers, cookies, query parameters, HTTP methods.
-
-**Example:**
+**Consistent hashing:** Backends and keys sit on a ring. `hash(user:42)` walks clockwise to the first node. Adding/removing one node remaps only **adjacent** keys (~`1/N`), unlike `hash % N` which reshuffles most keys.
 
 ```text
-/api/users  → User Service
-/api/orders → Order Service
+hash % N, 3 → 4 nodes: ~75% keys move
+consistent hash add 1 node: ~25% keys move
 ```
 
-**Examples:** Nginx, Envoy, AWS ALB, Traefik
+Use **virtual nodes** (many ring points per physical server) to spread load evenly when the pool is small.
 
-| Advantages | Disadvantages |
-|------------|---------------|
-| Intelligent routing, API gateway style routing, SSL termination, content-based routing | More CPU intensive; slightly slower than L4 |
+**Health checks:**
 
----
-
-### Load balancing algorithms
-
-The load balancer must decide: *"Which server gets the next request?"*
-
-#### 1. Round robin
-
-Requests distributed sequentially.
-
-```text
-Request 1 → App1
-Request 2 → App2
-Request 3 → App3
-Request 4 → App1
+```http
+GET /health → 200 OK   (in pool)
+GET /health → timeout (removed)
 ```
 
-Best for servers with similar capacity.
+**Sticky sessions:** When session state is local to App1, route the same user to App1 via cookie (`AWSALB`, `JSESSIONID`) or IP hash — trade-off: uneven load, harder drain.
 
-#### 2. Weighted round robin
-
-Servers have weights — e.g. App1 = 5, App2 = 3, App3 = 2. App1 receives more traffic.
-
-Useful when servers have different capacities.
-
-#### 3. Least connections
-
-Request goes to server with fewest active connections.
-
-```text
-App1 = 100 connections
-App2 = 20 connections  ← next request
-App3 = 50 connections
-```
-
-Useful when request duration varies.
-
-#### 4. Weighted least connections
-
-Combination of server capacity and active connections. More intelligent than simple least connections.
-
-#### 5. Least response time
-
-Choose server responding fastest — e.g. App1 = 10ms, App2 = 30ms, App3 = 15ms → request goes to App1.
-
-Useful for latency-sensitive systems.
-
-#### 6. Random
-
-Server selected randomly. Simple but uncommon.
-
-#### 7. Hash based
-
-Server selected using hash function — e.g. `Hash(UserId)`, `Hash(SessionId)`, `Hash(ClientIP)`.
-
-Same user often goes to same server. Useful for session affinity.
-
-#### 8. IP hash
-
-Hash based on client IP — User A always goes to App1, User B always goes to App3.
-
-Useful for sticky sessions.
-
-#### 9. Consistent hashing
-
-Place backends and keys on a **hash ring** (0 to 2³²−1). A key walks clockwise to the first backend on the ring.
-
-```text
-hash(user:42) → Node B
-hash(user:99) → Node C
-```
-
-When a node is **added or removed**, only keys **adjacent** to that node move — not all keys (unlike `hash % N`).
-
-```text
-hash % N with 3 → 4 backends:  ~75% of keys remap
-consistent hash:                ~25% of keys remap
-```
-
-**Virtual nodes (vnodes):** Each physical server gets many points on the ring (e.g. 100) to spread load evenly when server count is small.
-
-| | Consistent hash | IP hash |
-|---|-----------------|---------|
-| Best for | Distributed caches, sharded state, CDN origin selection | Simple stickiness without cookies |
-| Pool change | ~1/N keys remap | Almost full reshuffle |
-| Hot key risk | Celebrity user id overloads one shard — use salting | Carrier NAT can hot-spot one backend |
+**Active-active vs active-passive (load balancer tier):**
 
 ```mermaid
 flowchart LR
-    K1["user 42"] --> N2[Node B]
-    K2["user 99"] --> N3[Node C]
-    N1[Node A] --- N2 --- N3
+    subgraph ActiveActive["Active-active LBs"]
+        direction LR
+        LB1[LB 1] --> Pool[Backend pool]
+        LB2[LB 2] --> Pool
+    end
+    subgraph ActivePassive["Active-passive LBs"]
+        direction LR
+        LBA[LB active] --> Pool2[Backend pool]
+        LBS[LB standby] -.-> Pool2
+    end
+    ActiveActive ~~~ ActivePassive
 ```
 
 ---
 
-### Health checks
+### Pitfalls and design tips
 
-Load balancer continuously checks server health.
-
-```http
-GET /health
-```
-
-| Status | Action |
-|--------|--------|
-| **Healthy** — `200 OK` | Server stays in pool |
-| **Unhealthy** — `500` error or timeout | Server removed from routing |
+- **Health check realism** — checking TCP open while app dead returns 502s to users; validate app-level `/health` including dependency flags you mean.
+- **Sticky sessions vs stateless** — prefer external session store (Redis) so any node can serve; stickiness complicates deploys.
+- **TLS termination** — re-encrypt to backend (mTLS) on zero-trust networks; do not assume "LB HTTPS → plain HTTP internally" is always acceptable.
+- **Consistent hash hot spots** — celebrity user IDs overload one shard; add replicas or salted keys.
+- **IP hash behind carrier NAT** — thousands of mobile users share one IP → one backend overload.
+- **Products** — Nginx, HAProxy, Envoy, AWS ALB/NLB, GCP LB, Azure LB; know L4 vs L7 in interviews.
 
 ---
 
-### Sticky sessions (session affinity)
+### Real-world example: AWS ALB in front of ECS services
 
-Normally: Request 1 → App1, Request 2 → App2.
-
-**Problem:** Session stored locally on App1.
-
-**Solution:** Sticky sessions — user always routed to same server.
-
-**Techniques:** Cookie based, IP hash, session hash
-
----
-
-### SSL termination
-
-```text
-Client → HTTPS → Load Balancer → HTTP → Backend Servers
-```
-
-Load balancer performs TLS handshake, certificate management, and decryption. Backend services remain simpler.
-
----
-
-### Active-active load balancing
-
-```text
-LB1 ─┐
-     ├─ Both serve traffic simultaneously
-LB2 ─┘
-```
-
-**Advantages:** Higher throughput, better utilization
-
----
-
-### Active-passive load balancing
-
-```text
-LB1 → Active
-LB2 → Standby (takes over only when LB1 fails)
-```
-
----
-
-### Common load balancers
-
-**Open source:** Nginx, HAProxy, Envoy, Traefik
-
-**Cloud managed:** AWS ALB, AWS NLB, Google Cloud Load Balancer, Azure Load Balancer
-
----
-
-### System design example
-
-```text
-Users → CDN → Load Balancer → App1 / App2 / App3 → Database
-```
-
-**Flow:**
-
-1. User sends request
-2. CDN serves cached content if available
-3. Request reaches load balancer
-4. Load balancer selects backend
-5. Backend processes request
-6. Response returned
+An e-commerce API runs three Fargate tasks behind an **Application Load Balancer**. ALB terminates TLS with ACM certificates, routes `GET /static/*` to a lighter target group (optional), and `POST /checkout` to payment-capable tasks. Target group health checks hit `/actuator/health` every 30 s; failed tasks drain in flight then drop. During deploy, new tasks register before old deregister — rolling capacity without user-visible outage.
 
 ---
 
 ## 1.22 SSE, Polling & WebSockets
 
----
+### Overview
 
-### The problem
+Web pages that need live updates — chat, stock tickers, order tracking, sports scores — must answer: *how does the client learn about new data?* **Short polling** asks repeatedly on a timer. **Long polling** holds one HTTP request open until data arrives. **SSE (Server-Sent Events)** keeps a one-way HTTP stream open for server pushes. **WebSockets** upgrade to a full-duplex channel where either side sends anytime.
 
-Suppose we have WhatsApp, live cricket scores, order tracking, stock market dashboards, and live monitoring dashboards. Data changes continuously.
-
-**Question:** How does the client know that new data is available?
-
-**Possible solutions:**
-
-1. Short polling
-2. Long polling
-3. Server-Sent Events (SSE)
-4. WebSockets
+Choosing the wrong pattern wastes bandwidth (polling), exhausts connections (long poll at scale), or over-engineers (WebSockets for a one-way dashboard).
 
 ---
 
-### 1. Short polling
+### What problem it fixes
 
-#### What is it?
-
-Short polling means the client repeatedly sends requests to the server at fixed intervals asking: *"Do you have any new data?"*
-
-#### Flow
-
-```text
-Client → GET /updates → Server → "No updates"
-(wait 5 seconds)
-Client → GET /updates → Server → "No updates"
-(wait 5 seconds)
-Client → GET /updates → Server → "New data"
-```
-
-#### Timeline example
-
-Polling interval = 5 seconds:
-
-```text
-0s  → Request
-5s  → Request
-10s → Request
-15s → Request
-20s → Request
-```
-
-Even if nothing changes.
-
-#### Problem
-
-Suppose new data arrives at **7 seconds**. Client receives it at **10 seconds** — **delay = 3 seconds**.
-
-| Advantages | Disadvantages |
-|------------|---------------|
-| Very simple | Huge number of unnecessary requests |
-| Easy implementation | Wastes CPU and bandwidth |
-| Works with normal HTTP | Increased server load; not truly real-time |
-
-**When to use:** Admin dashboards, rarely changing data, small applications
+HTTP alone is **request-response**: the server cannot speak first. Real-time UX needs the server to deliver events with low latency without the client spamming empty requests. Each pattern trades **simplicity**, **latency**, **scalability**, and **directionality** differently.
 
 ---
 
-### 2. Long polling
+### What it does
 
-#### What is it?
+| Pattern | Direction | Connection | Server complexity |
+|---------|-----------|------------|-----------------|
+| Short polling | Client pulls | New request per poll | Lowest |
+| Long polling | Client pulls (delayed) | One long HTTP request per event batch | Medium |
+| SSE | Server pushes | One long-lived HTTP stream | Medium |
+| WebSocket | Bidirectional | Persistent upgraded socket | Highest |
 
-Long polling tries to solve the wastefulness of short polling.
-
-Instead of responding immediately, the server keeps the request open until **new data becomes available** OR a **timeout** occurs.
-
-#### Flow
-
-```text
-Client → GET /updates → Server (no response yet — connection remains open)
-
-New event arrives → Server → Response → Client
-
-Client immediately creates another request.
-```
-
-#### Timeline example
+**Evolution:**
 
 ```text
-0s  → Client sends request; server waits
-20s → New message arrives; server responds immediately
-21s → Client creates new long-poll request
+Short polling  → client asks every N seconds
+Long polling   → client asks; server waits until data
+SSE            → client asks once; server streams events
+WebSocket      → both sides send anytime after upgrade
 ```
-
-**Benefits over short polling:** No repeated requests every few seconds — only responds when data exists.
-
-| Advantages | Disadvantages |
-|------------|---------------|
-| Fewer requests | Still creates new request after every response |
-| Better than polling | Many open connections |
-| Near real-time updates | More server resources |
-| Works over standard HTTP | Complex timeout handling |
-
-**When to use:** Legacy systems, browsers without SSE/WebSocket support, moderate real-time requirements
 
 ---
 
-### 3. Server-Sent Events (SSE)
-
-#### What is it?
-
-SSE allows a server to continuously push updates to the client through a **single long-lived HTTP connection**.
-
-Client sends one request. Server keeps connection open forever.
-
-#### Flow
-
-```text
-Client → GET /events → Server (connection stays open)
-
-Server pushes: Event 1 → Event 2 → Event 3 → Event 4
-
-No additional requests needed.
-```
-
-#### Important
-
-**Communication direction:** Server → Client **only**
-
-Client can receive updates. Client **cannot** push messages through SSE. For sending data, client must still use normal HTTP APIs.
-
-#### Real example
-
-**Live log viewer** — server generates Log 1, Log 2, Log 3, Log 4; browser instantly receives updates.
-
-#### Spring Boot example
-
-Spring Boot commonly uses **`SseEmitter`** to stream events to the UI.
-
-| Advantages | Disadvantages |
-|------------|---------------|
-| Real-time updates | One-way communication |
-| Simple implementation | Not suitable for chat systems |
-| Uses HTTP | Each client keeps one open connection |
-| Automatic reconnection | |
-| Lightweight | |
-
-**When to use:** Notifications, live dashboards, monitoring systems, order tracking, stock prices, distributed tracing dashboards
-
----
-
-### 4. WebSockets
-
-#### What is it?
-
-WebSocket creates a **persistent bidirectional** connection between client and server. Both sides can send data at any time.
-
-#### Flow
-
-```text
-Client ↔ WebSocket ↔ Server
-```
-
-#### How connection is created
-
-**Step 1** — Client sends HTTP request:
-
-```http
-GET /chat
-Upgrade: websocket
-```
-
-**Step 2** — Server responds:
-
-```http
-101 Switching Protocols
-```
-
-**Step 3** — Connection upgrades from HTTP to WebSocket. Connection remains open.
-
-#### Real example
-
-**WhatsApp:**
-
-```text
-User A ↔ WebSocket ↔ Server ↔ WebSocket ↔ User B
-```
-
-Messages delivered instantly.
-
-| Advantages | Disadvantages |
-|------------|---------------|
-| True real-time communication | More complex |
-| Bidirectional | Stateful connections |
-| Very low latency | Harder to scale |
-| Minimal protocol overhead | Higher memory usage |
-| Efficient for frequent updates | |
-
-**When to use:** Chat applications, multiplayer games, collaborative editors, trading platforms, video call signaling
-
----
-
-### Evolution of real-time communication
-
-| Pattern | Behavior |
-|---------|----------|
-| **Short polling** | Client repeatedly asks: *"Any updates?"* |
-| **Long polling** | Client asks once; server waits until data exists |
-| **SSE** | Client asks once; server continuously pushes updates |
-| **WebSocket** | Both sides continuously communicate |
-
----
-
-### Connection comparison
+### How it works — the architecture inside
 
 **Short polling:**
 
 ```text
-Request → Response → Close
-Request → Response → Close
-Request → Response → Close
+Client → GET /updates → "none"
+(wait 5 s)
+Client → GET /updates → "none"
+(wait 5 s)
+Client → GET /updates → "new data"
 ```
+
+Simple but wasteful — most responses empty. Event at T=7 s may not be seen until next poll at T=10 s.
 
 **Long polling:**
 
 ```text
-Request → Wait → Response → Close
-Request → Wait → Response → Close
+Client → GET /updates (held open)
+... server waits ...
+Event arrives → response → connection closes
+Client immediately opens next long poll
 ```
+
+Fewer empty responses; still one request cycle per event batch.
 
 **SSE:**
 
 ```text
-Request → Open connection → Event → Event → Event → Event
+Client → GET /events (Accept: text/event-stream)
+Server streams:
+  data: {"status":"shipped"}\n\n
+  data: {"status":"out for delivery"}\n\n
 ```
+
+Single HTTP connection; server → client only. Client sends commands via normal REST. Browser `EventSource` auto-reconnects.
 
 **WebSocket:**
 
-```text
-Open connection
-Client ↔ Server
-Client ↔ Server
-Client ↔ Server
+```http
+GET /chat HTTP/1.1
+Upgrade: websocket
+Connection: Upgrade
+```
+
+```http
+HTTP/1.1 101 Switching Protocols
+```
+
+After upgrade, frames flow both ways with low overhead — ideal for chat and collaborative editing.
+
+```mermaid
+flowchart LR
+    subgraph Polling["Short polling"]
+        direction LR
+        p1[Request] --> p2[Response] --> p3[Wait N sec] --> p1
+    end
+    subgraph SSEflow["SSE"]
+        direction LR
+        s1[One request] --> s2[Event stream]
+    end
+    subgraph WSflow["WebSocket"]
+        direction LR
+        w1[Upgrade] --> w2[Bidirectional frames]
+    end
+    Polling ~~~ SSEflow ~~~ WSflow
 ```
 
 ---
 
-### System design examples
+### Comparison — when to use which
 
-| Use case | Best choice | Reason |
-|----------|-------------|--------|
-| Live order tracking | **SSE** | Server pushes status changes |
-| Distributed tracing dashboard | **SSE** | Server pushes new trace events |
-| WhatsApp | **WebSocket** | Both users send and receive messages |
-| Stock market dashboard | **SSE** | Mostly server-to-client updates |
-| Admin dashboard refresh every minute | **Short polling** | Simple and sufficient |
+| Use case | Best fit | Why |
+|----------|----------|-----|
+| Admin dashboard refresh every minute | Short polling | Simple, low event rate |
+| Legacy browser moderate updates | Long polling | Works without WebSocket |
+| Order tracking, live metrics, logs | SSE | One-way push, HTTP-friendly |
+| Chat, multiplayer, collaborative edit | WebSocket | Bidirectional low latency |
+| Stock ticker (server → client only) | SSE | Simpler than WebSocket |
+
+**Scaling notes:** SSE and WebSockets are **stateful** — each user holds a connection; horizontal scale needs pub/sub backplanes (Redis, Kafka) to fan-in events to the right server. Polling is stateless but multiplies request volume.
+
+---
+
+### Pitfalls and design tips
+
+- **Do not default to WebSockets** — if updates are server → client only, SSE is simpler and passes most corporate proxies.
+- **SSE limits** — browser tab connection caps to same host; HTTP/1.1 limit ~6 parallel connections can starve other assets — HTTP/2 helps.
+- **Long poll timeouts** — set proxy/LB idle timeout above server long-poll duration or connections drop spuriously.
+- **WebSocket load balancers** — require L7 upgrade support and often sticky sessions; NLB alone may not suffice.
+- **Polling math** — 10k users polling every 5 s = 2k RPS even when idle; model cost before choosing short poll.
+- **Interview angle** — "live dashboard" → **SSE**; "WhatsApp-style chat" → **WebSocket**; mention **stateful connection** scaling cost.
+
+---
+
+### Real-world example: live order tracking with SSE
+
+A food-delivery app exposes `GET /orders/{id}/events` returning `text/event-stream`. Rider GPS updates publish to Redis; the API instance holding the SSE connection writes `data: {"lat":12.97,"lng":77.59}`. The mobile web client uses `EventSource` — auto-reconnect on dropout. Outbound status is server-driven; placing a new order still uses REST `POST`. No WebSocket cluster needed for one-way location pins.
 
 ---
 
