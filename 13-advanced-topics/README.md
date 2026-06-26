@@ -4,20 +4,6 @@
 
 ---
 
-## Overview
-
-This chapter covers data structures and identifier schemes that show up repeatedly in large-scale backends — CDN caches, analytics pipelines, distributed databases, peer-to-peer systems, and services that must assign unique IDs across many machines without a single central database handing out numbers.
-
-**Probabilistic structures** are the first group. They give approximate answers using a fixed amount of memory, which matters when the stream never ends and storing every key is impossible. A Bloom filter tells you whether an item might already be in a set. It never says "definitely not there" when the item was actually inserted, but it can say "maybe there" when it was not — so you use it to skip costly lookups, not as the final source of truth. HyperLogLog answers a different question: how many *distinct* values have passed through the stream, such as unique visitors or unique client IPs, in about 12 KB with roughly 1–2% error. Count-Min Sketch answers yet another: how many times a specific key appeared — useful for heavy-hitter detection, rate limiting, and trending queries. Its frequency estimates may be high, but they are not low. In practice these three are often used together: Bloom to filter, HyperLogLog for cardinality, Count-Min Sketch for per-key counts.
-
-**Specialized trees and lists** come next. A trie stores strings by sharing common prefixes, which makes prefix search fast — think autocomplete, spell-check dictionaries, and IP routing tables. A skip list is a sorted in-memory structure with express-lane layers that skip over nodes; it gives tree-like O(log n) performance with simpler implementation and concurrency than a balanced binary tree, which is why Redis uses it for sorted sets. A Merkle tree hashes data bottom-up into a single root value. That root acts as a fingerprint for the whole dataset, and you can prove one record belonged to a snapshot by supplying only a short chain of sibling hashes — the pattern behind Git, Cassandra anti-entropy repair, blockchains, and certificate transparency logs.
-
-**Distributed hash tables** explain how a cluster of nodes acts as one key-value store without a central coordinator. Each key is hashed onto a logical ring, and the node that owns that segment stores the value. When nodes join or leave, consistent hashing limits how many keys move compared with naive modulo sharding. Protocols like Chord and Kademlia add routing tables so any node can find the owner in O(log N) hops instead of walking the entire ring. Replication and virtual nodes spread load and survive failures. The same ideas appear in Cassandra's ring, BitTorrent's DHT, and IPFS content routing.
-
-The last group is **distributed unique IDs**. Microservices, sharded databases, and event pipelines all need identifiers that are unique across processes and often sortable by creation time so database indexes stay efficient. UUID is the familiar 128-bit standard; version 4 is random, while version 7 adds a time-ordered prefix. Snowflake packs timestamp, machine ID, and a per-millisecond sequence into a 64-bit integer — compact and very fast, but it requires assigning worker IDs and keeping clocks in sync. ULID and KSUID are string encodings that combine time with randomness and sort lexicographically without worker coordination; KSUID carries more random bits but only second-level time precision. Section 13.8 compares all of these side by side; sections 13.9 through 13.11 go deeper on Snowflake, ULID, and KSUID.
-
----
-
 ## Sub-topics
 
 | # | Sub-topic |
