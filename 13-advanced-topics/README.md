@@ -1,21 +1,5 @@
 ﻿# 13. Advanced Topics
 
-<style>
-/* Static diagrams in this chapter — no copy / zoom / pan / rotate toolbar */
-.mermaid-zoom-controls,
-.mermaid-controls,
-.mermaid-zoom-toolbar,
-[class*="diagram-toolbar"],
-[class*="diagram-controls"],
-[class*="mermaid-toolbar"],
-[class*="DiagramToolbar"],
-[class*="diagram-actions"],
-[class*="mermaid-actions"] {
-  display: none !important;
-  pointer-events: none !important;
-}
-</style>
-
 [<- Back to master index](../README.md)
 
 ---
