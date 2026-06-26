@@ -1100,14 +1100,175 @@ Maintains a sorted set with multiple forward-pointer levels per node. Supports s
 
 ### How it works — the algorithm inside
 
+A skip list is a **sorted linked list with express lanes**. Every key lives on the bottom level; a coin flip may promote it to higher levels so search can **skip** large gaps instead of visiting every node.
+
+#### Plain linked list vs skip list
+
+**Sorted linked list** — find `70` by walking every node:
+
 ```text
-Level 2:  Head → 1 --------→ 5 --------→ 9
-Level 1:  Head → 1 → 3 → 5 → 7 → 9
+10 → 20 → 30 → 40 → 50 → 60 → 70
+
+Search = O(n)
 ```
 
-**Level assignment:** coin flip with `p = 0.5` — promote while heads. `P(level ≥ i) = p^(i−1)`.
+**Skip list** — higher levels hold fewer nodes; search drops down when the next hop would overshoot:
 
-**How to calculate — expected skip-list levels:**
+```text
+Level 2:  10 -----------------> 50 -----------------> 70
+
+Level 1:  10 --------> 30 --------> 50 --------> 70
+
+Level 0:  10 → 20 → 30 → 40 → 50 → 60 → 70
+
+Search ≈ O(log n) average
+```
+
+---
+
+#### Step 1 — Base level (Level 0)
+
+Every inserted element is linked into **Level 0** — a ordinary sorted singly linked list:
+
+```text
+Level 0:  10 → 20 → 30 → 40 → 50 → 60 → 70
+```
+
+No express lanes yet; this alone is correct but slow to search.
+
+---
+
+#### Step 2 — Randomly promote nodes
+
+After linking at Level 0, flip a coin (typically **p = ½**): on heads, add the node to the next level up and flip again; on tails, stop.
+
+```text
+Level 2:  10 -----------------> 50 -----------------> 70
+
+Level 1:  10 --------> 30 --------> 50 --------> 70
+
+Level 0:  10 → 20 → 30 → 40 → 50 → 60 → 70
+```
+
+Higher levels contain **fewer** nodes. Each level is a subsequence of the level below — express pointers only forward, never backward.
+
+---
+
+#### Step 3 — Search: start high, go right, then down
+
+To find **60**, begin at the **head of the top level**:
+
+```text
+Level 2:  10 -----------------> 50 -----------------> 70
+                              ↑ at 50; next is 70, and 70 > 60 → drop down
+```
+
+**Level 1:** move right while `next ≤ target`, else drop.
+
+```text
+Level 1:  50 --------> 70        (70 > 60 → drop)
+```
+
+**Level 0:** same rule — land on **60**.
+
+```text
+Level 0:  50 → 60 → 70           FOUND
+```
+
+**Rule:** at each level, walk forward while `forward[key] < target`; if `forward[key] == target`, done; if `forward[key] > target` or null, **drop one level**. Never visit every node on Level 0.
+
+```text
+function search(target):
+    level = max_level
+    node = head
+    while level >= 0:
+        while node.forward[level] != null
+              and node.forward[level].key < target:
+            node = node.forward[level]
+        if node.forward[level] != null
+           and node.forward[level].key == target:
+            return found
+        level--
+    return not found
+```
+
+---
+
+#### Worked example — search for **40**
+
+Using the structure above:
+
+```text
+Level 2:  10 → 50        (50 > 40 → down)
+Level 1:  10 → 30 → 50   (50 > 40 → down)
+Level 0:  30 → 40        FOUND
+```
+
+Three pointer hops instead of scanning from `10` through `20` and `30` on the bottom list alone.
+
+---
+
+#### Insert — example **45**
+
+1. **Search** for the insert position (predecessors at each level).
+2. **Splice** `45` into Level 0:
+
+```text
+Level 0:  10 → 20 → 30 → 40 → 45 → 50 → 60 → 70
+```
+
+3. **Coin flip** — suppose one heads, then tails:
+
+```text
+Level 1:  10 --------> 30 --------> 45 --------> 50 --------> 70
+Level 0:  10 → 20 → 30 → 40 → 45 → 50 → 60 → 70
+```
+
+Each level promotion is an **independent** coin flip. Update forward pointers at every level the node reaches.
+
+---
+
+#### Delete — example **50**
+
+Find `50`, then unlink it from **every level** where it appears:
+
+**Before:**
+
+```text
+Level 2:  10 -----------------> 50 -----------------> 70
+Level 1:  10 --------> 30 --------> 50 --------> 70
+Level 0:  10 → 20 → 30 → 40 → 50 → 60 → 70
+```
+
+**After:**
+
+```text
+Level 2:  10 ------------------------------------> 70
+Level 1:  10 --------> 30 ----------------------> 70
+Level 0:  10 → 20 → 30 → 40 → 60 → 70
+```
+
+Bridge each predecessor's forward pointer across the removed node at every level.
+
+---
+
+#### Why random promotion? (not rotations)
+
+If every node sat on one level, the structure collapses to a linked list — **O(n)** search. Random promotion spreads express lanes **without AVL/red-black rotations**.
+
+With **p = ½**:
+
+| Level | Share of nodes (expected) |
+|-------|---------------------------|
+| ≥ 1 | 100% |
+| ≥ 2 | 50% |
+| ≥ 3 | 25% |
+| ≥ 4 | 12.5% |
+| ≥ i | (½)^(i−1) |
+
+Expected tower height per node = **1 / (1 − p)** = 2 levels when p = ½.
+
+**How to calculate — expected levels and search cost:**
 
 ```text
 Given:  n = 1,000,000 keys in sorted skip list
@@ -1139,43 +1300,16 @@ Sanity check: Redis ZSET uses p ≈ 0.25 in some implementations — less memory
               worst-case O(n) if every coin flip promotes to max level (probability 2^(−n) tiny).
 ```
 
-#### Search algorithm
+---
 
-```text
-function search(target):
-    node = head at top level
-    while node is not null:
-        while node.forward[level] < target:
-            node = node.forward[level]
-        if node.forward[level] == target: return found
-        level--
-    return not found
-```
-
-Search for `7`: top level jumps `1 → 5`, drops, finds `7` on bottom.
-
-```mermaid
-flowchart TB
-    L3["Level 3: 1 ---------- 9"]
-    L2["Level 2: 1 ---- 5 --- 9"]
-    L1["Level 1: 1 - 3 - 5 - 7 - 9"]
-```
+#### Complexity
 
 | Operation | Average | Worst |
 |-----------|---------|-------|
-| Search / insert / delete | O(log n) | O(n) |
-
----
-
-### Walkthrough: search for 7
-
-```text
-Level 2:  1 → 9     (9 > 7, drop)
-Level 1:  1 → 5 → 9  (9 > 7, drop from 5)
-Level 0:  5 → 7      FOUND
-```
-
-Insert: find predecessors at each level, random height, splice pointers.
+| Search | O(log n) | O(n) |
+| Insert | O(log n) | O(n) |
+| Delete | O(log n) | O(n) |
+| Space | O(n) | O(n) extra forward pointers |
 
 ---
 
