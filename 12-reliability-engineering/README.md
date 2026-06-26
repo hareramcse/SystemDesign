@@ -60,6 +60,17 @@ It does **not** guarantee zero downtime (that is **fault tolerance**) and does *
 
 ---
 
+### Compared to the alternative
+
+| | High availability | Fault tolerance | Disaster recovery |
+|---|-------------------|-----------------|-------------------|
+| **Scope** | Component failure in one site | Hardware fault with no user-visible gap | Entire site or region lost |
+| **Downtime** | Seconds to minutes possible | Effectively none | Minutes to hours |
+| **Cost** | Moderate | High (duplicate hardware) | Varies by cold/warm/hot site |
+| **Example** | Failover to DB replica | Dual CPUs executing same work | Failover to second data center |
+
+---
+
 ### How it works — the architecture inside
 
 #### Single point of failure
@@ -102,9 +113,7 @@ Failure:    primary unhealthy → secondary promoted
 Repaired:   old primary rejoins as standby (failback)
 ```
 
----
-
-### Walkthrough: e-commerce web tier failure
+#### Worked example — e-commerce web tier failure
 
 ```mermaid
 flowchart LR
@@ -123,31 +132,36 @@ flowchart LR
 
 ---
 
-### HA vs fault tolerance vs disaster recovery
-
-| | High availability | Fault tolerance | Disaster recovery |
-|---|-------------------|-----------------|-------------------|
-| **Scope** | Component failure in one site | Hardware fault with no user-visible gap | Entire site or region lost |
-| **Downtime** | Seconds to minutes possible | Effectively none | Minutes to hours |
-| **Cost** | Moderate | High (duplicate hardware) | Varies by cold/warm/hot site |
-| **Example** | Failover to DB replica | Dual CPUs executing same work | Failover to second data center |
-
----
-
 ### Pitfalls and design tips
 
+#### When to use (and when not to)
+
+- **Default for production services** — any tier with revenue or SLA exposure needs redundancy at compute, data, and network layers.
 - **HA ≠ fault tolerance** — HA accepts brief blips (seconds); fault tolerance masks hardware faults with duplicate execution (Tandem, Stratus). Interviewers often conflate them.
+- **HA does not replace DR** — multi-AZ survives AZ failure, not regional outage or ransomware; pair HA with backups and DR ([12.9](#129-disaster-recovery)).
+- **N+1 for stateless tiers** — run at least one extra instance so losing one node does not drop below required capacity; size for peak load on N−1 nodes.
+
+#### Common mistakes
+
 - **The load balancer is a SPOF** — use redundant LBs (active/passive pair), DNS round-robin to multiple LBs, or cloud-managed LBs with built-in redundancy.
 - **Redundant app servers do not fix a single DB** — every stateful tier (database, cache, message broker) needs its own replication and failover path.
-- **N+1 for stateless tiers** — run at least one extra instance so losing one node does not drop below required capacity; size for peak load on N−1 nodes.
 - **Failover without drills rots** — config, credentials, and DNS TTLs change; quarterly game days catch stale runbooks before customers do.
-- **Production:** AWS ALB + Auto Scaling Group, Kubernetes `replicas` + PodDisruptionBudget, Postgres with Patroni or RDS Multi-AZ, Redis Sentinel or ElastiCache Multi-AZ.
+
+#### Production notes
+
+- AWS ALB + Auto Scaling Group, Kubernetes `replicas` + PodDisruptionBudget, Postgres with Patroni or RDS Multi-AZ, Redis Sentinel or ElastiCache Multi-AZ.
 
 ---
 
 ### Real-world example: Stripe-style payment API tier
 
-Stripe's public architecture docs describe stateless API nodes behind load balancers, with databases replicated for durability. The pattern maps directly: three or more stateless app instances behind an ALB; Postgres primary with synchronous standby in a second AZ; session or idempotency keys in Redis (not local memory). When one instance fails, the ALB drains connections and routes to survivors. When the primary DB fails, automated promotion targets under 30 seconds. The lesson is **every layer** — not just compute — must have a failover story.
+**Problem:** A payment API must stay available when individual instances or an AZ fail — downtime directly blocks revenue and merchant trust.
+
+**Naive failure:** A single app server behind one load balancer with a single Postgres host. One instance crash or DB disk failure takes the entire API offline until manual intervention.
+
+**How HA fixed it:** Stripe's public architecture docs describe stateless API nodes behind load balancers, with databases replicated for durability. The pattern maps directly: three or more stateless app instances behind an ALB; Postgres primary with synchronous standby in a second AZ; session or idempotency keys in Redis (not local memory). When one instance fails, the ALB drains connections and routes to survivors. When the primary DB fails, automated promotion targets under 30 seconds.
+
+**Outcome:** Component failures become brief capacity dips or sub-minute failovers instead of full outages — **every layer** (compute, LB, DB, cache) has an automated recovery path.
 
 ---
 
@@ -190,6 +204,18 @@ Continuously answers: **"Is this component fit to serve?"**
 
 ---
 
+### Compared to the alternative
+
+| | No health checks (blind routing) | Health-checked routing |
+|---|----------------------------------|------------------------|
+| **Dead node behavior** | LB keeps sending traffic → timeouts, 502s | Dead node removed from pool within probe interval |
+| **User impact** | Every request to dead node fails | Traffic shifts to healthy peers |
+| **Failover trigger** | Manual or never | Automatic promotion / replacement |
+| **Cost** | None (but outages are expensive) | Probe overhead + tuning effort |
+| **Example** | Static DNS round-robin to crashed server | AWS ALB target health checks, K8s readiness probes |
+
+---
+
 ### How it works — probes, heartbeats, and thresholds
 
 #### Health check flow
@@ -222,25 +248,19 @@ flowchart LR
 
 If heartbeats stop, standby promotes — but without **fencing** (isolating the failed primary), both nodes may write (split-brain).
 
-#### Detection to recovery sequence
+#### Detection to recovery flow
 
 ```mermaid
-sequenceDiagram
-    participant Mon as Monitor
-    participant LB as Load balancer
-    participant Failed as Failed node
-    participant Healthy as Healthy node
-    Mon->>Failed: Health probe
-    Failed--xMon: No response
-    Mon->>LB: Mark unhealthy
-    LB->>Healthy: Redirect traffic
+flowchart LR
+    Mon[Monitor] -->|health probe| Failed[Failed node]
+    Failed -->|no response| Mark[Mark unhealthy]
+    Mark --> LB[Load balancer]
+    LB -->|redirect| Healthy[Healthy node]
 ```
 
 **Tuning:** aggressive timeouts → faster failover, more false positives. Lenient timeouts → slower failover, users wait longer on dead nodes.
 
----
-
-### Walkthrough: Kubernetes pod failure
+#### Worked example — Kubernetes pod failure
 
 1. Pod passes liveness and readiness probes → receives Service traffic.
 2. App deadlocks; liveness probe fails 3 times in a row.
@@ -254,18 +274,35 @@ Users see errors only during the gap between failure and ready replacement.
 
 ### Pitfalls and design tips
 
+#### When to use (and when not to)
+
+- **Required whenever redundancy exists** — without detection, spare capacity never takes over automatically.
+- Use **readiness** to drain traffic from degraded instances; use **liveness** only to restart truly dead processes.
+- **Heartbeat failover** needs **fencing** (STONITH, lease-based leadership) — promotion without isolation risks split-brain.
+
+#### Common mistakes
+
 - **Liveness vs readiness confusion** — restarting a pod whose DB is down (liveness passes, readiness fails) causes a crash loop; use readiness to drain traffic, liveness only for deadlocks.
 - **`/health` always returns 200** — hides dead dependencies; readiness must probe DB, cache, and disk (e.g. `SELECT 1`, Redis `PING`).
 - **No fencing on heartbeat failover** — isolated primary keeps writing while standby promotes → split-brain; use STONITH, lease-based leadership (etcd), or cloud API stop-instance.
 - **Flapping** — node repeatedly added/removed from pool; add hysteresis (require N consecutive failures, longer success threshold before re-adding).
+
+#### Production notes
+
+- Kubernetes `livenessProbe` / `readinessProbe`, AWS ALB target health checks, Consul health checks, PagerDuty/Opsgenie on sustained unhealthy counts.
 - **Monitoring the monitors** — if the probe agent dies silently, you are blind; meta-alert on probe-agent health and synthetic checks from outside the cluster.
-- **Production:** Kubernetes `livenessProbe` / `readinessProbe`, AWS ALB target health checks, Consul health checks, PagerDuty/Opsgenie on sustained unhealthy counts.
 
 ---
 
 ### Real-world example: AWS ALB multi-AZ health checks
 
-An ALB health-checks `GET /ready` every 5 seconds; 2 consecutive failures mark a target unhealthy. With targets in three AZs, an AZ network partition removes unhealthy targets in ~10 seconds (2 × 5s interval) and traffic flows to surviving AZs. PagerDuty fires on sustained unhealthy count **before** customer SLO breach — detection is the first line, alerting is the safety net.
+**Problem:** A multi-AZ API must stop routing to failed targets within seconds, not minutes — users behind a dead AZ should not see sustained 502 errors.
+
+**Naive failure:** Static target lists or lenient health checks keep sending traffic to instances in a partitioned AZ. Users hit timeouts until someone manually removes targets.
+
+**How health-checked routing fixed it:** An ALB health-checks `GET /ready` every 5 seconds; 2 consecutive failures mark a target unhealthy. With targets in three AZs, an AZ network partition removes unhealthy targets in ~10 seconds (2 × 5s interval) and traffic flows to surviving AZs.
+
+**Outcome:** PagerDuty fires on sustained unhealthy count **before** customer SLO breach — detection is the first line, alerting is the safety net.
 
 ---
 
@@ -306,14 +343,29 @@ Requires **shared or partitioned data** so requests are not tied to one machine'
 
 ---
 
+### Compared to the alternative
+
+| | Active-active | Active-passive |
+|---|---------------|----------------|
+| **Nodes serving** | All | One active, others standby |
+| **Utilization** | High | Standby mostly idle |
+| **Failover** | Redistribute load | Promote standby (brief gap) |
+| **Data writes** | Multiple writers — need coordination | Single writer — simpler |
+| **Complexity** | Higher | Lower |
+| **Best for** | Scale + resilience | Simpler HA, strong consistency |
+
+Active-passive is covered in [12.4](#124-active-passive). Active-active does **not** replace backups ([12.5](#125-backup-strategy)).
+
+---
+
 ### How it works — traffic flow and shared state
 
 ```mermaid
 flowchart LR
     Clients[Clients] --> LB[Load balancer]
-    LB --> SA[Server A — active]
-    LB --> SB[Server B — active]
-    LB --> SC[Server C — active]
+    LB --> SA[Server A - active]
+    LB --> SB[Server B - active]
+    LB --> SC[Server C - active]
     SA --> DB[(Shared database)]
     SB --> DB
     SC --> DB
@@ -346,13 +398,13 @@ Users may hit different servers on each request. Options:
 
 ```mermaid
 flowchart LR
-    subgraph Before["Before — B crashes"]
+    subgraph Before["Before - B crashes"]
         direction LR
         LB1[LB] --> A1[A]
         LB1 --> B1[B]
         LB1 --> C1[C]
     end
-    subgraph After["After — B drained"]
+    subgraph After["After - B drained"]
         direction LR
         LB2[LB] --> A2[A]
         LB2 --> C2[C]
@@ -360,9 +412,7 @@ flowchart LR
     Before ~~~ After
 ```
 
----
-
-### Walkthrough: three-node API cluster
+#### Worked example — three-node API cluster
 
 An API runs three identical pods behind nginx. Traffic splits ~33% each. Pod B OOM-kills during a traffic spike:
 
@@ -373,35 +423,36 @@ An API runs three identical pods behind nginx. Traffic splits ~33% each. Pod B O
 
 ---
 
-### Active-active vs active-passive
-
-| | Active-active | Active-passive |
-|---|---------------|----------------|
-| **Nodes serving** | All | One active, others standby |
-| **Utilization** | High | Standby mostly idle |
-| **Failover** | Redistribute load | Promote standby (brief gap) |
-| **Data writes** | Multiple writers — need coordination | Single writer — simpler |
-| **Complexity** | Higher | Lower |
-| **Best for** | Scale + resilience | Simpler HA, strong consistency |
-
-Active-passive is covered in [12.4](#124-active-passive). Active-active does **not** replace backups ([12.5](#125-backup-strategy)).
-
----
-
 ### Pitfalls and design tips
+
+#### When to use (and when not to)
+
+- **Default for new stateless APIs:** active-active behind LB + shared DB; avoid sticky sessions unless legacy constraint forces it.
+- Use when you need **horizontal scale and resilience** together — one node loss should not stop the service.
+- Prefer **active-passive** ([12.4](#124-active-passive)) when single-writer consistency is simpler than coordinating multiple live writers.
+
+#### Common mistakes
 
 - **Sticky sessions are fragile** — if the pinned node dies, users lose session state; prefer external session store (Redis) or stateless JWT.
 - **Multiple writers need coordination** — two app servers writing the same row without transactions or optimistic locking causes lost updates; single-writer DB or conflict resolution required.
 - **Replication lag = stale reads** — async replica may serve data seconds behind primary; route critical reads to primary or use sync replication for those paths.
 - **Capacity headroom on N−1** — losing one of three nodes jumps load ~50%; size clusters so survivors stay under CPU/memory SLO at N−1.
-- **Default for new stateless APIs:** active-active behind LB + shared DB; avoid sticky sessions unless legacy constraint forces it.
-- **Production:** nginx/K8s Service round-robin, DynamoDB or Redis for session state, HPA for auto-scale on survivor overload.
+
+#### Production notes
+
+- nginx/K8s Service round-robin, DynamoDB or Redis for session state, HPA for auto-scale on survivor overload.
 
 ---
 
 ### Real-world example: Netflix API gateway (Zuul)
 
-Netflix's Zuul API gateway runs as a fleet of stateless instances behind Eureka service discovery. Every instance handles traffic; no node is "standby." Session state lives in external stores, not local memory. When an instance is terminated (including by Chaos Monkey — see [12.10](#1210-chaos-engineering)), Eureka deregisters it within one heartbeat interval and remaining instances absorb the load. This is the canonical active-active pattern: **stateless compute + externalized state**.
+**Problem:** Netflix's edge must serve millions of requests with no single instance as a bottleneck — any one gateway node must be disposable without customer impact.
+
+**Naive failure:** A single gateway with local session state. Terminating that instance logs out users and drops in-flight requests until manual recovery.
+
+**How active-active fixed it:** Netflix's Zuul API gateway runs as a fleet of stateless instances behind Eureka service discovery. Every instance handles traffic; no node is "standby." Session state lives in external stores, not local memory. When an instance is terminated (including by Chaos Monkey — see [12.10](#1210-chaos-engineering)), Eureka deregisters it within one heartbeat interval and remaining instances absorb the load.
+
+**Outcome:** Instance loss becomes a capacity blip, not an outage — the canonical active-active pattern: **stateless compute + externalized state**.
 
 ---
 
@@ -440,30 +491,43 @@ Acceptable when failover takes seconds (not milliseconds) and standby capacity s
 
 ---
 
+### Compared to the alternative
+
+| | Active-passive | Active-active |
+|---|----------------|---------------|
+| **Write path** | Single primary | Multiple nodes (coordination needed) |
+| **Standby use** | Idle until failover | Always serving |
+| **Failover gap** | Seconds typical | Near zero (redistribute) |
+| **Split-brain risk** | High without fencing | Lower for reads; writes need care |
+| **Cost efficiency** | Lower (idle standby) | Higher utilization |
+
+---
+
 ### How it works — replication and promotion
 
 ```mermaid
 flowchart LR
     Clients[Clients] --> LB[Load balancer]
     LB --> Active[Active server]
-    Active -->|continuous replication| Passive[Passive — standby]
+    Active -->|continuous replication| Passive[Passive - standby]
 ```
 
 #### Failover sequence
 
 ```mermaid
-sequenceDiagram
-    participant C as Clients
-    participant LB as Load balancer
-    participant A as Active
-    participant P as Passive
-    C->>LB: Requests
-    LB->>A: Route traffic
-    A->>P: Replication stream
-    A--xLB: Active crashes
-    LB->>P: Promote + route
-    C->>LB: Requests
-    LB->>P: Traffic to new active
+flowchart LR
+    subgraph Normal["Normal operation"]
+        direction LR
+        C1[Clients] --> LB1[Load balancer]
+        LB1 --> A1[Active]
+        A1 -->|replication| P1[Passive]
+    end
+    subgraph Failover["After active crashes"]
+        direction LR
+        C2[Clients] --> LB2[Load balancer]
+        LB2 --> P2[Promoted passive]
+    end
+    Normal ~~~ Failover
 ```
 
 ```text
@@ -476,9 +540,7 @@ sequenceDiagram
 
 Replication lag at failover moment defines actual **RPO** ([12.7](#127-rpo)).
 
----
-
-### Walkthrough: Postgres primary with standby
+#### Worked example — Postgres primary with standby
 
 1. Primary serves reads/writes; synchronous standby in another AZ.
 2. Primary AZ network partition at 14:00 — primary isolated but still running.
@@ -489,32 +551,35 @@ Replication lag at failover moment defines actual **RPO** ([12.7](#127-rpo)).
 
 ---
 
-### Active-passive vs active-active
-
-| | Active-passive | Active-active |
-|---|----------------|---------------|
-| **Write path** | Single primary | Multiple nodes (coordination needed) |
-| **Standby use** | Idle until failover | Always serving |
-| **Failover gap** | Seconds typical | Near zero (redistribute) |
-| **Split-brain risk** | High without fencing | Lower for reads; writes need care |
-| **Cost efficiency** | Lower (idle standby) | Higher utilization |
-
----
-
 ### Pitfalls and design tips
 
+#### When to use (and when not to)
+
+- Use when **single-writer consistency** matters more than maximizing utilization — banking cores, legacy single-node apps, database primaries.
 - **Idle standby is real cost** — you pay for a machine that does no work until disaster; justify with simpler consistency and lower split-brain risk.
+- **Synchronous replication trades latency for RPO** — sync standby gives RPO ≈ 0 but adds write latency; async is faster but laggy.
+
+#### Common mistakes
+
 - **Split-brain without fencing** — network partition leaves both primary and standby writing; always fence the old primary (STONITH, `pg_ctl promote` + revoke old primary's write access).
 - **Replication lag = actual RPO** — at failover, anything not yet replicated is lost; monitor `pg_stat_replication.replay_lag` or equivalent as an SLO.
 - **Failover gap consumes RTO** — detection time + promotion + DNS TTL + app reconnect = your RTO budget; measure end-to-end in drills.
-- **Synchronous replication trades latency for RPO** — sync standby gives RPO ≈ 0 but adds write latency; async is faster but laggy.
-- **Production:** Postgres Patroni + etcd, AWS RDS Multi-AZ, SQL Server Always On Availability Groups, MySQL Group Replication with single-writer mode.
+
+#### Production notes
+
+- Postgres Patroni + etcd, AWS RDS Multi-AZ, SQL Server Always On Availability Groups, MySQL Group Replication with single-writer mode.
 
 ---
 
 ### Real-world example: Postgres Patroni failover
 
-Patroni manages Postgres primary/standby pairs with etcd for leader election. On primary failure, Patroni detects missed heartbeats, fences the old primary via callback (often cloud API `StopInstances`), and promotes the standby. AWS RDS Multi-AZ uses the same pattern internally: automatic failover typically completes in 60–120 seconds. A documented disk-corruption incident on the primary promoted the standby in ~4 minutes with 12 seconds of WAL lag — actual RPO = 12 seconds, actual RTO = 4 minutes.
+**Problem:** A Postgres primary can fail from disk corruption, AZ outage, or OOM — the database must promote a standby without manual DBA intervention.
+
+**Naive failure:** Manual promotion scripts, no fencing. A network partition leaves both primary and standby accepting writes — split-brain corrupts data.
+
+**How active-passive fixed it:** Patroni manages Postgres primary/standby pairs with etcd for leader election. On primary failure, Patroni detects missed heartbeats, fences the old primary via callback (often cloud API `StopInstances`), and promotes the standby. AWS RDS Multi-AZ uses the same pattern internally: automatic failover typically completes in 60–120 seconds.
+
+**Outcome:** A documented disk-corruption incident on the primary promoted the standby in ~4 minutes with 12 seconds of WAL lag — actual RPO = 12 seconds, actual RTO = 4 minutes.
 
 ---
 
@@ -590,7 +655,7 @@ Restore Thu: FULL + Thu_diff only
 ```mermaid
 flowchart LR
     Primary[Primary server] --> Local[Local backup]
-    Primary --> Cloud[Cloud backup — off-site]
+    Primary --> Cloud[Cloud backup - off-site]
 ```
 
 #### Storage locations
@@ -603,9 +668,7 @@ flowchart LR
 
 Encrypt backups at rest and in transit; use **immutable** storage (WORM, S3 Object Lock) against ransomware.
 
----
-
-### Walkthrough: e-commerce database schedule
+#### Worked example — e-commerce database schedule
 
 ```text
 Sunday 02:00  — FULL backup to S3
@@ -620,9 +683,7 @@ Monday 11:00 corruption discovered:
 - Latest incremental: Monday 10:00
 - **Worst-case data loss if restored to 10:00 incr:** 1 hour (drives RPO discussion in [12.7](#127-rpo))
 
----
-
-### Backup type comparison
+#### Backup type comparison
 
 | | Full | Incremental | Differential |
 |---|------|-------------|--------------|
@@ -633,6 +694,8 @@ Monday 11:00 corruption discovered:
 **How to calculate — backup storage growth (incremental chain):**
 
 ```text
+Goal:  Estimate weekly backup storage for an incremental chain and the RPO ceiling from backup interval alone
+
 Given:
   Full backup size     = 500 GB
   Daily incremental    = 20 GB/day (avg)
@@ -646,26 +709,45 @@ Week 1 storage (before next full):
 Designed RPO ceiling (backup-only, no replication):
   Backup interval = 1 hour → worst-case data loss = 1 hour of writes
   If write rate = 5 GB/hour → up to 5 GB unrecoverable without WAL/PITR
-```
 
-**Sanity check:** If designed RPO is 5 minutes, hourly backups alone cannot meet it — add WAL archiving or continuous replication.
+Interpretation: Incremental chains minimize backup I/O but grow storage linearly with retention;
+  backup interval alone sets the RPO ceiling unless WAL archiving or replication narrows it.
+
+Sanity check: If designed RPO is 5 minutes, hourly backups alone cannot meet it — add WAL archiving or continuous replication.
+```
 
 ---
 
 ### Pitfalls and design tips
 
+#### When to use (and when not to)
+
+- **Every production data store** needs a defined backup strategy — databases, object storage, configs, and IaC state.
+- **Backup frequency sets RPO ceiling** — nightly full alone → RPO up to 24 hours; tighten with hourly incrementals + WAL/PITR.
+- Backups complement but do not replace **replication** — replication gives low RPO; backups protect against logical corruption and ransomware.
+
+#### Common mistakes
+
 - **Backup job success ≠ restorable backup** — corrupted dumps, wrong permissions, and missing WAL segments surface only at restore time; test monthly ([12.6](#126-restore-strategy)).
 - **Incremental chains are fragile** — one missing incremental breaks the entire chain; monitor chain integrity and alert on gaps.
 - **Local-only backups die with the site** — 3-2-1 rule: at least one copy off-site and on different media.
 - **Ransomware encrypts local backups** — use S3 Object Lock (WORM), Azure Immutable Blob Storage, or tape with offline rotation.
-- **Backup frequency sets RPO ceiling** — nightly full alone → RPO up to 24 hours; tighten with hourly incrementals + WAL/PITR.
-- **Production:** Postgres `pg_basebackup` + WAL archiving to S3, AWS RDS automated backups + snapshots, Veeam/Commvault for VMs, `restic`/`borg` for file-level.
+
+#### Production notes
+
+- Postgres `pg_basebackup` + WAL archiving to S3, AWS RDS automated backups + snapshots, Veeam/Commvault for VMs, `restic`/`borg` for file-level.
 
 ---
 
 ### Real-world example: Postgres PITR with WAL archiving
 
-A SaaS team runs Postgres with nightly `pg_basebackup` to S3 and continuous WAL archiving (`archive_mode = on`, `archive_command` pushes WAL to S3). Recovery playbook: spin a clean instance, restore latest base backup, replay WAL to one minute before the incident (`recovery_target_time`). Ransomware variant: restore from S3 Object Lock immutable copy. Monthly drill restores to staging and runs row-count validation — backup metrics alone are insufficient.
+**Problem:** A SaaS team needs point-in-time recovery after accidental deletes, bad migrations, or ransomware — nightly full backups alone lose up to 24 hours of data.
+
+**Naive failure:** Weekly full backups only. A noon corruption forces restore to last Sunday — a full business day of orders lost.
+
+**How backup strategy fixed it:** Postgres with nightly `pg_basebackup` to S3 and continuous WAL archiving (`archive_mode = on`, `archive_command` pushes WAL to S3). Recovery playbook: spin a clean instance, restore latest base backup, replay WAL to one minute before the incident (`recovery_target_time`). Ransomware variant: restore from S3 Object Lock immutable copy.
+
+**Outcome:** Monthly drill restores to staging and runs row-count validation — backup metrics alone are insufficient; practiced PITR cuts RPO from 24 hours to minutes.
 
 ---
 
@@ -745,9 +827,7 @@ Skip none. Order matters.
   2. Latest DIFFERENTIAL (Wednesday AM)
 ```
 
----
-
-### Walkthrough: banking DB corruption on Wednesday
+#### Worked example — banking DB corruption on Wednesday
 
 ```text
 10:00 AM — DBA notices corrupted index on primary DB
@@ -764,6 +844,8 @@ Data loss: changes between 09:00 incremental and 10:00 failure = 1 hour (actual 
 **How to calculate — restore time estimate:**
 
 ```text
+Goal:  Estimate the restore-only component of RTO for a full + incremental chain
+
 Given:
   Full backup size       = 500 GB
   3 incrementals × 20 GB = 60 GB
@@ -782,13 +864,14 @@ Step 3 — validation:
   10 + 5 = 15 minutes
 
 Estimated RTO component (restore only) ≈ 48 + 5 + 15 = 68 minutes
+
+Interpretation: Transfer dominates restore time; validation is non-negotiable before cutover.
+  Total RTO always exceeds restore-only — add detection, DNS, and staff response.
+
+Sanity check: Add detection time, DNS cutover, and staff response — total RTO is always longer than restore transfer alone.
 ```
 
-**Sanity check:** Add detection time, DNS cutover, and staff response — total RTO is always longer than restore transfer alone.
-
----
-
-### Factors that affect restore time
+#### Factors that affect restore time
 
 Backup size · storage I/O · network bandwidth · number of incremental layers · integrity checks · whether runbooks are current · staff familiarity from drills
 
@@ -796,18 +879,33 @@ Backup size · storage I/O · network bandwidth · number of incremental layers 
 
 ### Pitfalls and design tips
 
-- **Restore chain order is not negotiable** — applying incrementals out of sequence corrupts the database; document exact order in the runbook.
-- **Restore to a clean target** — never restore over a running corrupted instance; use a side instance, validate, then swap DNS.
+#### When to use (and when not to)
+
+- **Every backup strategy needs a matching restore strategy** — backups without a practiced restore path are inventory, not insurance.
 - **PITR beats full+incremental for RPO** — Postgres `recovery_target_time` can recover to minutes before failure; nightly full alone loses a full business day.
+- **Restore to a clean target** — never restore over a running corrupted instance; use a side instance, validate, then swap DNS.
+
+#### Common mistakes
+
+- **Restore chain order is not negotiable** — applying incrementals out of sequence corrupts the database; document exact order in the runbook.
 - **"Restored" ≠ "verified"** — row counts, checksums, and app smoke tests must pass before resuming traffic; skipping validation ships bad data.
 - **Runbook rot** — decommissioned servers, rotated credentials, and changed S3 bucket names break restores; drill quarterly.
-- **Production:** Postgres PITR (`pg_restore` + WAL replay), AWS RDS point-in-time restore, Veeam instant recovery, Terraform to provision clean restore environment.
+
+#### Production notes
+
+- Postgres PITR (`pg_restore` + WAL replay), AWS RDS point-in-time restore, Veeam instant recovery, Terraform to provision clean restore environment.
 
 ---
 
 ### Real-world example: Postgres PITR after accidental `DROP TABLE`
 
-Engineer runs `DROP TABLE orders` on production. Within 5 minutes writes freeze. Team uses Postgres PITR: restore base backup to a side instance, replay WAL to 2 minutes before the drop, validate `SELECT COUNT(*) FROM orders` matches pre-incident count, swap connection string. Total outage: 22 minutes. Without PITR, last night's full backup would have lost a full business day (RPO = 24 hours).
+**Problem:** An engineer runs `DROP TABLE orders` on production — writes must stop immediately and orders must be recovered with minimal data loss.
+
+**Naive failure:** Restore from last night's full backup only. RPO = 24 hours — a full business day of orders gone.
+
+**How restore strategy fixed it:** Within 5 minutes writes freeze. Team uses Postgres PITR: restore base backup to a side instance, replay WAL to 2 minutes before the drop, validate `SELECT COUNT(*) FROM orders` matches pre-incident count, swap connection string.
+
+**Outcome:** Total outage: 22 minutes. PITR recovered to 2 minutes before the drop instead of losing 24 hours.
 
 ---
 
@@ -861,16 +959,14 @@ If RPO = 1 hour and the last recoverable point is 45 minutes before failure, you
 ```mermaid
 flowchart LR
     App[Application writes] --> Primary[(Primary DB)]
-    Primary -->|sync replica| Sync[(Sync standby — RPO ~ 0)]
-    Primary -->|async replica| Async[(Async standby — RPO = lag)]
+    Primary -->|sync replica| Sync[(Sync standby - RPO ~ 0)]
+    Primary -->|async replica| Async[(Async standby - RPO = lag)]
     Primary -->|WAL / snapshots| Backup[(Backup store)]
 ```
 
 **Replication lag** is the operational metric for async RPO. Monitor it as an SLO.
 
----
-
-### Walkthrough: hourly backup vs actual crash
+#### Worked example — hourly backup vs actual crash
 
 ```text
 09:00 AM — backup completes
@@ -889,6 +985,8 @@ If business RPO = 5 minutes → failed; need continuous replication
 **How to calculate — actual data loss (RPO):**
 
 ```text
+Goal:  Measure actual data loss at failure and compare to the business RPO target
+
 Given:
   Last successful backup/replay point = 10:00 AM
   Failure detected at                = 10:30 AM
@@ -903,13 +1001,14 @@ Step 2 — volume-based impact (optional):
 Step 3 — compare to target:
   Business RPO target = 5 minutes → FAILED (30 > 5)
   Business RPO target = 1 hour    → MET (30 < 60)
+
+Interpretation: Backup interval sets the designed ceiling; async replication lag sets the actual ceiling at failure.
+  Volume impact helps executives understand business cost beyond the time metric.
+
+Sanity check: With async replication, actual RPO = replication lag at failure moment (e.g. 12 seconds), not backup interval.
 ```
 
-**Sanity check:** With async replication, actual RPO = replication lag at failure moment (e.g. 12 seconds), not backup interval.
-
----
-
-### RPO by system tier
+#### RPO by system tier
 
 | System | Typical RPO | Why |
 |--------|-------------|-----|
@@ -920,9 +1019,7 @@ Step 3 — compare to target:
 
 Define RPO **per tier**, not one number for the whole company.
 
----
-
-### RPO vs RTO
+#### RPO vs RTO
 
 | | RPO | RTO |
 |---|-----|-----|
@@ -934,8 +1031,8 @@ Define RPO **per tier**, not one number for the whole company.
 ```mermaid
 flowchart LR
     subgraph timeline [After failure]
-        LastGood[Last good data point] -->|RPO window — lost writes| Failure[Failure]
-        Failure -->|RTO window — users down| Restored[Service restored]
+        LastGood[Last good data point] -->|RPO window - lost writes| Failure[Failure]
+        Failure -->|RTO window - users down| Restored[Service restored]
     end
 ```
 
@@ -943,18 +1040,32 @@ flowchart LR
 
 ### Pitfalls and design tips
 
+#### When to use (and when not to)
+
 - **RPO is a business number, not a backup schedule** — "we backup hourly" is a means; the question is "how many minutes of orders can we lose?"
-- **Designed RPO ≠ actual RPO** — backup interval sets the ceiling; replication lag, failed backup jobs, and WAL gaps set the floor in practice.
-- **One RPO for the whole company fails** — ledger needs RPO ≈ 0; analytics can tolerate 24 hours; tier per service.
-- **Async replication lag spikes during load** — monitor `replay_lag` as an SLO; page before lag exceeds RPO target.
+- Define RPO **per tier**, not one number for the whole company — ledger needs RPO ≈ 0; analytics can tolerate 24 hours.
 - **Interview angle:** RPO and RTO are independent — you can have RPO = 0 (sync replica) and RTO = 4 hours (slow restore from replica).
-- **Production:** Postgres sync standby (`synchronous_commit = on`), AWS RDS cross-region read replica with monitored lag, S3 versioning + PITR for object data.
+
+#### Common mistakes
+
+- **Designed RPO ≠ actual RPO** — backup interval sets the ceiling; replication lag, failed backup jobs, and WAL gaps set the floor in practice.
+- **Async replication lag spikes during load** — monitor `replay_lag` as an SLO; page before lag exceeds RPO target.
+
+#### Production notes
+
+- Postgres sync standby (`synchronous_commit = on`), AWS RDS cross-region read replica with monitored lag, S3 versioning + PITR for object data.
 
 ---
 
 ### Real-world example: tiered RPO in a fintech stack
 
-A fintech typically tiers RPO by data class: ledger on sync replica in a second AZ (RPO ≈ 0), audit logs on async replication + S3 (RPO = replication lag, target 15 minutes), reporting DB on nightly export (RPO = 24 hours). When async replica lag spiked to 20 minutes, the audit tier breached its RPO target — automated page fired before any customer-facing impact.
+**Problem:** A fintech handles ledger, audit, and reporting data with different loss tolerance — one RPO for the whole stack misaligns cost and risk.
+
+**Naive failure:** Single nightly backup policy for all databases. A ledger outage with 12 hours of replication lag would breach regulatory requirements.
+
+**How tiered RPO fixed it:** Ledger on sync replica in a second AZ (RPO ≈ 0), audit logs on async replication + S3 (RPO = replication lag, target 15 minutes), reporting DB on nightly export (RPO = 24 hours).
+
+**Outcome:** When async replica lag spiked to 20 minutes, the audit tier breached its RPO target — automated page fired before any customer-facing impact.
 
 ---
 
@@ -1004,7 +1115,7 @@ Clock stops when the service meets SLO again (not merely when the first process 
 
 ```mermaid
 flowchart LR
-    Fail[Failure] --> Detect[Detect — 12.2]
+    Fail[Failure] --> Detect[Detect - 12.2]
     Detect --> Decide[Runbook / auto failover]
     Decide --> Recover[Restore or promote]
     Recover --> Validate[Verify data + smoke tests]
@@ -1013,9 +1124,7 @@ flowchart LR
 
 Each step consumes part of the RTO budget.
 
----
-
-### Walkthrough: active-passive banking failover
+#### Worked example — active-passive banking failover
 
 ```text
 Business RTO: 10 minutes
@@ -1035,6 +1144,8 @@ If smoke tests had been skipped and bad data served, "recovery" would be a false
 **How to calculate — RTO budget breakdown:**
 
 ```text
+Goal:  Sum every phase of recovery and compare to the business RTO target
+
 Given:
   Detection (3 × 5s probes)     = 15 seconds
   LB drain + stop routing       = 15 seconds
@@ -1048,13 +1159,14 @@ Step 1 — sum phases:
 Step 2 — compare to target:
   Business RTO = 10 minutes → MET (with 30s margin)
   Business RTO = 5 minutes  → FAILED (DNS TTL alone exceeds budget)
+
+Interpretation: DNS TTL is often the hidden RTO killer — lower TTL before planned failovers.
+  Clock stops when SLO is met, not when the first process starts.
+
+Sanity check: Lower DNS TTL (60s) before failover-critical cutovers; pre-warm connection pools on standby.
 ```
 
-**Sanity check:** Lower DNS TTL (60s) before failover-critical cutovers; pre-warm connection pools on standby.
-
----
-
-### RTO by system tier
+#### RTO by system tier
 
 | System | Typical RTO | Why |
 |--------|-------------|-----|
@@ -1067,18 +1179,34 @@ Step 2 — compare to target:
 
 ### Pitfalls and design tips
 
+#### When to use (and when not to)
+
+- **Every customer-facing service needs a defined RTO** — without it, teams optimize for cost until a real outage exposes hours-long recovery.
+- Match **site warmth to RTO** — cold DR cannot meet 15-minute RTO; hot multi-region can.
+
+#### Common mistakes
+
 - **Runbook never drilled → 3× longer in real incidents** — muscle memory and discovered blockers only come from timed drills.
 - **"Up" ≠ recovered** — process started but users still see errors until data is verified and traffic resumes; clock stops at SLO met, not at `systemctl start`.
 - **DNS TTL eats RTO** — 5-minute RTO with 5-minute TTL means some clients wait 10 minutes; lower TTL before planned failover.
 - **Restore-from-backup RTO includes download + apply** — not just failover; a 500 GB restore at 200 MB/s is ~42 minutes before validation even starts.
 - **Count every phase** — detection + decision + recovery + validation + traffic cutover; optimistic single-step estimates always fail audits.
-- **Production:** Route 53 health-check failover, Patroni automated promotion, pre-scripted Terraform for DR environment spin-up.
+
+#### Production notes
+
+- Route 53 health-check failover, Patroni automated promotion, pre-scripted Terraform for DR environment spin-up.
 
 ---
 
 ### Real-world example: Route 53 health-check failover
 
-A multi-region SaaS runs a hot standby in a second AWS region. Primary region fails; Route 53 health checks on the primary endpoint fail after 2 consecutive 30-second intervals (~60 seconds). Traffic shifts to the secondary region's ALB by ~3 minutes total. RTO target: 5 minutes — met. Secondary was running at reduced capacity (warm standby); autoscaler adds capacity over the next 7 minutes. Post-drill finding: payment webhook URLs hardcoded to primary region — fixed before the next drill.
+**Problem:** A multi-region SaaS must shift traffic to a secondary region when the primary region fails — customers cannot wait for manual DNS edits.
+
+**Naive failure:** Long DNS TTL (300s+), hardcoded primary-region webhook URLs, cold secondary with no pre-warmed capacity. Failover takes 15+ minutes and breaks payment callbacks.
+
+**How automated failover fixed it:** Primary region fails; Route 53 health checks on the primary endpoint fail after 2 consecutive 30-second intervals (~60 seconds). Traffic shifts to the secondary region's ALB by ~3 minutes total. Secondary runs at reduced capacity (warm standby); autoscaler adds capacity over the next 7 minutes.
+
+**Outcome:** RTO target: 5 minutes — met. Post-drill finding: payment webhook URLs hardcoded to primary region — fixed before the next drill.
 
 ---
 
@@ -1117,6 +1245,19 @@ DR provides **geographic separation** and **tested recovery** at another site.
 **Redirects** users (DNS, global load balancer, BGP).
 
 **Validates** RPO/RTO before declaring "recovered."
+
+---
+
+### Compared to the alternative
+
+| | HA | DR |
+|---|-----|-----|
+| **Failure scope** | Server, disk, rack | Site, region, cyber event |
+| **Recovery** | Seconds–minutes | Minutes–hours (strategy-dependent) |
+| **Location** | Same site / AZ | Different site / region |
+| **Cost** | Moderate redundancy | Significant duplicate infra |
+
+You need **both** for production-grade reliability.
 
 ---
 
@@ -1170,6 +1311,8 @@ RPO = backup age; RTO = restore duration ([12.6](#126-restore-strategy)).
 **How to calculate — DR RPO and RTO from strategy:**
 
 ```text
+Goal:  Estimate RPO and RTO for two DR strategies and validate site warmth matches targets
+
 Given (hot standby with async replication):
   Replication lag at failure  = 2 minutes
   DNS failover time           = 3 minutes
@@ -1187,13 +1330,14 @@ Given (backup-and-restore to cold site):
 
 RPO = 18 hours (backup age)
 RTO = 4h + 1.4h + 0.5h ≈ 6 hours (optimistic; add staff response)
+
+Interpretation: Hot standby trades infra cost for minutes-level RTO/RPO; cold site is cheap but measured in hours.
+  Match declared RTO to site warmth — do not sell cold DR as 5-minute RTO.
+
+Sanity check: Cold-site RTO is almost always measured in hours/days, not minutes — do not sell cold DR as 5-minute RTO.
 ```
 
-**Sanity check:** Cold-site RTO is almost always measured in hours/days, not minutes — do not sell cold DR as 5-minute RTO.
-
----
-
-### Walkthrough: data center fire
+#### Worked example — data center fire
 
 ```text
 Normal:     users → primary DC; async replication to DR DC 200 km away
@@ -1211,33 +1355,35 @@ RPO: 2 minutes replication lag at failure (target 5)
 
 ---
 
-### HA vs disaster recovery
-
-| | HA | DR |
-|---|-----|-----|
-| **Failure scope** | Server, disk, rack | Site, region, cyber event |
-| **Recovery** | Seconds–minutes | Minutes–hours (strategy-dependent) |
-| **Location** | Same site / AZ | Different site / region |
-| **Cost** | Moderate redundancy | Significant duplicate infra |
-
-You need **both** for production-grade reliability.
-
----
-
 ### Pitfalls and design tips
 
+#### When to use (and when not to)
+
 - **HA does not replace DR** — multi-AZ survives AZ failure, not regional outage or ransomware that encrypts all AZs' shared control plane dependencies.
-- **DR site with hardcoded primary URLs breaks failover** — webhooks, OAuth callbacks, and internal service discovery must use region-agnostic endpoints or config that swaps on DR.
+- You need **both** HA and DR for production-grade reliability.
 - **Cold DR with tight RTO is a lie** — provisioning hardware + restore from tape cannot meet 15-minute RTO; match site warmth to RTO target.
+
+#### Common mistakes
+
+- **DR site with hardcoded primary URLs breaks failover** — webhooks, OAuth callbacks, and internal service discovery must use region-agnostic endpoints or config that swaps on DR.
 - **Ransomware DR needs immutable backups** — replication copies encrypted malware too; restore from Object Lock / offline backup, not live replica.
 - **DR drills find what HA drills miss** — DNS, certificate SANs, license keys tied to hostname, and third-party IP allowlists break only at region failover.
-- **Production:** AWS multi-region with Route 53 failover, Azure Site Recovery, GCP cross-region GKE, pilot-light pattern (RDS cross-region replica + scaled-down ECS).
+
+#### Production notes
+
+- AWS multi-region with Route 53 failover, Azure Site Recovery, GCP cross-region GKE, pilot-light pattern (RDS cross-region replica + scaled-down ECS).
 
 ---
 
 ### Real-world example: AWS pilot-light DR
 
-AWS documents the **pilot-light** pattern: a minimal core (e.g. RDS cross-region read replica, AMIs pre-built) runs continuously in the DR region; app tier scales from zero on disaster declaration. A team running checkout API in `us-east-1` keeps a read replica in `us-west-2` and a launch template ready. Annual drill: simulate region isolation with Security Group deny rules, promote replica, scale ECS from 0 → 10 tasks, shift Route 53. Last drill: RTO 8 minutes, RPO 0 with sync replication enabled — but found payment webhook URLs still pointed at `us-east-1` ALB.
+**Problem:** A checkout API in `us-east-1` must survive a full regional outage without rebuilding infrastructure from scratch during the incident.
+
+**Naive failure:** Backups only in the primary region. Region isolation means no runnable stack, no promoted database, and hours to provision DR hardware.
+
+**How pilot-light DR fixed it:** AWS documents the **pilot-light** pattern: a minimal core (e.g. RDS cross-region read replica, AMIs pre-built) runs continuously in the DR region; app tier scales from zero on disaster declaration. Team keeps a read replica in `us-west-2` and a launch template ready. Annual drill: simulate region isolation with Security Group deny rules, promote replica, scale ECS from 0 → 10 tasks, shift Route 53.
+
+**Outcome:** Last drill: RTO 8 minutes, RPO 0 with sync replication enabled — but found payment webhook URLs still pointed at `us-east-1` ALB; fixed before the next drill.
 
 ---
 
@@ -1276,6 +1422,17 @@ Does **not** replace unit tests, backups, or DR planning — it **stress-tests**
 
 ---
 
+### Compared to the alternative
+
+| | Traditional testing | Chaos engineering |
+|---|---------------------|-------------------|
+| **Environment** | Staging, scripted cases | Often production, realistic load |
+| **Failures** | Expected paths | Surprising combinations |
+| **Goal** | Features correct | System survives faults |
+| **Audience** | QA sign-off | SRE confidence |
+
+---
+
 ### How it works — the experiment loop
 
 ```mermaid
@@ -1304,9 +1461,7 @@ flowchart LR
 - **Abort conditions** — auto-stop if error rate > 5%
 - One fault at a time until maturity increases
 
----
-
-### Walkthrough: server failure experiment
+#### Worked example — server failure experiment
 
 ```mermaid
 flowchart LR
@@ -1316,7 +1471,7 @@ flowchart LR
         LB1 --> A[Server A]
         LB1 --> B[Server B]
     end
-    subgraph After["After — A terminated"]
+    subgraph After["After - A terminated"]
         direction LR
         Users2[Users] --> LB2[Load balancer]
         LB2 --> B2[Server B]
@@ -1332,31 +1487,34 @@ flowchart LR
 
 ---
 
-### Chaos engineering vs traditional testing
-
-| | Traditional testing | Chaos engineering |
-|---|---------------------|-------------------|
-| **Environment** | Staging, scripted cases | Often production, realistic load |
-| **Failures** | Expected paths | Surprising combinations |
-| **Goal** | Features correct | System survives faults |
-| **Audience** | QA sign-off | SRE confidence |
-
----
-
 ### Pitfalls and design tips
 
+#### When to use (and when not to)
+
 - **Start in staging, graduate to prod** — blast radius in production affects real customers; begin with one pod, one AZ, low-traffic window.
-- **Define abort conditions before injecting** — auto-stop if error rate > 5% or p99 > 2× baseline; manual kill switch for the experiment runner.
-- **One fault at a time until mature** — killing a pod + adding latency + partitioning network simultaneously makes root-cause analysis impossible.
 - **Chaos ≠ load testing** — chaos validates failure recovery under realistic load, not peak capacity; run load tests separately.
 - **Steering committee / blast-radius approval** — Netflix runs Chaos Monkey during business hours *because* teams fixed their services; do not copy that on day one.
-- **Production:** Netflix Chaos Monkey / Simian Army, AWS Fault Injection Simulator (FIS), Gremlin, Litmus Chaos (Kubernetes), Chaos Mesh.
+
+#### Common mistakes
+
+- **Define abort conditions before injecting** — auto-stop if error rate > 5% or p99 > 2× baseline; manual kill switch for the experiment runner.
+- **One fault at a time until mature** — killing a pod + adding latency + partitioning network simultaneously makes root-cause analysis impossible.
+
+#### Production notes
+
+- Netflix Chaos Monkey / Simian Army, AWS Fault Injection Simulator (FIS), Gremlin, Litmus Chaos (Kubernetes), Chaos Mesh.
 
 ---
 
 ### Real-world example: Netflix Chaos Monkey
 
-Netflix open-sourced **Chaos Monkey**, which randomly terminates production EC2 instances during business hours. The design intent: if your service cannot survive random instance loss without manual intervention, it is not production-ready. Outcome over years: stateless services, externalized state, automated replacement via Auto Scaling Groups, and a culture aligned with "everything fails all the time" (their resilience engineering philosophy).
+**Problem:** At Netflix scale, individual EC2 instances fail constantly — services must survive random instance loss without manual intervention or customer-visible outages.
+
+**Naive failure:** Stateful services with local session data and manual failover runbooks. A random instance termination causes user logouts and paging on-call until someone manually replaces capacity.
+
+**How chaos engineering fixed it:** Netflix open-sourced **Chaos Monkey**, which randomly terminates production EC2 instances during business hours. The design intent: if your service cannot survive random instance loss without manual intervention, it is not production-ready.
+
+**Outcome:** Over years: stateless services, externalized state, automated replacement via Auto Scaling Groups, and a culture aligned with "everything fails all the time" (their resilience engineering philosophy).
 
 ---
 
@@ -1397,6 +1555,19 @@ Injection forces those paths to run in controlled conditions.
 
 ---
 
+### Compared to the alternative
+
+| | Fault injection | Chaos engineering |
+|---|-----------------|-------------------|
+| **Scope** | Single component / fault type | Whole system / random failures |
+| **Control** | Precise, repeatable | Broader, exploratory |
+| **Example** | Add 200ms to Redis | Kill random AZ |
+| **Best for** | Libraries, timeouts, breakers | Architecture, DR, culture |
+
+Use both: injection during development and CI; chaos in staging/prod for holistic confidence.
+
+---
+
 ### How it works — injection workflow
 
 ```mermaid
@@ -1418,9 +1589,7 @@ flowchart LR
 | **Dependency** | DB connection refused, 503 from API | Circuit breaker, fallbacks |
 | **Infrastructure** | CPU throttle, DNS failure | Autoscaling, caching |
 
----
-
-### Walkthrough: database latency injection
+#### Worked example — database latency injection
 
 ```text
 Hypothesis: "If Postgres p99 > 300ms for 60s, API returns 503
@@ -1435,33 +1604,35 @@ Result:   PASS — tune alert threshold from 500ms to 350ms
 
 ---
 
-### Fault injection vs chaos engineering
-
-| | Fault injection | Chaos engineering |
-|---|-----------------|-------------------|
-| **Scope** | Single component / fault type | Whole system / random failures |
-| **Control** | Precise, repeatable | Broader, exploratory |
-| **Example** | Add 200ms to Redis | Kill random AZ |
-| **Best for** | Libraries, timeouts, breakers | Architecture, DR, culture |
-
-Use both: injection during development and CI; chaos in staging/prod for holistic confidence.
-
----
-
 ### Pitfalls and design tips
 
+#### When to use (and when not to)
+
 - **Inject in staging first, scoped prod later** — same blast-radius discipline as chaos; one fault type, one dependency, timed window.
+- Use for **libraries, timeouts, circuit breakers** — precise, repeatable validation of error-handling paths.
+- Pair with chaos engineering ([12.10](#1210-chaos-engineering)): injection tests building blocks; chaos tests the assembled system.
+
+#### Common mistakes
+
 - **Define expected behavior before injecting** — "circuit opens at 300ms, error rate < 15%, no thread exhaustion" — otherwise you cannot pass/fail the experiment.
-- **Toxiproxy / iptables for network faults** — precise latency, bandwidth, and partition simulation without changing application code.
-- **Service mesh fault injection (Istio/Linkerd)** — HTTP 503, delay, and abort on specific routes; good for microservice dependency testing.
 - **Regression in CI** — automate injection tests (e.g. fraud API 100% failure) so timeout fixes do not rot between releases.
-- **Production:** Toxiproxy, Chaos Mesh `NetworkChaos` / `HTTPChaos`, AWS FIS single-action faults, `tc netem` for Linux latency.
+
+#### Production notes
+
+- Toxiproxy, Chaos Mesh `NetworkChaos` / `HTTPChaos`, AWS FIS single-action faults, `tc netem` for Linux latency.
+- **Service mesh fault injection (Istio/Linkerd)** — HTTP 503, delay, and abort on specific routes; good for microservice dependency testing.
 
 ---
 
 ### Real-world example: checkout dependency timeout (Toxiproxy)
 
-Before launch, a team injects 100% failure on the fraud-scoring API in staging using Toxiproxy's `timeout` toxic on the upstream connection. Expected: checkout declines safely with a user-visible message within 2 seconds. Observed: HTTP client had no timeout — requests hung 30 seconds and held connection pool slots. Fixed before production; the same Toxiproxy scenario runs in CI on every release branch.
+**Problem:** A checkout flow depends on a fraud-scoring API — if that dependency hangs, checkout must fail fast with a clear user message, not hold connection pool slots.
+
+**Naive failure:** HTTP client had no timeout on the fraud API. Staging tests never exercised dependency failure — the path looked fine in happy-path QA.
+
+**How fault injection fixed it:** Before launch, team injects 100% failure on the fraud-scoring API in staging using Toxiproxy's `timeout` toxic on the upstream connection. Expected: checkout declines safely with a user-visible message within 2 seconds. Observed: requests hung 30 seconds and held connection pool slots.
+
+**Outcome:** Fixed before production; the same Toxiproxy scenario runs in CI on every release branch.
 
 ---
 
