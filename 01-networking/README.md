@@ -1002,6 +1002,32 @@ sequenceDiagram
 
 **TLS 1.3** reduces round trips vs 1.2 (1-RTT handshake, 0-RTT resumption with replay tradeoffs). **SNI** carries virtual host name in cleartext during handshake — relevant for shared IP hosting and privacy discussions.
 
+**How to calculate — SSL/TLS handshake latency cost:**
+
+```text
+Given:  RTT client ↔ server = 80 ms (one-way ≈ 40 ms)
+        New HTTPS connection, TLS 1.3, no session resumption
+
+Step 1 — count round trips before application data:
+  TCP 3-way handshake     = 1 RTT
+  TLS 1.3 full handshake  = 1 RTT (ClientHello → ServerHello + key share → Finished)
+  Total setup             = 2 RTT before first HTTP byte
+
+Step 2 — substitute:
+  Handshake time ≈ 2 × 80 ms = 160 ms (network-bound; CPU crypto adds ~5–20 ms on modern hardware)
+
+Step 3 — compare with keep-alive / session resumption:
+  TLS 1.3 session ticket (1-RTT)  ≈ 1 × 80 ms = 80 ms  (TCP already open)
+  TLS 1.3 0-RTT resumption      ≈ 0 RTT on wire      (replay risk on non-idempotent POST)
+  TLS 1.2 full handshake        ≈ 3 RTT total with TCP ≈ 240 ms at same RTT
+
+Result: first visit to https://api.example.com pays ~160 ms setup at 80 ms RTT;
+        pooled connection skips both TCP and TLS on subsequent requests.
+
+Sanity check: cross-region RTT 200 ms → 2 RTT ≈ 400 ms handshake alone — why HTTP/2 multiplexing
+              and connection pools dominate API latency design.
+```
+
 ### Pitfalls and design tips
 
 - **Expired or wrong-host certificates** — browsers hard-fail; automate renewal (ACME / cert-manager on Kubernetes).
@@ -1551,6 +1577,35 @@ sequenceDiagram
 
 Allows inbound internet traffic to an internal server.
 
+**How to calculate — NAT port exhaustion (PAT):**
+
+```text
+Given:  One public IPv4 address for PAT (home router or NAT Gateway)
+        Ephemeral port range ≈ 49,152 ports (Linux typical: 32768–60999)
+        Each outbound TCP connection consumes one (src_ip, src_port) mapping
+        Connection duration (including TIME_WAIT) ≈ 120 s average
+
+Step 1 — max concurrent outbound connections per public IP:
+  ≈ 49,152 mappings (practical ceiling before kernel refuses new sockets)
+
+Step 2 — sustainable new connections per second (reuse after TIME_WAIT):
+  new_conn/s ≈ ephemeral_ports / TIME_WAIT_seconds
+             ≈ 49,152 / 120
+             ≈ 410 connections/s per public IP (all LAN hosts combined)
+
+Step 3 — example: 50 internal hosts each opening 20 long-lived HTTPS tabs:
+  Concurrent mappings ≈ 50 × 20 = 1,000  →  well under 49k (no exhaustion)
+
+Step 4 — example: one misconfigured load generator from LAN, 2,000 new TCP/s:
+  2,000 × 120 s ≈ 240,000 mappings needed  →  exceeds 49k  →  EADDRINUSE / dropped flows
+
+Result: ~410 new outbound TCP connections/s sustainable per public IP with 120 s TIME_WAIT;
+        fix with connection pooling, more public IPs, or tcp_tw_reuse where appropriate.
+
+Sanity check: AWS NAT Gateway scales horizontally but each ENI still has port limits;
+              high-connection microservices need VPC endpoints or fewer NAT hops.
+```
+
 ---
 
 ### NAT vs proxy
@@ -1956,6 +2011,39 @@ GET /health → timeout (removed)
 ```
 
 **Sticky sessions:** When session state is local to App1, route the same user to App1 via cookie (`AWSALB`, `JSESSIONID`) or IP hash — trade-off: uneven load, harder drain.
+
+**How to calculate — connections per backend:**
+
+```text
+Given:  12,000 active client connections through the load balancer
+        4 healthy backends, round-robin (no stickiness)
+        Each client connection maps to one backend TCP connection (L4 pass-through or L7 proxy)
+
+Step 1 — even split across backends:
+  connections_per_backend ≈ 12,000 / 4 = 3,000
+
+Step 2 — check against backend limits:
+  Backend max_connections = 5,000  →  3,000 / 5,000 = 60% utilization  →  OK
+  Backend max_connections = 2,500  →  3,000 > 2,500  →  need more backends or drain
+
+Step 3 — least-connections algorithm (uneven durations):
+  Backend A: 1,200 conns (long WebSocket)
+  Backend B: 800 conns
+  Backend C: 900 conns
+  Backend D: 700 conns
+  New request → route to D (lowest count), not strict 3,000 each
+
+Step 4 — sticky sessions skew:
+  10,000 users, 1 celebrity shard via IP hash on same /24 NAT
+  → one backend may hold thousands of conns while others idle
+
+Result: plan backend pool size as
+  backends_needed ≥ ceil(total_client_connections / max_conns_per_backend)
+  with headroom for health-check drain (e.g. × 1.25).
+
+Sanity check: 12k clients × 50 ms DB queries ≠ 12k DB connections if app pools 20 conns per pod;
+              distinguish **client↔LB** connections from **app↔database** pool size.
+```
 
 **Active-active vs active-passive (load balancer tier):**
 

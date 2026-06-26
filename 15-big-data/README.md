@@ -203,6 +203,52 @@ flowchart LR
 
 **Backpressure** — when sinks are slow, credit-based flow control (Flink) or consumer lag (Kafka) throttles upstream instead of OOMing workers.
 
+**How to calculate:** Kafka retention storage
+
+```text
+Given:
+  aggregate ingest = 40 MB/s across all partitions (compressed on disk ~40 MB/s)
+  retention.ms = 7 days
+  replication.factor = 3
+
+Step 1 — Bytes per day:
+  per_day = 40 MB/s × 86,400 s ≈ 3.45 TB/day
+
+Step 2 — Retention window:
+  raw_retention = 3.45 TB × 7 ≈ 24 TB
+
+Step 3 — Replication:
+  total_disk ≈ 24 TB × 3 ≈ 72 TB cluster-wide (same bytes on 3 brokers per partition)
+
+Result: budget ~72 TB for this topic family before compaction or tiered storage
+
+Sanity check: doubling retention to 14 days doubles disk linearly — retention is the cheapest "replay insurance"
+  until it isn't; 40 MB/s × 30 days × 3 replicas ≈ 310 TB — plan tiered S3 or reduce retention.
+```
+
+**How to calculate:** stream processing lag
+
+```text
+Given:
+  Kafka partition ingest = 6,000 events/s
+  Flink operator sustained throughput = 5,000 events/s (same partition)
+  current consumer lag = 12M events
+
+Step 1 — Lag growth rate while overloaded:
+  growth = 6,000 − 5,000 = 1,000 events/s
+
+Step 2 — Time to add 1 hour of backlog at this rate:
+  1,000/s × 3,600 s = 3.6M events per hour of lag growth
+
+Step 3 — Catch-up time after ingest drops to 4,000/s (headroom 1,000/s for replay):
+  catch_up = 12M / 1,000 = 12,000 s ≈ 3.3 hours
+
+Result: lag grows 3.6M/hour until capacity ≥ ingest; clearing 12M backlog needs 3.3 h at 1k/s surplus
+
+Sanity check: lag in "messages" ≠ lag in "time" — if burst was 5 minutes at 2× rate,
+  backlog ≈ 6,000 × 300 = 1.8M events; at 5k/s steady state you never catch up without scaling out.
+```
+
 **CQRS / event sourcing** — the log is the source of truth; projections are derived views that can be rebuilt by replaying the stream.
 
 ---
@@ -308,6 +354,29 @@ Reduce: sum counts per word, write part-r files to HDFS.
 
 The job takes minutes to hours — acceptable for offline analytics, unacceptable for interactive queries. That latency gap drove Spark's in-memory DAG model.
 
+**How to calculate:** MapReduce map/reduce task count
+
+```text
+Given:
+  input file = 2 TB on HDFS
+  HDFS block size = 256 MB
+  mapreduce.job.reduces = 64 (explicitly set)
+
+Step 1 — Map tasks (one per input split, ≈ one per block):
+  map_tasks = 2 TB / 256 MB = (2 × 1024 GB) / 0.256 GB = 8,192 map tasks
+
+Step 2 — Reduce tasks:
+  reduce_tasks = 64 (configured — not derived from input size)
+
+Step 3 — Shuffle fan-in per reducer (uniform key distribution):
+  avg_map_outputs_per_reducer ≈ 8,192 / 64 = 128 map spills merged per reduce
+
+Result: 8,192 maps + 64 reduces; YARN must schedule thousands of map containers across the cluster
+
+Sanity check: 2 TB with 128 MB blocks → 16,384 maps — block size directly halves map count;
+  8,192 maps on a 200-node cluster ≈ 41 maps/node — reasonable; 8 maps on 200 nodes underutilizes the cluster.
+```
+
 ---
 
 ### Hadoop vs modern cloud pattern
@@ -391,6 +460,29 @@ flowchart LR
 
 **Partition count** drives parallelism. Rule of thumb: target ~128 MB per partition and roughly 2–3× total CPU cores across executors. Too few partitions → underutilized cluster; too many → task scheduling overhead.
 
+**How to calculate:** partition row sizing
+
+```text
+Given:
+  input Parquet = 640 GB for one day's partition (dt=2024-06-01)
+  target ≈ 128 MB per Spark partition (scan + shuffle friendly)
+  cluster = 32 executor cores total
+
+Step 1 — Partition count from data size:
+  partitions = 640 GB / 128 MB = 640 GB / 0.128 GB = 5,000 partitions
+
+Step 2 — Parallelism check:
+  5,000 tasks / 32 cores ≈ 156 waves — acceptable for overnight batch
+
+Step 3 — Row-based cross-check (avg row 400 bytes):
+  rows ≈ 640 GB / 400 B ≈ 1.6B rows → ~320K rows per partition at 5,000 parts
+
+Result: repartition or read with ~5,000 partitions; or coalesce down if files already well-sized
+
+Sanity check: 640 GB in 50 partitions = 12.8 GB each — long GC, stragglers, shuffle spikes;
+  640 GB in 500,000 partitions — scheduler overhead dominates.
+```
+
 **Caching** (`persist`) keeps hot datasets in memory across iterations (ML training). `MEMORY_AND_DISK` spills gracefully on pressure.
 
 ---
@@ -405,6 +497,29 @@ Shuffle bytes: low (broadcast) vs SortMergeJoin on two huge tables (expensive).
 ```
 
 If both sides are large, salting skewed keys or pre-aggregating before join avoids one reducer holding 90% of data.
+
+**How to calculate:** Spark shuffle data volume
+
+```text
+Given:
+  large table A = 200M rows after filter, ~180 bytes per row on shuffle key + payload
+  join key = user_id (high cardinality — no broadcast)
+  default spark.sql.shuffle.partitions = 200
+
+Step 1 — Shuffle write (one side):
+  shuffle_bytes ≈ 200M × 180 B ≈ 36 GB written to local disk per shuffle stage
+
+Step 2 — Both sides of equi-join shuffle (if B is also large):
+  total_shuffle ≈ 36 GB + size(B) — e.g. 36 + 4 GB ≈ 40 GB network + disk I/O
+
+Step 3 — Per-reducer share (uniform hash):
+  per_task ≈ 36 GB / 200 ≈ 180 MB — healthy
+
+Result: expect ~40 GB shuffle traffic for this join; plan executor disk ≥ 2–3× shuffle spill headroom
+
+Sanity check: if 90% of rows share one user_id, one reducer gets ~32 GB while others get KB —
+  fix with salting or AQE skew join, not more shuffle partitions alone.
+```
 
 **Structured Streaming** — same DataFrame API; default micro-batch reads Kafka offsets every trigger interval. Continuous processing mode exists for lower latency but is narrower in scope than Flink.
 

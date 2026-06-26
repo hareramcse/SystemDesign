@@ -100,6 +100,27 @@ Login:        entered password → hash (+ same salt) → compare with stored ha
 
 **Salting** adds a per-user random value before hashing so identical passwords produce different hashes and rainbow tables fail.
 
+**How to calculate — bcrypt cost factor tradeoff:**
+
+```text
+Given: bcrypt cost factor = 12, server has 4 cores, target ≤ 250 ms per login under load
+
+Step 1 — cost doubles work each +1:
+  cost 10 ≈ ~65 ms, cost 11 ≈ ~130 ms, cost 12 ≈ ~250 ms per hash (order-of-magnitude; measure on your CPU)
+
+Step 2 — peak login throughput (single core):
+  logins/sec ≈ 1 / 0.25 s = 4 hashes/s per core → 4 cores ≈ 16 logins/s before CPU saturation
+
+Step 3 — trade-off:
+  cost 10 → faster logins, weaker against offline GPU cracking
+  cost 12 → OWASP-friendly default on modern hardware
+  cost 14 → ~1 s/hash — consider only for high-value accounts or Argon2id instead
+
+Result: choose cost where p95 hash time ≈ 200–300 ms on production instance type
+
+Sanity check: cost 8 cracks faster in breach dumps; cost 14 without MFA may DoS your login CPU during stuffing — pair with rate limits (10.18).
+```
+
 #### Session-based vs token-based
 
 | | Session-based | Token-based (e.g. JWT) |
@@ -742,6 +763,29 @@ Refresh token: long-lived, stored securely, exchanged only at /token for new acc
 
 When access token expires → client sends refresh token → new access token (optionally rotate refresh token).
 
+**How to calculate — JWT expiry sizing:**
+
+```text
+Given: SPA session UX target = 8 h without re-login, stolen-token risk window, API load 10k req/s
+
+Step 1 — access token TTL (minimize replay window):
+  access_ttl = 15 min (common) → attacker window ≤ 15 min without refresh theft
+
+Step 2 — refresh token TTL (UX):
+  refresh_ttl = 7–30 days with rotation on each use
+
+Step 3 — re-auth math for 8 h active use:
+  refresh calls ≈ 8 h / 15 min = 32 silent refreshes per workday
+
+Step 4 — revocation trade-off:
+  stateless access JWT → logout effective at access_ttl unless blocklist (Redis) or token version bump
+
+Result: access = 15 min, refresh = 30 days rotated, absolute re-login at 30 days
+
+Sanity check: access_ttl > 1 h widens stolen-token blast radius;
+             access_ttl < 5 min spams /token and hurts mobile offline UX.
+```
+
 #### Revocation challenge
 
 Stateless JWTs remain valid until `exp` unless you add:
@@ -863,6 +907,29 @@ TTL:       idle timeout (e.g. 30 minutes)
 
 ```text
 Login 10:00 → absolute cap 18:00 → session ends at 18:00 even if active
+```
+
+**How to calculate — session TTL:**
+
+```text
+Given: idle_timeout = 30 min, absolute_max = 8 h, user activity every 5 min from 09:00 login
+
+Step 1 — idle refresh on each request:
+  Redis TTL reset to 30 min on every authenticated call (sliding idle window)
+
+Step 2 — activity pattern 09:00–17:00 (requests every 5 min):
+  session stays alive via sliding idle — idle timer never fires
+
+Step 3 — absolute cap:
+  login 09:00 + 8 h → forced logout at 17:00 regardless of activity
+
+Step 4 — Redis key lifetime:
+  key TTL = min(idle_remaining, absolute_remaining) on each touch
+
+Result: active banker works all day; lunch break > 30 min without calls → re-login
+
+Sanity check: idle-only without absolute_max → stolen session lives forever if attacker polls;
+             absolute 8 h meets typical compliance; banking may use 15 min idle + 30 min absolute.
 ```
 
 #### Secure cookie flags
@@ -1564,6 +1631,30 @@ Applications call KMS APIs; they do not read raw CMK bytes.
 
 ```text
 Benefits: bulk crypto local and fast; master key never leaves KMS; CMK rotation re-wraps DEKs
+```
+
+**How to calculate — KMS envelope overhead sketch:**
+
+```text
+Given: 1,000 PII records/day, 2 KB each, AES-256-GCM local encrypt, KMS GenerateDataKey + Decrypt per record
+
+Step 1 — data encrypted locally (fast):
+  1,000 × 2 KB = 2 MB/day app CPU crypto — negligible with AES-NI
+
+Step 2 — KMS API calls (cost + latency):
+  write: 1,000 GenerateDataKey ≈ 1,000 × ~5–15 ms = 5–15 s KMS time/day
+  read:  500 views × Decrypt(DEK) ≈ 2.5–7.5 s KMS time/day
+
+Step 3 — vs naive Encrypt(whole blob) per object:
+  2 KB through KMS Encrypt API — within limit but $$$ at scale; envelope keeps KMS off bulk data
+
+Step 4 — DEK cache (5 min TTL, 80% read hit rate):
+  Decrypt calls ≈ 500 × 20% = 100/day → ~0.5–1.5 s KMS time saved
+
+Result: envelope = 2 KMS ops per object lifecycle; bulk crypto stays on app CPU
+
+Sanity check: never send megabytes through KMS Encrypt — use GenerateDataKey + local AES;
+             CloudTrail logs every Decrypt — budget API quotas for traffic spikes.
 ```
 
 #### Key rotation and versioning
@@ -2298,6 +2389,53 @@ Fixed window:   100 req/min per IP — simple; burst at window edge
 Sliding window: smoother distribution
 Token bucket:   allows controlled bursts
 Leaky bucket:   constant outbound processing rate
+```
+
+**How to calculate — rate limit per IP:**
+
+```text
+Given: WAF rule = 100 req/min per IP (fixed window), attacker single IP sends 150 req/min for 2 min
+
+Step 1 — minute 1 allowance:
+  allowed = 100, blocked = 50
+
+Step 2 — minute 2 (window reset):
+  allowed = 100 again, blocked = 50 (fixed window allows 200 req/2 min)
+
+Step 3 — sliding window improvement (same 100/min cap):
+  weighted count at minute 1:59 with 90 prior + 10 new → smoother, fewer edge bursts
+
+Step 4 — login endpoint stricter cap:
+  /login = 10 req/min per IP → 6 failed attempts/min still blocked after 10
+
+Result: origin sees ≤ 100 req/min/IP at edge; combine with ASN scoring for botnets
+
+Sanity check: 100k bots × 100 req/min = 10M req/min — per-IP limits alone fail;
+             CDN/scrubbing must drop volumetric junk before WAF rate rules matter.
+```
+
+**How to calculate — DDoS mitigation capacity:**
+
+```text
+Given: origin capacity = 2,000 req/s (20 app servers × 100 req/s each),
+       attack = 50,000 req/s L7 flood, CDN caches 60% of URL mix, scrubbing drops 95% of remainder
+
+Step 1 — attack after CDN cache hit:
+  miss traffic = 50,000 × 40% = 20,000 req/s to scrubbing tier
+
+Step 2 — after scrubbing (95% junk removed):
+  origin_load = 20,000 × 5% = 1,000 req/s
+
+Step 3 — compare to origin capacity:
+  1,000 req/s < 2,000 req/s → origin survives with ~50% headroom
+
+Step 4 — if scrubbing absent:
+  50,000 req/s >> 2,000 req/s → outage in seconds regardless of autoscale cost
+
+Result: edge must absorb ≥ 96% of attack before origin; autoscale alone is not defense
+
+Sanity check: 1.35 Tbps volumetric needs provider scrubbing (Akamai/Shield), not app replicas;
+             hide origin IP behind CDN or attackers bypass all L7 rules.
 ```
 
 ```mermaid

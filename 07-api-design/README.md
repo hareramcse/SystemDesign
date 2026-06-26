@@ -814,6 +814,26 @@ Aggregator starts:
 NOT T_user + T_order + T_payment
 ```
 
+**How to calculate:**
+
+```text
+Given: T_user = 80 ms, T_order = 120 ms, T_payment = 200 ms (parallel fan-out)
+
+Step 1 — identify parallel calls:
+  User, Order, Payment start at T0 (no dependency between them)
+
+Step 2 — aggregator wait time:
+  T_end = max(80, 120, 200) = 200 ms
+
+Step 3 — compare to sequential (for sanity):
+  T_sequential = 80 + 120 + 200 = 400 ms
+
+Result: dashboard latency ≈ 200 ms (not 400 ms)
+
+Sanity check: tail latency is set by the slowest dependency (Payment);
+             if Payment p99 is 500 ms, dashboard p99 ≈ 500 ms regardless of fast User/Order.
+```
+
 Set **per-dependency deadlines** — tail latency equals the slowest call unless you return partial data earlier.
 
 #### Failure modes
@@ -938,6 +958,26 @@ flowchart LR
 ```text
 Latency ≈ T_user + T_order + T_payment
 Minimize depth; cache stable intermediate reads.
+```
+
+**How to calculate:**
+
+```text
+Given: T_user = 50 ms, T_order = 90 ms, T_payment = 150 ms (sequential chain)
+
+Step 1 — sum each hop (later step needs earlier output):
+  T_total = 50 + 90 + 150 = 290 ms
+
+Step 2 — compare to parallel aggregation (same services, independent):
+  T_parallel = max(50, 90, 150) = 150 ms
+
+Step 3 — depth cost:
+  Extra latency vs parallel = 290 − 150 = 140 ms (sequential tax)
+
+Result: order-summary latency ≈ 290 ms end-to-end
+
+Sanity check: six sequential 50 ms hops → 300 ms minimum;
+             a read-model projection often beats deep composition chains.
 ```
 
 #### Composition vs database join
@@ -1182,6 +1222,26 @@ LIMIT 10 OFFSET 20;
 ```
 
 Returns rows 21–30 (0-indexed skip 20, take 10).
+
+**How to calculate — deep offset cost:**
+
+```text
+Given: table has 10M rows, query uses ORDER BY id LIMIT 10 OFFSET 1_000_000
+
+Step 1 — rows the engine must walk:
+  scan_and_discard ≈ OFFSET + LIMIT = 1_000_000 + 10 = 1_000_010 rows
+
+Step 2 — compare to cursor (keyset) on indexed id:
+  WHERE id > last_seen_id LIMIT 10 → ≈ 10 index lookups (O(page size), not O(offset))
+
+Step 3 — rough latency ratio (same hardware, indexed id):
+  offset page 100k vs cursor page 100k → offset often 10×–100× slower at deep pages
+
+Result: page 100,001 via offset touches ~1M rows before returning 10
+
+Sanity check: OFFSET 0 is cheap; OFFSET in the millions is an anti-pattern —
+             switch to cursor for infinite scroll and high-churn feeds.
+```
 
 **How to calculate total pages:**
 
@@ -2052,6 +2112,30 @@ flowchart LR
 
 **Retry:** failed delivery → exponential backoff → dead-letter queue after max attempts.
 
+**How to calculate — webhook retry backoff:**
+
+```text
+Given: initial delay = 1 s, multiplier = 2, max attempts = 5, jitter ±20%
+
+Step 1 — attempt schedule (no jitter):
+  attempt 1: immediate
+  wait 1 s  → attempt 2
+  wait 2 s  → attempt 3
+  wait 4 s  → attempt 4
+  wait 8 s  → attempt 5
+
+Step 2 — total retry window:
+  1 + 2 + 4 + 8 = 15 s of backoff delays (+ handler time per try)
+
+Step 3 — with jitter (example attempt 3):
+  base 4 s → random in [3.2 s, 4.8 s] spreads thundering herds
+
+Result: subscriber has ≈ 15–20 s to recover before DLQ on 5-attempt policy
+
+Sanity check: return 2xx within provider timeout (often 5–30 s) on first try;
+             design idempotent handlers — same event_id may arrive on attempts 2–5.
+```
+
 **Security** (public URLs accept anyone's HTTP):
 
 | Method | How |
@@ -2263,6 +2347,29 @@ flowchart LR
 
 **Example:** allowed processing rate 100 req/s; incoming 1,000 req/s → ~100 processed per second; remainder queued (risk: tail latency) or rejected depending on policy.
 
+**How to calculate — throttle queue wait:**
+
+```text
+Given: drain rate = 100 req/s, arrival burst = 1,000 req/s for 10 s, queue capacity = 500
+
+Step 1 — net accumulation per second during burst:
+  net = 1,000 − 100 = 900 req/s queued
+
+Step 2 — queue fill after 1 second:
+  queued = 900 (> capacity 500) → 400 rejected or shed immediately (policy-dependent)
+
+Step 3 — if first 500 are admitted, time to drain after burst stops:
+  drain_time = 500 / 100 = 5 s
+
+Step 4 — tail latency for last queued request:
+  wait ≈ 5 s (plus processing time) before response
+
+Result: p99 latency spikes to seconds under sustained overload; cap queue depth
+
+Sanity check: unbounded queues turn overload into hour-long waits — prefer 503 + Retry-After
+             when queue > cap instead of infinite buffering.
+```
+
 **Throttling vs rate limiting:**
 
 | | Rate limiting | Throttling |
@@ -2446,6 +2553,29 @@ Content-Type: application/json
 | `status` | `processing` / `completed` / `failed` |
 | `response_code`, `response_body` | Exact replay |
 | `expires_at` | TTL (24–72h typical) |
+
+**How to calculate — idempotency key TTL window:**
+
+```text
+Given: client retry window = 2 min (timeouts + 3 retries), ops replay window = 24 h, payment dispute window = 72 h
+
+Step 1 — minimum TTL (cover client retries):
+  TTL_min ≥ max_retry_span ≈ 2–5 min → use at least 24 h for safety margin
+
+Step 2 — business-driven TTL (payments):
+  TTL = max(client_retry, support_replay, dispute_lookback) ≈ 72 h
+
+Step 3 — storage estimate:
+  keys/day = 50k mutating POSTs × 72 h / 24 h ≈ 150k live keys
+
+Step 4 — memory (Redis, ~500 B/record):
+  150k × 500 B ≈ 75 MB for idempotency store
+
+Result: set expires_at = now + 72 h; purge via TTL index or Redis EX
+
+Sanity check: TTL too short → duplicate charges on late retries;
+             TTL too long → unbounded store; 24–72 h is the usual production band.
+```
 
 ---
 

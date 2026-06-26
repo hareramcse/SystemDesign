@@ -361,6 +361,33 @@ If each node holds ~100 keys:
 
 Three disk reads can locate one row among a million — the design target for index depth.
 
+**How to calculate — B+ tree height:**
+
+```text
+Given:  N = 50,000,000 index keys (rows or index entries)
+        Page size = 16 KB (PostgreSQL default)
+        Key + pointer ≈ 16 bytes per index entry (8-byte key + 8-byte page pointer)
+        Fan-out (keys per internal node) ≈ 16,384 / 16 ≈ 1,024 keys per page
+
+Step 1 — keys addressable per level (all leaves at same depth):
+  Level 1 (root only)           ≈ 1,024
+  Level 2                       ≈ 1,024² ≈ 1,048,576
+  Level 3                       ≈ 1,024³ ≈ 1.07 × 10⁹
+
+Step 2 — height for N = 50M:
+  1,024² = 1.05M < 50M < 1.07B = 1,024³  →  tree height = 3 levels
+  Point lookup ≈ 3 disk reads (root + internal + leaf) on cold cache
+
+Step 3 — sanity with smaller fan-out (fan-out = 100, common rule-of-thumb):
+  height = ceil(log₁₀₀(50,000,000)) = ceil(4.35) = 5 levels
+
+Result: 50M-row B+ tree index is 3–5 page reads deep depending on fan-out;
+        buffer pool keeps root + upper levels hot → often 1 leaf read after warm-up.
+
+Sanity check: doubling N adds at most one level (fan-out thousands per page);
+              UUID v4 random inserts still pay leaf-page splits — height stays low but pages fragment.
+```
+
 #### Insertion and split (order 4, max 3 keys)
 
 Start: `[10|20|30]`. Insert 40 → overflow `[10|20|30|40]`. Promote middle key 20:
@@ -1056,11 +1083,29 @@ Plus **sparse index** (sample keys → file offsets) and often a **Bloom filter*
 - **Read amplification** — files checked per read
 - **Space amplification** — duplicate keys across levels before compaction
 
-**How to calculate write amplification:**
+**How to calculate — write amplification:**
 
-- **Given:** compaction rewrites 10 MB of SSTables for every 1 MB of new user writes over an hour
-- **Write amplification ≈** `10 / 1 = 10×`
-- **Sanity check:** leveled compaction often 10–30×; size-tiered lower write amp, higher read amp
+```text
+Given:  1 GB of new user writes (PUT/DELETE) over 24 hours
+        Compaction rewrites 12 GB of on-disk SSTable bytes in the same period
+
+Step 1 — write amplification (WA):
+  WA = bytes_written_by_compaction / bytes_written_by_users
+     = 12 GB / 1 GB = 12×
+
+Step 2 — read amplification (RA) for one point read:
+  MemTable checked: 1
+  SSTables on disk: 6 files, Bloom filters say "maybe" in 2 files
+  RA ≈ 1 + 2 = 3 disk seeks (worst case without Bloom: 1 + 6 = 7)
+
+Step 3 — space amplification (SA) before compaction:
+  Same key updated 5 times across levels → 5 copies on disk briefly
+  SA ≈ 5× for that key until compaction merges
+
+Result: WA ≈ 12× write cost vs user data; tune leveled vs size-tiered for WA vs RA trade-off.
+
+Sanity check: leveled compaction often WA 10–30×, RA ~1–2; size-tiered WA ~2–5×, RA higher.
+```
 
 ```mermaid
 flowchart LR

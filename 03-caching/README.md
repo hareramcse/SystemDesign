@@ -1002,6 +1002,37 @@ flowchart LR
 
 - Long tail of rarely accessed IDs — wastes memory and startup time.
 
+**How to calculate — cache warming time:**
+
+```text
+Given:  Warm 10,000 product keys into Redis
+        Batch size = 500 keys per round trip (MSET pipeline)
+        DB fetch per batch ≈ 40 ms (indexed IN query)
+        Redis MSET per batch ≈ 5 ms
+        4 parallel warmup workers
+
+Step 1 — batches total:
+  batches = 10,000 / 500 = 20 batches
+
+Step 2 — time per batch (sequential DB + Redis):
+  per_batch ≈ 40 ms + 5 ms = 45 ms
+
+Step 3 — sequential warmup (1 worker):
+  total ≈ 20 × 45 ms = 900 ms ≈ 0.9 s
+
+Step 4 — parallel workers (4), assume linear speedup on independent key ranges:
+  total ≈ 900 ms / 4 ≈ 225 ms
+
+Step 5 — readiness gate:
+  Do not mark pod ready until warmup completes → add 225 ms to deploy cold-start SLO
+
+Result: ~0.2–1 s warmup for 10k keys with batching; 1M keys at same batch rate ≈ 100× longer (~90 s) —
+        warm only the hot subset or run async warmup with partial traffic.
+
+Sanity check: network cross-AZ DB adds latency per batch; pipeline without batching (10k individual SETs)
+              can be 10–50× slower than MSET batches.
+```
+
 ---
 
 ### Pitfalls and design tips
@@ -1095,6 +1126,36 @@ Reject malformed IDs at the API gateway (`id` must be UUID, or numeric range 1�
 | Null cache | Repeat lookups for same bad key | Redis pollution |
 | Bloom filter | Random non-existent IDs | False positive DB hits; rebuild lag |
 | Validation | Out-of-range junk | Does not stop valid-format fake IDs |
+
+**How to calculate — penetration load vs Bloom + null cache:**
+
+```text
+Given:  Attack traffic = 50,000 RPS of random product_id lookups
+        Valid catalog = 1,000,000 IDs; attacker IDs are never in catalog
+        Bloom filter: n = 1M, p = 1% false-positive rate (~1.2 MB)
+        Null-cache TTL = 60 s for confirmed misses
+
+Step 1 — Bloom rejects (definitely not in set):
+  For random IDs not in the 1M set, almost all pass "definitely NOT" → ~100% safe reject
+  DB queries from Bloom alone ≈ 0/s
+
+Step 2 — without Bloom (cache aside only):
+  Every request → cache miss → DB query
+  DB load = 50,000 QPS  →  likely outage
+
+Step 3 — with Bloom only (no null cache), 1% FP on edge cases:
+  If 1% of 50k wrongly pass "maybe" → 500 DB queries/s still possible on adversarial mix
+
+Step 4 — Bloom + null cache after first DB miss:
+  First probe per bad ID hits DB once, then Redis NULL EX 60 for 60 s
+  Steady-state DB ≈ unique_bad_keys_per_minute (not 50k/s)
+
+Result: Bloom blocks ~100% of never-seen random IDs; null cache caps repeat probes to ~1 DB read
+        per bad key per TTL window.
+
+Sanity check: attacker sending unique UUID every request defeats null cache — add rate limiting + Bloom;
+              Bloom must be rebuilt when catalog grows past design n.
+```
 
 ---
 
@@ -1303,6 +1364,33 @@ Cron or jittered refresh at 80% of TTL before expiry — key never goes cold.
 | Singleflight | Single process | `golang.org/x/sync/singleflight` |
 | Logical expiry | Hot read-mostly keys | Application pattern |
 | Early refresh | Scheduled hot keys | Sidecar cron, Celery |
+
+**How to calculate — distributed lock TTL (stampede protection):**
+
+```text
+Given:  Hot key rebuild query p99 = 800 ms, p99.9 = 2,500 ms
+        Redis lock: SET lock:product:42 NX EX <TTL>
+        10,000 concurrent missers when key expires
+
+Step 1 — lock holder must finish before TTL expires:
+  TTL_min > p99.9_rebuild + safety_margin
+  TTL_min > 2,500 ms + 500 ms ≈ 3 s  →  round up to EX 5 or EX 10
+
+Step 2 — waiter behavior (no lock):
+  Poll cache every 50 ms for up to 3 s → max 60 polls × 10k clients still cheap on Redis GET
+  Only 1 holder runs SELECT; others wait → DB sees 1 query not 10,000
+
+Step 3 — if TTL too short (EX 1 s) with 2.5 s query:
+  Lock expires at 1 s → second builder starts → duplicate DB load (partial stampede)
+
+Step 4 — if TTL too long (EX 300 s) and holder crashes:
+  Key stays cold until lock expires → 300 s outage for that entry
+
+Result: lock TTL ≈ 2–3× p99 rebuild time (often 5–15 s for Redis EX), with short client wait loop;
+        use lock value + Lua compare-and-del on success to avoid deleting another holder's lock.
+
+Sanity check: EX 10 s with 800 ms p99 rebuild is safe; EX 1 s is not — tune from EXPLAIN ANALYZE on miss path.
+```
 
 ---
 

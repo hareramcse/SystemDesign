@@ -259,6 +259,34 @@ Query "quick AND fox":
 
 **Compression:** doc_id deltas + variable-byte or PForDelta encoding shrink indexes 3–10×. Very common terms (`the`) compress aggressively because lists are huge.
 
+**How to calculate:** inverted index size estimate
+
+```text
+Given:
+  N = 20M documents
+  avg 250 indexed terms per document (after stop-word removal)
+  ~6 bytes per compressed posting (doc_id delta + tf; positions omitted)
+  dictionary + norms + skip-list overhead ≈ 25% on top of postings
+
+Step 1 — Total postings:
+  total_postings = 20M × 250 = 5 billion postings
+
+Step 2 — Posting list bytes:
+  postings = 5B × 6 B ≈ 30 GB
+
+Step 3 — Add structural overhead:
+  index_size ≈ 30 GB × 1.25 ≈ 38 GB
+
+Step 4 — Compare to raw source text:
+  raw_text ≈ 20M × 250 terms × 5 chars ≈ 25 GB uncompressed
+  index / source ≈ 38 / 25 ≈ 1.5× (positions + stored fields push higher in production)
+
+Result: ~35–40 GB inverted index for this corpus before _source storage
+
+Sanity check: rule-of-thumb "index = 20–50% of source" applies when _source is stored separately;
+  with full _source JSON, total disk often lands at 1.5–2× raw text — not just the inverted index alone.
+```
+
 #### Tokenization pipeline
 
 ```text
@@ -533,6 +561,29 @@ Index "orders" (3 primary shards)
 | Custom routing | Same `user_id` → same shard for efficient per-user queries |
 | Too many shards | Cluster state overhead, small segments, wasted heap |
 
+**How to calculate:** shard count for corpus
+
+```text
+Given:
+  projected index size = 900 GB (primary data only, one year growth included)
+  target shard size = 40 GB (middle of 10–50 GB guidance)
+  fixed at index creation — cannot shrink shard count without reindex
+
+Step 1 — Minimum primaries needed:
+  primaries = ceil(900 / 40) = ceil(22.5) = 23
+
+Step 2 — Round to operational sweet spot:
+  choose 24 primary shards → ~37.5 GB per shard at full size
+
+Step 3 — Replicas (number_of_replicas = 1):
+  total_shard_copies = 24 primaries × 2 = 48 Lucene indices on disk
+
+Result: create index with 24 primary shards; each grows to ~37 GB
+
+Sanity check: 900 GB / 3 shards = 300 GB each — too fat for merge and recovery;
+  900 GB / 200 shards = 4.5 GB each — cluster state and heap overhead dominate.
+```
+
 #### Replicas
 
 `number_of_replicas: 1` → one primary + one replica per shard; survives loss of one copy.
@@ -540,6 +591,29 @@ Index "orders" (3 primary shards)
 - **Write:** primary indexes → async replicate to replicas.
 - **Read:** coordinating node may assign query phase to replicas for load spread.
 - **Placement:** never put primary and its only replica on the same node; use `node.attr.zone` awareness.
+
+**How to calculate:** replication factor storage
+
+```text
+Given:
+  primary index data = 600 GB (all primary shards summed)
+  number_of_replicas = 2  (two replica copies per primary → 3 total copies each)
+  24 primary shards
+
+Step 1 — Copies per shard:
+  copies_per_shard = 1 primary + 2 replicas = 3
+
+Step 2 — Total cluster disk for this index:
+  total = 600 GB × 3 = 1,800 GB ≈ 1.8 TB
+
+Step 3 — Per-node planning (3 data nodes, balanced):
+  per_node ≈ 1.8 TB / 3 ≈ 600 GB for this index alone
+
+Result: replicas=2 triples storage vs no replicas; budget 1.8 TB before snapshots and translog
+
+Sanity check: number_of_replicas=1 doubles storage (1 primary + 1 replica) —
+  interview mistake is treating "replicas=1" as "one copy total" instead of "one extra copy."
+```
 
 #### Near real-time (NRT)
 
@@ -559,6 +633,30 @@ POST /index/_doc  →  memory buffer  →  refresh (1s)  →  searchable segment
 - `refresh_interval: 30s` — bulk log ingest; higher throughput, staler search.
 - `refresh_interval: -1` — disable auto-refresh during bulk load; call `_refresh` after.
 - `refresh=wait_for` — write blocks until next refresh (stronger read-your-writes).
+
+**How to calculate:** refresh interval vs NRT lag
+
+```text
+Given:
+  index.refresh_interval = 5s (bulk log ingest)
+  steady write rate — documents arrive uniformly
+  search does NOT use refresh=wait_for
+
+Step 1 — Worst-case search visibility lag:
+  a doc indexed just after a refresh waits nearly full interval → max_lag ≈ 5s
+
+Step 2 — Average lag (uniform arrivals):
+  avg_lag ≈ refresh_interval / 2 = 5 / 2 = 2.5s
+
+Step 3 — Write latency if refresh=wait_for:
+  write blocks until next refresh → p99 write latency += up to 5s
+  search lag after acknowledged write ≈ 0
+
+Result: 5s refresh → users see new logs in 0–5s (avg ~2.5s); bulk throughput improves vs 1s default
+
+Sanity check: refresh_interval = 30s for overnight backfill → avg 15s stale search is acceptable for analytics;
+  checkout search on product catalog should stay at 1s or use wait_for for read-your-writes tests only.
+```
 
 #### Aggregations
 
@@ -793,6 +891,33 @@ doc B title: "wireless ergonomic mouse pad set"  (5 terms, both query terms appe
 doc A: shorter → higher length-normalized score despite fewer total words
 doc B: "mouse" appears once in longer title → lower per-term contribution
 → doc A ranks above doc B
+```
+
+**How to calculate:** BM25 intuition — comparing two title lengths
+
+```text
+Given:
+  avgdl = 8 tokens, k1 = 1.2, b = 0.75
+  IDF(mouse) = 1.5 (same for both docs — same corpus term)
+  doc A: |D| = 2, f(mouse) = 1
+  doc B: |D| = 5, f(mouse) = 1
+
+Step 1 — Length norm factor for doc A:
+  norm_A = 1 − b + b · (|D|/avgdl) = 1 − 0.75 + 0.75 · (2/8) = 0.4375
+
+Step 2 — TF saturation for doc A (mouse):
+  TF_A = (1 · 2.2) / (1 + 1.2 · 0.4375) = 2.2 / 1.525 ≈ 1.44
+  term_score_A = 1.5 · 1.44 ≈ 2.16
+
+Step 3 — Same for doc B (|D| = 5):
+  norm_B = 1 − 0.75 + 0.75 · (5/8) = 0.71875
+  TF_B = 2.2 / (1 + 1.2 · 0.71875) = 2.2 / 1.8625 ≈ 1.18
+  term_score_B = 1.5 · 1.18 ≈ 1.77
+
+Result: doc A scores ~22% higher on the same term with same tf — shorter field wins
+
+Sanity check: repeating "mouse" 5× in doc B would raise TF but also |D| —
+  saturation + length norm cap the gain; stuffing keywords stops helping.
 ```
 
 ---

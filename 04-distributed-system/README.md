@@ -821,6 +821,39 @@ Load balancers themselves must be redundant (DNS failover, anycast VIP, managed 
 
 **Cost trade-off:** 2× hardware ≈ 2× capex; active-passive leaves ~50% idle; cross-region replication adds egress and consistency complexity.
 
+**How to calculate:**
+
+```text
+Given: 3 app servers in active-active (any one can serve full load)
+       Single-server availability p = 99.5% per month (0.5% downtime each)
+
+Step 1 — probability all replicas fail at once (independent failure domains):
+  P(all down) = (1 − p)³ = 0.005³ = 1.25 × 10⁻⁷
+
+Step 2 — fleet availability:
+  Availability ≈ 1 − (1 − p)³ ≈ 1 − 0.000000125 ≈ 99.99999%
+
+Result: ~three extra nines vs a single node — at ~3× server capex
+
+Sanity check: if all three share one AZ/power domain, correlated failure
+  collapses this — independence assumption must hold for the math to apply
+```
+
+```text
+Given: Active-passive pair, primary handles 100% traffic, standby idle
+
+Step 1 — capex:
+  2 servers × $500/mo = $1,000/mo (≈2× single-server cost)
+
+Step 2 — utilization:
+  Primary at 60% CPU, standby at ~5% (health checks only) → ~32% fleet average
+
+Result: ~2× hardware cost for N+1 failover; ~50% of compute idle until failover
+
+Sanity check: active-active spreads load and uses both boxes; active-passive
+  is cheaper to reason about but wastes half the fleet under normal operation
+```
+
 ### Pitfalls and design tips
 
 - **Redundant but not independent** — same power strip, same switch, same bug in all replicas = one failure domain.
@@ -1515,6 +1548,30 @@ flowchart LR
     Majority --> Future[Future reads via quorum see new value]
 ```
 
+**How to calculate:**
+
+```text
+Given: N = 3 replicas, write quorum W = 2, read quorum R = 2
+
+Step 1 — overlap rule (read sees a write):
+  R + W > N  →  2 + 2 = 4 > 3 ✓
+  Every read quorum shares ≥1 node with every write quorum
+
+Step 2 — fault tolerance (majority must survive):
+  Max simultaneous failures f = ⌊(N − 1) / 2⌋ = ⌊2/2⌋ = 1
+  Cluster stays writable if W = 2 nodes remain reachable
+
+Step 3 — write latency (single-region):
+  Client waits for slowest of W acks ≈ max(RTT₁, RTT₂) + fsync
+  Example: 2 × 5 ms RTT + 3 ms disk ≈ 8 ms quorum write overhead
+
+Result: 3-node Raft/etcd tolerates 1 failure; linearizable writes need
+        majority (2 of 3) before ack
+
+Sanity check: N = 4 with W = 2 allows split-brain (two partitions of 2
+  each both think they have quorum) — odd N is standard for consensus
+```
+
 **Comparison with related models**
 
 | Model | Global order | Real-time order | Stale read after write |
@@ -1622,6 +1679,47 @@ flowchart LR
 
 When DB slows, connection pools fill, payment blocks, order blocks, gateway returns 503 or queues — pressure travels upstream.
 
+**How to calculate:**
+
+```text
+Given: Producer rate λ_in = 10,000 msg/s
+       Consumer rate λ_out = 1,000 msg/s
+       Bounded queue capacity Q_max = 50,000 messages
+
+Step 1 — net queue growth rate:
+  dQ/dt = λ_in − λ_out = 10,000 − 1,000 = 9,000 msg/s
+
+Step 2 — time until queue full (starting empty):
+  t_fill = Q_max / 9,000 = 50,000 / 9,000 ≈ 5.6 s
+
+Step 3 — memory if unbounded after 60 s:
+  Q(60 s) = 9,000 × 60 = 540,000 messages
+  At 2 KB/msg → ≈ 1.08 GB heap growth from backlog alone
+
+Result: without backpressure, OOM in ~5.6 s with a 50K cap; unbounded
+        queue adds ~540K messages in one minute
+
+Sanity check: throttling producer to λ_out = 1,000 msg/s keeps queue
+  stable (dQ/dt = 0) — backpressure must cap ingress at consumer capacity
+```
+
+```text
+Given: Bounded queue Q_max = 1,000, consumer λ_out = 500 msg/s
+       Producer burst λ_in = 2,000 msg/s for 2 s, then 500 msg/s steady
+
+Step 1 — burst accumulation:
+  Excess in burst = (2,000 − 500) × 2 = 3,000 messages
+  Queue overflows (3,000 > 1,000) unless producer blocks or drops
+
+Step 2 — choose blocking backpressure:
+  Producer limited to 500 msg/s once queue full → stable depth ≤ 1,000
+
+Result: queue depth stays ≤ Q_max; producer blocks ~75% of burst capacity
+
+Sanity check: if blocking uses thread-per-request, blocked threads can
+  exhaust the pool — pair bounded queues with async or reactive pull
+```
+
 ### Pitfalls and design tips
 
 - Unbounded in-memory queues (`LinkedBlockingQueue` without capacity) hide backpressure until the JVM dies — always bound buffers and monitor queue depth.
@@ -1694,6 +1792,47 @@ After error threshold, breaker opens — fast-fail locally instead of hammering 
 | Goal | Core features with reduced extras | Full function on backup | Often invisible recovery |
 | User impact | Noticeable reduction | Should be minimal | Ideally none |
 | Example | Hide recs | Promote replica DB | RAID rebuild transparently |
+
+**How to calculate:**
+
+```text
+Given: Checkout SLO = 99.9% success (error budget = 0.1%)
+       1,000,000 checkout attempts/month
+       Optional rec-service failures would add 0.08% errors if not isolated
+       Core path (catalog + cart + payment) failure rate = 0.02%
+
+Step 1 — monthly error budget (checkouts):
+  Allowed failures = 1,000,000 × 0.001 = 1,000 failures/month
+
+Step 2 — without degradation (rec failures fail whole page):
+  Total error rate ≈ 0.02% + 0.08% = 0.10% → 1,000 failures (budget exhausted)
+
+Step 3 — with degradation (hide rec widget, core path only):
+  Effective error rate ≈ 0.02% → 200 failures/month
+
+Result: degradation preserves ~800 failures/month of budget for real
+        checkout bugs and deploy risk
+
+Sanity check: shedding optional features should not hide core-path SLO
+  regressions — monitor checkout and rec circuits separately
+```
+
+```text
+Given: Peak traffic = 10,000 RPS, system capacity = 8,000 RPS (overload)
+       Critical tier (checkout) needs 3,000 RPS capacity
+       Sheddable tier (analytics + recs) = 4,000 RPS
+
+Step 1 — deficit without shedding:
+  Overload = 10,000 − 8,000 = 2,000 RPS over capacity → queues grow, all paths slow
+
+Step 2 — shed low-priority 4,000 RPS first:
+  Remaining demand ≈ 6,000 RPS < 8,000 capacity → core fits with headroom
+
+Result: drop ~40% of ingress (non-critical) to protect checkout latency
+
+Sanity check: classify traffic before the incident — ad-hoc shedding under
+  fire often drops the wrong requests; use feature flags and priority queues
+```
 
 ### Pitfalls and design tips
 

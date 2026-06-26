@@ -72,34 +72,54 @@ It does **not** tell you how many items are stored, list members, or delete keys
 
 ### How it works — the algorithm inside
 
-Internally, a Bloom filter is just two things:
+```text
+Input key                    Bit array (fixed m bits)              Output
+─────────                    ────────────────────────              ──────
+product:42  ──hash──►  set k bit positions  ──►  [0,1,1,0,1,…]  DEFINITELY_NOT
+random-id   ──hash──►  any bit = 0?         ──►  (skip DB)       or MAYBE (verify DB)
+```
 
-1. A **bit array** of size `m`, all zeros at the start.
-2. **`k` independent hash functions**, each mapping a key to an index from `0` to `m − 1`.
+Memory stays **fixed at m bits** whether you insert thousands or billions of keys — unlike a hash set that grows with every key.
 
-Hash functions spread keys pseudo-randomly across the array. Using **multiple** hashes reduces the chance that unrelated keys accidentally line up on the same bits.
+#### Step 1 — Hash the key to spread bits uniformly
 
-#### Insert algorithm
+Each key passes through hash functions that map to indices `0 … m − 1`. Real implementations often use **double hashing** — one base hash plus offsets — to simulate `k` independent positions cheaply:
+
+```text
+h_i(key) = (h1(key) + i × h2(key)) mod m     for i = 0 … k−1
+```
+
+Uniform spread matters: clustered hashes inflate false positives because unrelated keys collide on the same bits.
+
+#### Step 2 — Insert: set k bits (never clear)
 
 ```text
 function insert(key):
     for i = 1 to k:
-        index = hash_i(key)
-        bit_array[index] = 1    // set to 1; already-1 stays 1
+        bit_array[hash_i(key)] = 1
 ```
 
-#### Lookup algorithm
+Setting a bit that is already `1` is a no-op. Overlaps between keys are expected — that is how memory stays small, and also how false positives arise.
+
+#### Step 3 — Lookup: one zero means definite absence
 
 ```text
 function lookup(key):
     for i = 1 to k:
-        index = hash_i(key)
-        if bit_array[index] == 0:
+        if bit_array[hash_i(key)] == 0:
             return DEFINITELY_NOT_PRESENT
-    return POSSIBLY_PRESENT    // all k bits are 1 — confirm downstream
+    return POSSIBLY_PRESENT
 ```
 
-Both operations run in **O(k)** time — constant with respect to how many keys were inserted, because `k` is fixed at design time (often around 7 for a 1% false-positive target).
+If **any** probed bit is `0`, the key was **never** inserted (no false negatives on standard filters). All `k` bits `1` → **maybe** — confirm with the authoritative store.
+
+#### Step 4 — False positives and sizing trade-off
+
+Collisions accumulate as `n` grows toward `m`. Size `m` and `k` from target error rate `p` (see calculation block below). More bits → fewer false positives; more hash functions → sharper discrimination up to an optimum, then diminishing returns.
+
+#### Step 5 — Mini state after two inserts (toy m = 10, k = 3)
+
+Use the fruit walkthrough below for a worked bitmap — after `"Apple"` and `"Banana"`, `"Orange"` may still read as **possibly present** when bits 2, 5, 7 were set only by other keys.
 
 ```mermaid
 flowchart LR
@@ -111,6 +131,12 @@ flowchart LR
     Any0 -->|Yes| DefNot[Definitely not present]
     Any0 -->|No| Maybe[Possibly present — verify store]
 ```
+
+| Operation | Complexity | Notes |
+|-----------|------------|-------|
+| Insert | O(k) | k fixed at design time (~7 for 1% p) |
+| Lookup | O(k) | No dependence on n inserted |
+| Memory | O(m) bits | Fixed; does not store keys |
 
 ---
 
@@ -859,6 +885,38 @@ function prefix_search(prefix):
 | Insert / search | O(L) |
 | Prefix query | O(L + K), K = results |
 
+**How to calculate — trie memory (approximate):**
+
+```text
+Given:  500,000 unique English words in autocomplete dictionary
+        Average word length L = 8 characters
+        26 lowercase children per node (array of pointers) — naive implementation
+        Pointer size = 8 bytes, plus 1 byte isEndOfWord flag (padded to alignment)
+
+Step 1 — upper bound (no prefix sharing — worst case):
+  nodes ≈ 500,000 × 8 chars = 4,000,000 nodes
+  per node ≈ 26 × 8 B pointers + overhead ≈ 208 B
+  memory ≈ 4M × 208 B ≈ 832 MB  (pessimistic)
+
+Step 2 — realistic with prefix sharing (English corpus):
+  Shared prefixes ("inter", "pre", "un") collapse paths
+  Empirical rule: ~0.3–0.6 × naive node count → ~1.2M–2.4M nodes
+  memory ≈ 1.5M × 208 B ≈ 312 MB
+
+Step 3 — compact map-based children (production tries):
+  Only store existing child edges (map<char, Node*>) → ~50–150 B per node average
+  1.5M nodes × 100 B ≈ 150 MB
+
+Step 4 — radix tree compression (single-child chains merged):
+  Often 2–5× reduction vs naive trie → ~30–80 MB for this dictionary size
+
+Result: plan ~150–300 MB RAM for 500k-word autocomplete trie (map children);
+        naive 26-array nodes can exceed 800 MB — use radix trees or external stores (Elasticsearch).
+
+Sanity check: 10M URLs with little shared prefix → memory approaches naive bound; IP radix trees
+              compress better because addresses share high-order bits.
+```
+
 ---
 
 ### Walkthrough: insert and prefix query
@@ -951,6 +1009,38 @@ Level 1:  Head → 1 → 3 → 5 → 7 → 9
 ```
 
 **Level assignment:** coin flip with `p = 0.5` — promote while heads. `P(level ≥ i) = p^(i−1)`.
+
+**How to calculate — expected skip-list levels:**
+
+```text
+Given:  n = 1,000,000 keys in sorted skip list
+        Promotion probability p = 0.5 (coin flip per level)
+
+Step 1 — expected level of a new node:
+  P(level ≥ 1) = 1
+  P(level ≥ 2) = p = 0.5
+  P(level ≥ 3) = p² = 0.25
+  P(level ≥ i) = p^(i−1)
+  Expected level count per node = 1 / (1 − p) = 1 / 0.5 = 2 levels (including level 1)
+
+Step 2 — expected nodes at each express level (geometric distribution):
+  Level 1: n = 1,000,000
+  Level 2: n × p = 500,000
+  Level 3: n × p² = 250,000
+  Level i: n × p^(i−1)
+
+Step 3 — expected max level in structure:
+  L_max ≈ log_{1/p}(n) = log₂(1,000,000) ≈ 20 levels (typical upper express lane)
+
+Step 4 — search path length (average):
+  O(log_{1/p} n) = O(log₂ n) ≈ 20 pointer hops average for n = 1M
+
+Result: with p = 0.5 and 1M keys, expect ~20-level max tower, ~2 forward pointers per node on average;
+        p = 0.25 → fewer pointers per node, taller towers (~log₄ n ≈ 10 hops).
+
+Sanity check: Redis ZSET uses p ≈ 0.25 in some implementations — less memory, slightly longer searches;
+              worst-case O(n) if every coin flip promotes to max level (probability 2^(−n) tiny).
+```
 
 #### Search algorithm
 
@@ -1226,6 +1316,35 @@ flowchart LR
 
 Typically **eventual consistency** — AP under partition unless quorum protocols added (Cassandra tunable consistency is separate).
 
+**How to calculate — DHT lookup hop count (Chord / Kademlia):**
+
+```text
+Given:  N = 1,024 nodes on the ring
+        Each node maintains finger table / k-buckets routing to successors at distances 2^i
+        Structured DHT lookup complexity O(log N) hops
+
+Step 1 — hops for Chord-style finger routing:
+  hops ≈ log₂(N) = log₂(1024) = 10 hops worst-case per lookup
+
+Step 2 — example trace (simplified):
+  Start node 10, target key hashes to node ID 900
+  Hop 1: finger to node ≥ 10 + 2^9 = 522  →  jump to 522
+  Hop 2: finger to node ≥ 522 + 2^8 = 778  →  jump to 778
+  … each hop at least halves remaining ring distance → ≤ 10 hops
+
+Step 3 — Kademlia (k = 20 buckets):
+  hops ≈ log₂(N) similarly; each step reduces XOR distance to target ID
+  At N = 1,000,000: hops ≈ log₂(1,000,000) ≈ 20
+
+Step 4 — latency estimate:
+  10 hops × 2 ms RTT per hop (WAN) ≈ 20 ms routing overhead per get(key)
+  (in-datacenter: 10 × 0.1 ms ≈ 1 ms)
+
+Result: 1,024-node DHT → ~10 hops; 1M nodes → ~20 hops — scalable routing without central directory.
+
+Sanity check: unstructured flooding is O(N); DHT's log N is why BitTorrent/IPFS use Kademlia at scale.
+```
+
 ---
 
 ### Walkthrough: node join
@@ -1344,6 +1463,34 @@ function uuid_v7():
 ```text
 xxxxxxxx-xxxx-Mxxx-Nxxx-xxxxxxxxxxxx
 M = version, N = variant
+```
+
+**How to calculate — UUID v4 collision odds (birthday bound):**
+
+```text
+Given:  UUID v4 has 122 random bits (RFC 9562)
+        Generate n IDs, ask P(at least one collision)
+
+Step 1 — approximate collision probability (birthday paradox):
+  P(collision) ≈ 1 − e^(−n² / (2 × 2^122))
+  Space size M = 2^122 ≈ 5.3 × 10^36
+
+Step 2 — n = 1 billion IDs (10^9):
+  n² = 10^18
+  n² / (2M) ≈ 10^18 / (2 × 5.3 × 10^36) ≈ 9.4 × 10^−19
+  P(collision) ≈ negligible (≈ 10^−18)
+
+Step 3 — n = 1 trillion IDs (10^12) — extreme lifetime:
+  n² = 10^24
+  P(collision) ≈ 10^24 / (2 × 5.3 × 10^36) ≈ 9 × 10^−14  →  still negligible
+
+Step 4 — rule of thumb (50% collision chance):
+  Need n ≈ √(2M × ln 2) ≈ 2.71 × 10^18 IDs — billions of billions
+
+Result: for any realistic system (< 10^12 IDs), v4 collision risk is ignored; use v7 for sortable PKs, not collision fear.
+
+Sanity check: if you generate 1 billion IDs/sec for 100 years you still won't approach birthday threshold;
+              operational risk is duplicate generation bugs, not random collision.
 ```
 
 ---

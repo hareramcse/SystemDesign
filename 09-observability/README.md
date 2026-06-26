@@ -330,6 +330,60 @@ P95 = 300 ms   — 5% slower than this
 P99 = 800 ms   — worst 1% — often what SLOs target
 ```
 
+**How to calculate — trace sampling rate:**
+
+```text
+Given:  Traffic = 8,000 requests/s
+        Target stored traces = 800 traces/s (collector + storage budget)
+        Head sampling: fixed percentage before export
+
+Step 1 — sample rate:
+  rate = target_traces / total_requests = 800 / 8,000 = 10% (0.1)
+
+Step 2 — storage per day (rough):
+  Avg spans per trace = 12, avg span size ≈ 500 bytes
+  traces/day = 800 × 86,400 = 69,120,000
+  storage ≈ 69.12M × 12 × 500 B ≈ 415 GB/day raw (compress ~3–5× in backend)
+
+Step 3 — tail sampling adjustment:
+  Keep 100% of status=ERROR and duration > 2 s even if head rate is 10%
+  → effective stored rate may be 11–15% but rare slow/error paths are never dropped
+
+Result: 10% head sampling at 8k RPS → ~800 traces/s; raise rate only if budget allows.
+
+Sanity check: 100% sampling at 8k RPS with 12 spans ≈ 4 TB/day — prohibitive without aggressive retention.
+```
+
+**How to calculate — histogram bucket sizing (latency SLO):**
+
+```text
+Given:  Latency SLO = "95% of requests < 500 ms"
+        Prometheus histogram http_request_duration_seconds
+        Current buckets: 0.1, 0.25, 0.5, 1, 2.5, 5 (seconds)
+
+Step 1 — bracket the SLO threshold:
+  SLO at 500 ms → need bucket boundary at 0.5 s (already present ✓)
+  Add 0.25 and 0.75 if you need finer burn alerts between 250–500 ms
+
+Step 2 — estimate P95 from buckets (histogram_quantile):
+  histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le))
+  Requires ≥ 2 buckets below and above typical P95 for stable interpolation
+
+Step 3 — SLI from histogram:
+  requests_under_500ms ≈ sum(rate(..._bucket{le="0.5"}[30d]))
+  total                ≈ sum(rate(..._count[30d]))
+  latency_SLI          ≈ requests_under_500ms / total
+
+Step 4 — bad bucket choice example:
+  Only buckets 0.1, 1.0, 10.0 → cannot measure 500 ms SLO accurately
+
+Result: place bucket boundaries at SLO thresholds (100 ms, 250 ms, 500 ms, 1 s) plus service knee
+        in latency curve; too many buckets (>20 per metric) increases cardinality cost.
+
+Sanity check: if P95 ≈ 480 ms and bucket at 0.5 s, small regressions to 520 ms are visible;
+              averages alone would hide tail violations.
+```
+
 ---
 
 ### How it works — the architecture inside
@@ -1163,6 +1217,35 @@ burn_rate = current_error_rate / allowed_error_rate
 
 Allowed: 0.1%  |  Current: 0.5%
 burn_rate = 0.5 / 0.1 = 5×  → budget drains 5× faster than sustainable
+```
+
+**How to calculate — error budget burn (multi-step):**
+
+```text
+Given:  SLO = 99.9% availability (30-day rolling window)
+        Total requests in window so far = 20,000,000
+        Failed requests so far = 30,000
+        Allowed error budget fraction = 100% − 99.9% = 0.1%
+
+Step 1 — total allowed failures for window at this volume:
+  allowed_failures = 20,000,000 × 0.001 = 20,000 failures
+
+Step 2 — budget consumed:
+  consumed = 30,000 / 20,000 = 1.5×  →  150% of budget spent (SLO miss unless failures stop)
+
+Step 3 — burn rate (last 1 hour slice):
+  last_hour_requests = 500,000, failures = 2,500
+  current_error_rate = 2,500 / 500,000 = 0.5% = 0.005
+  allowed_error_rate = 0.1% = 0.001
+  burn_rate = 0.005 / 0.001 = 5×
+
+Step 4 — time to exhaust remaining budget (rough):
+  If 50% budget remains and burn_rate = 5× sustained → miss in ~0.1 × 30 days ≈ 3 days
+  Google SRE multi-window alerts page at burn_rate ≈ 14.4× on short + long windows together
+
+Result: burn_rate = current_error_rate / allowed_error_rate; > 1× means on track to miss SLO.
+
+Sanity check: 5× burn for one hour is urgent; 1.1× for 5 minutes may be noise — pair 5m + 1h windows.
 ```
 
 Burn-rate alerts warn when you're on track to miss the month even if today's SLI still passes.

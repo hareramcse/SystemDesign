@@ -1133,6 +1133,28 @@ flowchart LR
 
 - **When not to use:** fewer than ~10 services, few internal calls — libraries (Resilience4j) + K8s Services are enough.
 - **Sidecar cost:** ~50–100 MB RAM and ~0.5–1.5 ms latency per hop — measure before meshing everything.
+
+**How to calculate — mesh latency overhead:**
+
+```text
+Given: baseline service RTT = 8 ms (app-to-app without mesh),
+       mesh overhead per hop = 0.5–1.5 ms (Envoy sidecar in + out ≈ 1 hop each direction)
+
+Step 1 — single call Order → Payment (one mesh hop each way):
+  overhead ≈ 1.0 ms (outbound) + 1.0 ms (inbound) = 2 ms
+
+Step 2 — chained call Order → Payment → Inventory (2 internal hops):
+  overhead ≈ 2 hops × 1.0 ms × 2 directions = 4 ms (use 0.5 ms/hop → 2 ms; 1.5 ms/hop → 6 ms)
+
+Step 3 — total user-visible latency (3-service chain):
+  T_total ≈ 8 + 8 + 8 + 4 = 28 ms app work + mesh tax (vs 24 ms without mesh)
+
+Result: +2–6 ms per multi-hop path at cited sidecar overhead
+
+Sanity check: 50-hop deep call graphs are an architecture smell — mesh overhead compounds linearly;
+             at <10 services, 1–2 ms/hop is usually acceptable for mTLS + policy wins.
+```
+
 - **Debugging:** extra hop makes traces essential; learn `istioctl` / Linkerd dashboards.
 - **Interview angle:** mesh = east-west; gateway = north-south; use both together.
 - **Istio ambient mode:** moves some functions to node level — less per-pod overhead than classic sidecars.
@@ -1297,6 +1319,31 @@ The breaker protects **caller resources** and gives the failing dependency room 
 | Minimum calls | 10 | Sample size before tripping |
 | Open duration | 30 s | Wait before half-open |
 | Half-open probes | 5 | Test calls allowed |
+
+**How to calculate — circuit breaker thresholds:**
+
+```text
+Given: sliding window = 60 s, failure rate threshold = 50%, minimum calls = 10,
+       open duration = 30 s, half-open probes = 5
+
+Step 1 — sample before trip (need minimum volume):
+  calls < 10 in window → breaker stays CLOSED (avoid noise trips)
+
+Step 2 — trip condition at volume:
+  8 failures / 12 calls = 66.7% > 50% → OPEN circuit
+
+Step 3 — open state behavior:
+  next 30 s: all calls fail fast (0 ms wait vs 10 s timeout each)
+  threads saved ≈ 1,000 concurrent × 10 s = 10,000 s-thread blocked → 0
+
+Step 4 — half-open probe:
+  after 30 s, allow 5 test calls; if ≥ 80% succeed → CLOSED, else OPEN again
+
+Result: trip after 50%+ failures with ≥ 10 samples; 30 s cooldown before retry
+
+Sanity check: threshold too low (10%) flaps on normal blips;
+             too high (90%) exhausts pools before opening — tune with dependency p99 error rate.
+```
 
 ---
 
@@ -1546,6 +1593,32 @@ Request 11 → rejected immediately (no thread consumed waiting)
 | Payment pods | 2 cores | 4 GB |
 | Notification pods | 1 core | 2 GB |
 
+**How to calculate — bulkhead thread pool sizing:**
+
+```text
+Given: Order service has 100 worker threads, 3 dependencies,
+       Payment p99 = 2 s (slow), Inventory/Notification p99 = 200 ms
+
+Step 1 — reserve pools (leave headroom for HTTP ingress):
+  available ≈ 100 − 20 (ingress/overhead) = 80 threads for outbound
+
+Step 2 — allocate by blast-radius priority:
+  Payment (slow, critical):     20 threads
+  Inventory (fast, critical):   30 threads
+  Notification (fast, optional): 30 threads
+
+Step 3 — saturation behavior:
+  Payment at 20 concurrent × 2 s = 40 in-flight max; request 21 → bulkhead reject immediately
+
+Step 4 — verify healthy paths still have threads:
+  Inventory pool full does not drain Payment pool (isolation goal)
+
+Result: payment bulkhead = 20 threads; inventory = 30; notification = 30
+
+Sanity check: sum of pools ≤ available workers;
+             if one pool is always empty, steal capacity — bulkheads are not static forever.
+```
+
 ---
 
 ### How it works — the architecture inside
@@ -1721,6 +1794,32 @@ Failure: … → PAYMENT_FAILED → RELEASE_INVENTORY → CANCEL_ORDER → FAILE
 ```
 
 **Correlation:** every event and log line carries `saga_id` for tracing.
+
+**How to calculate — saga timeout budget:**
+
+```text
+Given: 4 saga steps with per-step timeouts — Order 5 s, Inventory 10 s, Payment 30 s, Shipping 15 s;
+       compensation steps: Release 5 s, Cancel 5 s
+
+Step 1 — happy-path budget (sequential orchestration):
+  T_happy = 5 + 10 + 30 + 15 = 60 s
+
+Step 2 — failure at Payment (worst common case):
+  forward = 5 + 10 + 30 = 45 s (payment times out)
+  compensate = 5 (release) + 5 (cancel) = 10 s
+  T_fail = 45 + 10 = 55 s
+
+Step 3 — orchestrator workflow timeout:
+  saga_timeout ≥ T_fail + margin ≈ 55 + 15 = 70 s (set workflow TTL to 90 s)
+
+Step 4 — client-facing SLA:
+  if UX requires < 30 s, Payment step budget must shrink or run async after hold
+
+Result: orchestrator timeout ≈ 90 s; payment is the dominant step (30 s)
+
+Sanity check: sum of step timeouts > user patience → return 202 + poll;
+             choreography needs the same budget on consumer processing deadlines.
+```
 
 **Saga vs 2PC:**
 

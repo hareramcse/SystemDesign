@@ -163,6 +163,27 @@ flowchart LR
     Key[Partition key] --> H[Hash function] --> Mod["% N partitions"] --> P[Target partition]
 ```
 
+**How to calculate:**
+
+```text
+Given: 100 million user rows, target ≤ 30 million rows per partition
+       4 physical servers (shards)
+
+Step 1 — minimum partition count:
+  Partitions needed = 100M / 30M ≈ 3.34 → round up to 4 partitions
+
+Step 2 — rows per partition (even split):
+  100M / 4 = 25 million rows per server
+
+Step 3 — hash routing check (UserID 50,000,001):
+  Partition index = 50,000,001 % 4 = 1 → Server-2 (0-indexed: partition 1)
+
+Result: 4 partitions, ~25M rows each, point lookup hits 1 of 4 servers
+
+Sanity check: 25M rows × ~1 KB/row ≈ 25 GB data per shard before indexes —
+  verify disk and memory headroom, not just row count
+```
+
 ---
 
 ### Pitfalls and design tips
@@ -275,6 +296,30 @@ Shard-3: UserID 5, 6
 
 Sharding combines with **replication** — each shard typically has its own primary and replicas (see 5.11).
 
+**How to calculate:**
+
+```text
+Given: 100 million users, 3 shards, replication factor RF = 2
+       ~500 bytes/user row (data + indexes)
+
+Step 1 — users per shard:
+  100M / 3 ≈ 33.3 million users/shard
+
+Step 2 — storage per shard (primary only):
+  33.3M × 500 B ≈ 16.7 GB primary data per shard
+
+Step 3 — total physical storage (RF = 2):
+  16.7 GB × 2 × 3 shards ≈ 100 GB across cluster
+
+Step 4 — write QPS per shard (even spread):
+  Peak 15,000 writes/s fleet → 15,000 / 3 = 5,000 writes/s per shard leader
+
+Result: 3 shards, ~33M users each, ~5K writes/s per primary at peak
+
+Sanity check: one hot shard key can 10× one shard's QPS — monitor per-shard
+  traffic, not fleet average; add shards before any primary exceeds CPU target
+```
+
 ---
 
 ### Pitfalls and design tips
@@ -379,6 +424,29 @@ P2: 101, 104
 **Insert:** `UserID = 125` → `125 % 3 = 2` → store in P2.
 
 **Lookup:** `UserID = 125` → `125 % 3 = 2` → read P2 only.
+
+**How to calculate:**
+
+```text
+Given: UserID = 12,345, partition key formula = UserID % 8
+       Cluster has 8 hash partitions (P0–P7)
+
+Step 1 — compute partition index:
+  12,345 % 8 = 1  →  route to P1
+
+Step 2 — verify distribution (sample of 8 consecutive IDs):
+  12,344 % 8 = 0,  12,345 % 8 = 1,  …  12,351 % 8 = 7
+  One ID per partition in any block of 8 consecutive IDs
+
+Step 3 — resharding cost if N changes 8 → 10:
+  Keys that remap ≈ (1 − 1/10) of all keys ≈ 90% move (naive modulo)
+
+Result: UserID 12,345 lives on P1; changing N without consistent hashing
+        forces ~90% key migration
+
+Sanity check: hash(UserID) % N spreads storage; it does not spread traffic
+  on a single viral UserID — hot keys stay hot on one partition
+```
 
 ---
 
@@ -485,6 +553,29 @@ flowchart LR
 | **OrderID** | P1 → 1–50000, P2 → 50001–100000 |
 | **Date** | P1 → January, P2 → February |
 | **Age** | P1 → 0–18, P2 → 19–40 |
+
+**How to calculate:**
+
+```text
+Given: 3 million orders, UserID range 1–3,000,000
+       Range partitions: P1 = 1–1,000,000, P2 = 1,000,001–2,000,000,
+                         P3 = 2,000,001–3,000,000
+       Query: SELECT * WHERE UserID BETWEEN 1,200,000 AND 1,500,000
+
+Step 1 — identify overlapping partitions:
+  Range 1.2M–1.5M lies entirely inside P2 (1,000,001–2,000,000)
+
+Step 2 — partitions scanned:
+  1 partition (P2 only), not all 3
+
+Step 3 — expected rows if uniform:
+  3M / 3 = ~1M rows in P2; query range = 300,000 IDs → ~300,000 rows
+
+Result: single-partition range scan on P2 (~300K rows)
+
+Sanity check: query 50–2,500,000 would hit all 3 partitions — wide ranges
+  erase the pruning benefit of range partitioning
+```
 
 ---
 
@@ -681,6 +772,30 @@ P2, P3 → Regular users
 
 **Effects:** slower responses, resource exhaustion, reduced overall efficiency — the system scales on paper but not in practice.
 
+**How to calculate:**
+
+```text
+Given: 3 partitions, traffic split P1 = 80%, P2 = 10%, P3 = 10%
+       Fleet capacity if perfectly balanced = 9,000 QPS total
+       Each partition max = 3,000 QPS
+
+Step 1 — actual traffic per partition:
+  P1 = 9,000 × 0.80 = 7,200 QPS  (exceeds 3,000 cap → hot)
+  P2 = 900 QPS,  P3 = 900 QPS     (underutilized)
+
+Step 2 — effective fleet throughput (bottleneck):
+  P1 throttles at 3,000 QPS; P2 + P3 serve 1,800 QPS
+  Usable fleet ≈ 3,000 + 900 + 900 = 4,800 QPS (53% of nominal 9,000)
+
+Step 3 — skew ratio:
+  P1 carries 7,200 / 3,000 = 2.4× its fair share (240% of target)
+
+Result: hot partition caps fleet at ~4,800 QPS despite 9,000 QPS nominal
+
+Sanity check: adding a 4th partition without fixing skew does not help if
+  80% of keys still route to the same hot key or range
+```
+
 ---
 
 ### Pitfalls and design tips
@@ -789,6 +904,29 @@ After:   P1 → 34%   P2 → 33%   P3 → 33%
 
 Naive `hash % N` reshuffling moves most keys when N changes — consistent hashing (5.8) limits migration to keys near the changed ring position.
 
+**How to calculate:**
+
+```text
+Given: Total data = 90 GB across 3 partitions (P1 = 70 GB, P2 = 20 GB, P3 = 10 GB)
+       Target: ≤ 35 GB per partition after rebalance
+
+Step 1 — data to move from P1:
+  Excess = 70 − 35 = 35 GB must leave P1
+
+Step 2 — redistribution plan:
+  Move 15 GB P1 → P2  (P2: 20 + 15 = 35 GB)
+  Move 20 GB P1 → P3  (P3: 10 + 20 = 30 GB)
+  P1 after: 70 − 35 = 35 GB
+
+Step 3 — migration time at 500 MB/s network:
+  35 GB / 500 MB/s ≈ 70 s minimum (plus routing cutover)
+
+Result: ~35 GB transferred; all three partitions within target band
+
+Sanity check: rebalance during peak doubles I/O on source and target —
+  throttle to 10–20% of link capacity in production
+```
+
 ---
 
 ### Pitfalls and design tips
@@ -890,6 +1028,29 @@ flowchart LR
     Traditional ~~~ Consistent
 ```
 
+**How to calculate:**
+
+```text
+Given: 1 billion keys, N = 4 nodes on the ring (uniform key distribution)
+       Add 5th node P5 to the cluster
+
+Step 1 — keys moved with consistent hashing (uniform arcs):
+  Fraction migrating ≈ 1 / (N + 1) = 1/5 = 20%
+  Keys moved ≈ 1B × 0.20 = 200 million keys
+
+Step 2 — compare to naive modulo (N = 4 → 5):
+  Fraction remapping ≈ 1 − 1/5 = 80%
+  Keys moved ≈ 1B × 0.80 = 800 million keys
+
+Step 3 — migration time (200M keys, 1 KB each, 500 MB/s link):
+  Data ≈ 200 GB; time ≈ 200 GB / 500 MB/s ≈ 400 s (~6.7 min) data copy only
+
+Result: consistent hash moves ~200M keys; naive hash moves ~800M keys
+
+Sanity check: without vnodes, arc lengths are uneven — actual migration may
+  differ from 20%; add vnodes (5.9) before trusting uniform math
+```
+
 ---
 
 ### Pitfalls and design tips
@@ -984,6 +1145,31 @@ With vnodes:     S1 → 33%   S2 → 34%   S3 → 33%
 **Add S4:** insert S4A, S4B, S4C; only keys near new vnodes move.
 
 **Remove S2:** drop S2A, S2B, S2C; their keys reassign to next clockwise vnode.
+
+**How to calculate:**
+
+```text
+Given: 3 physical servers, V = 256 vnodes per server
+       Total vnodes on ring = 3 × 256 = 768
+       Target load per server = 33.3% ± 5%
+
+Step 1 — expected keys per physical server (uniform):
+  Each server owns 256/768 ≈ 33.3% of keyspace
+
+Step 2 — skew without vnodes (example from section):
+  S1 = 15%, S2 = 25%, S3 = 60% → max/min ratio = 60/15 = 4×
+
+Step 3 — skew with 256 vnodes per server:
+  Expected spread ≈ 33% ± 3–5% (law of large numbers on arc count)
+
+Step 4 — add 4th server (256 new vnodes):
+  Keys migrating ≈ 256 / (768 + 256) = 256/1024 = 25% of keyspace
+
+Result: vnodes cut skew from 4× to ~1.1×; adding 4th node moves ~25% of keys
+
+Sanity check: V = 8 vnodes is too few — skew remains visible; V = 256 is
+  Cassandra's default for a reason; V = 10,000 adds metadata overhead
+```
 
 ---
 
@@ -1097,6 +1283,28 @@ flowchart LR
   Max --> Owner[Winning server]
 ```
 
+**How to calculate:**
+
+```text
+Given: 3 servers (S1, S2, S3), 1 million keys, add server S4
+
+Step 1 — probability a random key's winner changes when adding S4:
+  Under HRW, key moves only if Hash(K+S4) > max(Hash(K+S1), Hash(K+S2), Hash(K+S3))
+  For uniform hash scores, P(move) ≈ 1 / (n + 1) where n = old server count
+  P(move) ≈ 1/4 = 25%
+
+Step 2 — keys that migrate:
+  1M × 0.25 = 250,000 keys
+
+Step 3 — lookup cost per read:
+  3 servers → 3 hashes; after add → 4 hashes (O(N) per key lookup)
+
+Result: ~250K keys move to S4; each lookup evaluates 4 hash scores
+
+Sanity check: same ~1/(N+1) migration order as consistent hashing, but
+  HRW's O(N) lookup makes it best for small N (tens), not thousands
+```
+
 ---
 
 ### Pitfalls and design tips
@@ -1198,6 +1406,34 @@ flowchart LR
 
 Quorum tuning for reads and writes: 5.14 and 5.15.
 
+**How to calculate:**
+
+```text
+Given: Primary data = 500 GB, replication factor RF = 3
+       Async replication, peak write rate = 10,000 rows/s
+       Average row = 2 KB, replication lag target < 5 s
+
+Step 1 — total physical storage:
+  500 GB × RF = 1,500 GB across all replicas
+
+Step 2 — write fan-out per primary write:
+  1 primary + (RF − 1) replica updates = 2 network copies per row (RF=3)
+
+Step 3 — replication throughput needed at peak:
+  10,000 rows/s × 2 KB = 20 MB/s outbound from primary
+
+Step 4 — lag bound (replica apply rate must keep up):
+  If replica applies 25 MB/s > 20 MB/s → lag stable
+  If replica applies 10 MB/s < 20 MB/s → lag grows 10 MB/s net
+  Lag after 5 s deficit ≈ (20 − 10) × 5 = 50 MB unapplied (~25,000 rows)
+
+Result: RF=3 → 1.5 TB total; 20 MB/s replication stream; need apply rate
+        ≥ ingest rate to keep lag under 5 s
+
+Sanity check: sync replication adds RTT to every commit — RF=3 with sync
+  acks from 2 replicas is durability win, not a lag-free async setup
+```
+
 ---
 
 ### Pitfalls and design tips
@@ -1289,6 +1525,31 @@ flowchart LR
 ```
 
 Leader fails → cluster elects or promotes a follower → clients redirect writes to new leader.
+
+**How to calculate:**
+
+```text
+Given: Async replication, leader write rate = 5,000 TPS
+       Follower apply rate = 4,500 TPS (10% slower than leader)
+       Initial lag = 0 at t = 0
+
+Step 1 — lag growth rate:
+  d(lag)/dt = 5,000 − 4,500 = 500 transactions/s
+
+Step 2 — lag after 60 s:
+  Lag = 500 × 60 = 30,000 transactions behind
+
+Step 3 — stale read window:
+  Reader on follower may miss last 30,000 writes (~6 s of leader traffic)
+
+Step 4 — RPO on leader crash (async):
+  Unreplicated writes ≈ current lag = 30,000 txns at crash instant
+
+Result: ~30K txns (~6 s) stale/RPO exposure unless reads route to leader
+
+Sanity check: sync replica cuts RPO to ~0 but adds one RTT per commit;
+  route "read your writes" sessions to leader or track replication LSN
+```
 
 ---
 
@@ -1387,6 +1648,29 @@ flowchart LR
 | **Conflicts** | None (single writer) | Must resolve |
 | **Latency** | Remote writers pay RTT | Local writes per region |
 | **Complexity** | Lower | Higher |
+
+**How to calculate:**
+
+```text
+Given: User in Singapore, single leader in Virginia (RTT ≈ 200 ms one-way)
+       Multi-leader with writable node in Singapore (RTT ≈ 5 ms)
+
+Step 1 — single-leader write latency (round trip to leader):
+  App → Virginia leader → ack ≈ 2 × 200 ms = 400 ms per write
+
+Step 2 — multi-leader local write:
+  App → Singapore leader → ack ≈ 2 × 5 ms = 10 ms per write
+
+Step 3 — conflict probability (rough order-of-magnitude):
+  If 2 regions edit same row concurrently at 100 writes/s each:
+  Collision rate depends on app; even 0.01% → 0.02 conflicts/s →
+  ~1,700 conflicts/day needing merge policy
+
+Result: multi-leader saves ~390 ms/write locally; pays conflict resolution cost
+
+Sanity check: 400 ms write RTT is why global apps use regional leaders;
+  bank ledgers still use single-leader or per-shard leaders to avoid merges
+```
 
 ---
 
@@ -1736,6 +2020,32 @@ flowchart LR
     Abort --> Done2[No partial state]
 ```
 
+**How to calculate:**
+
+```text
+Given: 3 participants (payment, inventory, order), RTT = 20 ms each hop
+       Prepare + commit phases (classic 2PC)
+
+Step 1 — minimum round trips:
+  Prepare: coordinator → 3 participants + 3 votes back = 2 × 20 ms = 40 ms
+  Commit:  coordinator → 3 participants + 3 acks     = 40 ms
+  Total coordination ≈ 80 ms (excluding local DB work)
+
+Step 2 — participant lock hold time:
+  Locks held from local prepare until commit/abort message arrives
+  If coordinator slow or blocked, locks held ≥ 80 ms + coordinator delay
+
+Step 3 — timeout sizing:
+  Client timeout should exceed 2 × RTT × participants + local prepare
+  Example: 80 ms network + 200 ms local prepare + 100 ms margin = 380 ms min
+
+Result: 3-participant 2PC adds ~80 ms coordination overhead; locks block
+        concurrent writers on touched rows for the full transaction
+
+Sanity check: adding a 4th participant adds another RTT pair — 2PC latency
+  grows linearly with participant count; sagas avoid long cross-service locks
+```
+
 ---
 
 ### Pitfalls and design tips
@@ -2022,6 +2332,33 @@ Crash → lease expires → another server can acquire
 ```
 
 **Fencing tokens:** when an old leader's lease expires and a new leader acquires the lock, the storage layer rejects writes from the stale holder using monotonically increasing tokens — critical for split-brain scenarios (5.20).
+
+**How to calculate:**
+
+```text
+Given: Lock TTL = 30 s, job duration = 45 s, heartbeat renew every 10 s
+
+Step 1 — lease renewals during job:
+  Renewals at t = 10, 20, 30 s → lease extended to 40, 50, 60 s
+  Job completes at 45 s while lease valid until 60 s ✓
+
+Step 2 — failure case (TTL = 30 s, no renewal, job = 45 s):
+  Owner crashes at t = 0; lease expires at t = 30 s
+  New owner acquires at t = 30 s while old owner still running until t = 45 s
+  Overlap window = 15 s (split-brain risk without fencing)
+
+Step 3 — safe TTL sizing:
+  TTL ≥ max(job duration) + network jitter + GC pause
+  Or: TTL = 30 s with renew every TTL/3 (10 s) and abort if renew fails
+
+Step 4 — recovery time after crash:
+  New acquirer waits ≤ TTL = 30 s (no renewals)
+
+Result: renew every TTL/3; pair with fencing tokens if work can outlive TTL
+
+Sanity check: TTL = 5 min after crash means 5 min before failover —
+  balance recovery speed (short TTL) vs false expiry (long TTL + renew)
+```
 
 ---
 
@@ -2963,6 +3300,37 @@ Gossip propagates Failed state to all members
 | **Gossip (decentralized)** | Scalable, fault tolerant | Temporary view divergence |
 
 Membership feeds **service discovery** (which nodes exist) but is not the same as discovering API endpoints for Payment vs Inventory services.
+
+**How to calculate:**
+
+```text
+Given: Phi-accrual failure detector (Cassandra/Akka style)
+       Heartbeat interval = 1 s, acceptable delay μ = 100 ms, stddev σ = 50 ms
+       Node misses 3 consecutive heartbeats
+
+Step 1 — expected arrival vs observed silence:
+  Expected gap between heartbeats ≈ 1 s
+  Observed silence = 3 s
+
+Step 2 — phi threshold (simplified intuition):
+  φ ≈ −log10(P(node still alive | 3 s silence))
+  With μ = 0.1 s, σ = 0.05 s, 3 s silence is many σ above mean
+  φ >> 8 (typical suspect threshold) → mark suspect/failed
+
+Step 3 — tuning trade-off:
+  Low φ threshold (e.g. 4) → fast failure detection, more false positives
+  High φ threshold (e.g. 12) → tolerates GC pauses, slower detection
+
+Step 4 — detection time vs heartbeat:
+  Fixed rule: 3 missed × 1 s = 3 s to suspect
+  Phi-accrual: may suspect at 2 s if jitter is low, hold at 4 s during known GC
+
+Result: use suspect state + φ ≥ 8 before marking failed; pair with
+        graceful leave to avoid deploy false alarms
+
+Sanity check: phi accrual adapts to network jitter; fixed "3 misses"
+  fires during a 3 s stop-the-world GC on an otherwise healthy node
+```
 
 ---
 
