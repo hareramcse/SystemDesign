@@ -6,45 +6,15 @@
 
 ## Overview
 
-Advanced topics in system design sit outside everyday CRUD but appear constantly at scale. This chapter covers four areas that often appear together in production systems:
+This chapter covers data structures and identifier schemes that show up repeatedly in large-scale backends — CDN caches, analytics pipelines, distributed databases, peer-to-peer systems, and services that must assign unique IDs across many machines without a single central database handing out numbers.
 
-1. **Probabilistic structures** — fixed-memory approximations for streams at billion-event scale
-2. **Specialized data structures** — tries, skip lists, and Merkle trees for prefix, order, and integrity
-3. **Distributed hash tables** — decentralized key placement and O(log N) lookup on a ring
-4. **Sortable unique IDs** — distributed primary keys without a central allocator
+**Probabilistic structures** are the first group. They give approximate answers using a fixed amount of memory, which matters when the stream never ends and storing every key is impossible. A Bloom filter tells you whether an item might already be in a set. It never says "definitely not there" when the item was actually inserted, but it can say "maybe there" when it was not — so you use it to skip costly lookups, not as the final source of truth. HyperLogLog answers a different question: how many *distinct* values have passed through the stream, such as unique visitors or unique client IPs, in about 12 KB with roughly 1–2% error. Count-Min Sketch answers yet another: how many times a specific key appeared — useful for heavy-hitter detection, rate limiting, and trending queries. Its frequency estimates may be high, but they are not low. In practice these three are often used together: Bloom to filter, HyperLogLog for cardinality, Count-Min Sketch for per-key counts.
 
-Each section builds on ideas introduced earlier. Later sections reference earlier explanations instead of repeating them.
+**Specialized trees and lists** come next. A trie stores strings by sharing common prefixes, which makes prefix search fast — think autocomplete, spell-check dictionaries, and IP routing tables. A skip list is a sorted in-memory structure with express-lane layers that skip over nodes; it gives tree-like O(log n) performance with simpler implementation and concurrency than a balanced binary tree, which is why Redis uses it for sorted sets. A Merkle tree hashes data bottom-up into a single root value. That root acts as a fingerprint for the whole dataset, and you can prove one record belonged to a snapshot by supplying only a short chain of sibling hashes — the pattern behind Git, Cassandra anti-entropy repair, blockchains, and certificate transparency logs.
 
-```mermaid
-flowchart TB
-    Prob[13.1–13.3 Probabilistic structures] --> Struct[13.4–13.6 Specialized structures]
-    Struct --> DHT[13.7 Distributed hash tables]
-    DHT --> IDs[13.8–13.11 Sortable unique IDs]
-    Prob --> BF[13.1 Bloom — membership]
-    Prob --> HLL[13.2 HyperLogLog — distinct count]
-    Prob --> CMS[13.3 Count-Min Sketch — frequency]
-```
+**Distributed hash tables** explain how a cluster of nodes acts as one key-value store without a central coordinator. Each key is hashed onto a logical ring, and the node that owns that segment stores the value. When nodes join or leave, consistent hashing limits how many keys move compared with naive modulo sharding. Protocols like Chord and Kademlia add routing tables so any node can find the owner in O(log N) hops instead of walking the entire ring. Replication and virtual nodes spread load and survive failures. The same ideas appear in Cassandra's ring, BitTorrent's DHT, and IPFS content routing.
 
-### Probabilistic structures at a glance
-
-Three structures answer **different** streaming questions. They are often combined in analytics pipelines (e.g. Bloom pre-filter → HLL for uniques → CMS for top-K):
-
-| Structure | Question it answers | Memory | Error type |
-|-----------|---------------------|--------|------------|
-| **Bloom filter** (13.1) | Is this item in the set? | Fixed bits | False positives only |
-| **HyperLogLog** (13.2) | How many distinct items? | ~12 KB fixed | ~1–2% relative |
-| **Count-Min Sketch** (13.3) | How many times did this item appear? | Fixed d × w | Overestimate only |
-
-### ID generation at a glance
-
-Distributed systems need unique, often time-ordered IDs. **13.8 UUID** holds the **canonical comparison table** for UUID v4/v7, Snowflake, ULID, and KSUID. Sections 13.9–13.11 cover each alternative in depth; refer to 13.8 when choosing between schemes.
-
-**Quick guidance:**
-
-- **Opaque, no coordination** → UUID v4
-- **Sortable + RFC standard** → UUID v7
-- **Compact numeric + max throughput** → Snowflake (13.9) — requires worker IDs
-- **Sortable string, no worker IDs** → ULID (13.10) or KSUID (13.11) — KSUID has more entropy, second-level time precision
+The last group is **distributed unique IDs**. Microservices, sharded databases, and event pipelines all need identifiers that are unique across processes and often sortable by creation time so database indexes stay efficient. UUID is the familiar 128-bit standard; version 4 is random, while version 7 adds a time-ordered prefix. Snowflake packs timestamp, machine ID, and a per-millisecond sequence into a 64-bit integer — compact and very fast, but it requires assigning worker IDs and keeping clocks in sync. ULID and KSUID are string encodings that combine time with randomness and sort lexicographically without worker coordination; KSUID carries more random bits but only second-level time precision. Section 13.8 compares all of these side by side; sections 13.9 through 13.11 go deeper on Snowflake, ULID, and KSUID.
 
 ---
 
@@ -68,8 +38,6 @@ Distributed systems need unique, often time-ordered IDs. **13.8 UUID** holds the
 
 
 ## 13.1 Bloom Filters
-
-Probabilistic structures (**13.1–13.3**) answer approximate questions on unbounded streams with fixed memory. Bloom filters test **set membership** — see **Overview** for how they differ from HyperLogLog and Count-Min Sketch.
 
 ### Definition
 
@@ -395,7 +363,6 @@ Request key K
 Bloom filter = bit array + k hash functions; "definitely not" or "possibly present"
 No false negatives; false positives controlled by m, k, n; confirm positives with backing store
 Variants: counting (delete), scalable (grow), blocked/partitioned (performance)
-For HLL and Count-Min Sketch, see Overview probabilistic structures table (13.2, 13.3)
 ```
 
 ---
@@ -703,7 +670,6 @@ A CDN logs billions of requests per day. Each edge node maintains an HLL per cus
 HyperLogLog = fixed-memory approximate distinct count via leading-zero patterns in hashes
 Split hash → register index + ρ → max update → harmonic mean estimate; ~1–2% error at 12 KB
 Mergeable (max per register); Redis PFADD/PFCOUNT/PFMERGE; does not store elements
-For Bloom filter and Count-Min Sketch, see Overview (13.1, 13.3)
 ```
 
 ---
@@ -890,7 +856,7 @@ d ≈ ⌈ln(1000)⌉ ≈ 7
 | **Stores keys** | Yes | No |
 | **Undercount** | No | Never (overestimate only) |
 
-Bloom filter (membership) and HyperLogLog (distinct count) solve different problems — see **Overview** probabilistic structures table and sections **13.1**, **13.2**.
+Bloom filter (membership) and HyperLogLog (distinct count) solve different streaming problems — see sections **13.1** and **13.2**.
 
 ### Variants
 
@@ -988,15 +954,13 @@ An API gateway tracks per-API-key request counts in a CMS instead of a full hash
 ```text
 Count-Min Sketch = d × w counter matrix; d hashes per insert; query = min across rows
 Never underestimates (overestimate only); fixed memory; heavy hitters and rate limiting
-See Overview for Bloom/HLL relationship; w = e/ε, d = ln(1/δ)
+w = e/ε, d = ln(1/δ)
 ```
 
 ---
 
 
 ## 13.4 Trie
-
-Specialized structures in **13.4–13.6** optimize specific access patterns that hash tables and arrays handle poorly: **prefix search** (trie), **sorted in-memory order** (skip list), and **integrity proofs** (Merkle tree).
 
 ### Definition
 
@@ -1704,8 +1668,6 @@ Git, Cassandra repair, blockchain SPV, Ethereum Patricia tree; not a search inde
 
 ## 13.7 Distributed Hash Tables
 
-DHTs (**13.7**) bridge specialized structures and ID generation: they show how **consistent hashing** distributes ownership across nodes — the same ring concept underlying Cassandra partitions and elastic cache clusters.
-
 ### Definition
 
 A **Distributed Hash Table (DHT)** is a decentralized key-value store where data is distributed across multiple nodes, and each node is responsible for a portion of the keyspace.
@@ -1997,8 +1959,6 @@ Vnodes balance load; eventual consistency; BitTorrent, IPFS, Cassandra, Ethereum
 
 ## 13.8 UUID
 
-Sections **13.8–13.11** cover distributed ID generation. **This section** defines UUID versions and holds the **canonical ID scheme comparison table** used throughout the rest of the chapter.
-
 ### Definition
 
 A **UUID** (Universally Unique Identifier) is a 128-bit identifier used to uniquely identify information in distributed systems **without central coordination**.
@@ -2184,8 +2144,6 @@ No coordination; comparison table above covers Snowflake, ULID, KSUID
 
 
 ## 13.9 Snowflake IDs
-
-Compact **64-bit integer** IDs with worker coordination and highest per-node throughput. Compare with string-based ULID/KSUID and RFC UUIDs in **13.8**.
 
 ### Definition
 
@@ -2440,8 +2398,6 @@ Twitter/X origin; vs UUID: smaller, sortable; vs auto-increment: distributed
 
 ## 13.10 ULID
 
-**128-bit** lexicographically sortable string IDs — no worker registry. See **13.8** for full scheme comparison; see **13.11 KSUID** for higher-entropy alternative.
-
 ### Definition
 
 A **ULID** (Universally Unique Lexicographically Sortable Identifier) is a 128-bit identifier designed to be:
@@ -2624,8 +2580,6 @@ Monotonic variant for same-ms ordering; see 13.8 for full ID comparison
 
 
 ## 13.11 KSUID
-
-**160-bit** Segment-style IDs — second-precision sort with **128-bit** randomness. See **13.8** for full scheme comparison; see **13.10 ULID** for ms-precision alternative.
 
 ### Definition
 
