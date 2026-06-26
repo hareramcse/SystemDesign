@@ -335,46 +335,193 @@ It does **not** tell you which items were seen, whether a specific item was seen
 
 ### How it works — the algorithm inside
 
-1. Hash the element to a 64-bit pseudo-random string.
-2. Split the hash:
-   - First `p` bits → **register index** `i` (bucket), `m = 2^p` registers.
-   - Remaining bits → **ρ(x)** = position of first 1-bit (leading zeros + 1).
-3. Update: `M[i] = max(M[i], ρ(x))`.
-4. Estimate cardinality with harmonic mean over all registers:
+HyperLogLog never stores the elements themselves. It streams each value through a hash function, updates a small array of **registers**, and later reads those registers to guess how many **distinct** values passed through.
+
+```text
+Input stream          Registers (few KB)         Answer
+─────────────         ──────────────────         ──────
+A                     [5, 3, 6, 4, 7, 2, …]     Estimated unique
+B                          ↓                    count ≈ 4
+C                     (fixed size, never
+A                      grows with stream)
+D
+B
+```
+
+Memory stays almost constant whether you process thousands or billions of records — that is the whole point.
+
+---
+
+#### Step 1 — Hash every element
+
+Each incoming value is passed through a hash function that produces a long, pseudo-random bit string. The same input always produces the same hash; different inputs spread evenly across all possible bit patterns.
+
+```text
+"apple"  → 1011001010010110...
+"banana" → 0000100110101101...
+"orange" → 1100010101010010...
+```
+
+Hashing turns arbitrary strings (user IDs, IPs, URLs) into uniform random-looking bits. Without that, the leading-zero trick in the next steps would not work.
+
+---
+
+#### Step 2 — Pick a register from the first bits
+
+The hash is split in two. The **first `p` bits** choose which register to update. The **remaining bits** are used in Step 3.
+
+```text
+Hash:  1010 000101101001...
+       │───│
+         ↓
+Register index = 1010₂ = 10   (register R10)
+
+Remaining bits: 000101101001...
+                ↑ used next
+```
+
+If precision `p = 14`, there are **m = 2¹⁴ = 16,384 registers**. The first 14 bits of every hash pick one of those buckets. Think of it as dealing each element to one of 16,384 mail slots — many elements land in the same slot, but that is expected.
+
+---
+
+#### Step 3 — Count leading zeros in the remaining bits
+
+After the index bits, scan the rest of the hash from left to right and count how many **0** bits appear before the first **1**.
+
+```text
+Remaining bits:  000101101...
+                 ^^^
+Leading zeros = 3
+
+Stored value ρ = 4   (position of the first 1, counting from 1)
+```
+
+**Why leading zeros?** In a fair random bit string, long runs of zeros are rare. The more **distinct** elements you hash, the more chances you get to see unusually long zero runs somewhere in the register array.
+
+| Leading zeros before first 1 | Approximate probability |
+|------------------------------|-------------------------|
+| 0 | 1/2 |
+| 1 | 1/4 |
+| 2 | 1/8 |
+| 3 | 1/16 |
+| k | 1 / 2^(k+1) |
+
+A register that has seen many different hashes is more likely to have recorded a large ρ value — a signal that this bucket has been "busy."
+
+---
+
+#### Step 4 — Update the register (keep the maximum)
+
+Each register stores only **one number**: the largest ρ value ever observed for that bucket. New elements either raise the max or are ignored.
+
+```text
+Register M[10] currently = 4
+New element hashes to ρ = 6
+
+M[10] = max(4, 6) = 6
+```
+
+Registers **never decrease**. Duplicates that hash to the same register with the same or smaller ρ change nothing — which is why re-adding `"apple"` does not inflate the distinct count.
+
+```text
+function add(element):
+    h   = hash(element)                    // e.g. 64-bit hash
+    i   = first_p_bits(h)                  // register index
+    rho = position_of_first_one(h, after_p) // leading zeros + 1
+    M[i] = max(M[i], rho)
+```
+
+---
+
+#### Step 5 — Estimate cardinality from all registers
+
+After processing the stream, every register holds a small integer. HyperLogLog combines them with a **harmonic mean** formula (plus bias correction in **HLL++** for small sets):
 
 ```text
 E ≈ α_m × m² / Σ(2^−M[i])
 ```
 
-**Intuition:** more unique elements → more hashes → higher chance of seeing long leading-zero runs → larger ρ values in registers.
-
-#### Insert algorithm
-
-```text
-function add(element):
-    h = hash(element)
-    i = first_p_bits(h)           // register index
-    rho = leading_zero_count(h)   // after index bits
-    M[i] = max(M[i], rho)
-```
-
-#### Estimate algorithm
-
-```text
-function estimate():
-    return harmonic_mean_formula(M, m, alpha_m)
-```
+`α_m` is a constant that depends on `m`. You do not need to implement this by hand — Redis, BigQuery, and other libraries handle it. The intuition: if many registers hold large values, the stream probably contained many unique elements; if most registers are still near zero, the distinct count is probably small.
 
 ```mermaid
 flowchart LR
     E[element] --> H[64-bit hash]
     H --> Idx[first p bits → register index]
-    H --> Rho[remaining bits → ρ leading zeros]
+    H --> Rho[remaining bits → ρ value]
     Idx --> Reg[register M i]
-    Rho --> Update[max update M i]
+    Rho --> Update["M[i] = max(M[i], ρ)"]
+    Update --> Est[harmonic mean → estimate]
 ```
 
-Typical config: `p = 14` → 16,384 registers → **~12 KB**, error ≈ `1.04 / √m` (~0.8% standard error).
+---
+
+#### Worked example — four registers
+
+Start with all registers at zero:
+
+```text
+R0 = 0    R1 = 0    R2 = 0    R3 = 0
+```
+
+**Process `"apple"`**
+
+```text
+Hash:  00 000101...
+       ││
+       R0
+
+Leading zeros in remainder = 3  →  ρ = 4
+
+R0 = 4    R1 = 0    R2 = 0    R3 = 0
+```
+
+**Process `"orange"`**
+
+```text
+Hash:  00 0000001...
+       ││
+       R0   (same bucket as apple — possible when m is small)
+
+Leading zeros in remainder = 6  →  ρ = 7
+
+R0 = max(4, 7) = 7    R1 = 0    R2 = 0    R3 = 0
+```
+
+**Process `"apple"` again** — duplicate. Same hash, same register, same ρ. Register stays at 7.
+
+Only the **strongest signal per bucket** is kept. After millions of distinct IDs, the pattern of register values feeds the estimator.
+
+---
+
+#### Merging two sketches
+
+Each server (or shard) can maintain its own HyperLogLog. To combine them, take the **element-wise maximum** — the same rule as a single register update, applied across the whole array:
+
+```text
+Server A:  [3, 6, 2, 5]
+Server B:  [4, 2, 7, 3]
+                    ↓
+Merged:    [4, 6, 7, 5]   = max per position
+```
+
+```text
+M_merged[i] = max(M_A[i], M_B[i])   for every register i
+```
+
+No raw events need to be shipped — only a few kilobytes per node. Redis exposes this as `PFMERGE`.
+
+---
+
+#### Complexity
+
+| Operation | Complexity | Notes |
+|-----------|------------|-------|
+| Add one element | O(1) | One hash + one register update |
+| Merge two HLLs | O(m) | `m` = number of registers |
+| Estimate count | O(m) | Scan all registers once |
+| Memory | O(m) | Fixed — typically a few KB |
+
+Typical production config: `p = 14` → **m = 16,384 registers** → **~12 KB** per sketch, standard error ≈ **0.8%**.
 
 **How to calculate memory and error:**
 
