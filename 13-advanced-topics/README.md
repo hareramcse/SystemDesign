@@ -27,9 +27,9 @@
 
 ### Overview
 
-A **Bloom filter** is a tiny bit array plus `k` hash functions that answers “might this key exist?” in constant time. Invented by Burton Bloom in 1970, it does not store actual keys — only a compact pattern of bits built from them. It **never** wrongly clears a real member, but may occasionally send you to the database for a key that was never there. Size it with `m`, `n`, and `k` for your target error rate, treat “possibly present” as a hint, and always confirm with the real store.
+Picture a library with a billion books and no card catalogue. Every time someone asks for a title, a librarian walks every aisle. That is what happens when a large system hits a database or disk for every key — costly and mostly wasteful, because most lookups are for things that were **never stored**. A Bloom filter is the **quick first question** before the expensive one: it cannot replace the database, but it can stop you from asking thousands of times per second for keys you already know do not exist.
 
-Picture a library with a billion books and no card catalogue. Every time someone asks for a title, a librarian walks every aisle. That is what happens when a large system hits a database or disk for every key — costly and mostly wasteful, because most lookups are for things that were **never stored**. A Bloom filter is the **quick first question** before the expensive one: it cannot replace the database, but it can stop you from asking thousands of times per second for keys you already know do not exist — like rejecting signup attempts for emails that were never registered without touching the users table.
+Technically, a **Bloom filter** is a tiny bit array plus `k` hash functions that answers “might this key exist?” in O(k) time. Invented by Burton Bloom in 1970, it does not store actual keys — only a compact pattern of bits built from them. It **never** wrongly clears a real member (no false negatives on a standard filter), but may occasionally send you to the database for a key that was never there (a **false positive**). Size it with bit array length `m`, expected element count `n`, and hash count `k` for your target error rate; treat “possibly present” as a hint and always confirm with the real store.
 
 ---
 
@@ -52,45 +52,6 @@ Bloom says "MAYBE here"         →  check the real store to confirm
 ```
 
 It accepts a small, tunable rate of **false positives** (saying “maybe” when the key was never inserted) in exchange for huge memory savings and speed. It **never** gives a false negative on a standard filter — if something was inserted, it will not say “definitely not here.”
-
----
-
-### A simple analogy: “Is this email already registered?”
-
-When you sign up on a large site, the backend must answer: **does `alice@example.com` already exist in our users table?**
-
-A naive approach loads every registered email into memory, or runs `SELECT 1 FROM users WHERE email = ?` on **every** signup attempt and typo. With 500 million accounts, that is slow, expensive, and easy to abuse — bots can hammer random emails and force millions of database reads.
-
-A Bloom filter sits **in front of** the database as a lightweight gate:
-
-1. **When a user registers successfully**, the system hashes the email and sets a few bits in a shared bit array — “we have seen something that maps here.”
-2. **When someone tries to sign up**, the system hashes the new email and checks those same bit positions.
-3. If **any bit is 0** → that email was **never registered** → return “available” immediately, **no database query**.
-4. If **all bits are 1** → email **might** already exist → run the real `SELECT` on the users table to confirm.
-
-```text
-POST /signup  { "email": "bob@newdomain.com" }
-  → Bloom.contains("bob@newdomain.com")?
-      bit check → one position is 0
-      → "Email available" (DB never touched)
-
-POST /signup  { "email": "alice@example.com" }
-  → Bloom.contains("alice@example.com")?
-      all bits are 1 (alice was registered; bits may overlap with others)
-      → SELECT from users WHERE email = 'alice@example.com'
-      → "Email already taken"
-```
-
-The filter does not store `alice@example.com` — only a fingerprint of bits. Two different emails can accidentally flip the same bits (like two users sharing one locker combination by chance). That overlap is a **false positive**: the filter says “maybe taken,” you query the database, and find the email is actually free. Rare, but acceptable if you sized the filter for ~1% error.
-
-| Signup flow step | Bloom filter role |
-|------------------|-------------------|
-| User registers `alice@example.com` | `insert(email)` — set k bit positions |
-| New signup for `bob@newdomain.com` | `lookup` → any 0 → **definitely not registered** |
-| New signup for `alice@example.com` | `lookup` → all 1 → **maybe registered** → confirm in DB |
-| Bot tries 10,000 random emails/sec | Most get rejected in RAM; DB sees only “maybe” cases |
-
-The bit array might be ~1 MB for a million emails instead of gigabytes to hold every address string. The trade-off: occasional extra database lookups when the filter says “maybe” for an email that was never registered — far cheaper than querying the database for every attempt.
 
 ---
 
