@@ -1905,60 +1905,174 @@ Only ~K/N keys move — not a full reshuffle (unlike hash % N)
 
 ### Overview
 
-Every order, user, and message in a distributed app needs an ID. Auto-increment (`1, 2, 3…`) from one database breaks when you have many services or offline clients — and exposes how many records exist. You want IDs any laptop or microservice can mint without calling home.
+Every order, user, and message in a distributed app needs an ID. Auto-increment (`1, 2, 3…`) from one database breaks when many services or offline clients mint IDs independently — and exposes how many records exist. You want identifiers any laptop or microservice can create **without calling a central server**.
 
-Technically, a **UUID** is a **128-bit** identifier (RFC 9562), often shown as `550e8400-e29b-41d4-a716-446655440000`. Collisions are negligible (~2^122 random bits in v4). **v4** is random and opaque; **v7** adds a millisecond timestamp prefix for sortable database keys. Store as `BINARY(16)`, not `CHAR(36)`.
+Technically, a **UUID (Universally Unique Identifier)** is a **128-bit** value (RFC 9562), usually shown as `550e8400-e29b-41d4-a716-446655440000`. Collisions are negligible for practical systems (~2^122 random bits in v4). **v4** is random and opaque; **v7** prefixes a millisecond timestamp for sortable database keys. Store as `BINARY(16)`, not `CHAR(36)`.
 
 ---
 
 ### What problem it fixes
 
-- Global uniqueness **without** a central ID server
-- Safe generation on clients, edge devices, and multiple microservices
-- Opaque IDs that do not leak sequence or shard information (v4)
-
-**v4 as primary key** on write-heavy tables causes **B-tree fragmentation** — random insert order. **v7**, ULID, or Snowflake fix sortability.
+- **Central ID authority** — auto-increment requires one database to hand out the next integer
+- **Cross-database collisions** — two shards both issuing `1, 2, 3…` cannot merge safely
+- **Distributed generation** — microservices, mobile clients, and batch jobs need IDs before talking to a coordinator
+- **Opaque identifiers** — random UUIDs do not reveal row count or creation order (v4)
 
 ---
 
 ### What it does
 
-Generates a 128-bit unique ID. Versions differ in how bits are filled:
+Mints a **128-bit globally unique identifier** on any machine:
 
-| Version | Method | Best for |
-|---------|--------|----------|
-| **v4** | 122 random bits | Opaque IDs, low write volume |
-| **v7** | 48-bit Unix ms + random | **Default for new DB PKs** |
-| **v3/v5** | hash(namespace + name) | Deterministic IDs |
-| **v1** | timestamp + MAC | Legacy; privacy risk |
+```text
+generate_uuid()  →  128 bits  →  optional string formatting (8-4-4-4-12 hex)
+```
+
+No registry lookup at generation time. Versions differ in how the 128 bits are filled (timestamp, randomness, MAC, hash).
+
+---
+
+### Compared to the alternative
+
+**Auto-increment ID (single database):**
+
+```text
+Database
+
+ID  Name
+---------
+1   Alice
+2   Bob
+3   Charlie
+
+Problems: central bottleneck, collisions across shards, hard to merge replicas
+```
+
+**UUID (generated anywhere):**
+
+```text
+Alice   → 550e8400-e29b-41d4-a716-446655440000
+Bob     → 7f4d8c9a-18b7-4e3d-bf66-9c3d4f8e1122
+Charlie → a1d93d60-2f51-47e8-bf84-67c9c1ab4567
+
+No coordinator — each machine mints its own ID
+```
+
+| | Auto-increment | UUID |
+|---|----------------|------|
+| Central database | Required | Not required |
+| Order | Sequential | Random (v4) or time-ordered (v7) |
+| Guessability | Easy (`user/42`) | Hard (opaque) |
+| Merge distributed DBs | Painful | Natural |
+| Index locality | Excellent | Poor for v4; good for v7 |
+| Size | 4–8 bytes | 16 bytes |
+| Best fit | Single DB, low volume | Microservices, distributed systems |
+
+UUID wins when **many writers** need IDs **without coordination**. Auto-increment wins for **one database**, **compact numeric keys**, and **perfect B-tree locality**.
+
+For **sortable** distributed IDs without a 128-bit string, see **13.9 Snowflake**, **13.10 ULID**, and **13.11 KSUID**.
 
 ---
 
 ### How it works — the algorithm inside
 
-**UUID v4:**
+#### Step 1 — 128-bit layout and string format
+
+A UUID is **128 bits (16 bytes)**. Canonical display: **32 hex digits** in groups **8-4-4-4-12**:
+
+```text
+550e8400-e29b-41d4-a716-446655440000
+
+550e8400 | e29b | 41d4 | a716 | 446655440000
+   8        4      4      4         12
+```
+
+Bits 48–51 encode the **version**; bits 64–65 encode the **variant** (RFC 9562).
+
+---
+
+#### Step 2 — Pick a version
+
+Different versions fill the 128 bits differently. The ones you will see in production:
+
+| Version | How bits are filled |
+|---------|---------------------|
+| **v1** | Timestamp + MAC address + clock sequence |
+| **v4** | 122 random bits |
+| **v7** | 48-bit Unix ms timestamp + random suffix |
+
+---
+
+#### Step 3 — UUID v1 (timestamp + machine)
+
+```text
+Current timestamp
++ Machine ID (often MAC)
++ Clock sequence (uniqueness if clock repeats)
+
+↓ pack into 128 bits, set version = 1
+
+UUID v1
+```
+
+Mostly time-ordered; very low collision rate when clocks are sane. **Downside:** leaks creation time and can expose hardware identity — avoid for client-visible IDs.
+
+---
+
+#### Step 4 — UUID v4 (random)
+
+Most widely deployed. **122 bits** are cryptographically random; version and variant nibbles are fixed:
 
 ```text
 function uuid_v4():
     bits = 122 random bits
     set version nibble = 4
     set variant bits per RFC 9562
-    format as 8-4-4-4-12 hex string
+    return format as 8-4-4-4-12 hex string
 ```
 
-**UUID v7:**
+Simple, no machine metadata, no timestamp leakage. **Downside:** random insert order hurts clustered B-tree indexes on primary keys.
+
+---
+
+#### Step 5 — UUID v7 (time-ordered)
+
+RFC 9562 **v7** puts a **48-bit millisecond timestamp** in the high bits and fills the rest with randomness:
 
 ```text
 function uuid_v7():
-    timestamp_ms = 48 bits
+    timestamp_ms = 48 bits (Unix ms)
     random_suffix = remaining bits
     set version = 7
-    format as hex string
+    return format as hex string
 ```
 
 ```text
-xxxxxxxx-xxxx-Mxxx-Nxxx-xxxxxxxxxxxx
-M = version, N = variant
+2026-06-26 10:30:00.123  +  random bits  →  UUID v7 (sortable by creation time)
+```
+
+Better index locality than v4; still no central coordinator. **Default for new database primary keys** when you want UUID semantics.
+
+---
+
+#### Worked example — three servers, no coordination
+
+```text
+Server A  →  550e8400-e29b-41d4-a716-446655440000
+Server B  →  9e6b87d0-7b82-4e8b-b93d-c53d76f0c221
+Server C  →  f85d42e9-5f90-4cb4-9b11-78efec2b8815
+```
+
+All three mint user IDs at the same instant — no shared counter — and collisions are negligible.
+
+---
+
+#### Why collisions are ignored (v4)
+
+UUID v4 exposes **122 random bits**:
+
+```text
+Possible values ≈ 2^122 ≈ 5.3 × 10^36
 ```
 
 **How to calculate — UUID v4 collision odds (birthday bound):**
@@ -1991,27 +2105,31 @@ Sanity check: if you generate 1 billion IDs/sec for 100 years you still won't ap
 
 ---
 
-### Choosing an ID scheme
+#### Complexity
 
-| | UUID v4 | UUID v7 | Snowflake | ULID | KSUID |
-|---|---------|---------|-----------|------|-------|
-| Size | 16 bytes | 16 bytes | 8 bytes | 16 bytes | 20 bytes |
-| Sortable | No | Yes (ms) | Yes (ms) | Yes (ms) | Yes (sec) |
-| Coordination | None | None | Worker IDs | None | None |
-| B-tree locality | Poor | Good | Good | Good | Good |
-
-Sections **13.9–13.11** cover Snowflake, ULID, and KSUID in detail.
+| Operation | Complexity |
+|-----------|------------|
+| Generate UUID | O(1) |
+| Compare UUIDs | O(1) |
+| Storage | 16 bytes (`BINARY(16)`) |
 
 ---
 
 ### Pitfalls and design tips
+
+| Version | Best for |
+|---------|----------|
+| **v1** | Legacy systems that already depend on timestamp ordering — avoid for new public IDs (MAC leak) |
+| **v4** | Opaque tokens — request IDs, session IDs, correlation IDs |
+| **v7** | **Modern DB primary keys** — time-sortable without a central allocator |
+| **v3/v5** | Deterministic IDs from namespace + name (idempotent imports) |
 
 - **Store as `BINARY(16)`** in databases — `CHAR(36)` wastes space and slows indexes; convert to string only at API boundaries.
 - **UUID v1 leaks MAC address** — privacy risk; avoid for client-visible IDs; prefer v4/v7.
 - **v3/v5 are deterministic** — same namespace + name → same UUID; great for idempotent imports, dangerous if you expected randomness.
 - **v4 primary keys fragment B-trees** — random insertion scatters index pages; **v7**, ULID, or Snowflake improve write locality on clustered indexes.
 - **Nil UUID** (`00000000-0000-0000-0000-000000000000`) — valid sentinel for “unset” in some schemas; do not generate randomly.
-- **Default for new systems:** **UUID v7** (RFC 9562) unless you need 64-bit numeric IDs (Snowflake) or URL-safe strings (ULID).
+- **Default for new systems:** **UUID v7** (RFC 9562) unless you need 64-bit numeric IDs (Snowflake, §13.9) or URL-safe strings (ULID, §13.10).
 
 ---
 
@@ -2029,6 +2147,8 @@ Tracing:   X-Request-ID: uuid_v4()  — opaque, no sort needed
 ```
 
 **Why v7 for PKs:** millisecond timestamp in the high bits keeps B-tree inserts mostly sequential (unlike random v4). **Why v4 for request IDs:** one-off correlation tokens with no ordering requirement.
+
+Common surfaces: database primary keys, event IDs, transaction IDs, file handles, session IDs, and `X-Request-ID` / trace IDs in APIs.
 
 ---
 
