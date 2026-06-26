@@ -2161,19 +2161,7 @@ Sequence:   2^12 = 4,096 IDs per ms per node
 
 ```mermaid
 flowchart LR
-    subgraph Snowflake[64-bit Snowflake ID]
-        direction LR
-        T[41 bits timestamp ms]
-        DC[5 bits datacenter]
-        W[5 bits worker]
-        S[12 bits sequence]
-        T --- DC --- W --- S
-    end
-    Gen[Generator] --> Clock{Same ms as last?}
-    Clock -->|Yes| Inc[sequence++]
-    Clock -->|No| Reset[sequence = 0]
-    Inc --> Pack[Bitwise OR and shifts]
-    Reset --> Pack
+    T[41 bits timestamp ms] --> DC[5 bits datacenter] --> W[5 bits worker] --> S[12 bits sequence]
 ```
 
 ### Bit breakdown
@@ -2218,6 +2206,11 @@ Packed → single 64-bit integer (e.g. 2199023255552)
 4. If sequence exceeds 4095 → **wait for next millisecond**, then reset sequence
 5. Combine fields with bit shifts
 6. Return final ID
+
+```mermaid
+flowchart LR
+    Gen[Generator] --> Ts[Read timestamp ms] --> Cmp[Compare with last] --> Seq[Update sequence] --> Pack[Shift and OR fields] --> ID[64-bit Snowflake ID]
+```
 
 **Production pattern (clock backward jump):**
 
