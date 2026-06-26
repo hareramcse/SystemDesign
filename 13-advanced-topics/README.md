@@ -2655,75 +2655,197 @@ Common surfaces: database primary keys, microservice entity IDs, event/transacti
 
 Segment built analytics pipelines that needed sortable, URL-safe IDs with **very high randomness** — more than ULID's 80-bit random suffix — while still grouping roughly by time. Second-level precision was enough; millisecond ordering was not required.
 
-Technically, **KSUID** is **160 bits**: **32-bit second timestamp + 128-bit random**, encoded as **27-character Base62** (`0ujtsYcgvSTl8PAuAdqWYSMnLOv`). Larger than ULID; stronger collision resistance per time window; coarser time ordering.
+Technically, **KSUID (K-Sortable Unique Identifier)** is **160 bits (20 bytes)**: **32-bit second timestamp + 128-bit random payload**, encoded as a **27-character Base62** string (`35oN0vR5fM2Rj6R3K9Y7L2QJg4M`). Larger than ULID; stronger collision resistance per second; coarser time ordering. Safe to generate on any machine without a central coordinator.
 
 ---
 
 ### What problem it fixes
 
-- Cross-service unique event IDs with high entropy
-- Lexicographic sort by second for log partitioning
-- URL-safe strings without worker ID coordination
+- **Random UUID v4 order** — hex IDs do not sort by creation time; poor B-tree locality
+- **ULID random tail size** — 80 bits per millisecond may be tight at extreme QPS in the same ms bucket
+- **Snowflake coordination** — KSUID needs no worker/datacenter registry
+- **Cross-service event IDs** — high-entropy, URL-safe strings for analytics and audit pipelines
 
 ---
 
 ### What it does
 
-Generates a fixed-length 27-char Base62 ID. Sortable at **second** granularity; order within the same second follows random payload, not strict creation order.
+Mints a **160-bit globally unique identifier** and renders it as a **sortable 27-character Base62 string**:
+
+```text
+ksuid()  →  combine(timestamp_sec_32, random_128)  →  base62_encode()  →  27 chars
+```
+
+Sortable at **second** granularity; order within the same second follows the random payload, not strict creation order.
+
+---
+
+### Compared to the alternative
+
+**UUID v4 (random hex):**
+
+```text
+550e8400-e29b-41d4-a716-446655440000
+7f4d8c9a-18b7-4e3d-bf66-9c3d4f8e1122
+1c9d34e0-6f1b-4c9e-91c4-a7d56d9e2134
+
+Problems: random order, poor index locality, no embedded creation time
+```
+
+**KSUID (time-first Base62):**
+
+```text
+35oN0vR5fM2Rj6R3K9Y7L2QJg4M
+35oN0vW2Bp1mA8N5P6Y4Q9DcJtZ
+35oN0vY9Fk8Qx3M1W7R5L2PbGhN
+
+Globally unique, lexicographically sortable, no central server
+```
+
+| | UUID v4 | ULID | KSUID | Snowflake |
+|---|---------|------|-------|-----------|
+| Distributed | Yes | Yes | Yes | Yes |
+| Time-ordered | No | Yes (ms) | Yes (sec) | Yes (ms) |
+| Size | 16 bytes | 16 bytes | 20 bytes | 8 bytes |
+| Human-readable | No | Yes (Base32) | Yes (Base62) | No (int64) |
+| Worker IDs needed | No | No | No | Yes |
+| Random entropy | 122 bits | 80 bits | 128 bits | sequence field |
+| Index locality | Poor | Good | Good | Excellent |
+
+KSUID wins for **high-volume event streams** needing **128-bit randomness per second** without worker IDs. ULID (§13.10) wins for **millisecond** string sort. Snowflake (§13.9) wins for **compact 64-bit integers**. **UUID v7** (§13.8) wins for **RFC-standard** 128-bit binary IDs.
 
 ---
 
 ### How it works — the algorithm inside
 
+#### Step 1 — 160-bit layout
+
 ```text
-function ksuid():
-    timestamp_sec = 32 bits (Unix seconds)
-    payload = 128 random bits
-    raw = combine(timestamp_sec, payload)   // 20 bytes
-    return base62_encode(raw)               // 27 chars
++----------------------+--------------------------------+
+| Timestamp (32 bits)  | Random Payload (128 bits)      |
++----------------------+--------------------------------+
+
+32 + 128 = 160 bits (20 bytes)
 ```
 
-```mermaid
-flowchart LR
-    T[32-bit timestamp sec] --> Combine[160-bit value]
-    R[128-bit random] --> Combine
-    Combine --> B62[Base62 encode]
-    B62 --> KSUID[27-char string]
+| Field | Bits | Purpose |
+|-------|------|---------|
+| Timestamp | 32 | Seconds since custom epoch (Segment: 2014-05-13) |
+| Payload | 128 | Cryptographic randomness for uniqueness |
+
+Displayed as **27 Base62 characters** (`0-9`, `A-Z`, `a-z`):
+
+```text
+35oN0vR5fM2Rj6R3K9Y7L2QJg4M
 ```
 
-Base62 is **case-sensitive** — normalize comparison carefully.
+Store **20 raw bytes** internally; render Base62 at API boundaries.
 
 ---
 
-### KSUID vs ULID
+#### Step 2 — Current timestamp
 
-| | ULID | KSUID |
-|---|------|-------|
-| Size | 128 bits | 160 bits |
-| Time precision | Millisecond | Second |
-| Random entropy | 80 bits | 128 bits |
-| Encoding | Base32 (case-insensitive) | Base62 |
+Place **current time in seconds** in the high 32 bits:
 
-Choose KSUID when collision resistance beats millisecond ordering. Choose ULID or UUID v7 when ms ordering matters.
+```text
+2026-06-26 10:30:15  →  32-bit timestamp field
+```
+
+Newer KSUIDs sort **after** older ones when compared as strings (timestamp dominates the encoding). Precision is **one second** — not milliseconds.
+
+---
+
+#### Step 3 — Generate random payload
+
+Fill **128 bits** from a cryptographically secure random source:
+
+```text
+CSPRNG  →  128 random bits  →  uniqueness when many IDs share the same second
+```
+
+Larger random space than ULID's 80-bit tail — important when thousands of events land in the same second.
+
+---
+
+#### Step 4 — Combine and encode
+
+```text
+function ksuid():
+    timestamp_sec = 32 bits (seconds since KSUID epoch)
+    payload = 128 cryptographically secure random bits
+    raw = combine(timestamp_sec, payload)    // 20 bytes
+    return base62_encode(raw)                  // 27 chars
+```
+
+```text
+Timestamp + 128 Random Bits  →  160-bit KSUID  →  35oN0vR5fM2Rj6R3K9Y7L2QJg4M
+```
+
+Base62 is **case-sensitive** — normalize case before compare; some URLs lower-case paths.
+
+---
+
+#### Worked example
+
+```text
+Timestamp:   2026-06-26 10:30:15  →  32-bit sec field
+Payload:     101010101011...     →  128 bits from CSPRNG
+
+Final KSUID:  35oN0vR5fM2Rj6R3K9Y7L2QJg4M
+```
+
+---
+
+#### Sorting example — string order = time order (by second)
+
+```text
+10:00:00  →  35oN0vA...
+10:00:01  →  35oN0vB...
+10:00:02  →  35oN0vC...
+
+Lexicographic sort:
+  35oN0vA...
+  35oN0vB...
+  35oN0vC...
+```
+
+Creation order is preserved at **second** granularity. IDs in the **same second** are not ordered by creation time — only by random payload.
+
+---
+
+#### Why KSUIDs are unique
+
+Uniqueness = **timestamp (32 bits) + payload (128 bits)**. Many IDs in the same second still differ in 128 random bits; collision probability is negligible for practical systems (far more headroom than ULID's 80-bit tail per ms).
+
+---
+
+#### Complexity
+
+| Operation | Complexity |
+|-----------|------------|
+| Generate KSUID | O(1) |
+| Compare KSUIDs | O(1) |
+| Storage | 20 bytes |
 
 ---
 
 ### Pitfalls and design tips
 
-- **Second-level granularity** — many IDs in the same second sort by random payload, not creation order; use ULID/Snowflake if you need ms ordering.
+- **Second-level granularity** — many IDs in the same second sort by random payload, not creation order; use ULID (§13.10) or Snowflake (§13.9) if you need millisecond ordering.
 - **Base62 is case-sensitive** — normalize to one case before compare; URLs may be lowercased by clients.
-- **160 bits (20 bytes)** — slightly larger than UUID/ULID; plan column width and index size accordingly.
-- **Custom epoch** — KSUID timestamp is offset from a fixed epoch (not always Unix); check library docs when decoding time from prefix.
+- **20 bytes** — larger than UUID/ULID (16 bytes) and Snowflake (8 bytes); plan column width and index size.
+- **Custom epoch** — KSUID timestamp is offset from a fixed epoch (Segment: 2014-05-13); check library docs when decoding time from prefix.
 - **When KSUID shines:** high-volume event streams (Segment-style analytics) where 128-bit randomness per second bucket avoids coordination without worker IDs.
+- **Default when:** you need **more random entropy per time bucket** than ULID and **second-level** sort is enough; prefer **ULID** for ms string sort, **UUID v7** for RFC compliance.
 
 ---
 
 ### Real-world example: Segment-style event IDs
 
-**KSUID** was created at Segment for analytics event IDs: 32-bit second timestamp + 128-bit random, encoded as a 27-character Base62 string.
+**KSUID** was created at **Segment** for analytics event IDs: 32-bit second timestamp + 128-bit random, encoded as a 27-character Base62 string.
 
 ```text
-event_id = "0ujtsYcgvSTl8PAuAdqWYSMnLOv"
+event_id = "35oN0vR5fM2Rj6R3K9Y7L2QJg4M"
 
 Properties used in production:
   • URL-safe, no coordination between writers (no worker ID registry)
@@ -2732,6 +2854,8 @@ Properties used in production:
 ```
 
 **Trade-off vs ULID:** coarser time sort (seconds, not milliseconds) in exchange for more randomness per time bucket.
+
+Common surfaces: distributed event IDs, audit logs, object-storage keys, message-queue message IDs, and REST API resource identifiers.
 
 ---
 
