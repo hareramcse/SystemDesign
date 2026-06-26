@@ -658,16 +658,92 @@ It does not list keys, delete counts (standard CMS), or give exact billing numbe
 
 ### How it works — the algorithm inside
 
+CMS never stores keys — only a fixed **2D table of counters**. Every insert bumps one cell per row; every query reads those cells and takes the **minimum**.
+
+#### Exact counting vs sketch — why CMS exists
+
+**HashMap (exact):**
+
 ```text
-        w columns
-     +-----------------+
-d 1  |  counters...    |
-d 2  |  counters...    |
-d 3  |  counters...    |
-     +-----------------+
+Input stream          HashMap                    Memory grows
+─────────────         ───────                    with distinct keys
+Apple                 Apple  → 3
+Banana                Banana → 2
+Apple                 Orange → 1
+Orange
+Apple
+Banana
 ```
 
-#### Update algorithm
+**Count-Min Sketch (approximate):**
+
+```text
+Input stream          Small 2D counter table     Fixed memory
+─────────────         (d rows × w columns)       (~KB, not GB)
+Apple                      ↓
+Banana                Estimated counts:
+Apple                 Apple  ≈ 3
+Orange                Banana ≈ 2
+Apple                 Orange ≈ 1
+Banana
+```
+
+Exact maps are correct but **O(distinct keys)** in RAM. CMS keeps **O(d × w)** counters no matter how many unique API keys, IPs, or search terms appear.
+
+---
+
+#### Step 1 — Create the counter matrix
+
+CMS is a **`d × w` array** — `d` rows (one hash function each), `w` columns (counter buckets).
+
+Example: **3 hash functions**, **5 counters per row**:
+
+```text
+           C0  C1  C2  C3  C4
+H1  -->    0   0   0   0   0
+H2  -->    0   0   0   0   0
+H3  -->    0   0   0   0   0
+```
+
+Each row uses a **different** hash function so a collision in one row is unlikely to repeat in all rows.
+
+---
+
+#### Step 2 — Hash the element
+
+For every insert or query, map the key to one column index **per row**:
+
+```text
+"apple"  →  H1(apple) = 2
+            H2(apple) = 4
+            H3(apple) = 1
+```
+
+Hashing spreads keys across columns uniformly. Without that, a few hot columns would dominate every estimate.
+
+---
+
+#### Step 3 — Increment counters on insert
+
+Each insertion adds `+1` (or `+count`) to **one counter in every row**:
+
+**Before inserting `"apple"`:**
+
+```text
+           C0  C1  C2  C3  C4
+H1  -->    0   0   0   0   0
+H2  -->    0   0   0   0   0
+H3  -->    0   0   0   0   0
+```
+
+**After one `"apple"`:**
+
+```text
+           C0  C1  C2  C3  C4
+H1  -->    0   0   1   0   0      ← H1 hit C2
+H2  -->    0   0   0   0   1      ← H2 hit C4
+H3  -->    0   1   0   0   0      ← H3 hit C1
+```
 
 ```text
 function update(key, count = 1):
@@ -676,37 +752,119 @@ function update(key, count = 1):
         CMS[i][j] += count
 ```
 
-#### Query algorithm
+---
+
+#### Step 4 — Query: take the minimum across rows
+
+To estimate how many times `"apple"` appeared:
+
+1. Hash `"apple"` with all `d` functions.
+2. Read the `d` counter values.
+3. Return **`min(...)`** — the smallest value wins.
 
 ```text
-function estimate(key):
-    return min( CMS[i][hash_i(key)] ) for i in 1..d
-```
+Counters for "apple" after many inserts:
 
-**Why minimum?** Collisions inflate cells — other keys may have incremented the same bucket. The smallest across rows is the least contaminated estimate.
+H1 → 5
+H2 → 7
+H3 → 5
+
+Estimated count = min(5, 7, 5) = 5
+```
 
 ```mermaid
 flowchart LR
-    Ins[Insert x] --> Hash[Compute d hashes]
+    Ins[Insert key] --> Hash[Compute d hashes]
     Hash --> Inc[Increment d counters]
-    Qry[Query x] --> Hash2[Compute d hashes]
+    Qry[Query key] --> Hash2[Compute d hashes]
     Hash2 --> Min[min across rows = estimate]
 ```
 
 ---
 
-### Walkthrough: counting `"apple"`
+#### Why the minimum? (collisions only inflate)
 
-`d = 3`, `w = 5`. Insert `"apple"` twice:
+Counters are **shared**. If `"banana"` hashes to the same bucket as `"apple"` in row 2, that cell counts **both** keys:
 
 ```text
-h1(apple) = 1    h2(apple) = 3    h3(apple) = 0
-→ CMS[1][1] += 2, CMS[2][3] += 2, CMS[3][0] += 2
+"apple" inserted 5 times; "banana" collides in row H2
 
-Query "apple": min(2, 2, 2) = 2  ✓
+H1 → 5
+H2 → 8   ← inflated by banana's hits
+H3 → 5
+
+max(5, 8, 5) = 8   ✗ overcounts apple
+avg(5, 8, 5) = 6   ✗ still high
+min(5, 8, 5) = 5   ✓ closest to true count for apple
 ```
 
-If `"banana"` shares column 3 in row 2, row 2's cell inflates; `min` across rows still limits overcount.
+Collisions **add** to counters — they never subtract. So CMS **never underestimates** a key's frequency; it may **overestimate** when other keys share buckets. The minimum across independent rows is the least contaminated row.
+
+```text
+Different keys, same bucket:
+
+"apple"  ──┐
+           ├──► Counter C2  (shared — both increment it)
+"banana" ──┘
+```
+
+---
+
+#### Worked example — `"apple"` twice
+
+Start empty (`d = 3`, `w = 5`):
+
+```text
+           C0  C1  C2  C3  C4
+H1  -->    0   0   0   0   0
+H2  -->    0   0   0   0   0
+H3  -->    0   0   0   0   0
+```
+
+**Insert `"apple"`** — `H1→C2`, `H2→C4`, `H3→C1`:
+
+```text
+           C0  C1  C2  C3  C4
+H1  -->    0   0   1   0   0
+H2  -->    0   0   0   0   1
+H3  -->    0   1   0   0   0
+```
+
+**Insert `"apple"` again** — same columns, `+1` each:
+
+```text
+           C0  C1  C2  C3  C4
+H1  -->    0   0   2   0   0
+H2  -->    0   0   0   0   2
+H3  -->    0   2   0   0   0
+```
+
+**Query `"apple"`:** `min(2, 2, 2) = 2` ✓
+
+If `"banana"` later shares column C2 in row H1 only, H1 might read `5` while H2/H3 stay `2` — query still returns `min(5, 2, 2) = 2` for `"apple"` (banana inflated H1, not the true apple-only rows).
+
+---
+
+#### Merging sketches
+
+Two CMS instances with the **same `d`, `w`, and hash seeds** merge by **adding** matrices cell-wise — same idea as unioning two streams' event counts:
+
+```text
+Sketch A[i][j] + Sketch B[i][j]  →  Merged[i][j]
+```
+
+Useful when each edge node counts locally and a central job combines without replaying raw events.
+
+---
+
+#### Complexity
+
+| Operation | Complexity | Notes |
+|-----------|------------|-------|
+| Add element | O(d) | `d` hash + increment |
+| Query count | O(d) | `d` hash + min |
+| Merge sketches | O(d × w) | Element-wise add |
+| Memory | O(d × w) | Fixed — `w` = width, `d` = depth (hash rows) |
 
 ---
 
