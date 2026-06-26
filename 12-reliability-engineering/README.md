@@ -1,1206 +1,1482 @@
 ﻿# 12. Reliability Engineering
 
-> Status: **Documented**  -  MASTER reference depth for all sub-topics below.
-
 [<- Back to master index](../README.md)
+
+---
+
+## Overview
+
+**System reliability** is the ability of a distributed system to continue serving users correctly despite hardware faults, software bugs, network partitions, operator mistakes, and regional disasters. Reliability engineering connects business requirements (how much downtime and data loss are acceptable) with operational practice: redundancy, failure detection, backups, restore drills, disaster recovery sites, and deliberate experimentation.
+
+This chapter progresses from foundational concepts through availability targets, high-availability architectures, data protection, recovery objectives, disaster recovery, and resilience testing. Each section builds on ideas introduced earlier; later sections reference earlier explanations instead of repeating them.
+
+```mermaid
+flowchart TB
+    Fund[Reliability fundamentals] --> Avail[Availability]
+    Avail --> HA[High availability]
+    HA --> FD[Failure detection]
+    FD --> AA[Active-active]
+    AA --> AP[Active-passive]
+    AP --> Backup[Backup strategy]
+    Backup --> Restore[Restore strategy]
+    Restore --> RPO
+    RPO --> RTO
+    RTO --> DR[Disaster recovery]
+    DR --> Chaos[Chaos engineering]
+    Chaos --> FI[Fault injection]
+```
+
+### Reliability fundamentals
+
+A reliable system is **available** (users can reach it), **durable** (data is not lost), and **correct** (responses match expectations even under stress). In practice, reliability work spans:
+
+- **Preventing** failures — redundancy, health monitoring, capacity planning
+- **Detecting** failures — health checks, heartbeats, alerting
+- **Recovering** from failures — failover, backup restore, disaster recovery
+- **Learning** from failures — postmortems, chaos engineering, fault injection
+
+Reliability is not binary. Teams define measurable targets (availability percentages, RPO, RTO) and design architecture, processes, and tooling to meet them within budget.
+
+### Availability
+
+**Availability** is the fraction of time a system is operational and accessible to users.
+
+```text
+Availability = Uptime / (Uptime + Downtime)
+```
+
+**Example:**
+
+```text
+Uptime = 364 days · Downtime = 1 day
+Availability = 364 / 365 = 99.73%
+```
+
+Higher percentage means better availability. Moving from one "nine" to the next usually requires significantly more engineering effort and infrastructure cost.
+
+### Availability levels
+
+| Availability | Downtime / year | Notes |
+|--------------|-----------------|-------|
+| **99%** (2 nines) | ~3.65 days | Basic production |
+| **99.9%** (3 nines) | ~8.76 hours | Standard SaaS |
+| **99.99%** (4 nines) | ~52.5 minutes | Business-critical |
+| **99.999%** (5 nines) | ~5.26 minutes | Mission-critical |
+
+```mermaid
+flowchart LR
+    N2[99%] --> N3[99.9%] --> N4[99.99%] --> N5[99.999%]
+```
+
+Availability targets drive architecture choices covered in the sections that follow — especially high availability, backup/restore, and disaster recovery.
 
 ---
 
 ## Sub-topics
 
-| # | Sub-topic | Status |
-|---|-----------|--------|
-| 12.1 | [High Availability](#121-high-availability) | Done |
-| 12.2 | [Active Active](#122-active-active) | Done |
-| 12.3 | [Active Passive](#123-active-passive) | Done |
-| 12.4 | [RPO](#124-rpo) | Done |
-| 12.5 | [RTO](#125-rto) | Done |
-| 12.6 | [Disaster Recovery](#126-disaster-recovery) | Done |
-| 12.7 | [Backup Strategy](#127-backup-strategy) | Done |
-| 12.8 | [Restore Strategy](#128-restore-strategy) | Done |
-| 12.9 | [Chaos Engineering](#129-chaos-engineering) | Done |
-| 12.10 | [Fault Injection](#1210-fault-injection) | Done |
-
-
-
-## Overview
-
-Reliability engineering builds systems that survive failures - hardware, software, human, and regional - through redundancy, tested recovery paths, and deliberate experimentation. It connects business continuity (RPO/RTO) with operational practice (backups, failover, chaos).
-
-```mermaid
-flowchart TB
-    subgraph Design['Reliability Design']
-        HA[High Availability]
-        AA[Active-Active / Passive]
-        DR[Disaster Recovery]
-    end
-
-    subgraph Metrics['Recovery Objectives']
-        RPO[RPO / Data loss tolerance]
-        RTO[RTO / Downtime tolerance]
-    end
-
-    subgraph Practice['Operational Practice']
-        BK[Backup Strategy]
-        RS[Restore Strategy]
-        CE[Chaos Engineering]
-        FI[Fault Injection]
-    end
-
-    Design --> Metrics
-    BK & RS --> RPO & RTO
-    CE & FI --> HA
-    DR --> AA
-```
+| # | Sub-topic |
+|---|-----------|
+| 12.1 | [High Availability](#121-high-availability) |
+| 12.2 | [Failure Detection](#122-failure-detection) |
+| 12.3 | [Active Active](#123-active-active) |
+| 12.4 | [Active Passive](#124-active-passive) |
+| 12.5 | [Backup Strategy](#125-backup-strategy) |
+| 12.6 | [Restore Strategy](#126-restore-strategy) |
+| 12.7 | [RPO](#127-rpo) |
+| 12.8 | [RTO](#128-rto) |
+| 12.9 | [Disaster Recovery](#129-disaster-recovery) |
+| 12.10 | [Chaos Engineering](#1210-chaos-engineering) |
+| 12.11 | [Fault Injection](#1211-fault-injection) |
 
 ---
 
-
----
 
 ## 12.1 High Availability
 
+### Definition
 
-### What is it
+**High Availability (HA)** is the ability of a system to remain operational and accessible when hardware, software, or network components fail.
 
-**High Availability (HA)** is an architecture that eliminates **single points of failure (SPOF)** so a service continues operating when individual components fail — through **redundancy**, **health checks**, and **automatic failover**.
+The goal is to minimize downtime by eliminating single points of failure and automatically recovering from failures.
 
-HA is measured in **nines** — the percentage of uptime in a year:
+**Example:** a banking application should remain available even if one application server crashes.
 
-| Availability | Downtime / year | Downtime / month | Typical tier |
-|--------------|-----------------|------------------|--------------|
-| **99%** (2 nines) | 3.65 days | 7.2 hours | Dev / internal tools |
-| **99.9%** (3 nines) | 8.76 hours | 43.8 minutes | Standard SaaS |
-| **99.95%** | 4.38 hours | 21.9 minutes | Business-critical |
-| **99.99%** (4 nines) | 52.6 minutes | 4.4 minutes | Payments, core platform |
-| **99.999%** (5 nines) | 5.26 minutes | 26 seconds | Telco, mission-critical |
+### Why it exists
 
-```mermaid
-flowchart LR
-    subgraph Nines['Cost vs Availability']
-        N2[99% / cheap]
-        N3[99.9% / multi-AZ]
-        N4[99.99% / multi-region + chaos]
-        N5[99.999% / extreme redundancy]
-    end
-    N2 --> N3 --> N4 --> N5
-```
+**Without HA:**
 
-**HA ≠ Disaster Recovery:** HA survives *component* failure (server, AZ, pod); DR survives *catastrophic* failure (region loss, ransomware).
+- A single server failure causes a complete outage
+- Users cannot access the application
+- Business operations stop; revenue and trust are affected
 
-### Why it matters
+**With HA:**
 
-Users and contracts expect near-continuous availability. Every minute of downtime has direct revenue and trust cost:
-
-- **SLO contracts** — enterprise deals specify 99.9%+ with financial penalties
-- **Cascading failures** — one SPOF can take down an entire dependency graph
-- **Competitive trust** — reliability is a product feature, not an afterthought
-
-Interview focus: calculate nines, identify SPOFs, and explain redundancy patterns (N+1, active-passive, quorum).
+- Backup components take over automatically
+- Users experience little or no interruption
+- The system continues serving requests
 
 ### How it works
 
-**Eliminate SPOFs at every layer:**
+HA combines **redundancy** (spare capacity), **failure detection** (covered in [12.2](#122-failure-detection)), and **failover** (automatic switch to healthy components).
 
-| Layer | SPOF risk | HA pattern |
-|-------|-----------|------------|
-| **Compute** | Single server | N+1 instances behind load balancer |
-| **Load balancer** | Single LB | Multi-AZ managed LB (ALB, GLB) |
-| **Database** | Single primary | Primary + sync/async replica; automatic failover |
-| **Cache** | Single Redis node | Redis Sentinel or Cluster mode |
-| **Message broker** | Single broker | Kafka 3+ brokers, RabbitMQ quorum queues |
-| **DNS** | Single provider | Secondary DNS, low TTL for failover |
-| **AZ / datacenter** | Single AZ | Replicas spread across 2–3 availability zones |
-| **Region** | Single region | Multi-region DR (active-passive or active-active) |
+### Single point of failure (SPOF)
 
-**Redundancy models:**
+A **single point of failure** is a component whose failure brings down the entire system.
 
-| Model | Description | Example |
-|-------|-------------|---------|
-| **N+1** | N units needed + 1 spare | 3 app servers need 2 → run 3 |
-| **N+2** | Tolerate 2 simultaneous failures | Critical payment path |
-| **2N** | Full duplicate stack | Active-active dual region |
-| **Quorum** | Majority must agree (avoid split-brain) | etcd 3 nodes (tolerate 1 loss), Kafka ISR |
+```mermaid
+flowchart LR
+    Client[Client] --> Web[Web server]
+    Web --> DB[(Database)]
+```
+
+If the database crashes, the application becomes unavailable. HA design removes every SPOF through redundancy at each layer.
+
+### Redundancy
+
+**Redundancy** means multiple copies of important components so if one fails, another continues the work.
+
+```mermaid
+flowchart LR
+    LB[Load balancer] --> SA[Server A]
+    LB --> SB[Server B]
+```
+
+If Server A fails, Server B continues serving requests.
+
+**Types:** server · database · network · storage · power
+
+### Failover and failback
+
+**Failover** is automatic switching from a failed component to a healthy one.
+
+```mermaid
+flowchart LR
+    Primary[(Primary DB)] -->|failure| Switch[Automatic switch]
+    Switch --> Secondary[(Secondary DB)]
+```
+
+Users continue without manual intervention.
+
+**Failback** returns traffic to the original primary after it has been repaired. Failback may be automatic or manual:
+
+```text
+Secondary serving traffic → primary repaired → traffic returns to primary
+```
+
+### HA architecture patterns
+
+Two common patterns distribute redundant capacity differently:
+
+- **Active-active** — all nodes serve traffic simultaneously ([12.3](#123-active-active))
+- **Active-passive** — one node serves traffic; others stand by ([12.4](#124-active-passive))
+
+Both rely on failure detection and load balancing; the choice trades complexity, cost, and utilization.
+
+### Load balancing
+
+The load balancer distributes requests among healthy servers and removes failed nodes from the pool once failure detection reports them unhealthy.
+
+```mermaid
+flowchart LR
+    Client[Client] --> LB[Load balancer]
+    LB --> App1[App 1]
+    LB --> App2[App 2]
+    LB --> App3[App 3]
+```
+
+**Benefits:** avoids overloaded servers · improves availability · supports failover · increases scalability
+
+### Database, storage, network, and power HA
+
+**Database** — replication with automatic promotion of a secondary when the primary fails:
+
+```mermaid
+flowchart LR
+    Primary[(Primary DB)] -->|replicate| Secondary[(Secondary DB)]
+```
+
+**Storage** — RAID, replication, distributed storage, NAS, storage clusters
+
+**Network** — multiple routers, switches, paths, and internet connections:
+
+```text
+Internet → Switch A → application | Internet → Switch B → application
+```
+
+**Power** — dual power supplies, UPS, backup generators, multiple circuits
+
+### Fault tolerance vs high availability
+
+| | Fault tolerance | High availability |
+|---|-----------------|-------------------|
+| **Downtime** | Continues without interruption | Small interruption may occur |
+| **Cost** | Usually expensive | Less expensive than fault tolerance |
+| **Recovery** | No noticeable downtime | Automatic recovery |
+| **Example** | Dual processors run same task | Failover to standby replica |
+
+### HA vs disaster recovery
+
+HA handles **component-level** failures (server, disk, network) with recovery in seconds or minutes. **Disaster recovery** ([12.9](#129-disaster-recovery)) handles **catastrophic** events (data center loss, fire, regional outage) and may take minutes to hours. Both are complementary; HA alone does not protect against every disaster.
+
+### Techniques for achieving HA
+
+- Redundant servers and databases
+- Data replication
+- Automatic failover
+- Health monitoring and heartbeat (see [12.2](#122-failure-detection))
+- Load balancing
+- Geographic deployment
+- Redundant networking and storage
+- Automatic scaling and continuous monitoring
+
+### Advantages
+
+- Reduced downtime and improved user experience
+- Automatic recovery without manual intervention
+- Better resilience to common component failures
+
+### Disadvantages
+
+- Higher infrastructure and operational cost
+- Data synchronization complexity
+- Split-brain and failover-testing challenges
+- Network latency between replicas
+
+### Real-world example — e-commerce
 
 ```mermaid
 flowchart TB
-    LB[Load Balancer / multi-AZ] --> A1[App AZ-a]
-    LB --> A2[App AZ-b]
-    LB --> A3[App AZ-c]
-    A1 & A2 & A3 --> DBP[(DB Primary / AZ-a)]
-    DBP -->|sync repl| DBS[(Standby / AZ-b)]
-    A1 & A2 & A3 --> Cache[(Redis Cluster)]
-    HC[Health Checks] --> LB
-    HC --> DBP
+    Internet[Internet] --> LB[Load balancer]
+    LB --> WS1[Web server 1]
+    LB --> WS2[Web server 2]
+    WS1 --> DBC[(DB cluster)]
+    WS2 --> DBC
+    DBC --> Storage[Replicated storage]
 ```
 
-**Health check driven failover:**
+**Workflow:**
+
+1. Users send requests; load balancer distributes traffic
+2. One web server crashes
+3. Health check detects failure; failed server is removed from the pool
+4. Remaining server continues serving users
+5. After repair, the failed server rejoins the cluster
+
+Users experience little or no downtime.
+
+### Best practices
+
+- Eliminate SPOFs at every layer
+- Automate failover; document and test failback
+- Monitor replication lag and health continuously
+- Run game days and chaos experiments ([12.10](#1210-chaos-engineering))
+
+### Common mistakes
+
+- HA without tested failover (standby never promoted in practice)
+- Ignoring split-brain during network partitions
+- Treating HA as a substitute for backups and disaster recovery
+
+### Summary
+
+```text
+HA = minimize downtime by removing SPOFs; redundancy + failover + failure detection
+Active-active and active-passive are the two main patterns; HA handles component failure, DR handles catastrophes
+```
+
+---
+
+
+## 12.2 Failure Detection
+
+### Definition
+
+**Failure detection** is the process of determining whether a component, service, or node is healthy enough to serve traffic. HA architectures depend on fast, accurate detection so load balancers and orchestrators can remove failed instances and trigger failover.
+
+### Why it exists
+
+Without timely detection:
+
+- Traffic continues routing to failed nodes
+- Users see errors or timeouts instead of automatic recovery
+- Failover never starts; standby nodes remain idle
+
+### How it works
+
+Monitors probe components on a schedule or receive periodic signals from them. When probes fail or signals stop, the component is marked unhealthy and removed from the serving pool.
+
+```mermaid
+flowchart LR
+    HC[Health check] -->|unhealthy| Remove[Remove from pool]
+    Remove --> Route[Route to healthy nodes]
+    Route --> Failover[Trigger failover if needed]
+```
+
+### Health checks
+
+**Health checks** continuously verify whether services are functioning correctly.
+
+**Common check types:**
+
+- HTTP endpoint (returns 200 when ready)
+- TCP connection (port open)
+- Database query (can read/write)
+- Resource thresholds (memory, CPU, disk usage)
+
+Load balancers, Kubernetes, and cloud auto-scaling groups all use health checks to decide which instances receive traffic.
+
+### Heartbeat
+
+A **heartbeat** is a periodic signal between components indicating they are alive.
+
+```mermaid
+flowchart LR
+    SA[Server A] <-->|heartbeat| SB[Server B]
+```
+
+If heartbeat messages stop, the peer is considered failed and failover begins. Heartbeats are common in active-passive pairs ([12.4](#124-active-passive)) where a standby must know when to promote itself.
+
+### Workflow — detection to recovery
 
 ```mermaid
 sequenceDiagram
-    participant LB as Load Balancer
-    participant A as Instance A
-    participant B as Instance B
-
-    LB->>A: health check /health
-    A-->>LB: 200 OK
-    Note over A: A crashes
-    LB->>A: health check
-    A-->>LB: timeout / 503
-    LB->>LB: mark A unhealthy
-    LB->>B: route all traffic
-    B-->>LB: 200 OK
+    participant Mon as Monitor
+    participant LB as Load balancer
+    participant Failed as Failed node
+    participant Healthy as Healthy node
+    Mon->>Failed: Health probe
+    Failed--xMon: No response
+    Mon->>LB: Mark unhealthy
+    LB->>Healthy: Redirect traffic
 ```
 
-**SPOF audit checklist:**
+1. Monitor probes the component
+2. Probe fails or heartbeat stops
+3. Component marked unhealthy
+4. Load balancer stops sending traffic
+5. Failover promotes standby or redistributes load (patterns in [12.3](#123-active-active) and [12.4](#124-active-passive))
 
-| Question | If "yes" → SPOF |
-|----------|-----------------|
-| Only one instance of this service? | ✓ |
-| Only one AZ for all replicas? | ✓ |
-| Single database with no replica? | ✓ |
-| Shared config store with no backup? | ✓ |
-| One person holds all prod access? | ✓ (operational SPOF) |
+### Advantages
 
-### Diagram
+- Enables automatic failover without human intervention
+- Reduces user-visible errors when combined with redundancy
+- Provides early warning through alerting before total outage
 
-```mermaid
-flowchart TB
-    subgraph WithoutHA['Without HA - SPOF']
-        U1[Users] --> S1[Single Server]
-        S1 --> DB1[(Single DB)]
-    end
-    subgraph WithHA['With HA - N+1']
-        U2[Users] --> LB2[LB]
-        LB2 --> S2a[Server 1]
-        LB2 --> S2b[Server 2]
-        S2a & S2b --> DBP2[(Primary)]
-        DBP2 --> DBR2[(Replica)]
-    end
+### Disadvantages
+
+- False positives can remove healthy nodes (flapping)
+- Probe design must distinguish "alive" from "ready to serve"
+- Aggressive timeouts increase false positives; lenient timeouts slow failover
+
+### Best practices
+
+- Separate **liveness** (process running) from **readiness** (can serve traffic)
+- Use multiple probe types for critical services
+- Tune timeouts and failure thresholds to avoid flapping
+- Alert on repeated probe failures before automatic removal when appropriate
+
+### Common mistakes
+
+- Health endpoint returns 200 even when dependencies (database) are down
+- Heartbeat without fencing — both nodes think the other failed (split-brain)
+- No monitoring of the monitors themselves
+
+### Summary
+
+```text
+Failure detection = health checks + heartbeats → mark unhealthy → remove from pool → failover
+Foundation for HA, active-active redistribution, and active-passive promotion
 ```
-
-### Key details
-
-| Topic | Detail |
-|-------|--------|
-| **Nines math** | 99.99% allows ~52 min downtime/year — budget error budget accordingly |
-| **Error budget** | SRE: 100% − SLO = budget for releases, experiments, incidents |
-| **Split-brain** | Two primaries without quorum → data corruption; use fencing/STONITH |
-| **Cold standby** | Cheaper but higher RTO; warm/hot for lower RTO |
-| **Chaos testing** | Regularly kill AZ/instance to prove HA works — not just on paper |
-| **Stateful HA** | Harder than stateless; needs replication + leader election (Raft, Paxos) |
-
-**Interview rapid-fire:**
-
-| Question | Answer |
-|----------|--------|
-| 99.9% vs 99.99% downtime difference? | 8.76 hr/yr vs 52 min/yr — 10× stricter |
-| What is a SPOF? | Component whose failure halts the entire service |
-| How achieve 4 nines? | Multi-AZ, no SPOF, automated failover, tested runbooks, chaos engineering |
-| HA vs DR? | HA = component failure; DR = region/catastrophe |
-| Why quorum (3 nodes)? | Tolerate 1 failure while maintaining consensus majority |
-
-### When to use
-
-- **All production user-facing services** — default expectation
-- **Stateful tiers** — DB, cache, queue with replication
-- **Internal critical dependencies** — auth, payment, config services
-- **Tiered approach** — not everything needs 5 nines; match nines to business impact
-
-### Trade-offs
-
-| Pros | Cons |
-|------|------|
-| Graceful component failure invisible to users | 2–3× resource cost for N+1 redundancy |
-| Meets SLO/contractual commitments | Distributed state complexity (consistency, split-brain) |
-| Builds user and stakeholder trust | Each redundancy layer adds operational surface |
-| Enables safe deployments (rolling updates) | Diminishing returns above 4 nines — cost explodes |
-| Foundation for chaos validation | Misconfigured failover can cause worse outages |
-
-### References
-
-- [AWS Well-Architected — Reliability](https://docs.aws.amazon.com/wellarchitected/latest/reliability-pillar/welcome.html)
-- [Google SRE — Embracing Risk](https://sre.google/sre-book/embracing-risk/)
-- [Availability calculator](https://uptime.is/)
 
 ---
 
 
-## 12.2 Active Active
+## 12.3 Active Active
 
+### Definition
 
-### What is it
+**Active-active** is a high availability architecture in which two or more servers run simultaneously and all actively handle user requests.
 
-Multiple sites or regions simultaneously serving live traffic with read-write capability - no idle standby waiting for failover.
+Instead of keeping one server idle, every server participates in serving traffic. This improves both availability and performance.
 
-### Why it matters
+### Why it exists
 
-Active-active minimizes RTO (traffic already routed) and can place users near nearest region. Required for global low-latency and highest availability tiers.
+When traffic and availability requirements exceed what a single node can provide, active-active spreads load across redundant nodes. A single node failure reduces capacity but does not stop the service — remaining nodes absorb traffic after failure detection ([12.2](#122-failure-detection)) removes the failed instance.
 
-### How it works
-
-Global load balancer geo-routes users. Data replicated multi-master or partitioned by region. Conflict resolution for concurrent writes (CRDTs, LWW, application merge). Each region runs full stack. Failure of one region sheds traffic to others automatically.
-
-### Diagram  -  Active-Active
-
-```mermaid
-flowchart TB
-    GLB[Global Load Balancer]
-    GLB --> R1[Region US / Read + Write]
-    GLB --> R2[Region EU / Read + Write]
-    R1 <-->|replication| R2
-    U1[US Users] --> GLB
-    U2[EU Users] --> GLB
-```
-
-### Key details
-
-- Data consistency is the hard problem
-- Prefer partition-by-region over multi-master when possible
-- DNS/global anycast for fast traffic shift
-- Test partial region failure, not only full outage
-
-### When to use
-
-- Global products needing local latency
-- RTO near zero requirements
-- Scale beyond single-region capacity
-
-### Trade-offs
-
-| Pros | Cons |
-|------|------|
-| Lowest RTO/RPO potential | Write conflict complexity |
-| Geographic performance | 2×+ operational cost |
-| No cold standby waste | Hard to debug cross-region |
-
-### References
-
-- [Martin Kleppmann  -  multi-datacenter](https://martin.kleppmann.com/2015/05/11/please-stop-calling-databases-cp-or-ap.html)
-
----
-
-
-## 12.3 Active Passive
-
-
-### What is it
-
-Primary site handles all production traffic; secondary (passive) site stands ready with replicated data, activated only on primary failure.
-
-### Why it matters
-
-Simpler than active-active with lower cost than full dual-live stacks. Common DR pattern for enterprise tiers with minutes-to-hours RTO.
-
-### How it works
-
-Primary serves traffic; async replication to standby. On failure, promote replica, start standby apps, update DNS/LB to passive site. Variants: **cold** (provision on fail), **warm** (apps running, no traffic), **hot standby** (sync repl, fast promote).
-
-### Diagram  -  Active-Passive
+### Basic architecture
 
 ```mermaid
 flowchart LR
-    Users[Users] --> Primary[Active Site / Serving Traffic]
-    Primary -->|async repl| Passive[Passive Site / Standby]
-    Primary -.->|failure| Failover[DNS / LB Failover]
-    Failover --> Passive
-    Passive --> Users
+    Clients[Clients] --> LB[Load balancer]
+    LB --> SA[Server A — active]
+    LB --> SB[Server B — active]
+    LB --> SC[Server C — active]
 ```
 
-### Key details
+All servers process requests simultaneously.
 
-- Replication lag = RPO
-- Failover time = RTO (DNS TTL matters)
-- Regular failover drills; passive drift is common
-- Split-brain prevention: fencing, STONITH
+### How it works
+
+**Step 1 — Users send requests:**
+
+```text
+Client → HTTP request → load balancer
+```
+
+**Step 2 — Load balancer distributes among active servers:**
+
+```text
+Request 1 → Server A | Request 2 → Server B | Request 3 → Server C
+Request 4 → Server A | Request 5 → Server B
+```
+
+**Step 3 — Each server processes work and returns the response.**
+
+### Failure scenario
+
+**Before failure:**
+
+```mermaid
+flowchart LR
+    LB[Load balancer] --> SA[Server A]
+    LB --> SB[Server B]
+    LB --> SC[Server C]
+```
+
+**Server B crashes:**
+
+```mermaid
+flowchart LR
+    LB[Load balancer] --> SA[Server A]
+    LB --> SC[Server C]
+```
+
+The load balancer detects Server B is unavailable (see [12.2](#122-failure-detection)) and stops sending requests to it. Users continue with little or no interruption.
+
+### Server recovery
+
+Once Server B is repaired:
+
+1. Health check reports Server B is healthy
+2. Load balancer adds it back to the pool
+3. Traffic is shared among all servers again
+
+### Load distribution methods
+
+**Round robin** — requests sent one after another:
+
+```text
+Request 1 → A · Request 2 → B · Request 3 → C · Request 4 → A
+```
+
+**Least connections** — server with fewest active connections gets the next request:
+
+```text
+Server A: 40 · Server B: 15 · Server C: 22 → next request goes to Server B
+```
+
+**Weighted distribution** — traffic by server capacity:
+
+```text
+Server A (powerful): 60% · Server B: 20% · Server C: 20%
+```
+
+### Shared data and session management
+
+Multiple servers need shared application data.
+
+**Common approaches:** shared database · distributed cache · database replication · distributed file storage
+
+```mermaid
+flowchart LR
+    SA[Server A] --> DB[(Shared database)]
+    SB[Server B] --> DB
+```
+
+Requests can reach different servers, so session data should not live only in server memory.
+
+**Option 1 — shared cache (e.g. Redis):**
+
+```mermaid
+flowchart LR
+    SA[Server A] --> Redis[(Redis)]
+    SB[Server B] --> Redis
+```
+
+**Option 2 — stateless authentication** such as JWT (no server-side session affinity required).
+
+### Advantages
+
+- High availability and better resource utilization
+- Higher throughput and improved scalability
+- No idle standby server; maintenance often possible with minimal downtime
+
+### Disadvantages
+
+- More complex architecture and data synchronization
+- Requires load balancer and careful session management
+- Higher infrastructure cost than single-server setup
 
 ### When to use
 
-- DR with moderate RTO (15 min  -  4 hr)
-- Cost-sensitive HA across regions
-- Legacy apps not designed multi-active
+E-commerce, banking, video streaming, social media, cloud APIs, online gaming, and large enterprise applications with heavy traffic.
 
-### Trade-offs
+### Real-world example
 
-| Pros | Cons |
-|------|------|
-| Simpler consistency | Standby resources idle |
-| Lower cost than active-active | Failover event causes blip |
-| Well-understood pattern | Replication lag data loss |
+An online shopping website has three application servers behind a load balancer. Customer requests distribute across all three. When Server C crashes, remaining servers handle new requests. The website continues operating.
 
-### References
+### Best practices
 
-- [AWS DR patterns](https://docs.aws.amazon.com/whitepapers/latest/disaster-recovery-workloads-on-aws/disaster-recovery-options-in-the-cloud.html)
+- Design for statelessness or externalize session state
+- Monitor replication lag on shared data stores
+- Test node failure regularly with chaos experiments ([12.10](#1210-chaos-engineering))
+
+### Common mistakes
+
+- Sticky sessions without failover plan for the session store
+- Write conflicts when multiple nodes write the same records without coordination
+- Assuming active-active removes the need for backups ([12.5](#125-backup-strategy))
+
+### Summary
+
+```text
+Active-active = all servers live behind load balancer; failed nodes removed, recovered nodes rejoin
+Share data (DB/cache) and sessions (Redis/JWT); compare with active-passive in 12.4
+```
 
 ---
 
 
-## 12.4 RPO
+## 12.4 Active Passive
 
+### Definition
 
-### What is it
+**Active-passive** is a high availability architecture in which one server (**active**) handles all user requests while another server (**passive**) remains on standby.
 
-**Recovery Point Objective (RPO)** is the maximum acceptable **data loss** measured in time — "how far back in time can we rewind after a failure?"
+The passive server does not normally process traffic. It stays ready to take over if the active server fails.
 
-| RPO target | Meaning | Data loss on failure |
-|------------|---------|----------------------|
-| **RPO = 0** | Zero data loss | No committed writes lost |
-| **RPO = 15 min** | Lose at most 15 min of writes | Restore to state ≤ 15 min ago |
-| **RPO = 24 hr** | Daily backup tolerance | Lose up to 1 day of changes |
+### Why it exists
 
-RPO answers: *"If the database dies right now, how much data are we willing to lose?"*
+Active-passive provides HA with simpler data consistency than active-active — only one node writes at a time. It suits workloads where standby capacity is acceptable and failover delay of seconds is tolerable.
 
-It is a **business decision** that engineering implements through replication, backups, and durability architecture.
+### Basic architecture
 
-### Why it matters
+```mermaid
+flowchart LR
+    Clients[Clients] --> LB[Load balancer]
+    LB --> Active[Active server]
+    Passive[Passive server — standby]
+```
 
-RPO drives infrastructure cost and complexity:
-
-| Lower RPO | Engineering requirement | Cost impact |
-|-----------|------------------------|-------------|
-| **0** | Synchronous replication, quorum writes | Highest latency + infra cost |
-| **< 1 min** | Async replication with sub-minute lag monitoring | Dedicated replicas, cross-AZ fiber |
-| **15–60 min** | Frequent WAL shipping / incremental backups | Moderate |
-| **24 hr** | Daily snapshots | Cheapest |
-
-Misaligned RPO causes either **over-engineering** (paying for sync repl on analytics) or **unacceptable data loss** (daily backups on payment ledger).
+Only the active server handles requests. The passive server waits in standby mode.
 
 ### How it works
 
-**RPO timeline — failure visualization:**
+**Normal operation:**
 
-```mermaid
-timeline
-    title RPO = 15 minutes (async replication)
-    section Normal operation
-        Last durable snapshot : 10:00
-        Continuous writes : 10:01 - 10:14
-    section Failure at 10:15
-        Unreplicated writes LOST : 10:00 - 10:15 window
-        Recoverable data : up to 10:00 snapshot + partial WAL
+```text
+Client → HTTP request → load balancer → active server
 ```
 
-**How architecture maps to RPO:**
+The passive server remains idle but stays synchronized with the active server.
 
-| Mechanism | Typical RPO | How it works |
-|-----------|-------------|--------------|
-| **Synchronous replication** | 0 | Primary waits for replica ACK before commit |
-| **Async replication** | Replication lag (seconds–minutes) | Commits locally; replicates after |
-| **WAL / binlog shipping** | Shipping interval | Ship transaction log every N seconds |
-| **Point-in-time recovery (PITR)** | Backup frequency + log retention | Restore snapshot + replay logs to timestamp |
-| **Hourly snapshots** | Up to 1 hour | Crash-consistent image every hour |
-| **Daily backups** | Up to 24 hours | Batch backup job overnight |
+**Data synchronization** — important data is regularly copied from active to passive:
+
+```mermaid
+flowchart LR
+    Active[Active server] -->|data replication| Passive[Passive server]
+```
+
+Synchronization may include application data, database changes, configuration files, and session information if required.
+
+### Failure and failover
+
+When the active server crashes, failure detection ([12.2](#122-failure-detection)) via health checks or heartbeat triggers automatic failover:
+
+1. Active server marked unhealthy
+2. Traffic to the failed server stops
+3. Passive server becomes the new active server
+4. Users continue accessing the application
+
+```mermaid
+flowchart LR
+    Clients[Clients] --> LB[Load balancer]
+    LB --> NewActive[New active server — previously passive]
+```
+
+### Server recovery
+
+After the failed server is repaired:
+
+1. Server starts again; data synchronization resumes
+2. Server enters standby mode as the new passive node
+3. Failback may be automatic or manual ([12.1](#121-high-availability))
+
+### Advantages
+
+- Simple architecture; easy to configure and troubleshoot
+- Automatic failover; reduced risk of write conflicts
+- Consistent request processing on a single active node
+
+### Disadvantages
+
+- Passive server mostly unused — lower hardware utilization
+- Short interruption during failover
+- Limited scalability — only one server handles requests at a time
+
+### When to use
+
+Banking applications, database servers, enterprise and legacy systems, internal business systems, and critical services where simplicity outweighs throughput scaling.
+
+### Active-active vs active-passive
+
+| | Active-active | Active-passive |
+|---|---------------|----------------|
+| **Servers** | All active | One active, one standby |
+| **Traffic** | All handle requests | Backup waits until failover |
+| **Utilization** | Better resource use | Some resources idle |
+| **Scalability** | Higher | Lower |
+| **Complexity** | More synchronization | Simpler architecture |
+| **Failover** | Traffic redistributed | Small interruption; standby promotes |
+
+### Real-world example
+
+An online banking application uses two application servers. All customer requests route to the active server. If the active server crashes, health checks detect failure, the passive server promotes, and customers continue without manual intervention.
+
+### Best practices
+
+- Keep replication lag within acceptable RPO ([12.7](#127-rpo))
+- Test failover and failback on a schedule
+- Use fencing to prevent split-brain during network partitions
+
+### Common mistakes
+
+- Standby never tested — promotion fails when needed
+- Session state only on active node without replication
+- Confusing active-passive HA with disaster recovery ([12.9](#129-disaster-recovery))
+
+### Summary
+
+```text
+Active-passive = one active + one standby; data replicated continuously; heartbeat/health checks trigger failover
+Simpler than active-active; lower utilization; canonical comparison table above
+```
+
+---
+
+
+## 12.5 Backup Strategy
+
+### Definition
+
+A **backup strategy** is a planned approach for creating, storing, managing, and retaining copies of data to protect against loss from hardware failures, software issues, accidental deletion, cyberattacks, or natural disasters.
+
+### Why it exists
+
+**Without backups:**
+
+- Lost data may be impossible to recover
+- Hardware failures and accidental deletion become permanent
+- Recovery after ransomware becomes difficult
+
+**With backups:**
+
+- Data can be restored; business continuity improves
+- Recovery from failures becomes repeatable and testable
+
+### How backup works
+
+```mermaid
+flowchart LR
+    Orig[Original data] -->|create copy| Store[Backup storage]
+    Store -->|restore — see 12.6| System[Original system]
+```
+
+If original data is lost, restore from backup storage back to the system. The restore process is covered in [12.6 Restore Strategy](#126-restore-strategy).
+
+### Types of backup
+
+**1. Full backup** — copies all selected data every time.
+
+```text
+Monday: all files → backup
+```
+
+| Advantages | Disadvantages |
+|------------|---------------|
+| Simple recovery · complete copy | Large storage · longer backup time |
+
+**2. Incremental backup** — copies only data changed since the last backup of any type.
+
+```text
+Monday: full · Tuesday: changes since Monday · Wednesday: changes since Tuesday
+```
+
+| Advantages | Disadvantages |
+|------------|---------------|
+| Fast backup · small storage | Slower recovery — multiple backups needed |
+
+**3. Differential backup** — copies all data changed since the last full backup.
+
+```text
+Monday: full · Tue/Wed/Thu: all changes since Monday
+```
+
+| Advantages | Disadvantages |
+|------------|---------------|
+| Faster recovery than incremental · simpler restore chain | Backup size grows until next full backup |
+
+### Comparison of backup types
+
+| Type | Copies | Size | Backup time | Recovery speed |
+|------|--------|------|-------------|----------------|
+| **Full** | All data | Largest | Longest | Fastest |
+| **Incremental** | Changes since last backup | Smallest | Fastest | Slowest |
+| **Differential** | Changes since last full | Medium | Medium | Medium |
+
+How to chain these during restore is detailed in [12.6](#126-restore-strategy).
+
+### Backup storage locations
+
+| Location | Advantages | Disadvantages |
+|----------|------------|---------------|
+| **Local** (external drive, NAS) | Fast backup and recovery | Vulnerable to fire, theft, disasters |
+| **Remote** (another site) | Geographic redundancy | Slower recovery (network-dependent) |
+| **Cloud** | Scalable · off-site · high durability | Internet required · ongoing cost |
+
+### Backup frequency and retention
+
+Frequency depends on how often data changes:
+
+| Data type | Frequency |
+|-----------|-----------|
+| Critical database | Every few minutes |
+| Business applications | Every hour |
+| Office documents | Daily |
+| Archive data | Weekly or monthly |
+
+**Retention policy** defines how long backups are kept:
+
+```text
+Daily backups — keep 30 days · Weekly — keep 3 months · Monthly — keep 1 year
+```
+
+### 3-2-1 backup rule
+
+```text
+3 copies: 1 original + 2 backups
+2 different storage media (e.g. local disk + cloud)
+1 copy off-site
+```
+
+```mermaid
+flowchart LR
+    Primary[Primary server] --> Local[Local backup]
+    Primary --> Cloud[Cloud backup — off-site]
+```
+
+### Verification and encryption
+
+Creating backups is not enough — test restores regularly ([12.6](#126-restore-strategy)). Verify integrity via restore tests, log checks, and monitoring backup job success.
+
+Encrypt backups containing sensitive data to protect against unauthorized access during storage and transmission.
+
+### Relationship to RPO
+
+Backup frequency directly bounds **RPO** ([12.7](#127-rpo)) — the maximum acceptable data loss. Hourly backups imply up to one hour of lost data unless continuous replication is also used.
+
+### Best practices
+
+- Automate backup jobs; use the 3-2-1 rule
+- Encrypt backup data; define retention policies
+- Monitor success and failures; test restoration regularly
+- Store backups in multiple geographic locations
+
+### Common mistakes
+
+- Backups that are never restored in tests
+- Only local backups (lost in same disaster as primary)
+- Incremental chains with missing intermediate backups
+
+### Real-world example
+
+Online shopping application — customer orders in a primary database:
+
+```mermaid
+flowchart LR
+    DB[(Primary DB)] -->|full — Sunday| Cloud[Cloud storage]
+    DB -->|incremental — hourly| Cloud
+```
+
+If the database is corrupted on Monday, recovery follows the restore chain in [12.6](#126-restore-strategy).
+
+### Summary
+
+```text
+Backup strategy = what, when, where, how long to keep copies; full / incremental / differential
+3-2-1 rule; verify and encrypt; frequency and retention match RPO; test restores, don't just backup
+```
+
+---
+
+
+## 12.6 Restore Strategy
+
+### Definition
+
+A **restore strategy** is a planned process for recovering data, applications, or entire systems from backups after data loss, corruption, hardware failure, software failure, or disasters.
+
+It builds on the backup types defined in [12.5 Backup Strategy](#125-backup-strategy).
+
+### Why it exists
+
+**Without a restore strategy:**
+
+- Backups exist but cannot be restored efficiently
+- Recovery takes longer; incorrect steps cause data inconsistency
+
+**With a restore strategy:**
+
+- Recovery is faster; downtime is reduced
+- Data consistency is maintained; business continuity improves
+
+### How restore works
+
+```mermaid
+flowchart LR
+    Fail[Failure] --> Identify[Identify correct backup]
+    Identify --> Restore[Restore data]
+    Restore --> Verify[Verify integrity]
+    Verify --> Resume[Resume operations]
+```
+
+The system returns to the last recoverable backup state.
+
+### Types of restore
+
+| Type | Scope | Used when |
+|------|-------|-----------|
+| **Full restore** | Complete system or all backed-up data | Complete system failure · disaster recovery |
+| **File-level restore** | Selected files or folders | Accidental deletion · few corrupted files |
+| **Database restore** | Entire database or selected tables | DB corruption · failed upgrades |
+| **Bare metal restore** | Entire OS, apps, config, and data on new machine | Server hardware completely fails |
+
+### Restore chains by backup type
+
+**Full backup restore** — only one backup required:
+
+```text
+Sunday: full backup → failure → restore Sunday's backup (simple and fast)
+```
+
+**Incremental backup restore** — requires last full + every incremental after it:
+
+```text
+Sunday: full · Mon/Tue/Wed: incrementals → restore order:
+1. Sunday full → 2. Monday incr → 3. Tuesday incr → 4. Wednesday incr
+```
+
+**Differential backup restore** — requires last full + latest differential:
+
+```text
+Sunday: full · Mon/Tue/Wed: differentials → restore order:
+1. Sunday full → 2. Wednesday differential
+```
+
+### Restore timeline
+
+```text
+10:00 AM — database failure · 10:05 AM — identified · 10:10 AM — restore begins
+10:25 AM — restore completed · 10:30 AM — users resume access
+Total recovery time: 30 minutes
+```
+
+Restore duration directly affects **RTO** ([12.8](#128-rto)). Data age at restore point affects **RPO** ([12.7](#127-rpo)).
+
+### Restore verification
+
+After restoration, verify:
+
+- Data completeness and absence of corruption
+- Database consistency
+- Application functionality
+- User access
+
+### Factors affecting restore time
+
+Backup size · storage and hardware performance · network speed · backup type · integrity checks · recovery procedures
+
+### Best practices
+
+- Test restore procedures regularly (not just backup creation)
+- Document restore steps; automate where possible
+- Maintain multiple backup copies; prioritize critical systems first
+- Review restore logs after every recovery
+
+### Common mistakes
+
+- Restoring incrementals out of order
+- Skipping verification before resuming production traffic
+- Restore runbooks that reference obsolete backup locations
+
+### Real-world example
+
+Online banking application: full backup every Sunday, incremental every hour. Database corrupted on Wednesday:
+
+1. Restore Sunday's full backup
+2. Restore every incremental backup after Sunday in order
+3. Verify database consistency; restart banking services
+
+Business operations resume with data loss bounded by the last successful incremental (RPO).
+
+### Summary
+
+```text
+Restore strategy = documented, tested path from backup to running system
+Match restore type to failure; chain incrementals correctly; verify after restore; align with RTO and RPO
+```
+
+---
+
+
+## 12.7 RPO
+
+### Definition
+
+**Recovery Point Objective (RPO)** is the maximum amount of data loss an organization can tolerate after a failure or disaster.
+
+It answers: *"How much data can we afford to lose?"*
+
+RPO is measured in time: seconds · minutes · hours · days
+
+### Why it exists
+
+Business and regulatory requirements define how much historical data can disappear before impact is unacceptable. RPO drives backup frequency, replication design, and budget — tighter RPO costs more.
+
+### Understanding RPO
+
+Suppose a database is backed up every hour:
+
+```text
+09:00 AM — backup · 10:00 AM — backup · 10:30 AM — server crash
+```
+
+Latest backup: 10:00 AM. Data lost: 10:00 AM → 10:30 AM. **RPO = 30 minutes** (actual loss in this incident).
+
+**Example — daily backup:**
+
+```text
+Day 1 — backup · Day 2 — system failure
+All work after last backup is lost → RPO = 24 hours (by design)
+```
+
+### Low vs high RPO
+
+**Low RPO** (e.g. 5 minutes) — very little data loss acceptable. Requires frequent backups, continuous replication, or real-time synchronization.
+
+**High RPO** (e.g. 24 hours) — more data loss acceptable. Daily backups may suffice; lower cost and complexity.
+
+| | Small RPO | Large RPO |
+|---|-----------|-----------|
+| **Advantages** | Less data loss · better continuity | Lower cost · simpler strategy |
+| **Disadvantages** | Higher cost · complex replication | More data loss · greater business impact |
+
+### How RPO is achieved
+
+Techniques introduced in [12.5 Backup Strategy](#125-backup-strategy) and replication:
+
+- Scheduled, incremental, and differential backups
+- Database replication (sync or async)
+- Continuous data replication, snapshots, log shipping
 
 ```mermaid
 flowchart LR
     App[Application writes] --> Primary[(Primary DB)]
-    Primary -->|sync ACK| SyncRep[(Sync Replica / RPO ~ 0)]
-    Primary -->|async lag 30s| AsyncRep[(Async Replica / RPO ~ 30s)]
-    Primary -->|WAL every 5min| S3[(Backup + WAL / RPO ~ 5min)]
+    Primary -->|sync| SyncRep[(Sync replica — RPO ~ 0)]
+    Primary -->|async| AsyncRep[(Async replica — RPO = lag)]
+    Primary -->|WAL / snapshots| Backup[(Backup store)]
 ```
 
-**Measuring actual RPO (not just target):**
+### RPO in different systems
 
-| Metric | Alert when |
-|--------|------------|
-| `replication_lag_seconds` | Lag > 50% of RPO target |
-| `last_successful_backup_timestamp` | Age > RPO target |
-| `wal_archive_gap` | Missing WAL segments |
+| System | Expected RPO | Reason |
+|--------|--------------|--------|
+| **Banking** | Near zero | Financial transactions cannot be lost |
+| **E-commerce** | Few minutes | Recent orders and payments must be preserved |
+| **Social media** | Several minutes | Small data loss may be acceptable |
+| **Archive** | Hours or one day | Data changes infrequently |
 
-**Example — tiered RPO by service:**
+### Factors affecting RPO
 
-| Service | Tier | RPO | Implementation |
-|---------|------|-----|----------------|
-| Payment ledger | Tier 1 | 0 | Sync repl + multi-AZ RDS |
-| User profiles | Tier 2 | 15 min | Async repl + PITR |
-| Analytics warehouse | Tier 3 | 24 hr | Daily snapshot to S3 |
-| Session cache | Tier 4 | N/A (ephemeral) | Rebuild from source |
+Backup frequency · replication method · storage and network reliability · business requirements · cost
 
-### Diagram
+### Relationship to RTO
 
-```mermaid
-flowchart TB
-    subgraph Primary['Primary Region']
-        W[Live Writes] --> DB[(Production DB)]
-    end
-    subgraph Protection['RPO Controls']
-        DB -->|sync| R0[Replica - RPO 0]
-        DB -->|async lag| R1[Replica - RPO = lag]
-        DB -->|snapshot + WAL| BK[Backup Store - RPO = interval]
-    end
-    subgraph Failure['On Failure']
-        BK --> Restore[Restore to last durable point]
-        R0 --> Promote[Promote replica]
-    end
+RPO measures **data loss** (how far back in time you recover). **RTO** ([12.8](#128-rto)) measures **downtime** (how long until service is back). They are independent — a system can have RPO = 5 minutes and RTO = 4 hours, or the reverse.
+
+### Real-world example
+
+Online shopping application:
+
+```text
+10:00 AM — backup · 10:30 AM — orders placed · 10:45 AM — payments · 11:00 AM — failure
+Latest backup: 10:00 AM — orders/payments from 10:00–11:00 AM are lost
+RPO = 1 hour (actual loss); business may require RPO = 5 minutes → need continuous replication
 ```
 
-### Key details
+### Best practices
 
-| Topic | Detail |
-|-------|--------|
-| **RPO ≠ backup frequency alone** | Need replication + PITR for low RPO; backups alone have restore-time gap |
-| **Async lag = practical RPO** | Monitor lag continuously; failover at lag=10min means 10min data loss |
-| **Logical corruption** | Ransomware/bug may require restore to *older* point — retain multiple PITR windows |
-| **Per-service RPO** | Document in service catalog; not one-size-fits-all |
-| **RPO + RTO together** | Low RPO with slow restore still hurts users — optimize both |
-| **Cross-region** | Async cross-region repl adds lag → higher RPO unless sync (latency cost) |
+- Define RPO per service tier, not one number for everything
+- Match backup and replication design to RPO; test that restore delivers it ([12.6](#126-restore-strategy))
+- Monitor replication lag as an operational SLO
 
-**Interview rapid-fire:**
+### Common mistakes
 
-| Question | Answer |
-|----------|--------|
-| RPO vs RTO? | RPO = data loss tolerance (time); RTO = downtime tolerance (time) |
-| RPO = 0 how? | Sync replication; write not ack'd until replica confirms |
-| Daily backup RPO? | Up to 24 hours of lost writes since last backup |
-| Does caching affect RPO? | Ephemeral cache loss is acceptable if rebuilt; don't count as durable data |
-| Replication lag 5 min, RPO 1 min? | **Non-compliant** — actual RPO is 5 min; alert and fix |
+- Confusing RPO with RTO
+- Declaring RPO = 0 without synchronous replication and understanding latency trade-offs
+- Hourly backups while claiming RPO = 5 minutes
 
-### When to use
+### Summary
 
-- **DR architecture decisions** — choose sync vs async replication
-- **SLA / contract negotiations** — translate business risk to numbers
-- **Backup policy design** — snapshot frequency, WAL retention
-- **Incident classification** — "we lost 20 min of data" → measure against RPO
-
-### Trade-offs
-
-| Lower RPO | Higher RPO |
-|-----------|------------|
-| Minimal data loss on failure | Cheaper, simpler architecture |
-| Sync repl adds write latency | Acceptable for non-critical data |
-| Multi-region replication cost | Single-region may suffice |
-| Complex monitoring and failover | Larger data loss window on disaster |
-| Required for financial/regulated data | Fine for derived/rebuildable data |
-
-### References
-
-- [IBM RPO/RTO explainer](https://www.ibm.com/topics/rpo-rto)
-- [AWS DR whitepaper — RPO/RTO](https://docs.aws.amazon.com/whitepapers/latest/disaster-recovery-workloads-on-aws/disaster-recovery-options-in-the-cloud.html)
-- [Google SRE — Data Integrity](https://sre.google/sre-book/data-integrity/)
+```text
+RPO = max acceptable data loss measured in time; lower RPO = less loss, higher cost
+Achieved via backups and replication; distinct from RTO (downtime, not data loss)
+```
 
 ---
 
 
-## 12.5 RTO
+## 12.8 RTO
 
+### Definition
 
-### What is it
+**Recovery Time Objective (RTO)** is the maximum amount of time a system, application, or service can remain unavailable after a failure or disaster before it must be restored.
 
-**Recovery Time Objective (RTO)** is the maximum acceptable **downtime** — the time from failure detection until the service is restored to an operational level that can handle production traffic.
+It answers: *"How quickly must the system be back online?"*
 
-| RTO target | Meaning | Typical architecture |
-|------------|---------|----------------------|
-| **RTO ≈ 0** | Near-instant failover | Active-active multi-region |
-| **RTO < 5 min** | Minutes of outage | Hot standby, automated DNS failover |
-| **RTO < 1 hr** | Hour of outage | Warm standby, scripted runbooks |
-| **RTO < 4 hr** | Half-day recovery | Cold standby, manual restore |
-| **RTO < 24 hr** | Next-day recovery | Backup-restore from snapshots |
+RTO is measured in time: seconds · minutes · hours · days
 
-RTO answers: *"How long can users be without the service?"*
+### Why it exists
 
-**RPO vs RTO — interview distinction:**
+Every hour of downtime has business cost. RTO defines the target recovery window and drives investments in HA ([12.1](#121-high-availability)), automation, and disaster recovery ([12.9](#129-disaster-recovery)).
 
-| Metric | Measures | Question answered |
-|--------|----------|-------------------|
-| **RPO** | Data loss window | "How much data can we lose?" |
-| **RTO** | Downtime window | "How long until we're back online?" |
+### Understanding RTO
 
-A system can have **RPO = 0** (no data loss) but **RTO = 2 hr** (slow failover). Both must be designed independently.
-
-### Why it matters
-
-RTO determines standby investment and automation depth:
-
-| RTO requirement | What you must build |
-|-----------------|---------------------|
-| Minutes | Pre-provisioned infra, automated failover, health-checked cutover |
-| Hours | Warm standby, documented runbooks, on-call trained on restore |
-| Days | Cold DR site, backup tapes, manual provisioning acceptable |
-
-Underestimating RTO leads to **contract breaches**, **revenue loss**, and **incident escalation** when manual recovery takes longer than promised.
-
-### How it works
-
-**RTO budget breakdown — every minute counts:**
-
-```mermaid
-gantt
-    title RTO Budget Example (target: 60 minutes)
-    dateFormat X
-    axisFormat %M min
-
-    section Detect
-    Monitoring alert fires     :0, 3
-    On-call acknowledges       :3, 5
-    section Decide
-    Triage + declare incident  :5, 10
-    Choose failover vs restore :10, 15
-    section Recover
-    Provision infra (if needed):15, 20
-    Restore database from repl :20, 35
-    Deploy application tier    :35, 50
-    section Validate
-    Smoke tests + canary       :50, 58
-    DNS / LB cutover           :58, 60
+```text
+Server crashes at 10:00 AM · Business requires availability by 10:30 AM
+Maximum acceptable downtime: 30 minutes → RTO = 30 minutes
 ```
 
-**RTO phases and optimization:**
+**Timeline example:**
 
-| Phase | Typical duration | How to shrink RTO |
-|-------|------------------|-------------------|
-| **Detection** | 1–15 min | Better alerting, SLO burn alerts, synthetic probes |
-| **Triage** | 5–30 min | Runbooks, severity matrix, pre-authorized failover |
-| **Decision** | 5–60 min | Pre-defined failover triggers; avoid debate during outage |
-| **Provision** | 0–120 min | IaC (Terraform), warm standby eliminates this |
-| **Data restore** | 10 min–hours | Hot replica promotion vs cold backup restore |
-| **App deploy** | 5–30 min | Pre-built images, GitOps, immutable infra |
-| **Validation** | 5–15 min | Automated smoke tests, health check gates |
-| **Cutover** | 1–60 min | Low DNS TTL, pre-staged LB rules |
-
-**Architecture patterns by RTO:**
-
-| Pattern | RTO range | How it works |
-|---------|-----------|--------------|
-| **Active-active** | ~0 | Traffic already on multiple regions; shed failed region |
-| **Hot standby** | 1–5 min | Standby apps running; promote DB replica; flip DNS |
-| **Warm standby** | 15–60 min | Minimal infra running; scale up on failover |
-| **Pilot light** | 1–4 hr | Core DB replicated; apps provisioned on demand |
-| **Backup-restore** | 4–24+ hr | Restore snapshots to fresh infra |
-
-```mermaid
-flowchart TB
-    Fail[Failure detected] --> T{Triage}
-    T -->|region down| AA[Active-Active / RTO ~ 0]
-    T -->|DB primary down| Hot[Promote replica / RTO ~ 5 min]
-    T -->|data corruption| Restore[PITR restore / RTO ~ 1-4 hr]
-    T -->|total loss| Cold[Backup restore / RTO ~ 4-24 hr]
+```text
+10:00 AM — failure · 10:10 AM — recovery starts · 10:25 AM — system restored
+Total recovery time: 25 minutes (within 30-minute RTO — achieved)
 ```
 
-**Example — payment service RTO = 5 min:**
+### Low vs high RTO
 
-| Step | Automation | Time |
-|------|------------|------|
-| RDS Multi-AZ failover | Automatic | ~60–120 sec |
-| App pods reschedule | Kubernetes | ~30 sec |
-| Health checks pass | ALB | ~30 sec |
-| Status page update | PagerDuty workflow | ~60 sec |
-| **Total** | | **~3–5 min** |
+**Low RTO** (e.g. 5 minutes) — requires automatic failover, redundant servers, HA, and fast restore procedures.
 
-### Diagram
+**High RTO** (e.g. 24 hours) — manual restoration from backups may suffice; lower architecture cost.
+
+| | Small RTO | Large RTO |
+|---|-----------|-----------|
+| **Advantages** | Less downtime · better UX | Lower cost · simpler process |
+| **Disadvantages** | Higher cost · complex architecture | Longer outages · revenue risk |
+
+### How RTO is achieved
+
+- High availability and automatic failover ([12.1](#121-high-availability), [12.4](#124-active-passive))
+- Fast restore procedures ([12.6](#126-restore-strategy))
+- Disaster recovery sites ([12.9](#129-disaster-recovery))
+- Automated recovery scripts and regular testing
 
 ```mermaid
 flowchart LR
-    subgraph Clock['RTO Clock']
-        D[Detect] --> T[Triage]
-        T --> R[Recover]
-        R --> V[Validate]
-        V --> C[Cutover]
-    end
-    subgraph Parallel['Run in Parallel']
-        P1[Restore DB]
-        P2[Deploy apps]
-        P3[Update DNS]
-    end
-    R --> P1 & P2 & P3
+    Fail[Failure] --> Detect[Detect]
+    Detect --> Recover[Recover]
+    Recover --> Validate[Validate]
+    Validate --> Online[System operational]
 ```
 
-### Key details
+### RPO and RTO on a single timeline
 
-| Topic | Detail |
-|-------|--------|
-| **Include detection time** | RTO starts at failure, not when someone notices — monitoring is part of RTO |
-| **DNS TTL impact** | TTL=300s adds 5 min to cutover; use low TTL for failover domains |
-| **Runbook parallelism** | DB restore + app deploy simultaneously, not sequentially |
-| **Game days** | Measure actual RTO quarterly; paper RTO ≠ real RTO |
-| **Communication** | Status updates to stakeholders are part of incident clock |
-| **Dependency chain** | RTO of service = sum of slowest critical dependency restore |
-
-**Interview rapid-fire:**
-
-| Question | Answer |
-|----------|--------|
-| RPO=0, RTO=2hr possible? | Yes — no data loss (sync repl) but slow manual failover |
-| Fastest RTO pattern? | Active-active with global LB |
-| DNS impact on RTO? | High TTL delays traffic shift; pre-lower TTL before maintenance |
-| How measure RTO? | Game day: inject failure, stopwatch to restored SLO |
-| RTO vs MTTR? | RTO = target/budget; MTTR = actual measured recovery time |
-
-### When to use
-
-- **DR tier classification** — Tier 1 (minutes) vs Tier 3 (hours)
-- **Choosing active-passive vs active-active** — RTO near zero needs active-active
-- **Incident severity definitions** — SEV1 when RTO budget at risk
-- **Capacity planning for on-call** — short RTO needs 24/7 staffed response
-
-### Trade-offs
-
-| Lower RTO | Higher RTO |
-|-----------|------------|
-| Better user experience | Lower infra and ops cost |
-| Hot/warm standby expense | Manual recovery acceptable |
-| Automation investment (IaC, failover scripts) | Longer outages tolerated |
-| Requires regular game-day validation | Simpler architecture |
-| Active-active complexity | Backup-restore may suffice |
-
-### References
-
-- [Google SRE — Disaster Recovery Planning](https://sre.google/sre-book/addressing-cascading-failures/)
-- [AWS DR patterns and RTO](https://docs.aws.amazon.com/whitepapers/latest/disaster-recovery-workloads-on-aws/disaster-recovery-options-in-the-cloud.html)
-- [IBM RPO/RTO explainer](https://www.ibm.com/topics/rpo-rto)
-
----
-
-
-## 12.6 Disaster Recovery
-
-
-### What is it?
-
-**Disaster Recovery (DR)** restores systems after **catastrophic** failure (region loss, ransomware) within **RPO (recovery point objective)** and **RTO (recovery time objective)** targets.
-
-DR ≠ **high availability (HA)**: HA survives pod/**availability zone (AZ)** failure; DR survives **region** loss or rebuild from backup.
-
-### Why it matters
-
-Regional outages and ransomware bypass in-region HA. Untested DR means slide-deck RPO/RTO only.
-
-### How it works
-
-| Tier | RTO | RPO | Pattern |
-|------|-----|-----|---------|
-| 0 | ~0 | ~0 | Active-active multi-region |
-| 1 | < 15 min | < 1 min | Hot standby |
-| 2 | < 4 hr | < 1 hr | Warm / pilot light |
-| 3 | < 24 hr | < 24 hr | Backup-restore |
-
-| Pattern | RTO | Cost |
-|---------|-----|------|
-| Backup-restore | Hours–days | $ |
-| Pilot light | 1–4 hr | $$ |
-| Warm standby | 15–60 min | $$$ |
-| Hot standby | 1–5 min | $$$$ |
-| Active-active | ~0 | $$$$$ |
-
-Failover basics: stop writes to primary → promote replica or restore backup → shift **DNS** / global load balancer → smoke test.
-
-### Key details
-
-- **Game days** quarterly — measure real RTO/RPO, not estimates
-- DR region needs secrets, DNS, and webhooks pre-staged
-- Ransomware: restore from **immutable** offsite backup; rebuild infra from infrastructure-as-code (IaC)
-
-### When to use
-
-- Any business beyond "we can be down a day"
-- Regulatory requirements (finance, healthcare)
-- Contractual SLA with financial penalties
-- Protection against cloud regional failures
-
-### Trade-offs / Pitfalls
-
-| Pitfall | Consequence | Fix |
-|---------|-------------|-----|
-| DR never tested | RTO 4× worse than planned | Quarterly game days |
-| Active-active without conflict handling | Duplicate writes | Idempotency or single-writer region |
-| Async repl only, RPO=0 claimed | Data loss on failover | Honest RPO or sync replication |
-| DR drift | DR apps 3 versions behind | Automated sync deploys |
-| Failback untested | Stuck in DR for weeks | Document failback runbook |
-
-### References
-
-- [AWS Disaster Recovery whitepaper](https://docs.aws.amazon.com/whitepapers/latest/disaster-recovery-workloads-on-aws/disaster-recovery-workloads-on-aws.html)
-- See [12.4 RPO](#124-rpo), [12.5 RTO](#125-rto), [12.7 Backup](#127-backup-strategy)
-
----
-
-
-## 12.7 Backup Strategy
-
-
-### What is it?
-
-A **backup strategy** defines **what** to back up, **how often**, **where** copies live, **how long** to retain them, and **who** can restore — covering databases, object storage, configs, secrets metadata, and IaC.
-
-Backups are insurance. A strategy without **tested restores** is a receipt for false confidence.
-
-### Why it matters
-
-```text
-Operator runs DELETE FROM orders WHERE 1=1 (wrong env)
-Ransomware encrypts RDS + replicas
-Bad deploy corrupts 40% of rows
-
-Only backups with point-in-time recovery (PITR) bring you back
-```
-
-### How it works
-
-**The 3-2-1 rule:**
-
-```text
-3 copies of data
-2 different storage media/types
-1 copy offsite (different region/account)
-```
+RPO and RTO measure different dimensions. Together they define the recovery window:
 
 ```mermaid
 flowchart LR
-    DB[(Production DB)] -->|continuous WAL| PITR[PITR / WAL archive]
-    DB -->|daily snapshot| Snap[Automated snapshot]
-    Snap --> S3[(S3 / Blob storage)]
-    S3 -->|cross-region replication| DR[(DR region copy)]
-    S3 -->|Object Lock WORM| Vault[Immutable vault]
-    CFG[Configs / IaC / secrets refs] --> S3
+    subgraph timeline [Failure timeline]
+        LastGood[Last recoverable state] -->|RPO window — data loss| Failure[Failure occurs]
+        Failure -->|RTO window — downtime| Restored[Service restored]
+    end
 ```
 
-**Backup types:**
+- **RPO** — how far back the recovered data may be ([12.7](#127-rpo))
+- **RTO** — how long users wait until service is available again
 
-| Type | Consistency | RPO | Use |
-|------|-------------|-----|-----|
-| **Crash-consistent snapshot** | Disk as-is | Minutes–hours | VMs, fast snapshots |
-| **Application-consistent** | Quiesced app + DB | Minutes | RDS, quiesced MySQL |
-| **Continuous WAL/binlog** | Transaction log stream | Seconds | PITR to any point in time |
-| **Logical dump** | `pg_dump`, `mysqldump` | Hours | Portability, selective restore |
+### RTO in different systems
 
-**GFS retention (Grandfather-Father-Son):**
+| System | Expected RTO | Reason |
+|--------|--------------|--------|
+| **Banking** | A few minutes | Customers expect near-continuous availability |
+| **E-commerce** | Minutes to one hour | Long outages lead to lost sales |
+| **Social media** | Minutes to few hours | Short downtime may be acceptable |
+| **Archive** | Hours or one day | Not used continuously |
 
-| Tier | Frequency | Retention |
-|------|-----------|-----------|
-| **Son (daily)** | Every day | 7–14 days |
-| **Father (weekly)** | Weekly | 4–8 weeks |
-| **Grandfather (monthly)** | Monthly | 6–12 months |
-| **Yearly** | Annual | 7+ years (compliance) |
+### Factors affecting RTO
 
-**Production checklist:**
+Recovery procedures · hardware availability · restore speed ([12.6](#126-restore-strategy)) · network connectivity · DR planning · automation · staff readiness
 
-```text
-□ Automated backups — no manual cron on one engineer's laptop
-□ Alert on backup job FAILURE (not just success logs)
-□ Cross-region copy for regional disaster
-□ Immutable / WORM for ransomware (S3 Object Lock, Azure Immutable)
-□ Encrypt at rest + in transit; separate KMS keys from prod
-□ Backup credentials in separate account (ransomware can't delete)
-□ Include: DB, Redis RDB (if stateful), Kafka tiered storage, Terraform state
-□ Document RPO achieved per system
-```
+### Real-world example
 
-### Key details
-
-| Topic | Production detail |
-|-------|-------------------|
-| **PITR window** | RDS default 7 days; extend to 35 for critical DBs |
-| **Backup window load** | Schedule off-peak; use replica for logical dumps |
-| **Large tables** | Tablespace-level or incremental; avoid locking prod |
-| **K8s** | Velero for PV snapshots + resource manifests |
-| **Compliance** | GDPR right-to-erasure vs backup retention — legal hold process |
-
-### When to use
-
-- All stateful systems (always)
-- Before schema migrations and major releases
-- Ransomware defense layer
-- Regulatory audit evidence
-
-### Trade-offs / Pitfalls
-
-| Pitfall | Consequence | Fix |
-|---------|-------------|-----|
-| Backups never restored | Discover corrupt backup at incident | Quarterly restore drills (12.8) |
-| Replica = backup | Logical delete replicates; ransomware hits replica | Immutable offsite copy |
-| Same account credentials | Attacker deletes backups too | Separate backup account |
-| Crash-consistent only | Restored DB won't start clean | App-consistent or WAL |
-| No monitoring | Silent backup failure for weeks | Pager on failed jobs |
-
-### References
-
-- [Google SRE — Data Integrity](https://sre.google/sre-book/data-integrity/)
-- See [12.8 Restore Strategy](#128-restore-strategy), [12.6 Disaster Recovery](#126-disaster-recovery)
-
----
-
-
-## 12.8 Restore Strategy
-
-
-### What is it?
-
-A **restore strategy** is the documented, **tested** procedure to recover systems from backups to a known-good state within **RTO** — including infrastructure provisioning, data restore, validation, traffic cutover, and communication.
-
-> *"Everybody has backups. Nobody has restores."* — every SRE who's been paged at 3am
-
-### Why it matters
-
-During an incident, untested restores fail because:
-
-```text
-- Backup is encrypted with key that rotated 6 months ago
-- Restored DB version doesn't match app version
-- Restore to wrong VPC — no route to apps
-- 800 GB restore takes 6 hours — RTO was "1 hour"
-```
-
-### How it works
-
-**Restore order (dependency-aware):**
-
-```text
-1. Network / VPC / security groups (IaC)
-2. Secrets (from vault — NOT from compromised backup)
-3. Database restore (longest pole)
-4. Message broker / cache (may rebuild from empty)
-5. Application deploy (version pinned to data epoch)
-6. Background workers
-7. DNS / traffic cutover
-8. Smoke tests → open traffic
-```
+Online banking application with active-passive failover:
 
 ```mermaid
-flowchart TB
-    Detect[Incident detected] --> Scope[Assess: corrupt? deleted? ransomware?]
-    Scope --> Prov[Provision infra via Terraform]
-    Prov --> Restore[Restore DB — snapshot or PITR]
-    Restore --> Binlog[Replay WAL/binlog to target time]
-    Binlog --> Deploy[Deploy app version matching data]
-    Deploy --> Validate[Automated smoke tests]
-    Validate --> Cutover[DNS / LB cutover]
-    Cutover --> Post[Postmortem + RPO/RTO actuals]
+sequenceDiagram
+    participant Sys as System
+    participant Mon as Monitoring
+    participant FB as Failover
+    participant Users as Users
+    Sys->>Mon: 10:00 failure
+    Mon->>FB: 10:02 detected
+    FB->>FB: 10:03 failover begins
+    FB->>Users: 10:07 users access app again
 ```
 
-**PITR restore example (PostgreSQL mental model):**
+Total downtime: 7 minutes. If business requirement is RTO = 10 minutes, recovery succeeds.
+
+### Best practices
+
+- Measure end-to-end recovery time in drills, not individual step estimates
+- Automate detection and failover; document manual steps that remain
+- Align restore runbooks with RTO targets
+
+### Common mistakes
+
+- RTO met in theory but restore drills take hours
+- Counting "service up" before data verification completes
+- Ignoring DNS and client propagation delay in RTO calculations
+
+### Summary
 
 ```text
-1. Restore base backup from Sunday 00:00
-2. Replay WAL archives Sunday 00:00 → Tuesday 14:32:00 (before bad deploy)
-3. Promote restored instance
-4. Deploy app commit from Tuesday 14:00 (matches schema)
-5. Validate: row count, checksum sample, test checkout
+RTO = max acceptable downtime after failure; lower RTO = faster recovery required
+HA, failover, restore speed, and DR sites reduce RTO; distinct from RPO (data loss, not downtime)
 ```
-
-**Game day exercise (quarterly):**
-
-| Step | Success criteria |
-|------|------------------|
-| Pick random backup | Not the newest — simulate unknown age |
-| Restore to isolated env | No prod traffic risk |
-| Stopwatch RTO | Compare to target |
-| Run smoke suite | Login, read, write, payment sandbox |
-| Document gaps | Update runbook same week |
-
-### Key details
-
-#### Ransomware restore
-
-```text
-1. Do NOT restore into compromised network
-2. Build clean VPC from IaC
-3. Restore from IMMUTABLE backup predating infection
-4. Rotate ALL secrets before any traffic
-5. Forensics on infected systems — don't rush wipe
-```
-
-#### Parallelism
-
-```text
-Sequential (bad):  DB 4hr → then apps 30min → RTO 4.5hr
-Parallel (good):   DB restore + app deploy to staging simultaneously
-                   → RTO dominated by DB only
-```
-
-#### Data epoch mismatch
-
-| Mistake | Symptom |
-|---------|---------|
-| New app + old DB | Migration errors, missing columns |
-| Old app + new DB | App crash on unknown schema |
-| Restored cache with stale keys | Phantom reads |
-
-**Rule:** tag backups with `app_version` and `schema_migration_id`.
-
-### When to use
-
-- Immediately after defining backup strategy
-- After any failed restore test
-- Before major version upgrades (rollback plan)
-- Annual ransomware tabletop
-
-### Trade-offs / Pitfalls
-
-| Pitfall | Consequence | Fix |
-|---------|-------------|-----|
-| No isolated restore env | Test corrupts prod | Dedicated restore VPC |
-| Runbook without commands | Improvise under pressure | Copy-paste CLI in runbook |
-| Ignore DNS TTL | "Restored" but users still on broken region | Pre-lower TTL |
-| Skip communication plan | Support flooded; executives blind | Pre-written status templates |
-| Restore without validation | Bad data goes live | Automated smoke + manual spot check |
-
-### References
-
-- [AWS Backup restore testing](https://docs.aws.amazon.com/aws-backup/latest/devguide/restore-testing.html)
-- See [12.7 Backup Strategy](#127-backup-strategy), [12.5 RTO](#125-rto)
 
 ---
 
 
-## 12.9 Chaos Engineering
+## 12.9 Disaster Recovery
 
+### Definition
 
-### What is it
+**Disaster Recovery (DR)** is the process of restoring applications, services, infrastructure, and data after a major failure or disaster that HA alone cannot handle.
 
-**Chaos engineering** is the disciplined practice of **experimenting on production-like systems** by injecting controlled failures to discover weaknesses *before* real outages expose them.
+The goal is to minimize business disruption and restore normal operations as quickly as possible within RPO and RTO targets ([12.7](#127-rpo), [12.8](#128-rto)).
 
-> *"Chaos engineering is the discipline of experimenting on a system in order to build confidence in the system's capability to withstand turbulent conditions in production."* — [Principles of Chaos](https://principlesofchaos.org/)
+### Why it exists
 
-It is not random breakage — it follows a **scientific method**: hypothesis → experiment → observe → fix → automate.
+**Disasters may include:** data center failure · fire · flood · earthquake · cyberattack · regional outage · human error
 
-### Why it matters
+HA ([12.1](#121-high-availability)) handles component failures inside a site. DR handles events that take an entire site or region offline.
 
-Distributed systems have **emergent failure modes** no design review catches:
-
-- Failover that works in docs but not under load
-- Retry storms that amplify outages
-- Cascading dependencies that bypass circuit breakers
-- Runbooks that haven't been tested in a year
-
-Chaos engineering converts unknown-unknowns into known-knowns and validates that **HA, DR, and RPO/RTO** targets are achievable in practice.
-
-### How it works
-
-**The chaos engineering loop:**
+### Disaster recovery workflow
 
 ```mermaid
 flowchart LR
-    H[1. Hypothesis / 'AZ failure won't affect checkout'] --> SS[2. Define Steady State / SLO metrics, error rate, latency]
-    SS --> BR[3. Define Blast Radius / canary %, abort conditions]
-    BR --> IN[4. Inject Fault]
-    IN --> OB[5. Observe / dashboards, alerts, user impact]
-    OB --> V{Weakness found?}
-    V -->|yes| FX[6. Fix & Harden]
-    V -->|no| AU[7. Automate in CI/CD]
-    FX --> H
-    AU --> H
+    D[Disaster occurs] --> Detect[Failure detected]
+    Detect --> Decide[Assess scope — HA or DR?]
+    Decide --> Start[Recovery starts]
+    Start --> Restore[Restore at DR site / from backup]
+    Restore --> Validate[Validate RPO and RTO]
+    Validate --> Users[Users reconnect]
 ```
 
-**Principles of Chaos Engineering:**
+1. Disaster occurs at the primary site
+2. Monitoring detects outage ([12.2](#122-failure-detection))
+3. Team or automation activates DR procedures
+4. Applications and data restored from replicas or backups ([12.5](#125-backup-strategy), [12.6](#126-restore-strategy))
+5. Traffic redirects to recovered environment; users reconnect
 
-| # | Principle | Practice |
-|---|-----------|----------|
-| 1 | **Build hypothesis around steady state** | Define normal: p99 < 200ms, error rate < 0.1% |
-| 2 | **Vary real-world events** | Kill pods, add latency, partition network, fill disk |
-| 3 | **Run in production** | Staging misses prod traffic patterns, config drift, scale |
-| 4 | **Automate experiments** | Manual game days first; then continuous chaos in pipeline |
-| 5 | **Minimize blast radius** | Start with 1 pod, 1 AZ canary; abort on SLO breach |
-
-**Fault injection examples:**
-
-| Fault | Tool | What it tests |
-|-------|------|---------------|
-| Kill random pod | Chaos Monkey, K8s `kubectl delete pod` | Self-healing, replica count, HPA |
-| AZ/network partition | AWS FIS, Gremlin, Litmus | Multi-AZ HA, quorum, split-brain |
-| Latency injection (+500ms) | Toxiproxy, Istio fault rules | Timeouts, circuit breakers, cascading slowness |
-| CPU / memory pressure | stress-ng, Litmus | OOM handling, cgroup limits, eviction |
-| DNS failure | `/etc/hosts` override, Toxiproxy | Dependency resolution, fallback endpoints |
-| Certificate expiry | Rotate to expired cert in staging | Monitoring alerts, renewal automation |
-
-**Tools landscape:**
-
-| Tool | Type | Best for |
-|------|------|----------|
-| **Chaos Monkey** (Netflix) | Random instance termination | AWS ASG resilience |
-| **Litmus** | K8s-native chaos | Pod/node/network chaos in Kubernetes |
-| **Chaos Mesh** | K8s-native chaos | CNCF; IO/network/kernel faults |
-| **Gremlin** | SaaS chaos platform | Enterprise game days, blast radius control |
-| **AWS FIS** | Cloud fault injection | EC2, RDS, AZ-level AWS faults |
-| **Toxiproxy** | Network proxy | Latency, timeout, partition between services |
-| **Istio fault injection** | Service mesh | HTTP abort/delay between microservices |
-| **PowerfulSeal** | K8s chaos | Node-level failure automation |
-| **Jepsen** | Formal testing | Database consistency under partition |
-
-```mermaid
-flowchart TB
-    subgraph Staging['Phase 1 - Staging']
-        S1[Single pod kill]
-        S2[Dependency timeout]
-    end
-    subgraph Canary['Phase 2 - Prod Canary']
-        C1[1% traffic AZ shift]
-        C2[Kill pod in canary pool]
-    end
-    subgraph Prod['Phase 3 - Prod (controlled)']
-        P1[AZ failure simulation]
-        P2[Regional failover drill]
-    end
-    Staging --> Canary --> Prod
-```
-
-**Game days — structured chaos exercises:**
-
-| Element | Description |
-|---------|-------------|
-| **Objective** | "Validate RTO < 15 min for regional failover" |
-| **Participants** | SRE, backend, DBA, product, comms |
-| **Scenario** | "Region us-east-1 is unreachable" |
-| **Inject** | Block traffic via security group or FIS |
-| **Observe** | Does GLB shift? Does DR region serve? What's actual RTO? |
-| **Debrief** | Blameless postmortem; file fixes as tickets |
-| **Frequency** | Quarterly for Tier 1; annually minimum |
-
-**Example game day timeline:**
-
-```mermaid
-gantt
-    title Game Day - AZ Failure Drill
-    dateFormat HH:mm
-    axisFormat %H:%M
-
-    section Prep
-    Briefing + roles assigned    :09:00, 30m
-    section Inject
-    Isolate AZ-b (FIS)           :09:30, 5m
-    section Observe
-    Monitor SLOs + runbooks      :09:35, 45m
-    section Recover
-    Restore AZ-b                 :10:20, 15m
-    section Debrief
-    Blameless review             :10:35, 60m
-```
-
-**Abort conditions (mandatory):**
-
-| Signal | Action |
-|--------|--------|
-| Error rate > 2× steady state | Abort experiment immediately |
-| p99 latency > SLO breach | Abort |
-| Customer-facing revenue impact | Abort |
-| On-call can't reach decision maker | Abort |
-| Experiment exceeds time box | Abort + rollback |
-
-### Diagram
-
-```mermaid
-flowchart TB
-    subgraph Hypothesis["Hypothesis: Multi-AZ survives node loss"]
-        SS[Steady State / 99.9% success, p99 < 100ms]
-    end
-    subgraph Experiment['Controlled Experiment']
-        FI["Inject: drain node in AZ-b"]
-        MON["Monitor: Grafana, PagerDuty"]
-    end
-    subgraph Outcome['Outcomes']
-        OK[OK Traffic rerouted - hypothesis confirmed]
-        FAIL[NO 500 errors for 3 min - fix PDB + probe]
-    end
-    SS --> FI --> MON --> OK & FAIL
-```
-
-### Key details
-
-| Topic | Detail |
-|-------|--------|
-| **Start small** | Single pod kill in staging before AZ failure in prod |
-| **Never without observability** | No chaos if you can't measure impact — you'll cause blind outages |
-| **Integrate with error budgets** | Chaos during healthy budget; pause when budget exhausted |
-| **Automate winning experiments** | One-off game day findings → Litmus ChaosSchedule in CI |
-| **Not a substitute for design** | Chaos validates design; it doesn't replace redundancy |
-| **Cultural buy-in** | Leadership must support intentional failure injection |
-| **Blast radius** | `terminationGracePeriodSeconds`, PDB, maxUnavailable protect rollouts |
-
-**Interview rapid-fire:**
-
-| Question | Answer |
-|----------|--------|
-| Chaos vs testing? | Testing verifies known paths; chaos discovers unknown failure modes |
-| Why prod, not just staging? | Prod has real traffic, scale, config drift, and dependency graph |
-| Chaos Monkey does what? | Randomly terminates instances to force redundancy validation |
-| What is a game day? | Scheduled, cross-team failure drill with hypothesis and debrief |
-| When NOT to do chaos? | No monitoring, no runbooks, during active incident, budget exhausted |
-
-### When to use
-
-- **Mature microservices** with observability (metrics, traces, logs)
-- **After major architecture changes** — new region, new DB, mesh rollout
-- **Pre-launch HA validation** — prove multi-AZ before GA
-- **Before peak traffic events** — validate autoscaling and failover under load
-- **Quarterly game days** for Tier 1 services
-
-**Skip chaos when:** no redundancy exists (will just cause outage), no monitoring, immature org culture.
-
-### Trade-offs
-
-| Pros | Cons |
-|------|------|
-| Discovers real weaknesses before customers do | Can cause real outages if reckless |
-| Validates HA/DR/RTO claims with evidence | Requires observability investment first |
-| Improves runbooks and on-call readiness | Cultural resistance ("don't break prod") |
-| Builds organizational confidence in resilience | Time-consuming to run properly |
-| Automatable in CI/CD for regression | Not substitute for sound architecture |
-| Reduces MTTR over time via practiced response | Blast radius misconfig → SEV1 |
-
-### References
-
-- [Principles of Chaos Engineering](https://principlesofchaos.org/)
-- [Netflix Chaos Monkey](https://github.com/Netflix/chaosmonkey)
-- [Litmus Chaos](https://litmuschaos.io/)
-- [Gremlin — Chaos Engineering](https://www.gremlin.com/community/tutorials/what-is-chaos-engineering)
-- [AWS Fault Injection Simulator](https://docs.aws.amazon.com/fis/latest/userguide/what-is.html)
-
----
-
-
-## 12.10 Fault Injection
-
-
-### What is it
-
-Deliberately introducing errors - latency, HTTP 500, packet loss, resource exhaustion - into a system to test resilience mechanisms.
-
-### Why it matters
-
-Fault injection proves circuit breakers, retries, bulkheads, and fallbacks work. It is the tactical tool inside chaos engineering experiments.
-
-### How it works
-
-At code level (fault injection library), network level (iptables, toxiproxy), or infrastructure level (kill pod, drain node). Inject with scope limits and automatic rollback. Measure error rate, latency, and user journeys during injection.
-
-### Diagram
+### Basic DR architecture
 
 ```mermaid
 flowchart LR
-    subgraph Normal
-        C[Client] --> S[Service]
-        S --> D[Dependency]
-    end
-    subgraph Injected
-        C2[Client] --> S2[Service]
-        S2 -->|timeout/500| D2[Dependency + Fault]
-    end
+    Users[Users] --> Primary[Primary data center]
+    Primary -->|replication| DR[DR site]
 ```
 
-### Key details
+**Normal:** primary serves users; DR site stays synchronized
 
-- Toxiproxy, Istio fault rules, AWS FIS, Jepsen
-- Test: dependency timeout, slow DB, certificate expiry
-- Combine with load tests for realistic saturation
-- Always have abort switch and blast radius control
+**During disaster:** traffic redirects to the DR site
 
-### When to use
+### Disaster recovery sites
 
-- Validating new resilience patterns (circuit breaker)
-- Pre-production staging environments
-- Chaos engineering game days
+A **DR site** is a secondary location where applications and data can run if the primary site is unavailable. Physical separation reduces correlated failure risk.
 
-### Trade-offs
+| Type | Characteristics |
+|------|-----------------|
+| **Cold site** | Basic infrastructure only; no running servers or current data · lowest cost · longest recovery · restore from backups |
+| **Warm site** | Partially configured infra with some replicated data · moderate cost · faster than cold |
+| **Hot site** | Fully operational copy of primary · highest cost · fastest recovery · near-real-time replication · minimal downtime |
 
-| Pros | Cons |
-|------|------|
-| Targeted, repeatable tests | Can leak to prod if misconfigured |
-| Fast feedback in CI | Not all faults easily injectable |
-| Improves code paths | False confidence if scope too narrow |
+### Recovery methods
 
-### References
+**Backup recovery** — restore from backups at DR site (longer RTO; RPO depends on backup frequency):
 
-- [Istio fault injection](https://istio.io/latest/docs/tasks/traffic-management/fault-injection/)
-- [Netflix Simian Army](https://github.com/Netflix/SimianArmy)
+```text
+Backup storage → restore data → application
+```
+
+**Replication recovery** — data continuously copied to DR site (faster RTO; RPO depends on replication lag):
+
+```mermaid
+flowchart LR
+    Primary[(Primary DB)] -->|continuous replication| Secondary[(DR DB)]
+```
+
+### DR strategies
+
+- **Backup and restore** — periodic backups, restore after failure
+- **Pilot light** — minimal DR environment always running; scale up on disaster
+- **Warm standby** — reduced capacity DR environment running continuously
+- **Hot site / multi-region** — full capacity in second region; fastest failover
+- **Cloud DR** — cross-region replication, automated snapshots, managed backup services
+
+### HA vs disaster recovery
+
+| | High availability (HA) | Disaster recovery (DR) |
+|---|------------------------|--------------------------|
+| **Purpose** | Prevent interruption during normal failures | Recover from large-scale disasters |
+| **Handles** | Server, disk, network failure | Data center loss, fire, flood, cyberattack |
+| **Recovery time** | Usually seconds or minutes | Minutes to hours (strategy-dependent) |
+| **Scope** | Single site, component level | Cross-site or cross-region |
+
+### Challenges
+
+- Backup consistency and replication delays
+- Infrastructure cost and regular DR testing
+- Recovery automation, network latency, security during recovery
+- Large backup storage requirements
+
+### Best practices
+
+- Define RPO and RTO per tier; test recovery frequently
+- Replicate critical data; store backups in separate geographic locations
+- Automate failover where possible; keep runbooks current
+- Run full DR drills, not just backup verification
+
+### Real-world example
+
+An online shopping company has two data centers with continuous replication.
+
+**Normal:** users access primary; data replicated continuously
+
+**Disaster:** fire damages primary; monitoring detects outage; traffic redirects to DR site; business resumes within RTO with data loss bounded by RPO
+
+### Summary
+
+```text
+DR = restore apps, data, and infra after catastrophic failure; complements HA, does not replace it
+Cold/warm/hot sites trade cost vs speed; align with RPO and RTO; test regularly
+```
 
 ---
 
-[<- Back to master index](../README.md)
+
+## 12.10 Chaos Engineering
+
+### Definition
+
+**Chaos engineering** is the practice of intentionally introducing failures into a system — often in production under controlled conditions — to verify it continues operating correctly under unexpected conditions.
+
+The goal is to discover weaknesses before real failures affect customers.
+
+### Why it exists
+
+**Without chaos engineering:**
+
+- Hidden failures and untested recovery paths remain undiscovered
+- Weaknesses surface during real incidents instead of controlled experiments
+
+**With chaos engineering:**
+
+- System weaknesses are identified early
+- Recovery mechanisms, monitoring, and DR plans are validated
+- Confidence in production reliability increases
+
+### How it works — experiment loop
+
+**1. Define normal behavior** — steady state: response time, error rate, throughput, resource usage
+
+**2. Form a hypothesis** — e.g. *"If one application server fails, users should still access the application."*
+
+**3. Introduce controlled failure** — stop a server, disconnect network, increase latency, simulate disk failure
+
+**4. Observe the system** — availability, latency, errors, logs, alerts
+
+**5. Improve** — fix weaknesses; repeat experiment
+
+```mermaid
+flowchart LR
+    Normal[Define normal] --> Hyp[Form hypothesis]
+    Hyp --> Inject[Introduce failure]
+    Inject --> Observe[Observe system]
+    Observe --> Improve[Improve system]
+    Improve --> Normal
+```
+
+### Example — server failure experiment
+
+**Normal:**
+
+```mermaid
+flowchart LR
+    Users[Users] --> LB[Load balancer]
+    LB --> SA[Server A]
+    LB --> SB[Server B]
+```
+
+**Experiment — stop Server A:**
+
+```mermaid
+flowchart LR
+    Users[Users] --> LB[Load balancer]
+    LB --> SB[Server B]
+```
+
+**Expected:** failure detection ([12.2](#122-failure-detection)) removes Server A; Server B handles traffic; no major outage.
+
+### Common chaos experiments
+
+| Experiment | Action | Validates |
+|------------|--------|-----------|
+| **Server failure** | Stop one app server | Active-active redistribution ([12.3](#123-active-active)) |
+| **Database failure** | Stop primary DB | Failover and replication |
+| **Network latency** | Inject delay | Timeouts and retries |
+| **Region failure** | Isolate a region | DR failover ([12.9](#129-disaster-recovery)) |
+
+For **component-level, targeted faults** (kill process, corrupt response, fill disk), see [12.11 Fault Injection](#1211-fault-injection).
+
+### Chaos engineering vs traditional testing
+
+| | Traditional testing | Chaos engineering |
+|---|---------------------|-------------------|
+| **Scope** | Expected scenarios in test environments | Unexpected failures, often in production (controlled) |
+| **Goal** | Features work correctly | System stays reliable during failures |
+
+### Best practices
+
+- Start small; define clear success criteria and abort conditions
+- Monitor continuously; run during low-risk periods initially
+- Test one failure at a time; document results
+- Stop immediately if severe issues or SLO breach occurs
+
+### Common mistakes
+
+- Chaos in production without blast-radius controls or rollback
+- Experiments without hypothesis — observing without learning
+- Running chaos instead of fixing known gaps (backups untested, etc.)
+
+### Real-world example
+
+Video streaming platform with three application servers. Experiment: shut down Server B. Health checks detect failure; load balancer routes to Servers A and C; users continue with little interruption — confirms HA and failure detection work.
+
+### Summary
+
+```text
+Chaos engineering = controlled failures to find weaknesses before customers do
+Hypothesis → inject → observe → fix; start small, monitor always, abort if SLO breached
+Component-level faults: see 12.11 Fault Injection
+```
+
+---
+
+
+## 12.11 Fault Injection
+
+### Definition
+
+**Fault injection** is the technique of deliberately introducing specific faults or errors into a system to observe how it behaves and verify it can detect, handle, and recover from failures correctly.
+
+Unlike accidental failures, fault injection is planned, scoped, and measured.
+
+### Why it exists
+
+Fault injection validates **individual failure modes** — error handling, retries, circuit breakers, failover triggers — that chaos engineering may explore at broader system scope ([12.10](#1210-chaos-engineering)).
+
+### How fault injection works
+
+```mermaid
+flowchart LR
+    Define[Define fault] --> Predict[Predict behavior]
+    Predict --> Inject[Inject fault]
+    Inject --> Monitor[Monitor system]
+    Monitor --> Analyze[Analyze results]
+    Analyze --> Fix[Fix issues]
+```
+
+1. **Define the fault** — e.g. disconnect the database, add 500ms latency
+2. **Predict expected behavior** — e.g. app shows friendly error and retries
+3. **Inject the fault** in a controlled environment or scoped production blast radius
+4. **Monitor** — availability, logs, alerts, latency, error rate, recovery time
+5. **Analyze and fix** identified issues
+
+### Types of faults
+
+| Category | Examples |
+|----------|----------|
+| **Hardware** | Disk failure · memory failure · power loss |
+| **Software** | Application crash · memory leak · configuration errors |
+| **Network** | Packet loss · high latency · partition · timeout |
+| **Storage** | Disk full · read/write failure · data corruption |
+| **Database** | Shutdown · slow queries · connection failure · replication lag |
+
+### Common fault injection experiments
+
+| Experiment | Expected result |
+|------------|-----------------|
+| **Server crash** | Failure detection removes node; traffic moves to healthy servers ([12.2](#122-failure-detection)) |
+| **Database failure** | Replica promoted; applications reconnect |
+| **Network latency** | Timeouts and retries behave correctly |
+| **Disk full** | Graceful errors; monitoring alerts |
+| **Memory exhaustion** | Service restarts or alerts; no silent data corruption |
+
+### Fault injection vs chaos engineering
+
+| | Fault injection | Chaos engineering |
+|---|-----------------|-------------------|
+| **Purpose** | Test specific faults and component behavior | Test overall system resilience under controlled failures |
+| **Examples** | Kill a process · disconnect DB · fill disk · network delay | Shut down servers · region failures · multi-component scenarios |
+| **Focus** | Individual components and error-handling paths | End-to-end system reliability and recovery |
+
+Both practices complement each other: fault injection validates building blocks; chaos engineering validates the assembled system.
+
+### Best practices
+
+- Begin with small, controlled faults; define expected outcomes first
+- Monitor all critical metrics; automate repeatable injections
+- Test recovery after each experiment; document findings
+- Stop if critical business services are impacted
+
+### Common mistakes
+
+- Injecting faults without monitoring — cannot tell if behavior was correct
+- Production fault injection without blast-radius limits
+- Conflating a passed experiment with comprehensive resilience
+
+### Real-world example
+
+Online banking application with active-passive pair ([12.4](#124-active-passive)). Experiment: stop Server A. Health check detects failure; load balancer routes to Server B; customers continue — confirms failover works.
+
+### Summary
+
+```text
+Fault injection = controlled, planned faults to validate detect/handle/recover behavior
+Hardware, software, network, storage, DB faults; monitor throughout
+Complements chaos engineering (12.10) at component level
+```
+
+---

@@ -13,7 +13,7 @@
 | 9 | [Observability](./09-observability/README.md) | 15 | Documented |
 | 10 | [Security](./10-security/README.md) | 21 | Documented |
 | 11 | [Cloud & Kubernetes](./11-cloud-and-kubernetes/README.md) | 35 | Documented |
-| 12 | [Reliability Engineering](./12-reliability-engineering/README.md) | 10 | Documented |
+| 12 | [Reliability Engineering](./12-reliability-engineering/README.md) | 11 | Documented |
 | 13 | [Advanced Topics](./13-advanced-topics/README.md) | 11 | Documented |
 | 14 | [Search Systems](./14-search-systems/README.md) | 9 | Documented |
 | 15 | [Big Data](./15-big-data/README.md) | 10 | Documented |
