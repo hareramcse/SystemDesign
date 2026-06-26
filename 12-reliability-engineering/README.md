@@ -4,41 +4,6 @@
 
 ---
 
-## Overview
-
-**System reliability** is the ability of a distributed system to keep serving users correctly when hardware fails, software bugs appear, networks partition, operators make mistakes, or entire regions go dark. Reliability engineering connects business promises ("how much downtime and data loss are acceptable?") with architecture and operations: redundancy, failure detection, backups, restore drills, disaster recovery sites, and deliberate failure experiments.
-
-A reliable system is **available** (reachable), **durable** (data survives), and **correct** (responses match expectations under stress). Teams measure this with availability percentages, **RPO** (data loss tolerance), and **RTO** (downtime tolerance) — then design to meet those targets within budget.
-
-```mermaid
-flowchart TB
-    Fund[Reliability fundamentals] --> Avail[Availability]
-    Avail --> HA[High availability]
-    HA --> FD[Failure detection]
-    FD --> AA[Active-active]
-    AA --> AP[Active-passive]
-    AP --> Backup[Backup strategy]
-    Backup --> Restore[Restore strategy]
-    Restore --> RPO
-    RPO --> RTO
-    RTO --> DR[Disaster recovery]
-    DR --> Chaos[Chaos engineering]
-    Chaos --> FI[Fault injection]
-```
-
-### Availability levels
-
-| Availability | Downtime / year | Notes |
-|--------------|-----------------|-------|
-| **99%** (2 nines) | ~3.65 days | Basic production |
-| **99.9%** (3 nines) | ~8.76 hours | Standard SaaS |
-| **99.99%** (4 nines) | ~52.5 minutes | Business-critical |
-| **99.999%** (5 nines) | ~5.26 minutes | Mission-critical |
-
-Each additional nine usually requires significantly more engineering effort and cost. The sections below show how to achieve these targets in practice.
-
----
-
 ## Sub-topics
 
 | # | Sub-topic |
@@ -142,7 +107,7 @@ Repaired:   old primary rejoins as standby (failback)
 ### Walkthrough: e-commerce web tier failure
 
 ```mermaid
-flowchart TB
+flowchart LR
     Internet[Internet] --> LB[Load balancer]
     LB --> WS1[Web server 1]
     LB --> WS2[Web server 2]
