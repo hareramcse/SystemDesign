@@ -485,12 +485,15 @@ User in Europe → eu-west-2 (London)   → app → database
 
 ```mermaid
 flowchart LR
-  subgraph Before[Before failure]
-    U1[Users] --> Mumbai[Mumbai region]
-  end
-  subgraph After[After failure]
-    U2[Users] --> Singapore[Singapore region]
-  end
+    subgraph Before["Before failure"]
+        direction LR
+        U1[Users] --> Mumbai[Mumbai region]
+    end
+    subgraph After["After failover"]
+        direction LR
+        U2[Users] --> Singapore[Singapore region]
+    end
+    Before ~~~ After
 ```
 
 ---
@@ -652,15 +655,20 @@ Architectures are typically **active-passive** (one region serves, one standby) 
 
 ```mermaid
 flowchart LR
-    Users[Users] --> Active[Mumbai — active]
-    Active -->|async replication| Passive[Singapore — passive]
-    Active -.->|region failure| Failover[DNS failover]
-    Failover --> Passive
+    subgraph Normal["Normal"]
+        direction LR
+        U1[Users] --> Active[Mumbai — active]
+        Active -->|async replication| Passive[Singapore — standby]
+    end
+    subgraph Failover["After region failure"]
+        direction LR
+        U2[Users] --> DNS[DNS failover]
+        DNS --> Passive2[Singapore — now active]
+    end
+    Normal ~~~ Failover
 ```
 
 ```text
-Normal: Mumbai serves all traffic; Singapore holds warm standby and replicated data
-Failure: Global DNS or health-check router shifts traffic to Singapore
 Trade-off: simpler, lower cost; standby may be underutilized; failover takes minutes
 ```
 
@@ -1131,13 +1139,20 @@ Application → database endpoint → managed database service → primary DB + 
 
 **Failover flow:**
 
-```text
-Before failure:  application → endpoint → primary database
-Primary fails:   health check detects outage
-After failover:  application → same endpoint → promoted standby (automatic)
+```mermaid
+flowchart LR
+    subgraph Before["Before failure"]
+        direction LR
+        App1[Application] --> EP1[Endpoint] --> Pri[Primary DB]
+    end
+    subgraph After["After failover"]
+        direction LR
+        App2[Application] --> EP2[Same endpoint] --> Standby[Promoted standby]
+    end
+    Before ~~~ After
 ```
 
-The endpoint DNS record updates to point at the new primary — applications reconnect without changing configuration.
+Primary failure is detected by health checks; the endpoint DNS record updates to the new primary — applications reconnect without config changes.
 
 **Read scaling:**
 

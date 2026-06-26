@@ -333,10 +333,20 @@ Users may hit different servers on each request. Options:
 
 #### Failure scenario
 
-```text
-Before:  LB → A, B, C  (all serving)
-B crashes → health check fails → LB → A, C only
-After repair: B rejoins → LB → A, B, C again
+```mermaid
+flowchart LR
+    subgraph Before["Before — B crashes"]
+        direction LR
+        LB1[LB] --> A1[A]
+        LB1 --> B1[B]
+        LB1 --> C1[C]
+    end
+    subgraph After["After — B drained"]
+        direction LR
+        LB2[LB] --> A2[A]
+        LB2 --> C2[C]
+    end
+    Before ~~~ After
 ```
 
 ---
@@ -1110,13 +1120,20 @@ flowchart LR
 
 ### Walkthrough: server failure experiment
 
-**Before:**
-
 ```mermaid
 flowchart LR
-    Users[Users] --> LB[Load balancer]
-    LB --> A[Server A]
-    LB --> B[Server B]
+    subgraph Before["Before"]
+        direction LR
+        Users1[Users] --> LB1[Load balancer]
+        LB1 --> A[Server A]
+        LB1 --> B[Server B]
+    end
+    subgraph After["After — A terminated"]
+        direction LR
+        Users2[Users] --> LB2[Load balancer]
+        LB2 --> B2[Server B]
+    end
+    Before ~~~ After
 ```
 
 **Experiment:** terminate Server A.
