@@ -1,4 +1,4 @@
-﻿# 13. Advanced Topics
+# 13. Advanced Topics
 
 [<- Back to master index](../README.md)
 
@@ -267,85 +267,69 @@ The same pattern appears in **RocksDB** and **LevelDB**: each SSTable file carri
 
 ---
 
-
 ## 13.2 HyperLogLog
 
-### Definition
+### Overview
 
-**HyperLogLog (HLL)** is a probabilistic data structure that estimates the number of **distinct elements** (cardinality) in a very large dataset using very small, fixed memory.
+Imagine a music festival trying to count **how many different people** attended — not total ticket scans (the same person can enter many times), but **unique visitors**. Writing down every name in a notebook works for hundreds of guests but fails at millions. You need a rough headcount without storing every identity.
 
-It does **not** store elements. It only answers:
+Technically, **HyperLogLog (HLL)** estimates **cardinality** — the number of **distinct** elements in a stream — using **fixed memory** (~12 KB for billions of uniques). It never stores the elements themselves. It hashes each item, watches patterns in the hash bits (especially leading zeros), and combines small **registers** into an approximate count with ~1–2% error. Sketches **merge** across nodes by taking the max per register (`PFMERGE` in Redis).
+
+---
+
+### What problem it fixes
+
+Systems constantly need “how many **unique** X”:
+
+- Unique visitors today
+- Distinct IP addresses in logs
+- Distinct search queries
+- Unique devices in an ad campaign
+
+A **hash set** of every value uses O(n) memory — billions of IDs is impractical. `COUNT DISTINCT` in a database over billions of rows is slow and expensive. HLL gives a **streaming, fixed-size** approximate answer you can update per event and merge across data centers.
+
+---
+
+### What it does
+
+**Insert (add)** — process one element; update internal registers. O(1) per element.
+
+**Query (estimate)** — return approximate distinct count from current registers.
+
+It does **not** tell you which items were seen, whether a specific item was seen (that is a Bloom filter), or exact counts. It answers **one question**: “about how many unique values have passed through?”
+
+---
+
+### How it works — the algorithm inside
+
+1. Hash the element to a 64-bit pseudo-random string.
+2. Split the hash:
+   - First `p` bits → **register index** `i` (bucket), `m = 2^p` registers.
+   - Remaining bits → **ρ(x)** = position of first 1-bit (leading zeros + 1).
+3. Update: `M[i] = max(M[i], ρ(x))`.
+4. Estimate cardinality with harmonic mean over all registers:
 
 ```text
-→ "How many unique items have we seen?"
+E ≈ α_m × m² / Σ(2^−M[i])
 ```
 
-### Problem it solves
+**Intuition:** more unique elements → more hashes → higher chance of seeing long leading-zero runs → larger ρ values in registers.
 
-Suppose you have:
-
-- 1 billion user IDs
-- 10 billion log events
-- 100 million web pages
-- Massive real-time event streams
-
-You need the **count of unique items** (cardinality).
-
-**Naive approaches:**
-
-| Approach | Issue |
-|----------|-------|
-| **Hash set** | Store every element — accurate but very high memory O(n) |
-| **Sort / DB aggregation** | Expensive and slow at scale |
-
-HyperLogLog solves this with **fixed memory**, **approximate result**, and **extremely fast** streaming updates.
-
-### Core idea
-
-HyperLogLog is based on a statistical observation: if you hash random values, the probability of seeing long runs of **leading zeros** is related to how many unique elements exist.
+#### Insert algorithm
 
 ```text
-More unique elements  →  higher chance of hashes like 0000001, 00000001, 0000000001
-Fewer elements        →  only short runs of zeros
+function add(element):
+    h = hash(element)
+    i = first_p_bits(h)           // register index
+    rho = leading_zero_count(h)   // after index bits
+    M[i] = max(M[i], rho)
 ```
 
-### Key intuition
-
-We do **not** count elements directly. We observe patterns in hashed values:
+#### Estimate algorithm
 
 ```text
-→ position of first 1-bit (leading zeros)
-```
-
-This pattern encodes information about cardinality.
-
-### Step 1 — Hashing
-
-Every input element is hashed into a binary string (typically 64 bits). Hash output is treated as pseudo-random.
-
-```text
-UserID "alice"  →  hash: 101100101010...
-UserID "bob"    →  hash: 000001001111...
-```
-
-### Step 2 — Split hash
-
-Each hash splits into two parts:
-
-**1. Register index (bucket selection)** — first `p` bits select a register.
-
-```text
-hash = 1011001010...
-first 4 bits → 1011 → register 11
-
-If p = 4  →  2^4 = 16 registers
-```
-
-**2. Remaining bits** — used to compute **ρ(x)** = position of first 1-bit (number of leading zeros + 1).
-
-```text
-remaining: 000001010...
-ρ(x) = 6
+function estimate():
+    return harmonic_mean_formula(M, m, alpha_m)
 ```
 
 ```mermaid
@@ -357,108 +341,29 @@ flowchart LR
     Rho --> Update[max update M i]
 ```
 
-### Registers
+Typical config: `p = 14` → 16,384 registers → **~12 KB**, error ≈ `1.04 / √m` (~0.8% standard error).
 
-Maintain an array of registers:
+---
 
-```text
-M[0], M[1], M[2], ... M[2^p − 1]
-```
+### Walkthrough: two users, four registers
 
-Each register stores the **maximum** ρ(x) observed for hashes mapping to that bucket.
-
-Typical configuration: `p = 14` → `m = 2^14 = 16,384` registers → ~12 KB total.
-
-### Step 3 — Insertion
-
-For each element:
-
-1. Hash it
-2. Determine register index from first `p` bits
-3. Compute leading-zero count ρ(x)
-4. Update register: `M[i] = max(M[i], ρ(x))`
-
-**Example** — registers initially `M = [0, 0, 0, 0]`:
+Registers `M = [0, 0, 0, 0]`:
 
 ```text
-Insert "A":  hash(A) → index = 2, ρ = 3   →  M[2] = 3
-Insert "B":  hash(B) → index = 2, ρ = 5   →  M[2] = max(3, 5) = 5
+add("alice"):  index = 2, ρ = 3  →  M[2] = 3
+add("bob"):    index = 2, ρ = 5  →  M[2] = max(3, 5) = 5
+add("alice"):  duplicate — same hash, no change to max
 ```
 
-### Step 4 — Estimation
+After millions of distinct IDs, register values rise; the estimator infers cardinality from the distribution. **HLL++** adds bias correction for small sets (< ~1000).
 
-After processing all elements, compute the harmonic mean of register values.
+---
 
-**Formula (standard HLL):**
+### Merging sketches across nodes
 
 ```text
-E ≈ α_m × m² / Σ(2^−M[i])
+M_merged[i] = max(M1[i], M2[i])   for all registers i
 ```
-
-Where:
-
-- `m` = number of registers (`2^p`)
-- `M[i]` = value stored in register `i`
-- `α_m` = bias correction constant (depends on `m`)
-
-**Intuition:** higher register values mean more leading zeros were observed → more unique elements likely exist. The estimator combines all registers to reduce variance.
-
-### Why it works
-
-Probability that a random binary string has `k` leading zeros:
-
-```text
-P(k leading zeros) ≈ 1 / 2^k
-```
-
-If we observe large `k`, many samples were likely drawn. HLL measures **statistical patterns in randomness** to infer how many unique items exist — it does not count elements directly.
-
-### Memory efficiency
-
-| Configuration | Typical memory | Handles |
-|---------------|----------------|---------|
-| `p = 14` (16,384 registers) | ~12 KB | Millions to billions of distinct elements |
-| Smaller `p` | 1–2 KB | Lower accuracy, less memory |
-
-Memory is **fixed** regardless of how many elements stream through — O(1) space.
-
-### Accuracy
-
-Standard error rate:
-
-```text
-Error ≈ 1.04 / √m
-```
-
-Where `m` = number of registers. More registers → better accuracy → more memory.
-
-| Registers `m` | Approx standard error |
-|---------------|----------------------|
-| 2^10 = 1,024 | ~3.25% |
-| 2^14 = 16,384 | ~0.81% (~1–2% in practice with corrections) |
-
-**HLL++** adds bias correction and sparse representation for small cardinalities (< ~1000).
-
-### Properties
-
-1. Fixed memory usage — does not grow with stream size
-2. No raw data storage — cannot list members
-3. Fast O(1) updates per element
-4. **Mergeable** across systems and shards
-5. Highly scalable for distributed aggregation
-
-### Merge property
-
-HyperLogLog sketches merge by taking the max per register:
-
-```text
-Given HLL1 and HLL2:
-  M_merged[i] = max(M1[i], M2[i])
-
-Result ≈ cardinality of the union of both streams
-```
-
-This makes HLL ideal for distributed systems — each node maintains a local sketch; central aggregator merges without shipping raw events.
 
 ```mermaid
 flowchart LR
@@ -468,440 +373,198 @@ flowchart LR
     Merge --> Est[Combined cardinality estimate]
 ```
 
-### Exact count vs HyperLogLog
+Each edge server counts locally; central job merges without shipping raw IPs.
 
-| | Exact count (hash set) | HyperLogLog |
-|---|------------------------|-------------|
-| **Stores** | All items | Registers only |
-| **Accuracy** | Exact | Approximate (~1–2%) |
-| **Memory** | O(n) | O(1) — fixed |
-| **List members** | Yes | No |
-| **Merge across nodes** | Expensive (ship all keys) | Cheap (max registers) |
+---
 
-### Workflow summary
+### HyperLogLog vs exact distinct count
 
-**Insert:**
+| | Hash set / exact | HyperLogLog |
+|---|------------------|-------------|
+| Memory | O(n) | O(1) fixed ~12 KB |
+| Accuracy | Exact | ~1–2% error |
+| List members | Yes | No |
+| Merge shards | Ship all keys | Max registers |
 
-```text
-Element  →  Hash  →  Split hash  →  Select register  →  Compute ρ  →  Update max register value
-```
+Do not use HLL for billing or compliance requiring exact counts. Do not confuse with Bloom filter (membership) or Count-Min Sketch (per-key frequency).
 
-**Query:**
+---
 
-```text
-Aggregate registers  →  Apply estimator formula  →  Return approximate cardinality
-```
+### Real-world example: unique visitors per CDN edge
 
-```mermaid
-flowchart LR
-    Ins[Insert element] --> Hash[Hash element]
-    Hash --> Split[Split: index + ρ]
-    Split --> Upd[Update M i = max]
-```
-
-```mermaid
-flowchart LR
-    Qry[Query cardinality] --> Agg[Aggregate registers]
-    Agg --> Formula[Harmonic mean estimator]
-    Formula --> Card[Approximate distinct count]
-```
-
-### Use cases
-
-1. Unique visitors on websites
-2. Unique IP addresses in logs
-3. Distinct query counting in search engines
-4. Network traffic analysis
-5. Database analytics (`COUNT DISTINCT` approximations)
-6. Real-time event streams
-7. Fraud detection (unique pattern estimation)
-8. Distributed telemetry aggregation
-
-### Real-world systems
-
-| System | API / feature |
-|--------|----------------|
-| **Redis** | `PFADD`, `PFCOUNT`, `PFMERGE` |
-| **Google BigQuery** | `APPROX_COUNT_DISTINCT` |
-| **Apache Druid** | HyperUnique aggregator |
-| **Elasticsearch** | `cardinality` aggregation |
-| **Amazon Redshift** | `APPROXIMATE COUNT(DISTINCT)` |
-
-**Redis example:**
+A CDN serves billions of requests daily. Each edge node runs HLL per customer for unique client IPs — ~12 KB per sketch. Hourly, aggregators `PFMERGE` sketches into a global “unique visitors” metric without storing every IP.
 
 ```text
-PFADD visitors "alice"
-PFADD visitors "bob"
-PFCOUNT visitors  →  approximate distinct count (internally HyperLogLog)
+PFADD visitors:customer42 "203.0.113.10"
+PFADD visitors:customer42 "198.51.100.5"
+PFCOUNT visitors:customer42  →  approximate distinct count
 ```
 
-### Real-world example
-
-A CDN logs billions of requests per day. Each edge node maintains an HLL per customer for unique client IPs. Central aggregator `PFMERGE`s sketches hourly to report "unique visitors" without storing every IP.
-
-### Advantages
-
-- Extremely memory efficient; handles massive datasets
-- Constant memory usage regardless of stream size
-- Mergeable across nodes for distributed counting
-- Fast streaming updates
-
-### Limitations
-
-- Approximate only — not suitable when exact count is required
-- Cannot list elements or answer membership queries
-- Cannot delete individual elements easily
-- Sensitive to hash quality
-- Small error margin always present; poor for tiny sets without HLL++ sparse mode
-
-### Best practices
-
-- Use HLL++ implementations (Redis 3.2+, modern libraries) for small-set accuracy.
-- Merge sketches at query time instead of shipping raw events.
-- Do not use HLL for billing or compliance counts requiring exactness.
-- Size `p` (register count) for target error: more registers → lower error → more memory.
-
-### Common mistakes
-
-- Expecting exact counts from HLL
-- Using HLL for tiny sets (< 100 elements) without sparse representation
-- Merging sketches built with different hash functions or parameters
-- Confusing HLL (cardinality) with Bloom filter (membership)
-
-### Summary
-
-```text
-HyperLogLog = fixed-memory approximate distinct count via leading-zero patterns in hashes
-Split hash → register index + ρ → max update → harmonic mean estimate; ~1–2% error at 12 KB
-Mergeable (max per register); Redis PFADD/PFCOUNT/PFMERGE; does not store elements
-```
+Same idea in **BigQuery** `APPROX_COUNT_DISTINCT`, **Elasticsearch** `cardinality` aggregation, and **Druid** HyperUnique.
 
 ---
 
 
 ## 13.3 Count Min Sketch
 
-### Definition
+### Overview
 
-A **Count-Min Sketch (CMS)** is a probabilistic data structure used to estimate the **frequency** of elements in a data stream using sub-linear, fixed memory.
+Picture a busy API gateway that must know whether a client is **hammering the same endpoint** thousands of times per minute — but there are millions of possible API keys and you cannot store a counter for every key in RAM. You need “about how many times did key X call us” without a full hash map.
 
-It answers:
+Technically, a **Count-Min Sketch (CMS)** is a `d × w` matrix of counters updated by `d` hash functions. Each event increments `d` cells; querying a key returns the **minimum** across those cells as the frequency estimate. Memory is **fixed** O(d × w). Estimates **never underestimate** (only overestimate) — safe for rate limits where missing abuse is worse than a false alarm.
 
-```text
-→ "How many times has this item appeared?"
-```
+---
 
-Results are **approximate** — space-efficient but not exact.
+### What problem it fixes
 
-### Problem it solves
+Streaming systems need **per-key frequency**:
 
-In large-scale streaming systems — click logs, search queries, network packets, product views, event streams — you need frequency counts for items like `user_id`, `ip_address`, `url`, or `keyword`.
+- Requests per API key
+- Packets per source IP
+- Clicks per ad ID
+- Search queries per keyword
 
-**Exact counting** requires a hash map storing every key → too much memory for billions of distinct keys.
+Exact counting needs a hash map `key → count` that grows with distinct keys — untenable at billions of keys. CMS trades exactness for a bounded matrix that handles unbounded streams.
 
-Count-Min Sketch provides:
+---
 
-- Approximate frequency
-- Fixed memory usage O(d × w)
-- Fast O(d) updates per element
+### What it does
 
-### Core idea
+**Update (insert)** — increment `d` counters for key `x`.
 
-Instead of storing exact counts for every key, CMS uses a **2D array of shared counters**:
+**Query** — return `min(CMS[i][h_i(x)])` as estimated frequency of `x`.
+
+It does not list keys, delete counts (standard CMS), or give exact billing numbers. It is a **frequency sketch**, not a database.
+
+---
+
+### How it works — the algorithm inside
 
 ```text
         w columns
      +-----------------+
-d 1  |  . . . . . . .  |
-d 2  |  . . . . . . .  |
-d 3  |  . . . . . . .  |
+d 1  |  counters...    |
+d 2  |  counters...    |
+d 3  |  counters...    |
      +-----------------+
-
-d = depth (number of hash functions / rows)
-w = width (buckets per row)
 ```
 
-Memory does not grow with the number of distinct elements in the stream.
-
-### Components
-
-**1. Hash functions** — `d` independent hash functions `h₁(x), h₂(x), …, h_d(x)`. Each maps an element to a column index `0` to `w−1`.
-
-**2. Counter matrix** — 2D array `CMS[d][w]`, all initialized to 0.
-
-```mermaid
-flowchart LR
-    X[item x] --> H[h1, h2, h3 → columns]
-    H --> M[(CMS d × w matrix — increment)]
-```
-
-### Insertion (update operation)
-
-To insert (or count) an element `x`, for each row `i`:
-
-1. Compute `h_i(x)`
-2. Increment `CMS[i][h_i(x)]`
-
-**Example** — `d = 3` rows, `w = 5` columns. Insert `"apple"`:
+#### Update algorithm
 
 ```text
-h1(apple) = 1    h2(apple) = 3    h3(apple) = 0
-
-Row 1, col 1 → +1
-Row 2, col 3 → +1
-Row 3, col 0 → +1
+function update(key, count = 1):
+    for i = 1 to d:
+        j = hash_i(key)
+        CMS[i][j] += count
 ```
 
-Insert `"apple"` again — same positions increment again. Counts accumulate.
-
-### Query (frequency estimation)
-
-To estimate frequency of `x`:
-
-1. Compute all `d` hash positions
-2. Read all `d` counters
-3. Return the **minimum** value
+#### Query algorithm
 
 ```text
-estimate(x) = min( CMS[i][h_i(x)] )   for i = 1..d
+function estimate(key):
+    return min( CMS[i][hash_i(key)] ) for i in 1..d
 ```
 
-### Why MIN?
-
-Counters may have **collisions** — different elements map to the same cell. Some rows may be inflated by other keys. The **minimum** across rows is the least overestimated and closest to the true count.
-
-**Example query** for `"apple"`:
-
-```text
-Positions:  Row 1 → col 1    Row 2 → col 3    Row 3 → col 0
-
-Values:     CMS[1][1] = 5    CMS[2][3] = 4    CMS[3][0] = 5
-
-Estimate:   min(5, 4, 5) = 4
-
-True count might be 3 — estimate is slightly over.
-```
-
-### Why overestimation happens
-
-Collisions inflate counters:
-
-```text
-"apple" and "banana" both increment the same cell in row 2
-→ that cell counts both items
-→ query for "apple" may read inflated value
-```
-
-### Key property
-
-Count-Min Sketch **never underestimates** frequency (with standard parameters). Estimate is always **exact or higher** — overestimate only. This makes CMS safe for rate-limiting thresholds where undercounting would miss abuse.
-
-### Memory efficiency
-
-```text
-Memory = O(d × w)   — fixed regardless of stream size or number of distinct keys
-```
-
-1 million distinct elements and 1 billion events both use the same sketch size.
-
-### Accuracy trade-off
-
-| Parameter | Effect |
-|-----------|--------|
-| **Larger width `w`** | Fewer collisions per row → better accuracy |
-| **More depth `d`** | Better confidence; minimum across more rows |
-
-### Error bound
-
-With probability `(1 − δ)`:
-
-```text
-error ≤ ε × N
-```
-
-Where:
-
-- `N` = total stream size (sum of all counts)
-- `ε` = error factor ≈ `1 / w`
-- `δ` = failure probability ≈ `e^(−d)`
-
-```text
-w controls error magnitude
-d controls confidence
-```
-
-### Parameter selection
-
-Typical sizing:
-
-```text
-w = ⌈e / ε⌉
-d = ⌈ln(1 / δ)⌉
-```
-
-**Example:** `ε = 0.01` (1% error factor), `δ = 0.001` (99.9% confidence):
-
-```text
-w ≈ ⌈e / 0.01⌉ ≈ 272
-d ≈ ⌈ln(1000)⌉ ≈ 7
-```
-
-### Comparison — hash map vs CMS
-
-| | Hash map | Count-Min Sketch |
-|---|----------|------------------|
-| **Counts** | Exact | Approximate |
-| **Memory** | O(distinct keys) | O(d × w) fixed |
-| **Updates** | O(1) | O(d) |
-| **Stores keys** | Yes | No |
-| **Undercount** | No | Never (overestimate only) |
-
-Bloom filter (membership) and HyperLogLog (distinct count) solve different streaming problems — see sections **13.1** and **13.2**.
-
-### Variants
-
-**Conservative update CMS** — only increments the minimum necessary counters to reduce overestimation.
-
-**Count Sketch** — uses +1 / −1 updates (signed counters) to reduce bias; can underestimate in some variants.
-
-**Conservative Count-Min Sketch** — minimizes unnecessary increments when collisions are detected.
-
-### Heavy hitters problem
-
-CMS is commonly used to find the **most frequent elements** in a stream:
-
-1. Maintain a CMS over the stream
-2. Query frequencies for candidate keys
-3. Track top-K elements in a separate heap
-
-Popular keys surface with high estimates; exact counters can be promoted for confirmed heavy hitters only.
-
-### Workflow summary
-
-**Insert:**
-
-```text
-Element  →  Compute d hashes  →  Increment d counters
-```
-
-**Query:**
-
-```text
-Element  →  Compute d hashes  →  Fetch d counters  →  Take minimum  →  Estimated frequency
-```
+**Why minimum?** Collisions inflate cells — other keys may have incremented the same bucket. The smallest across rows is the least contaminated estimate.
 
 ```mermaid
 flowchart LR
     Ins[Insert x] --> Hash[Compute d hashes]
     Hash --> Inc[Increment d counters]
     Qry[Query x] --> Hash2[Compute d hashes]
-    Hash2 --> Read[Read d counters]
-    Read --> Min[min = estimate]
+    Hash2 --> Min[min across rows = estimate]
 ```
 
-### Use cases
+---
 
-1. **Network traffic analysis** — packet frequency per IP
-2. **Search engines** — query frequency tracking
-3. **Distributed systems** — event counting across nodes (mergeable by adding matrices)
-4. **Fraud detection** — repeated patterns or spikes
-5. **Database analytics** — approximate `GROUP BY` counts
-6. **AdTech** — impression counts per user/ad
-7. **Logging systems** — log level frequency tracking
+### Walkthrough: counting `"apple"`
 
-### Real-world systems
-
-- Apache Storm / Apache Flink — streaming aggregations
-- Redis modules — approximate counters
-- Twitter — heavy-hitter analysis
-- Network intrusion detection — DDoS and anomaly signals
-
-### Real-world example
-
-An API gateway tracks per-API-key request counts in a CMS instead of a full hash map with millions of keys. Keys whose sketch estimate exceeds a threshold trigger exact counters or throttling — catching abuse with fixed memory.
-
-### Advantages
-
-- Extremely memory efficient for unbounded key spaces
-- Fast streaming updates O(d) per event
-- Never underestimates — safe for rate limits
-- Mergeable across shards (add counter matrices element-wise)
-
-### Limitations
-
-- Overestimates counts — cannot correct downward
-- No deletion support in standard CMS (unless modified variants)
-- Collisions affect accuracy on skewed distributions
-- Cannot retrieve original keys or list all items
-- Not suitable for exact billing
-
-### Best practices
-
-- Size `w` and `d` from target `ε` and `δ` before deployment.
-- Use conservative updates when overcounting causes unnecessary throttling.
-- Pair CMS with a small exact counter map for confirmed heavy hitters.
-- Merge sketches from edge nodes for global frequency views.
-
-### Common mistakes
-
-- Using CMS for exact per-key billing
-- Too few rows (`d`) → high variance in estimates
-- Confusing CMS frequency with Bloom membership or HLL distinct count
-- Querying keys never inserted — estimate may reflect collision noise from other keys
-
-### Summary
+`d = 3`, `w = 5`. Insert `"apple"` twice:
 
 ```text
-Count-Min Sketch = d × w counter matrix; d hashes per insert; query = min across rows
-Never underestimates (overestimate only); fixed memory; heavy hitters and rate limiting
-w = e/ε, d = ln(1/δ)
+h1(apple) = 1    h2(apple) = 3    h3(apple) = 0
+→ CMS[1][1] += 2, CMS[2][3] += 2, CMS[3][0] += 2
+
+Query "apple": min(2, 2, 2) = 2  ✓
 ```
+
+If `"banana"` shares column 3 in row 2, row 2's cell inflates; `min` across rows still limits overcount.
+
+---
+
+### Sizing — choosing `w` and `d`
+
+With probability `(1 − δ)`:
+
+```text
+error ≤ ε × N     where N = total events in stream
+ε ≈ 1/w           δ ≈ e^(−d)
+
+w = ⌈e / ε⌉
+d = ⌈ln(1 / δ)⌉
+```
+
+**Example:** ε = 0.01, δ = 0.001 → `w ≈ 272`, `d ≈ 7`.
+
+---
+
+### Count-Min Sketch vs hash map
+
+| | Hash map | CMS |
+|---|----------|-----|
+| Counts | Exact | Approximate (over only) |
+| Memory | O(distinct keys) | O(d × w) fixed |
+| Undercount | No | Never |
+
+Pair CMS with a heap for **heavy hitters**: promote keys above threshold to exact counters.
+
+---
+
+### Real-world example: API gateway rate limiting
+
+An API gateway maintains a CMS per route for API-key request counts. Fixed ~2 KB sketch per route handles millions of keys. When `estimate(api_key) > 10,000/min`, throttle or promote to an exact counter — catching abuse without a giant hash map.
+
+Sketches **merge** by adding matrices element-wise across edge nodes for global frequency views.
 
 ---
 
 
 ## 13.4 Trie
 
-### Definition
+### Overview
 
-A **trie** (prefix tree) is a tree-based data structure used to store strings in a way that allows efficient **prefix-based** operations.
+When you type in a search box and suggestions appear after each letter — `sys` → `system design`, `systemctl` — something is matching **prefixes** fast. A plain list of millions of strings would require scanning everything on each keystroke.
 
-Each node represents a character; paths from root to nodes represent prefixes or complete words.
+Technically, a **trie** (prefix tree) stores strings as character paths from a root. Shared prefixes share nodes — `cat`, `car`, and `cart` all traverse `c → a` before branching. Insert, search, and prefix queries run in **O(L)** where L is string length, independent of how many total words are stored.
 
-Also called:
+---
 
-- **Prefix tree**
-- **Digital tree**
-- **Radix tree** (compressed form)
+### What problem it fixes
 
-### Core idea
+- **Autocomplete** and type-ahead
+- **Spell checking** against a dictionary
+- **IP routing** — longest prefix match for CIDR blocks
+- **Phone/contact search** by prefix
 
-Instead of storing whole words as separate entities, a trie **shares common prefixes**.
+A **hash map** gives O(1) exact lookup but cannot answer “all keys starting with `sys`” without scanning all keys. **Binary search** on a sorted list is O(log n) per prefix query and awkward for incremental typing.
 
-```text
-Words:  cat, car, cart, dog
+---
 
-Shared structure:
+### What it does
 
-c → a → t          (cat)
-      → r          (car)
-         → t       (cart)
-d → o → g          (dog)
-```
+**Insert** — walk/create character nodes; mark end-of-word.
 
-### Structure
+**Search** — walk characters; check path exists and end-of-word flag if full word needed.
 
-Each trie node contains:
+**Prefix search** — walk to prefix node; collect all descendant end-of-word nodes.
 
-1. **Children map** — `char → node`
-2. **End-of-word flag** — marks a complete word
+Each node holds `children: map<char, Node>` and `isEndOfWord: boolean`.
 
-```text
-Node {
-  children: map<char, Node>
-  isEndOfWord: boolean
-}
-```
+---
+
+### How it works — the algorithm inside
+
+Words: `cat`, `car`, `cart`, `dog`
 
 ```mermaid
 flowchart TB
@@ -915,471 +578,214 @@ flowchart TB
     O --> G[g · dog ✓]
 ```
 
-### Insertion
-
-**Insert `"cat"`:**
+#### Insert algorithm
 
 ```text
-Root → c (create) → a (create) → t (create) → isEndOfWord = true
+function insert(word):
+    node = root
+    for each char c in word:
+        if c not in node.children:
+            node.children[c] = new Node()
+        node = node.children[c]
+    node.isEndOfWord = true
 ```
 
-**Insert `"car"`:**
+#### Search algorithm
 
 ```text
-Root → c → a (already exists) → r (create) → isEndOfWord = true
+function search(word):
+    node = walk(root, word)
+    return node exists and node.isEndOfWord
 ```
 
-**Insert `"cart"`** — extends existing `c → a → r` path with `t` and marks end.
-
-**Insert `"dog"`** — new branch from root: `d → o → g`.
-
-### Search operation
-
-**Search `"car"`:**
+#### Prefix search
 
 ```text
-root → c → a → r → exists, isEndOfWord = true  →  FOUND
+function prefix_search(prefix):
+    node = walk(root, prefix)
+    if node is null: return []
+    return DFS collect all isEndOfWord under node
 ```
 
-**Search `"ca"`:**
-
-```text
-root → c → a → exists, isEndOfWord = false  →  NOT a complete word
-(but valid prefix exists)
-```
-
-### Prefix search
-
-Tries are extremely efficient for prefix queries.
-
-**Find all words starting with `"ca"`:**
-
-1. Traverse `c → a`
-2. From node `a`, explore all descendants collecting terminal nodes
-
-```text
-Result: cat, car, cart
-```
-
-No full-dataset scan required — only the subtree under the prefix.
-
-### Time complexity
-
-| Operation | Complexity | Notes |
-|-----------|------------|-------|
-| **Insert** | O(L) | L = string length |
-| **Search** | O(L) | L = string length |
-| **Prefix query** | O(L + K) | K = number of matched results |
-
-### Memory usage
-
-Trie stores one node per character along each path.
-
-```text
-Worst case:  O(total characters in all words)
-Best case:   much less when words share long prefixes
-```
-
-Pointer-heavy structure — not cache-friendly unless compressed.
-
-### Trie node variants
-
-**1. Array-based trie** — `children[26]` for lowercase English letters. Fast traversal but memory-heavy for sparse alphabets.
-
-**2. HashMap-based trie** — `children: map<char, Node>`. More memory-efficient; slightly slower per step.
-
-**3. Compressed trie (radix tree)** — compress single-child chains.
-
-```text
-Instead of:  c → a → t  (three nodes)
-Store:      "cat" on one edge  (one node)
-```
-
-**4. Ternary search trie** — each node has left, middle, right pointers. Used for memory optimization in some dictionaries.
-
-### Deletion
-
-1. Traverse to the word's final node
-2. Unmark `isEndOfWord`
-3. Remove nodes only if they have no children **and** are not the end of another word
-
-**Example** — trie contains `cat`, `car`, `cart`. Delete `"car"`:
-
-```text
-c → a → r  →  unmark isEndOfWord on r
-Nodes remain because "cart" still uses c → a → r → t
-```
-
-### Space optimization techniques
-
-| Technique | Idea |
+| Operation | Time |
 |-----------|------|
-| **Compressed trie / radix tree** | Merge single-child chains into multi-char edges |
-| **Ternary trie** | Three-way branching per node |
-| **DAWG** | Directed Acyclic Word Graph — merge identical suffixes |
-| **Patricia trie** | Binary trie on bit strings; used for IP routing |
+| Insert / search | O(L) |
+| Prefix query | O(L + K), K = results |
 
-**DAWG** merges identical suffixes — common in advanced dictionaries and NLP systems for static word sets.
+---
 
-### Longest prefix matching
+### Walkthrough: insert and prefix query
 
-Used in **IP routing**. Given IP `192.168.1.10`, find the most specific route prefix (e.g. `192.168.1.0/24`). Trie-style structures walk bits of the address to find the longest matching prefix efficiently.
+Insert `"cat"`, `"car"`, `"cart"`, `"dog"` as in the diagram.
 
-### Trie vs hash map
+Prefix `"ca"` → traverse `c → a` → descendants yield `cat`, `car`, `cart` without scanning `dog`.
+
+Delete `"car"` → unmark end on `r`; keep nodes because `"cart"` still uses `c → a → r → t`.
+
+---
+
+### Variants and trade-offs
+
+| Variant | Use when |
+|---------|----------|
+| **Radix tree** | Compress single-child chains into multi-char edges |
+| **Patricia trie** | IP addresses — binary trie on bits |
+| **DAWG** | Static dictionaries — merge identical suffixes |
 
 | | Hash map | Trie |
 |---|----------|------|
-| **Lookup** | O(1) average | O(L) |
-| **Prefix support** | No | Yes |
-| **Stores** | Full keys | Character paths |
-| **Best for** | Exact key lookup | String prefixes, autocomplete |
+| Exact lookup | O(1) avg | O(L) |
+| Prefix queries | Poor | Natural |
+| Memory | Lower for sparse exact keys | Pointer-heavy |
 
-### Trie vs binary search
+---
 
-| | Binary search | Trie |
-|---|---------------|------|
-| **Requires** | Sorted list | No sorting |
-| **Lookup** | O(log N) | O(L) |
-| **Prefix queries** | Poor (scan or multiple searches) | Natural O(L + K) |
+### Real-world example: search autocomplete
 
-### Applications
+A search engine stores millions of past queries in a trie. User types `"sys"` → walk to node `s→y→s` → return ranked terminal descendants (`system design`, `systemctl`, …) in milliseconds. No full-table scan.
 
-1. **Autocomplete** — search engines, IDE code suggestions
-2. **Spell checkers** — dictionary word validation
-3. **IP routing** — longest prefix match in routers
-4. **Contact search** — phone directories
-5. **Word games** — Scrabble, Boggle solvers
-6. **Text processing** — prefix matching in NLP
-
-### Real-world example
-
-A search box autocomplete stores millions of queries in a trie. When the user types `"sys"`, the engine walks to the `"sys"` node and returns all descendant terminal strings ranked by popularity — without scanning the full dictionary.
-
-### Advantages
-
-- Fast prefix search and efficient autocomplete
-- No hashing required; predictable O(L) lookup
-- Natural dictionary representation; shared prefixes save space when keys overlap
-
-### Disadvantages
-
-- High memory usage (pointer-heavy) for sparse datasets
-- Not cache-friendly compared to flat arrays
-- More overhead than hash maps for simple exact-key lookup only
-
-### Best practices
-
-- Use radix trees or DAWGs when the dictionary is static and large.
-- Store popularity scores at terminal nodes for ranked autocomplete.
-- For IP routing, use Patricia/radix multi-bit tries for CIDR blocks.
-- Prefer HashMap-based children when alphabet is large or sparse.
-
-### Common mistakes
-
-- Plain trie on huge sparse key spaces without compression
-- Confusing trie prefix search with fuzzy edit-distance matching (different algorithms)
-- Deleting nodes that are still needed by other words
-- Using trie when only exact O(1) lookup is needed (hash map is simpler)
-
-### Summary
-
-```text
-Trie = prefix tree; nodes per character; isEndOfWord marks complete words
-O(L) insert/search; O(L+K) prefix query; shares prefixes across words
-Radix/DAWG/Patricia compress space; autocomplete, spell check, IP LPM
-```
+Routers use trie-style **longest prefix match** for CIDR routing tables.
 
 ---
 
 
 ## 13.5 Skip Lists
 
-### Definition
+### Overview
 
-A **skip list** is a probabilistic data structure that supports fast **search**, **insertion**, and **deletion** in a sorted sequence.
+Finding a name in a phone book sorted A–Z, you do not read every page — you jump to the right section, then narrow down. A plain sorted linked list forces you to check every entry one by one.
 
-It works like a layered linked list with **express lanes** that skip over elements. Performance is similar to balanced trees (AVL, red-black) but the implementation is simpler.
+Technically, a **skip list** is a probabilistic layered linked list. The bottom level is a full sorted list; higher levels are “express lanes” with fewer nodes. Search starts at the top, moves right while the next value is smaller, then drops down — **average O(log n)** search, insert, and delete. Simpler than balanced trees (no rotations), popular for concurrent structures (**Redis sorted sets**).
 
-### Core idea
+---
 
-A normal sorted linked list:
+### What problem it fixes
 
-```text
-Head → 1 → 3 → 5 → 7 → 9 → NULL
-```
+You need a **sorted** in-memory structure with:
 
-Search is **O(n)** — walk every node.
+- Fast search, insert, delete
+- Range scans and rank queries
+- Reasonable concurrency without tree rotation complexity
 
-A skip list adds multiple levels with fewer nodes at each higher level:
+Sorted arrays are slow to insert. Plain linked lists are O(n) search. AVL/red-black trees work but are harder to implement lock-free.
 
-```text
-Level 2 (express):  Head → 1 --------→ 5 --------→ 9 → NULL
-Level 1 (full):     Head → 1 → 3 → 5 → 7 → 9 → NULL
-```
+---
 
-Higher levels let you skip large sections before dropping down to finer levels.
+### What it does
 
-### Structure
+Maintains a sorted set with multiple forward-pointer levels per node. Supports search, insert, delete, and ordered traversal in **O(log n)** average time.
 
-A skip list consists of multiple layers:
+---
 
-```text
-Level 3: sparse
-Level 2: medium
-Level 1: dense (full sorted list)
-```
-
-Each node contains:
-
-1. **Value**
-2. **Forward pointers** — one per level the node participates in
+### How it works — the algorithm inside
 
 ```text
-Node {
-  value
-  forward[levels]
-}
+Level 2:  Head → 1 --------→ 5 --------→ 9
+Level 1:  Head → 1 → 3 → 5 → 7 → 9
 ```
 
-### Visualization
+**Level assignment:** coin flip with `p = 0.5` — promote while heads. `P(level ≥ i) = p^(i−1)`.
+
+#### Search algorithm
 
 ```text
-Level 3:        1 ----------------- 9
-Level 2:        1 -------- 5 ------ 9
-Level 1:        1 - 3 - 5 - 7 - 9
+function search(target):
+    node = head at top level
+    while node is not null:
+        while node.forward[level] < target:
+            node = node.forward[level]
+        if node.forward[level] == target: return found
+        level--
+    return not found
 ```
+
+Search for `7`: top level jumps `1 → 5`, drops, finds `7` on bottom.
 
 ```mermaid
 flowchart TB
-    L3["Level 3: 1 ─────────── 9"]
-    L2["Level 2: 1 ──── 5 ─── 9"]
+    L3["Level 3: 1 ---------- 9"]
+    L2["Level 2: 1 ---- 5 --- 9"]
     L1["Level 1: 1 - 3 - 5 - 7 - 9"]
 ```
 
-**Key property:** higher levels contain fewer nodes. Each higher level acts as an express highway.
+| Operation | Average | Worst |
+|-----------|---------|-------|
+| Search / insert / delete | O(log n) | O(n) |
 
-### How levels are assigned
+---
 
-When inserting a node, its level is chosen **randomly** — typically a coin-flip with probability `p` (commonly `0.5`):
-
-```text
-Level increases while coin = heads
-
-Example assignments:
-  1 → level 3
-  3 → level 1
-  5 → level 2
-```
-
-**Probability model:**
+### Walkthrough: search for 7
 
 ```text
-P(level ≥ i) = p^(i−1)
-
-With p = 0.5, higher levels become exponentially rare.
+Level 2:  1 → 9     (9 > 7, drop)
+Level 1:  1 → 5 → 9  (9 > 7, drop from 5)
+Level 0:  5 → 7      FOUND
 ```
 
-### Search operation
+Insert: find predecessors at each level, random height, splice pointers.
 
-To search for a value, start at the **top-left** (head at highest level):
-
-1. Move **right** while next value < target
-2. If next value > target, go **down** one level
-3. Repeat until bottom level
-
-**Example — search for 7:**
-
-```text
-Level 3:  1 → 9        (9 > 7, stop at 1, go down)
-Level 2:  1 → 5 → 9    (9 > 7, stop at 5, go down)
-Level 1:  5 → 7        FOUND
-```
-
-```mermaid
-flowchart LR
-    Start[Start top-left] --> Right{next < target?}
-    Right -->|Yes| MoveR[Move right]
-    MoveR --> Right
-    Right -->|No| Down{at bottom?}
-    Down -->|No| LevelDown[Go down one level]
-    LevelDown --> Right
-    Down -->|Yes| Found[Found or not found]
-```
-
-### Why logarithmic?
-
-Each higher level skips about half the nodes (with `p = 0.5`):
-
-```text
-Level 1: n nodes
-Level 2: n/2
-Level 3: n/4
-...
-Height ≈ log n
-```
-
-| Operation | Average | Worst case |
-|-----------|---------|------------|
-| **Search** | O(log n) | O(n) |
-| **Insert** | O(log n) | O(n) |
-| **Delete** | O(log n) | O(n) |
-
-### Insertion
-
-1. Find position using search logic (track predecessors at each level)
-2. Randomly decide node level
-3. Insert node at all chosen levels
-4. Update forward pointers
-
-**Example — insert 6:**
-
-```text
-Find position between 5 and 7
-Random level = 2
-
-Level 2:  5 → 6 → 7
-Level 1:  5 → 6 → 7
-```
-
-### Deletion
-
-1. Search for the node at all levels where it appears
-2. Remove forward pointers referencing the node
-3. Adjust links at each level
-4. Free the node
-
-### Space complexity
-
-Expected **O(n)** total pointers. Each node may appear in multiple levels, but expected pointer count per node ≈ `1 / (1 − p)` — linear overall with `p = 0.5`.
+---
 
 ### Skip list vs balanced tree
 
-| | Balanced tree (AVL / red-black) | Skip list |
-|---|--------------------------------|-----------|
-| **Balancing** | Strict deterministic rules | Probabilistic |
-| **Rotations** | Required | None |
-| **Implementation** | Complex | Simpler |
-| **Concurrency** | Harder lock-free | Easier lock-free |
-| **Worst case** | O(log n) guaranteed | O(n) possible |
+| | AVL / red-black | Skip list |
+|---|-----------------|-----------|
+| Balancing | Deterministic rotations | Random coin flips |
+| Implementation | Complex | Simpler |
+| Concurrency | Harder lock-free | Easier lock-free |
+| Worst case | O(log n) guaranteed | O(n) possible |
 
-### Performance intuition
+**Redis `ZSET`:** skip list for rank/range (`ZRANK`, `ZRANGE`) + hash table for O(1) score lookup (`ZSCORE`).
 
-Think of a skip list as a road network:
+---
 
-```text
-Level 3: highways     — few stops, long jumps
-Level 2: main roads   — medium granularity
-Level 1: local streets — every node
-```
+### Real-world example: game leaderboard
 
-You travel **highway → main road → local street** instead of walking every node.
-
-### Applications
-
-1. **In-memory databases** — sorted indexes
-2. **Key-value stores** — Redis sorted sets (`ZSET`) use skip lists for rank/range
-3. **Distributed systems** — fast ordered lookup tables
-4. **Concurrent data structures** — lock-free skip lists
-5. **File systems** — indexing metadata
-
-### Why used in real systems
-
-Skip lists are preferred when:
-
-- Simplicity matters more than worst-case guarantees
-- Concurrency is required without tree rotation complexity
-- Predictable **average** O(log n) performance is sufficient
-
-**Redis** combines skip list + hash table: O(1) member → score lookup via hash; O(log n) rank and range via skip list.
-
-### Real-world example
-
-Redis `ZADD leaderboard 100 "player42"` stores members in a skip list by score. `ZRANK` and `ZRANGE` walk the skip list; `ZSCORE` hits the hash table directly.
-
-### Advantages
-
-- Simple to implement; no rotation logic
-- Efficient average search, insert, delete
-- Supports ordered operations (range scan, rank)
-- Good fit for concurrent / lock-free designs
-
-### Disadvantages
-
-- Worst-case O(n) if randomization produces a degenerate structure
-- Randomization quality matters
-- Slightly more memory than a flat array
-- Not cache-optimal on disk — B-trees preferred for disk-backed indexes
-
-### Best practices
-
-- Use `p = 0.5` and cap max level at `log₂(n)` for expected balance.
-- For disk-backed ordered stores, prefer B-trees; skip lists shine in memory.
-- Combine with a hash map when you need both O(1) key lookup and ordered traversal.
-
-### Common mistakes
-
-- Using skip lists on disk where B-trees are standard
-- Assuming worst-case O(log n) — only average case
-- Implementing concurrency without careful lock ordering on level updates
-- Poor random number source → unbalanced levels → degraded performance
-
-### Summary
-
-```text
-Skip list = layered linked list with express lanes; coin-flip level assignment
-Search: go right while < target, go down when ≥ target; O(log n) average
-Simpler than balanced trees; Redis ZSET; highway → main road → local street intuition
-```
+`ZADD leaderboard 9850 "player42"` stores scores in a skip list. `ZRANGE leaderboard 0 9` returns top 10 in log time. `ZSCORE` hits the hash table directly. Disk-backed indexes prefer B-trees; skip lists shine **in memory**.
 
 ---
 
 
 ## 13.6 Merkle Trees
 
-### Definition
+### Overview
 
-A **Merkle tree** (hash tree) is a cryptographic tree data structure used to efficiently and securely verify the **integrity** of large datasets.
+When you download a large file, how do you know it was not corrupted in transit? Checking every byte against a copy on the server is slow. Instead, the publisher gives you one **fingerprint** (hash) of the whole file — if your copy's fingerprint matches, the file is intact.
 
-Leaf nodes contain hashes of data blocks; parent nodes contain hashes of their children. The top node is the **Merkle root** — a single fingerprint for the entire dataset.
+Technically, a **Merkle tree** hashes leaf data blocks, then hashes pairs of child hashes up to a single **Merkle root**. Change any leaf → root changes completely. Prove one element belongs with only **O(log N)** sibling hashes (a **Merkle proof**), not the full dataset.
 
-### Core idea
+---
 
-Instead of verifying all data items individually, repeatedly hash pairs until one root hash remains.
+### What problem it fixes
 
-```text
-Root represents entire dataset
-Any change in underlying data → completely different root
-```
+- **Integrity verification** of large datasets (downloads, replicas, blockchains)
+- **Efficient sync** — compare roots first; bisect only divergent subtrees
+- **Inclusion proofs** — show one transaction belongs in a block without downloading all transactions
 
-### Structure — building the tree
+`hash(entire_file)` gives one fingerprint but cannot prove a single chunk without rehashing everything.
 
-**Example dataset:** A, B, C, D
+---
 
-**Step 1 — leaf hashes:**
+### What it does
 
-```text
-H(A)   H(B)   H(C)   H(D)
-```
+**Build** — construct tree from data leaves; publish root hash.
 
-**Step 2 — pairwise hashing:**
+**Verify inclusion** — given element + Merkle proof + known root, confirm element is in the tree.
 
-```text
-H(AB) = hash(H(A) || H(B))
-H(CD) = hash(H(C) || H(D))
-```
+**Compare replicas** — exchange roots; if different, walk tree to find minimal differing ranges.
 
-**Step 3 — root:**
+Not a search index — proves integrity/membership, not arbitrary key lookup.
 
-```text
-Root = H(ABCD) = hash(H(AB) || H(CD))
-```
+---
+
+### How it works — the algorithm inside
+
+Dataset `{A, B, C, D}`:
 
 ```text
-            Root
-          /      \
-      H(AB)      H(CD)
-      /   \      /   \
-   H(A) H(B)  H(C) H(D)
+Leaves:   H(A)  H(B)  H(C)  H(D)
+Parents:  H(AB) = hash(H(A)||H(B))    H(CD) = hash(H(C)||H(D))
+Root:     hash(H(AB) || H(CD))
 ```
 
 ```mermaid
@@ -1393,240 +799,88 @@ flowchart TB
     CD --> HD[H D]
 ```
 
-### Merkle root
+#### Proof verification for element B
 
-The single hash at the top summarizes all data. Even a tiny change in any leaf completely changes the root hash — making tampering detectable.
-
-### Hash function requirements
-
-Must be:
-
-- **Deterministic** — same input → same hash
-- **Fast** — practical for large datasets
-- **Collision-resistant** — infeasible to find two inputs with same hash
-
-Common choices: **SHA-256**, **SHA-3**. Avoid deprecated algorithms (MD5, SHA-1 for security-critical use).
-
-### Verification concept
-
-Instead of downloading or comparing an entire dataset, verify integrity using only:
-
-- The **root hash** (known good reference)
-- A small subset of hashes along a **proof path** — O(log N) hashes
-
-### Merkle proof
-
-A Merkle proof verifies a **specific element** without the full tree.
-
-**Example — verify block B:**
-
-Need sibling hashes along the path to root:
+Provide siblings `H(A)` and `H(CD)` + known root:
 
 ```text
-H(A)     — sibling of H(B)
-H(CD)    — sibling of H(AB)
-Root     — expected root
+H(AB) = hash(H(A) || H(B))
+recomputed_root = hash(H(AB) || H(CD))
+match known root → B is authentic
 ```
 
-**Steps:**
+Use SHA-256+; document `left || right` concatenation order. Odd leaf count: duplicate last node or promote — both sides must agree.
 
-1. Compute `H(B)`
-2. Compute `H(AB) = hash(H(A) || H(B))`
-3. Compute `hash(H(AB) || H(CD))`
-4. Compare with known root — if match, B is valid
+| | hash(all data) | Merkle tree |
+|---|----------------|-------------|
+| One fingerprint | Yes | Yes (root) |
+| Prove one element | Rehash all | O(log N) proof |
+| Localize changes | No | Bisect subtrees |
 
-```mermaid
-flowchart TB
-    Root[Root]
-    Root --> AB[H AB]
-    Root --> CD[H CD — in proof]
-    AB --> B[H B — prove this]
-    AB --> A[H A — in proof]
-```
+---
 
-### Why it works
+### Walkthrough: tamper detection
 
-Hash functions are **one-way** and **collision-resistant**. Any change in data → changes leaf hash → propagates through all parent hashes → changes root.
+Change one byte in block C → `H(C)` changes → `H(CD)` changes → root changes. Comparing roots alone detects tampering without reading every block.
 
-### Efficiency and complexity
+---
 
-| | Complexity |
-|---|------------|
-| **Tree height** | O(log N) — each level halves nodes |
-| **Construction** | O(N) — hash each node once per level |
-| **Space** | O(N) nodes |
-| **Proof verification** | O(log N) hashes — vs O(N) for full dataset compare |
+### Variants worth knowing
 
-Instead of verifying N items, verify only **O(log N)** hashes.
+| Variant | Use |
+|---------|-----|
+| **Merkle Patricia tree** | Ethereum state — trie + hashing |
+| **Sparse Merkle tree** | Full key space for ZK proofs |
 
-### Balanced tree property
+---
 
-Merkle trees are usually **binary and balanced**. If an odd number of nodes at a level, the last node is **duplicated** or carried forward before hashing — convention must be consistent between prover and verifier.
+### Real-world example: Cassandra anti-entropy repair
 
-### Comparison with simple hashing
+Two replicas exchange Merkle roots per partition. Roots differ → walk divergent branches → stream only mismatched SSTable ranges, not the full table.
 
-| | `hash(all data)` | Merkle tree |
-|---|------------------|-------------|
-| **Single fingerprint** | Yes | Yes (root) |
-| **Prove one element** | No — must rehash everything | Yes — O(log N) proof |
-| **Localize changes** | No | Yes — bisect divergent subtrees |
-| **Scalable verification** | No | Yes |
-
-### Variants
-
-**1. Binary Merkle tree** — standard form described above.
-
-**2. Merkle Patricia tree** — combines trie structure with cryptographic hashing. Used in **Ethereum** for account balances, contract state, and key-value storage.
-
-**3. Sparse Merkle tree** — represents entire key space (including empty slots). Useful for zero-knowledge proofs and audit systems.
-
-### Use cases
-
-**Data integrity** — file downloads, software updates, cloud storage. If root hash matches → data is intact.
-
-**Distributed systems** — nodes agree on dataset state without byte-by-byte comparison:
-
-- **Git** — tree objects are Merkle structures; `git diff` localizes changes
-- **Cassandra** — anti-entropy repair exchanges roots, bisects to find divergent SSTable ranges
-- **Certificate Transparency** — auditable TLS certificate logs
-- **IPFS** — content-addressed blocks linked by hashes
-
-**Blockchain** — each block contains transactions and a Merkle root of those transactions:
-
-- Efficient per-transaction verification
-- Lightweight **SPV (Simplified Payment Verification)** clients
-
-### SPV — simplified payment verification
-
-A lightweight blockchain node does **not** download the full blockchain. It downloads block headers and uses Merkle proofs to verify specific transactions belong in a block.
-
-**To prove transaction X exists:**
-
-```text
-Provide:  H(X)  +  sibling hashes along path to root
-Verifier recomputes root → if match, transaction is valid
-```
-
-### Security property
-
-If even one transaction (or data block) changes:
-
-```text
-leaf hash changes → parent hashes change → root changes
-```
-
-Tampering is detectable by comparing roots alone.
-
-### Real-world example
-
-Two Cassandra replicas exchange Merkle tree roots for a partition. Roots differ → walk divergent branches to find exact SSTable ranges that disagree → stream only those ranges for repair instead of full table comparison.
-
-### Advantages
-
-- Efficient integrity verification with O(log N) proofs
-- Minimal data transfer for inclusion proofs
-- Tamper detection via root comparison
-- Scales to very large datasets
-- Supports distributed verification across replicas
-
-### Limitations
-
-- Tree maintenance overhead on frequent updates (use incremental Merkle trees)
-- Extra computation vs storing raw data alone
-- Dynamic datasets require rebuild or incremental update strategies
-- Proof must be generated for each inclusion query
-- Not a search structure — proves membership/integrity, not arbitrary lookup
-
-### Best practices
-
-- Use SHA-256 or stronger; document hash concatenation order (`left || right`).
-- Exchange roots before bulk sync; bisect on mismatch to minimize transfer.
-- Use incremental Merkle trees when data changes frequently.
-- For range proofs, use sorted-leaf variants.
-
-### Common mistakes
-
-- Rebuilding the full tree on every small update
-- Inconsistent odd-node handling (duplicate vs promote) between implementations
-- Treating Merkle trees as indexes for key lookup
-- Using weak hash functions for security-critical proofs
-
-### Summary
-
-```text
-Merkle tree = hash pairs up to root; root = cryptographic fingerprint of all data
-Merkle proof = O(log N) sibling hashes verify one element; tamper changes root
-Git, Cassandra repair, blockchain SPV, Ethereum Patricia tree; not a search index
-```
+**Git** tree objects are Merkle structures — `git diff` localizes changes. **Blockchain SPV** clients verify a transaction with header + Merkle proof.
 
 ---
 
 
 ## 13.7 Distributed Hash Tables
 
-### Definition
+### Overview
 
-A **Distributed Hash Table (DHT)** is a decentralized key-value store where data is distributed across multiple nodes, and each node is responsible for a portion of the keyspace.
+Imagine a peer-to-peer file-sharing network with no central server listing who has which file. Each computer must know where to route a lookup — “who stores `hash(key)`” — among thousands of peers.
 
-It provides:
+Technically, a **Distributed Hash Table (DHT)** spreads key-value pairs across nodes on a **logical ring** using **consistent hashing**. `put(key)` and `get(key)` hash the key, find the responsible node (clockwise successor), and route there. Structured DHTs (**Chord**, **Kademlia**) maintain routing tables for **O(log N)** hops instead of walking the ring.
 
-- Scalable storage
-- Decentralized lookup
-- Fault tolerance
+---
 
-There is **no central server**.
+### What problem it fixes
 
-### Core idea
-
-Instead of storing all key-value pairs on one machine:
-
-- Split the key space across nodes
-- Assign each node responsibility for a segment
-- Route requests to the correct node using hashing
-
-```text
-put(key, value)  →  hash(key)  →  mapped to node  →  stored there
-get(key)         →  hash(key)  →  routed to owner  →  retrieved
-```
-
-### Why DHT is needed
-
-**Centralized hash table problems:**
+Centralized key-value stores hit limits:
 
 - Single point of failure
-- Limited scalability
 - Bottleneck under load
+- Cannot scale storage horizontally
 
-**DHT solves:**
+Naive `hash(key) % N` reshuffles almost all keys when N changes — breaking caches and overloading nodes during cluster resize.
 
-- Horizontal scalability
-- Fault tolerance
-- Distributed storage without a coordinator
+---
 
-### Key component — hash function
+### What it does
 
-A consistent hash function maps keys into a fixed identifier space:
-
-```text
-hash(key) → position on ring / node_id
-```
-
-Example: `hash("file1") = 65` → stored on the node responsible for that range.
-
-### Node ring (conceptual model)
-
-Most DHTs use a **logical ring** structure.
+Provides a **decentralized** key-value abstraction:
 
 ```text
-Node IDs on ring (example 0–255 space):
-
-  10 → Node A
-  50 → Node B
- 120 → Node C
- 200 → Node D
-
-Ring wraps: 0 → 255 → back to 0
+put(key, value)  →  hash(key)  →  route to owner node  →  store
+get(key)         →  hash(key)  →  route to owner node  →  return
 ```
+
+No central coordinator for lookup routing (though production systems like Cassandra add ops tooling on top of the same ring idea).
+
+---
+
+### How it works — the algorithm inside
+
+**Ring assignment:** nodes at IDs 10, 50, 120, 200. `hash("file-X") = 65` → stored at node **120** (first node ID ≥ 65).
 
 ```mermaid
 flowchart LR
@@ -1634,62 +888,7 @@ flowchart LR
     K["hash(X) = 65"] --> NC
 ```
 
-### Key assignment rule — consistent hashing
-
-A key is stored on the **first node whose ID ≥ hash(key)** (clockwise successor on the ring).
-
-If no node has a higher ID, **wrap around** to the first node.
-
-**Example:**
-
-```text
-Nodes: 10, 50, 120, 200
-hash("X") = 65  →  stored at Node 120 (next highest)
-```
-
-Adding a node moves only **K/N** keys on average — vs nearly all keys with naive `hash(key) % N`.
-
-### Lookup process
-
-1. Hash the key
-2. Determine the responsible node (successor)
-3. Route request to that node via overlay routing
-4. Retrieve or store the value
-
-### Routing challenge
-
-Nodes do **not** know full system state. Structured DHTs maintain:
-
-- Routing tables (finger tables, k-buckets)
-- Neighbor pointers (successor, predecessor)
-- Overlay network for O(log N) hops
-
-Naive linear walk around the ring is **O(N)** — too slow at scale.
-
-### Chord DHT
-
-Chord organizes nodes in a ring. Each node maintains:
-
-- **Successor** — next node clockwise
-- **Finger table** — skip pointers for fast lookup
-
-**Finger table** — instead of stepping one node at a time, store shortcuts:
-
-```text
-node → node + 2^0
-node → node + 2^1
-node → node + 2^2
-node → node + 2^3
-...
-```
-
-Enables **O(log N)** lookup.
-
-**Lookup example** — search for key owned near node 120, start at node 10:
-
-```text
-10 → 50 → 120   (jump via finger table, not 10 → 11 → 12 → ...)
-```
+**Chord finger table:** shortcuts `node + 2^0`, `node + 2^1`, … for O(log N) lookup.
 
 ```mermaid
 flowchart LR
@@ -1698,389 +897,167 @@ flowchart LR
     N120 --> Val[key value]
 ```
 
-### Time complexity
+**Replication:** primary at successor + replicas on next k successors.
 
-| Operation | Structured DHT (Chord, Kademlia) |
-|-----------|----------------------------------|
-| **Lookup** | O(log N) |
-| **Insert** | O(log N) |
-| **Delete** | O(log N) |
+**Virtual nodes:** one physical machine claims multiple ring positions for even load.
 
-### Replication
+**Kademlia:** XOR distance + k-buckets — BitTorrent DHT, Ethereum peer discovery, IPFS.
 
-To improve fault tolerance, each key is stored on multiple nodes:
+| Operation | Structured DHT |
+|-----------|----------------|
+| Lookup / insert | O(log N) |
 
-```text
-Primary:   node responsible for hash(key)
-Replicas:  next k successor nodes on the ring
-```
+Typically **eventual consistency** — AP under partition unless quorum protocols added (Cassandra tunable consistency is separate).
 
-Example: key at Node 50 → replicas at successors 120, 200.
+---
 
-**Cassandra** uses consistent hashing + vnode + configurable replication factor (RF ≥ 3).
+### Walkthrough: node join
 
-### Failure handling
+Add node 80 to ring `{10, 50, 120, 200}`. Only keys hashing to ranges now owned by 80 migrate (~K/N keys). Naive modulo hashing would reshuffle nearly everything.
 
-If a node fails:
+---
 
-- Successor takes over the key range
-- Replicas serve reads/writes until rebalancing completes
-- System **self-heals** as routing tables update
+### DHT vs centralized hash table
 
-### Node join
+| | Central KV | DHT |
+|---|------------|-----|
+| Coordinator | Required | None for routing |
+| Scale-out | Limited | Horizontal |
+| Key movement on resize | N/A or full reshuffle | ~K/N with consistent hashing |
 
-1. New node claims a position on the ring
-2. Takes part of the key range from its predecessor
-3. Keys transfer to the new node
-4. Routing tables (finger tables / k-buckets) update across peers
+---
 
-### Node leave
+### Real-world example: Cassandra cluster expansion
 
-1. Keys reassigned to successor nodes
-2. Replicas ensure no data loss during graceful or detected failure
-3. Neighbor pointers and routing tables adjust
-
-### Load balancing and virtual nodes
-
-Hashing aims for uniform key distribution, but physical nodes can still become unevenly loaded.
-
-**Virtual nodes (vnodes)** — each physical machine owns multiple positions on the ring:
-
-```text
-Node A → positions 10, 110, 210
-Node B → positions 30, 130, 230
-```
-
-Benefits: better load distribution, smoother scaling when nodes join or leave.
-
-### CAP considerations
-
-DHT systems typically operate under network partitions. Most prioritize:
-
-```text
-Availability + Partition tolerance
-```
-
-over strong consistency — especially in wide-area P2P networks.
-
-### Consistency model
-
-Typically **eventual consistency** — not strong consistency. Updates propagate asynchronously between replicas; readers may see stale values briefly.
-
-### Kademlia (important variant)
-
-Uses **XOR distance** metric:
-
-```text
-distance(a, b) = a XOR b
-```
-
-Nodes store **k-buckets** of peers at varying XOR distances. Used in **BitTorrent** (DHT), **Ethereum** node discovery, **IPFS**.
-
-Advantages: faster routing table updates, efficient lookup, robust against churn (frequent join/leave).
-
-### Other real systems
-
-| System | Notes |
-|--------|-------|
-| **Chord** | Finger table ring; foundational academic DHT |
-| **Kademlia** | XOR metric; BitTorrent, Ethereum |
-| **Pastry** | Prefix-based routing |
-| **CAN** | Content Addressable Network — multi-dimensional space |
-| **Cassandra** | Ring + vnode + RF; not pure DHT but same hashing model |
-
-**Rendezvous hashing (HRW)** — alternative when ring management is complex: `hash(node, key)` highest wins.
-
-### Applications
-
-1. **Peer-to-peer networks** — BitTorrent trackerless DHT
-2. **Distributed storage** — IPFS content routing
-3. **Blockchain** — node discovery (Ethereum Kademlia)
-4. **Content delivery** — decentralized caching
-5. **Cloud storage** — scalable object lookup (Cassandra-style rings)
-
-### Real-world example
-
-A Cassandra cluster adds a fourth node. With consistent hashing and vnodes, only ~25% of partitions migrate to the new node. With naive `hash(key) % N`, nearly all keys would reshuffle — breaking caches and overloading the cluster.
-
-### Advantages
-
-- Horizontal scalability without central coordinator
-- O(log N) lookup in structured DHTs
-- Minimal key movement on topology change (consistent hashing)
-- Fault tolerance via replication and self-healing
-
-### Limitations
-
-- Eventual consistency — not suitable for all workloads without extra coordination
-- Hot spots if keys skew (mitigate with vnodes and application sharding)
-- Operational complexity — gossip, failure detection, ring rebalancing
-- Churn (rapid join/leave) stresses routing table maintenance
-
-### Best practices
-
-- Use vnodes (e.g. 256 per physical node) for even load distribution.
-- Pair consistent hashing with replication factor ≥ 3.
-- Monitor ring imbalance and hot partitions.
-- Prefer Kademlia-style designs for high-churn P2P environments.
-
-### Common mistakes
-
-- `hash(key) % num_nodes` when cluster size changes frequently
-- Too few vnodes → uneven partition sizes
-- Ignoring skewed access patterns that bypass uniform hashing
-- Expecting strong consistency without quorum reads/writes (Cassandra tunable consistency is separate)
-
-### Key insight
-
-A DHT turns a collection of independent nodes into a **single logical hash table** by using consistent hashing and distributed routing, enabling scalable and fault-tolerant key-value storage without any central coordinator.
-
-### Summary
-
-```text
-DHT = decentralized KV store; consistent hashing assigns keys to ring segments
-Chord finger tables / Kademlia XOR → O(log N) lookup; replication + self-healing
-Vnodes balance load; eventual consistency; BitTorrent, IPFS, Cassandra, Ethereum
-```
+Adding a fourth node with **vnodes** migrates ~25% of partitions. **BitTorrent** trackerless DHT finds peers for content hashes. **IPFS** routes by content address on Kademlia-style overlays.
 
 ---
 
 
 ## 13.8 UUID
 
-### Definition
+### Overview
 
-A **UUID** (Universally Unique Identifier) is a 128-bit identifier used to uniquely identify information in distributed systems **without central coordination**.
+Every order, user, and message in a distributed app needs an ID. Auto-increment (`1, 2, 3…`) from one database breaks when you have many services or offline clients — and exposes how many records exist. You want IDs any laptop or microservice can mint without calling home.
 
-It is designed to be globally unique across space and time. UUID is not about absolute uniqueness — it makes collisions so improbable they can be ignored in real-world systems.
+Technically, a **UUID** is a **128-bit** identifier (RFC 9562), often shown as `550e8400-e29b-41d4-a716-446655440000`. Collisions are negligible (~2^122 random bits in v4). **v4** is random and opaque; **v7** adds a millisecond timestamp prefix for sortable database keys. Store as `BINARY(16)`, not `CHAR(36)`.
 
-### Core idea
+---
 
-Instead of sequential IDs (`1, 2, 3…`) that require a central allocator:
+### What problem it fixes
+
+- Global uniqueness **without** a central ID server
+- Safe generation on clients, edge devices, and multiple microservices
+- Opaque IDs that do not leak sequence or shard information (v4)
+
+**v4 as primary key** on write-heavy tables causes **B-tree fragmentation** — random insert order. **v7**, ULID, or Snowflake fix sortability.
+
+---
+
+### What it does
+
+Generates a 128-bit unique ID. Versions differ in how bits are filled:
+
+| Version | Method | Best for |
+|---------|--------|----------|
+| **v4** | 122 random bits | Opaque IDs, low write volume |
+| **v7** | 48-bit Unix ms + random | **Default for new DB PKs** |
+| **v3/v5** | hash(namespace + name) | Deterministic IDs |
+| **v1** | timestamp + MAC | Legacy; privacy risk |
+
+---
+
+### How it works — the algorithm inside
+
+**UUID v4:**
 
 ```text
-UUIDs are:
-  → extremely unlikely to collide
-  → independent across machines
-  → safe in distributed / offline generation
+function uuid_v4():
+    bits = 122 random bits
+    set version nibble = 4
+    set variant bits per RFC 9562
+    format as 8-4-4-4-12 hex string
 ```
 
-**Example:**
+**UUID v7:**
 
 ```text
-550e8400-e29b-41d4-a716-446655440000
+function uuid_v7():
+    timestamp_ms = 48 bits
+    random_suffix = remaining bits
+    set version = 7
+    format as hex string
 ```
-
-### Structure
-
-UUID = **128 bits** (16 bytes), typically shown as **8-4-4-4-12** hexadecimal:
 
 ```text
 xxxxxxxx-xxxx-Mxxx-Nxxx-xxxxxxxxxxxx
-
-550e8400 - e29b - 41d4 - a716 - 446655440000
+M = version, N = variant
 ```
 
-**Field meaning:**
+---
 
-- **M** (version nibble) — UUID generation version (1, 3, 4, 5, 7, …)
-- **N** (variant bits) — layout scheme per RFC 9562
-
-Store as `BINARY(16)` or native `UUID` type in databases — not `CHAR(36)` — for space and comparison speed.
-
-### UUID versions
-
-| Version | Method | Properties |
-|---------|--------|------------|
-| **v1** | Timestamp + MAC/node ID + clock sequence | Sortable by time; **privacy risk** (MAC leakage) |
-| **v2** | DCE security — adds POSIX UID/GID | Rarely used |
-| **v3** | Namespace + name → **MD5** hash | Deterministic: same input → same UUID |
-| **v4** | **Random** (122 bits) | Most common; opaque; poor DB index locality |
-| **v5** | Namespace + name → **SHA-1** hash | Deterministic; more secure than v3 |
-| **v7** | 48-bit Unix ms timestamp + random | **Modern default** for DB PKs; time-ordered |
-
-#### Version 1 — time-based
-
-Uses timestamp, MAC address (or random node ID), and clock sequence. Partially sortable but may expose hardware identity.
-
-#### Version 4 — random (most common)
-
-Generated from random or cryptographically secure random bits. Widely used when opacity and zero coordination matter.
-
-**Generation process:**
-
-1. Generate 122 random bits
-2. Set version bits = 4
-3. Set variant bits per RFC
-4. Format as hexadecimal string
-
-#### Version 3 / 5 — name-based
-
-```text
-UUID = hash(namespace UUID + name)
-
-v3 → MD5    v5 → SHA-1
-Same namespace + name always produces the same UUID (deterministic).
-```
-
-#### Version 7 — time-ordered (RFC 9562)
-
-48-bit millisecond timestamp prefix + random bits. Sortable like ULID/Snowflake; better B-tree insert locality than v4. Preferred for new write-heavy database primary keys.
-
-### Collision probability
-
-UUID v4 has **122 random bits** (6 bits reserved for version + variant).
-
-```text
-Total possibilities ≈ 2^122 ≈ 5.3 × 10^36
-```
-
-Even generating billions per second for years, collision probability remains **practically negligible**. Billions of devices over long periods remain safe.
-
-**Why 122 bits, not 128?** Version and variant fields are fixed — usable randomness is reduced.
-
-### Database impact
-
-Using **UUID v4** as a primary key causes problems:
-
-- Random insertion order → **B-tree fragmentation**
-- Slower writes and larger indexes vs sequential integers
-
-**Mitigations:**
-
-- Use **UUID v7** (time-ordered)
-- Use **ULID** or **Snowflake** (see sections 13.9–13.11)
-
-### UUID vs auto-increment ID
-
-| | Auto-increment | UUID |
-|---|----------------|------|
-| **Example** | 1, 2, 3, 4 | `550e8400-e29b-…` |
-| **Size** | Small (4–8 bytes) | 16 bytes |
-| **Ordering** | Sequential | v4: none; v7: time-ordered |
-| **Global uniqueness** | No — per database | Yes |
-| **Coordination** | Central DB sequence | None (v4/v7) |
-| **Indexing** | Fast sequential inserts | v4: fragmented; v7: better |
-
-### ID schemes — canonical comparison
-
-Use this table when choosing between distributed ID options. Sections **13.9–13.11** expand Snowflake, ULID, and KSUID without repeating the full matrix.
+### Choosing an ID scheme
 
 | | UUID v4 | UUID v7 | Snowflake | ULID | KSUID |
 |---|---------|---------|-----------|------|-------|
-| **Size** | 16 bytes | 16 bytes | 8 bytes | 16 bytes (26 char) | 20 bytes (27 char) |
-| **Sortable** | No | Yes (ms) | Yes (ms) | Yes (ms) | Yes (seconds) |
-| **Coordination** | None | None | Worker/DC IDs | None | None |
-| **Clock dependency** | No | Yes | Yes | Yes | Yes |
-| **B-tree locality** | Poor | Good | Good | Good | Good |
-| **String form** | 36 chars | 36 chars | Numeric | 26 chars Base32 | 27 chars Base62 |
-| **Entropy** | 122 bits | ~74 bits random | Per-ms sequence | 80 bits random | 128 bits random |
+| Size | 16 bytes | 16 bytes | 8 bytes | 16 bytes | 20 bytes |
+| Sortable | No | Yes (ms) | Yes (ms) | Yes (ms) | Yes (sec) |
+| Coordination | None | None | Worker IDs | None | None |
+| B-tree locality | Poor | Good | Good | Good | Good |
 
-**Choose UUID v7** when: standard format, sortable, no worker registry, client-generated IDs.
+Sections **13.9–13.11** cover Snowflake, ULID, and KSUID in detail.
 
-**Choose Snowflake** (13.9) when: compact 64-bit numeric PK, high insert rate.
+---
 
-**Choose ULID** (13.10) or **KSUID** (13.11) when: URL-safe string IDs with lexicographic sort — KSUID trades ms precision for 128-bit randomness.
+### Real-world example: microservice entity IDs
 
-**Choose UUID v4** when: opacity matters more than index locality; low write volume.
-
-### Use cases
-
-1. **Distributed systems** — microservice entity IDs
-2. **Databases** — primary keys in sharded / replicated tables
-3. **File systems** — object identifiers
-4. **Messaging** — message and correlation IDs
-5. **APIs** — request tracing (`X-Request-ID`)
-6. **Logs / events** — opaque event identifiers
-
-### Advantages
-
-- Globally unique without central coordination
-- Works across distributed and offline clients
-- Easy to generate; library support everywhere
-- v4 opaque and non-guessable; v3/v5 deterministic when needed
-
-### Disadvantages
-
-- Large (128-bit) vs 64-bit integers
-- Not human-friendly (36-char string)
-- v4 poor index locality → fragmented B-trees
-- v1 leaks MAC address (privacy)
-
-### Best practices
-
-- Default to **UUID v7** for new write-heavy database primary keys.
-- Store as `BINARY(16)`, not `CHAR(36)`.
-- Do not use v1 in public-facing contexts.
-- Use v3/v5 only when deterministic IDs from namespace+name are required.
-
-### Common mistakes
-
-- UUID v4 as PK on high-write tables → index fragmentation
-- Storing as string in every index column → wasted space
-- Assuming v4 is sortable by creation time
-- Ignoring v7 monotonic collision risk at same millisecond without extra random bits
-
-### Summary
-
-```text
-UUID = 128-bit RFC 9562 ID; v4 random (122 bits), v7 time-ordered (preferred for DBs)
-Collisions practically impossible; v4 fragments indexes — use v7/ULID/Snowflake instead
-No coordination; comparison table above covers Snowflake, ULID, KSUID
-```
+A user service creates `user_id = uuid_v7()` on registration — no round-trip to an ID service. Orders service does the same for `order_id`. Sharded Postgres stores `BINARY(16)` PKs; APIs expose canonical hex strings. `X-Request-ID: <uuid_v4>` on HTTP calls for distributed tracing.
 
 ---
 
 
 ## 13.9 Snowflake IDs
 
-### Definition
+### Overview
 
-A **Snowflake ID** is a 64-bit unique identifier for distributed systems that is:
+Twitter needed tweet IDs that were unique across thousands of machines, sortable by time, and compact — without a central database handing out the next integer on every post. Think of a timestamp stamped on each ID, plus a machine number, plus a per-millisecond counter.
 
-- **Time-ordered**
-- **Globally unique** without central coordination
-- **Scalable** across many nodes
+Technically, **Snowflake** packs **41-bit millisecond timestamp + 10-bit worker ID + 12-bit sequence** into one **64-bit integer**. ~4,096 IDs per millisecond per node. Time-ordered and B-tree friendly. Requires **unique worker IDs** and **reliable clocks** (NTP).
 
-Originally designed by **Twitter** (now X) for tweet IDs at massive scale.
+---
 
-### Core idea
+### What problem it fixes
 
-Instead of random UUIDs or sequential database IDs, Snowflake encodes structured metadata into one 64-bit integer:
+- High-throughput distributed ID generation
+- Sortable numeric PKs smaller than 128-bit UUID
+- No central ID database bottleneck
 
-```text
-timestamp  +  machine/node ID  +  sequence number
-```
+UUID v4 is random (bad index locality). Auto-increment does not scale across shards.
 
-This makes IDs **unique**, **sortable by time**, and **efficiently indexable** in B-trees.
+---
 
-### 64-bit structure
+### What it does
 
-| Bits | Component | Notes |
-|------|-----------|-------|
-| **1** | Sign bit | Always 0 (positive int64) |
-| **41** | Timestamp | Milliseconds since custom epoch (~69 years) |
-| **10** | Worker / machine ID | Identifies generating node (often 5 DC + 5 worker) |
-| **12** | Sequence | Per-millisecond counter on that node |
+Generates a unique, roughly time-sorted **int64** per call. IDs increase with creation time (within clock precision). Reveals approximate creation time.
 
-```text
-| 0 | timestamp (41) | worker_id (10) | sequence (12) |
-```
+---
 
-**Twitter layout** splits the 10 worker bits:
+### How it works — the algorithm inside
 
 ```text
 | 0 | timestamp (41) | datacenter (5) | worker (5) | sequence (12) |
-
-Datacenter: 2^5 = 32 DCs
-Worker:     2^5 = 32 machines per DC  →  1,024 total generators
-Sequence:   2^12 = 4,096 IDs per ms per node
 ```
 
 ```mermaid
 flowchart LR
     T[41 bits timestamp ms] --> DC[5 bits datacenter] --> W[5 bits worker] --> S[12 bits sequence]
 ```
+
+```text
+id = (timestamp << 22) | (datacenter_id << 17) | (worker_id << 12) | sequence
+```
+
+#### Generation algorithm
 
 ```mermaid
 flowchart LR
@@ -2091,256 +1068,75 @@ flowchart LR
     Reset --> Pack
 ```
 
-### Bit breakdown
-
-**1. Sign bit (1 bit)** — always 0; keeps ID a positive integer.
-
-**2. Timestamp (41 bits)** — milliseconds since a **custom epoch** (Twitter: 2010-11-04).
-
-```text
-timestamp = current_time_ms - custom_epoch
-```
-
-Provides ~69 years of range from epoch.
-
-**3. Worker / machine ID (10 bits)** — uniquely identifies the generating node. Must be provisioned at deploy (config service, ZooKeeper, etc.). Two generators with the same worker ID can collide.
-
-**4. Sequence (12 bits)** — increments when multiple IDs are generated in the **same millisecond** on the same node. Max 4,096 IDs/ms per node.
-
-### How the ID is constructed
-
-```text
-id = (timestamp << 22) | (datacenter_id << 17) | (worker_id << 12) | sequence
-```
-
-Bitwise composition packs all fields into one int64.
-
-**Example:**
-
-```text
-timestamp  = 1000000000
-worker_id  = 25
-sequence   = 12
-
-Packed → single 64-bit integer (e.g. 2199023255552)
-```
-
-### Generation flow
-
-1. Get current timestamp (ms)
-2. Compare with last timestamp
-3. If **same millisecond** → increment sequence; else reset sequence = 0
-4. If sequence exceeds 4095 → **wait for next millisecond**, then reset sequence
-5. Combine fields with bit shifts
-6. Return final ID
-
-**Production pattern (clock backward jump):**
-
 ```text
 now = currentTimeMs()
-if now < lastTimestamp:
-    wait until now >= lastTimestamp      # prevent duplicate IDs
+if now < lastTimestamp: wait until caught up    // clock went backward
 if now == lastTimestamp:
     sequence = (sequence + 1) & 4095
-    if sequence == 0: wait next ms       # sequence exhausted
+    if sequence == 0: wait next ms
 else:
     sequence = 0
 lastTimestamp = now
+return pack(timestamp, worker_id, sequence)
 ```
 
-### Sequence handling
+Uniqueness: time + worker + sequence. ~4M IDs/sec per node.
 
-If sequence exceeds 4,095 in the same millisecond:
+---
 
-```text
-→ spin-wait until next millisecond
-→ reset sequence to 0
-```
+### Snowflake vs alternatives
 
-Ensures uniqueness under burst load (~4,096 IDs/ms/node).
+| | Auto-increment | UUID v4 | Snowflake |
+|---|----------------|---------|-----------|
+| Size | 4–8 bytes | 16 bytes | 8 bytes |
+| Coordination | Central DB | None | Worker registry |
+| Sortable | Yes | No | Yes (ms) |
+| Clock dependency | No | No (v4) | Yes |
 
-### Uniqueness guarantee
+**Pitfalls:** duplicate worker IDs; NTP step backward without blocking.
 
-Snowflake IDs are unique because:
+---
 
-- **Timestamp** — separates IDs across time
-- **Worker ID** — separates IDs across nodes
-- **Sequence** — separates IDs within the same millisecond on one node
+### Real-world example: social feed ordering
 
-### Ordering property
-
-IDs are **roughly time-sorted**:
-
-```text
-ID generated earlier < ID generated later
-```
-
-Useful for timelines, feeds, log ordering, and time-range queries on primary keys.
-
-### Scalability
-
-Each node generates independently:
-
-```text
-Per node:   ~4,096 IDs/ms  ≈  ~4M IDs/sec
-Cluster:    scales linearly with number of provisioned workers
-```
-
-No central database round-trip per ID.
-
-### Clock dependency
-
-Snowflake requires a **correct, monotonic millisecond clock** per worker.
-
-| Scenario | Risk | Mitigation |
-|----------|------|------------|
-| Clock runs fast | IDs slightly in future | Usually harmless; monitor skew |
-| **NTP step backward** | Duplicate IDs if sequence resets | Block until clock catches up |
-| VM pause | Gap in timestamps | Sequence handles short pauses; long pause → wait |
-
-Solutions: reject ID generation on backward clock, wait until caught up, or use logical clock fallback. Run **chrony** with slew (not step); alert on offset > 50 ms.
-
-Compared to UUID, ULID, and KSUID — see **13.8 canonical ID comparison**. Snowflake is the only option here that is a **64-bit integer** with **worker ID coordination** and **~4096 IDs/ms** per node.
-
-### Snowflake vs auto-increment
-
-| | Auto-increment | Snowflake |
-|---|----------------|-----------|
-| **Coordination** | Single DB bottleneck | Distributed per node |
-| **Global uniqueness** | Per database only | Across cluster |
-| **Scalability** | Poor across shards | Horizontal |
-| **Ordering** | Strict sequential | Roughly time-ordered |
-
-### Variations
-
-| Variant | Notes |
-|---------|-------|
-| **Twitter Snowflake** | 41 + 5 DC + 5 worker + 12 sequence |
-| **Sonyflake** | Go ecosystem; different bit split (39+8+8+16) |
-| **Discord** | Similar snowflake-style IDs |
-| **Instagram** | Time-based shard IDs (custom layout) |
-| **Custom** | Organizations tune bit allocation for their scale |
-
-**ULID** (13.10) is a string alternative — lexicographically sortable, no worker registry.
-
-### Use cases
-
-1. **Social media** — posts, tweets, comments
-2. **Distributed databases** — compact sortable primary keys
-3. **Event logging** — trace and event IDs
-4. **Messaging** — message IDs with time ordering
-5. **Microservices** — high-throughput entity IDs
-
-### Real systems
-
-- Twitter/X Snowflake service (original)
-- Discord message IDs
-- Instagram-style time-based IDs
-- Distributed log and feed systems
-
-### Advantages
-
-- Globally unique without central ID database
-- High throughput (thousands per ms per node)
-- Time-sortable; efficient B-tree indexing
-- Compact 64-bit storage
-
-### Disadvantages
-
-- Requires correct clock sync (NTP)
-- Sensitive to clock rollback
-- Limited lifespan (~69 years from custom epoch)
-- Worker/datacenter ID provisioning and ops complexity
-- Reveals approximate creation time
-
-### Best practices
-
-- Provision unique (datacenter, worker) pairs; never duplicate worker IDs.
-- Block generation on backward clock steps.
-- Monitor clock skew on all ID-generating hosts.
-- Document custom epoch and bit layout for your implementation.
-
-### Common mistakes
-
-- Duplicate worker IDs across machines → collisions
-- Ignoring NTP step-backward → duplicate IDs
-- Using Snowflake when opaque string IDs are required in public APIs
-- Assuming global strict ordering across workers with clock skew
-
-### Key insight
-
-Snowflake IDs combine **time**, **machine identity**, and **sequence counters** into a single 64-bit integer, enabling high-scale distributed ID generation that is both unique and roughly time-ordered without a central coordinator.
-
-### Summary
-
-```text
-Snowflake = 64-bit int: 41-bit ms timestamp + 10-bit worker + 12-bit sequence
-~4096 IDs/ms/node; time-ordered; clock sync critical; worker IDs must be unique
-Twitter/X origin; vs UUID: smaller, sortable; vs auto-increment: distributed
-```
+Tweet/post IDs are Snowflake-style integers — feeds sort by ID ≈ sort by time. Discord message IDs follow a similar pattern. Custom layouts (Sonyflake, Instagram) tune bit widths for their scale.
 
 ---
 
 
 ## 13.10 ULID
 
-### Definition
+### Overview
 
-A **ULID** (Universally Unique Lexicographically Sortable Identifier) is a 128-bit identifier designed to be:
+You want IDs that sort like timestamps when written as strings — useful in URLs, logs, and databases — but UUID v4 is random gibberish that scatters index pages. You also do not want to register worker IDs like Snowflake requires.
 
-- **Globally unique** (like UUID)
-- **Time-ordered** (like Snowflake)
-- **Lexicographically sortable** as a string
+Technically, **ULID** is **128 bits**: **48-bit millisecond timestamp + 80-bit random**, encoded as **26-character Crockford Base32** (`01ARZ3NDEKTSV4RRFFQ69G5FAV`). Lexicographic string sort ≈ creation-time sort. Same size as UUID, shorter string, case-insensitive, URL-safe.
 
-It improves on UUID v4 by making IDs naturally sortable in databases and logs.
+---
 
-### Core idea
+### What problem it fixes
 
-ULID encodes two components:
+- Sortable string IDs without central coordination
+- Better B-tree locality than UUID v4
+- Compact, URL-safe representation vs 36-char hex UUID
 
-```text
-1. Timestamp (48 bits)  →  ordering
-2. Randomness (80 bits) →  uniqueness
-```
+---
 
-This ensures newer IDs are always "greater" in sort order, with no central coordination and high uniqueness guarantees.
+### What it does
 
-ULID is essentially **a UUID redesigned for ordered systems** — timestamp-based sorting plus high-entropy randomness.
+Generates a unique, time-ordered string ID. **Monotonic ULID** variants increment randomness within the same millisecond for strict single-process ordering.
 
-### Structure
+---
 
-| Component | Bits | Description |
-|-----------|------|-------------|
-| **Timestamp** | 48 | Milliseconds since Unix epoch |
-| **Randomness** | 80 | Entropy for uniqueness |
-| **Total** | 128 | Same size as UUID |
-
-### String representation
-
-ULIDs are encoded in **Crockford Base32**:
+### How it works — the algorithm inside
 
 ```text
-01ARZ3NDEKTSV4RRFFQ69G5FAV
-|----------||----------------|
- 10 chars     16 chars
- timestamp    randomness
-
-Length: 26 characters (vs UUID's 36)
+function ulid():
+    timestamp_ms = 48 bits (Unix epoch)
+    random = 80 cryptographically secure bits
+    value = combine(timestamp_ms, random)
+    return crockford_base32_encode(value)   // 26 chars
 ```
-
-**Why Base32?**
-
-- Case-insensitive
-- URL-safe
-- Avoids confusing characters (`0`/`O`, `I`/`l`)
-- Compact representation
-
-### Generation process
-
-1. Get current timestamp (milliseconds)
-2. Generate 80 bits of cryptographically secure randomness
-3. Combine into 128-bit value
-4. Encode using Crockford Base32
 
 ```mermaid
 flowchart LR
@@ -2350,222 +1146,62 @@ flowchart LR
     B32 --> ULID[26-char string]
 ```
 
-### Timestamp part
+Store `BINARY(16)` internally; expose Base32 at API boundaries.
 
-First **10 characters** represent time:
+---
 
-- Sortable and monotonic over time (at millisecond granularity)
-- Derived from Unix epoch in milliseconds
+### ULID vs UUID v4 vs Snowflake
 
-### Randomness part
+| | UUID v4 | ULID | Snowflake |
+|---|---------|------|-----------|
+| Form | 36-char hex | 26-char Base32 | int64 |
+| Sortable | No | Yes (ms) | Yes (ms) |
+| Worker IDs | No | No | Yes |
 
-Remaining **16 characters** (80 bits):
+Prefer **UUID v7** when RFC standard compliance matters.
 
-- Ensures uniqueness within the same millisecond
-- Prevents collisions across independently generating machines
+---
 
-```text
-2^80 combinations per timestamp window
-Collision risk: practically negligible
-```
+### Real-world example: event log IDs
 
-### Ordering property
-
-ULIDs are **lexicographically sortable** — sorting strings equals sorting by creation time:
-
-```text
-01ARZ3NDEK...
-01ARZ3NDFK...
-01ARZ3NDG0...
-```
-
-Within the same millisecond, order depends on random bits (unless monotonic mode is used).
-
-### Monotonic ULID
-
-Some implementations support **monotonic ULID** generation. If multiple ULIDs are created in the same millisecond:
-
-```text
-→ increment randomness instead of fresh random
-→ strict ordering even within one ms (single process)
-```
-
-### When to choose ULID over UUID v4
-
-ULID improves on UUID v4 where **sortability** and **compact strings** matter: time-ordered Base32 (26 chars vs 36), better B-tree locality, no worker IDs. For RFC-standard sortable IDs, consider **UUID v7** (13.8). Full scheme comparison — **13.8**.
-
-### Uniqueness guarantee
-
-ULID uniqueness comes from:
-
-- Millisecond timestamp window
-- 80 bits of high-entropy randomness
-- Per-millisecond differentiation across machines
-
-Multiple machines generating ULIDs simultaneously remain safe without a central allocator.
-
-### Database performance impact
-
-ULIDs improve performance in:
-
-- B-tree indexes (ordered inserts, less fragmentation)
-- Append-heavy tables
-- Time-series and event data
-
-Reason: inserts are naturally ordered → better cache locality than random UUID v4.
-
-Store as **binary (16 bytes)** in the database; encode to Base32 string at API boundaries.
-
-### Use cases
-
-1. **Distributed databases** — sortable primary keys
-2. **Event logging** — ordered event IDs
-3. **APIs** — request and resource IDs
-4. **Microservices** — correlation IDs
-5. **Time-series data** — metrics and telemetry
-6. **Message queues** — ordered message identifiers
-
-### Advantages
-
-- Lexicographically sortable; database index friendly
-- Globally unique without central coordination
-- URL-safe, case-insensitive string format
-- Shorter than UUID string; better than UUID v4 for ordered systems
-
-### Disadvantages
-
-- Larger than 64-bit Snowflake integers
-- Base32 encode/decode overhead
-- Less standardized than UUID in databases and tools
-- Timestamp leaks approximate creation time
-- Same-ms order not guaranteed without monotonic variant
-
-### Best practices
-
-- Use monotonic ULID for single-process strict ordering.
-- Store as `BINARY(16)` internally; expose Base32 at API layer.
-- Normalize case on comparison (Crockford is case-insensitive).
-- Prefer ULID over UUID v4 when sortability and compact strings both matter.
-
-### Common mistakes
-
-- Assuming total global order across processes at same millisecond
-- Case-sensitive string sorting/comparison
-- Using ULID where a 64-bit Snowflake integer suffices
-- Ignoring UUID v7 when RFC standard compliance is required
-
-### Summary
-
-```text
-ULID = 128-bit: 48-bit ms timestamp + 80-bit random; 26-char Crockford Base32
-Lexicographically sortable; no worker IDs; better DB locality than UUID v4
-Monotonic variant for same-ms ordering; see 13.8 for full ID comparison
-```
+An event pipeline assigns `event_id = ulid()` per message. Log files and Kafka partitions sort lexicographically by creation time. Consumers range-scan by ULID prefix for time windows.
 
 ---
 
 
 ## 13.11 KSUID
 
-### Definition
+### Overview
 
-**KSUID** (K-Sortable Unique ID) is a globally unique identifier designed to be:
+Segment built analytics pipelines that needed sortable, URL-safe IDs with **very high randomness** — more than ULID's 80-bit random suffix — while still grouping roughly by time. Second-level precision was enough; millisecond ordering was not required.
 
-- **Time-sortable**
-- **Distributed-safe** (no central coordinator)
-- **Compact and efficient** as a fixed-length string
+Technically, **KSUID** is **160 bits**: **32-bit second timestamp + 128-bit random**, encoded as **27-character Base62** (`0ujtsYcgvSTl8PAuAdqWYSMnLOv`). Larger than ULID; stronger collision resistance per time window; coarser time ordering.
 
-Similar in spirit to UUID and ULID, but uses a different encoding optimized for chronological ordering and high entropy. Created by **Segment** for analytics and event pipelines.
+---
 
-### Core idea
+### What problem it fixes
 
-A KSUID encodes:
+- Cross-service unique event IDs with high entropy
+- Lexicographic sort by second for log partitioning
+- URL-safe strings without worker ID coordination
 
-```text
-1. Timestamp (32 bits)  →  ordering
-2. Random payload (128 bits) →  uniqueness
-```
+---
 
-Unlike ULID (128-bit, Base32) or Snowflake (64-bit integer), KSUID is:
+### What it does
 
-- **160 bits** total
-- Encoded as a **27-character Base62** string
+Generates a fixed-length 27-char Base62 ID. Sortable at **second** granularity; order within the same second follows random payload, not strict creation order.
 
-### Structure
+---
 
-| Component | Bits | Description |
-|-----------|------|-------------|
-| **Timestamp** | 32 | Seconds since custom epoch (~136 years range) |
-| **Payload** | 128 | Cryptographically secure random entropy |
-| **Total** | 160 | 20 bytes raw |
+### How it works — the algorithm inside
 
 ```text
-Raw payload: [ 4 bytes timestamp | 16 bytes random ] → Base62 → 27-char string
+function ksuid():
+    timestamp_sec = 32 bits (Unix seconds)
+    payload = 128 random bits
+    raw = combine(timestamp_sec, payload)   // 20 bytes
+    return base62_encode(raw)               // 27 chars
 ```
-
-### String representation
-
-KSUID uses **Base62** encoding:
-
-```text
-Characters: 0-9, A-Z, a-z
-
-Example: 0ujtsYcgvSTl8PAuAdqWYSMnLOv
-
-Length: 27 characters (fixed)
-```
-
-**Why Base62?**
-
-- Compact representation (higher density than Base32)
-- URL-safe — no special characters
-- Case-sensitive — more bits per character than case-insensitive Base32
-
-### Core design choice
-
-KSUID prioritizes:
-
-- Chronological sorting (lexicographic)
-- Compact string portability
-- High entropy for cross-service uniqueness
-
-### Timestamp component
-
-Uses a **32-bit UNIX timestamp in seconds** (not milliseconds):
-
-- Coarser than ULID (ms) or Snowflake (ms)
-- Long lifespan — ~136 years from epoch
-- First portion of string drives sort order
-
-### Random component
-
-**128-bit** cryptographically secure random payload:
-
-```text
-2^128 possibilities per second
-Collision probability: practically impossible
-```
-
-Ensures uniqueness within the same second and across independently generating services.
-
-### Ordering property
-
-KSUIDs are **lexicographically sortable**:
-
-```text
-0ujtsYcgv...
-0ujtsYdAA...
-0ujtsYeZZ...
-```
-
-Sorting strings ≈ sorting by creation time at **second** granularity. Many IDs in the same second order by random payload, not strict creation order.
-
-### Generation process
-
-1. Get current UNIX timestamp (seconds)
-2. Generate 128-bit cryptographically secure random value
-3. Combine timestamp + payload (20 bytes)
-4. Encode into Base62 string (27 chars)
 
 ```mermaid
 flowchart LR
@@ -2575,84 +1211,26 @@ flowchart LR
     B62 --> KSUID[27-char string]
 ```
 
-### Example breakdown
+Base62 is **case-sensitive** — normalize comparison carefully.
 
-```text
-0ujtsYcgvSTl8PAuAdqWYSMnLOv
-|---- timestamp ----||--- random payload ---|
-```
+---
 
-### Key properties
+### KSUID vs ULID
 
-1. **Time-ordered** — lexicographically sortable by second
-2. **Globally unique** — 128-bit randomness per second
-3. **Fixed length** — always 27 characters
-4. **URL-safe** — Base62, no special characters
+| | ULID | KSUID |
+|---|------|-------|
+| Size | 128 bits | 160 bits |
+| Time precision | Millisecond | Second |
+| Random entropy | 80 bits | 128 bits |
+| Encoding | Base32 (case-insensitive) | Base62 |
 
-### When to choose KSUID over ULID
+Choose KSUID when collision resistance beats millisecond ordering. Choose ULID or UUID v7 when ms ordering matters.
 
-Both are sortable strings without worker IDs. KSUID trades **millisecond** timestamp precision for **128-bit** randomness (vs ULID's 80-bit) and uses **Base62** (27 chars, case-sensitive). Prefer KSUID when cross-service collision resistance matters more than ms ordering. Full comparison — **13.8**.
+---
 
-### Database behavior
+### Real-world example: multi-tenant event ingestion
 
-KSUID improves performance in:
-
-- Insert-heavy, append-oriented workloads
-- Time-ordered queries and range scans
-- B-tree indexes (ordered inserts vs random UUID v4)
-
-Store as **binary (20 bytes)** when possible; expose Base62 string at API boundaries.
-
-### Use cases
-
-1. **Distributed systems** — event IDs, request tracking
-2. **Logging** — ordered log entry identifiers
-3. **Microservices** — correlation IDs across services
-4. **Databases** — append-heavy primary keys
-5. **Messaging** — message identifiers with rough time order
-
-Segment analytics pipelines and multi-tenant SaaS event ingestion are the original motivating workloads.
-
-### Advantages
-
-- Globally unique without central coordination
-- Lexicographically sortable; URL-safe Base62
-- Strong randomness guarantees (128-bit payload)
-- Good for distributed systems needing high collision resistance
-
-### Disadvantages
-
-- Larger than ULID (160 vs 128 bits) and Snowflake (64 bits)
-- Timestamp precision only **seconds** — not ms-orderable
-- Less widely adopted than UUID
-- Not optimized for numeric indexing (string/binary, not int64)
-- Case-sensitive encoding — normalize comparison carefully
-
-### Best practices
-
-- Use KSUID when cross-service collision resistance matters more than ms ordering.
-- Store 20-byte binary internally; encode to string at API layer.
-- Prefer ULID or UUID v7 when millisecond ordering is required.
-- Pair with per-second partitioning when time bucketing matches second granularity.
-
-### Common mistakes
-
-- Expecting strict millisecond order from second-granularity timestamps
-- Case-insensitive comparison (Base62 is case-sensitive)
-- Choosing KSUID over ULID without needing the extra 48 bits of randomness
-- Using `CHAR(27)` everywhere instead of compact binary storage
-
-### Key insight
-
-KSUID combines **timestamp-based ordering**, **high-entropy randomness**, and **compact Base62 encoding**. It is a larger, more entropy-heavy alternative to ULID — optimized for ordered distributed systems where collision resistance and portability matter more than millisecond precision.
-
-### Summary
-
-```text
-KSUID = 160-bit: 32-bit second timestamp + 128-bit random; 27-char Base62
-Lexicographically sortable; no worker IDs; Segment heritage; more entropy than ULID
-Second precision only; see 13.8 for full UUID/Snowflake/ULID comparison
-```
+A SaaS analytics platform assigns `ksuid()` per ingested event. Storage partitions by KSUID prefix (time bucket in seconds). 128-bit randomness keeps IDs unique across thousands of concurrent writers without a central allocator.
 
 ---
 
