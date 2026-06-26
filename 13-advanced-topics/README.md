@@ -2434,65 +2434,199 @@ Common surfaces: order IDs, payment transaction IDs, event IDs, log correlation,
 
 You want IDs that sort like timestamps when written as strings — useful in URLs, logs, and databases — but UUID v4 is random gibberish that scatters index pages. You also do not want to register worker IDs like Snowflake requires.
 
-Technically, **ULID** is **128 bits**: **48-bit millisecond timestamp + 80-bit random**, encoded as **26-character Crockford Base32** (`01ARZ3NDEKTSV4RRFFQ69G5FAV`). Lexicographic string sort ≈ creation-time sort. Same size as UUID, shorter string, case-insensitive, URL-safe.
+Technically, **ULID (Universally Unique Lexicographically Sortable Identifier)** is **128 bits**: **48-bit millisecond timestamp + 80-bit random**, encoded as **26-character Crockford Base32** (`01JZB5ZQXK9T6F1M8Q2YV3A7RW`). Lexicographic string sort ≈ creation-time sort. Same size as UUID, shorter string, case-insensitive, URL-safe.
 
 ---
 
 ### What problem it fixes
 
-- Sortable string IDs without central coordination
-- Better B-tree locality than UUID v4
-- Compact, URL-safe representation vs 36-char hex UUID
+- **Random UUID v4 order** — opaque hex strings do not sort by creation time; B-tree indexes fragment on insert
+- **Snowflake worker registry** — ULID needs no datacenter/worker ID coordination
+- **Human-readable IDs** — 26-char Base32 vs 36-char hex UUID with hyphens
+- **Distributed generation** — any service can mint IDs offline with only a clock and CSPRNG
 
 ---
 
 ### What it does
 
-Generates a unique, time-ordered string ID. **Monotonic ULID** variants increment randomness within the same millisecond for strict single-process ordering.
+Mints a **128-bit globally unique identifier** and renders it as a **sortable 26-character string**:
+
+```text
+ulid()  →  combine(timestamp_ms_48, random_80)  →  crockford_base32_encode()  →  26 chars
+```
+
+Plain ULIDs are ordered by millisecond; **monotonic ULID** factories increment the random tail within the same ms on one process.
+
+---
+
+### Compared to the alternative
+
+**UUID v4 (random hex):**
+
+```text
+550e8400-e29b-41d4-a716-446655440000
+7f4d8c9a-18b7-4e3d-bf66-9c3d4f8e1122
+1c9d34e0-6f1b-4c9e-91c4-a7d56d9e2134
+
+Problems: random order, poor index locality, cannot sort by creation time as strings
+```
+
+**ULID (time-first Base32):**
+
+```text
+01JZB5ZQXK9T6F1M8Q2YV3A7RW
+01JZB5ZR3N8W2J5B1T4D9M6QPX
+01JZB5ZR8P4V7C2Y9K1N6F5WGH
+
+Globally unique, lexicographically sortable, URL-friendly
+```
+
+| | UUID v4 | Snowflake ID | ULID |
+|---|---------|--------------|------|
+| Distributed | Yes | Yes | Yes |
+| Time-ordered | No | Yes (ms) | Yes (ms) |
+| Size | 16 bytes | 8 bytes | 16 bytes |
+| Human-readable | No (hex + hyphens) | No (int64) | Yes (26-char Base32) |
+| Worker IDs needed | No | Yes | No |
+| Index locality | Poor | Excellent | Good |
+| String sortable | No | N/A (integer) | Yes |
+
+ULID wins for **sortable string IDs** without worker coordination. Snowflake wins for **compact 64-bit integers** at extreme throughput. **UUID v7** (§13.8) wins when you need **RFC-standard** binary UUIDs in the same ecosystem as v4.
 
 ---
 
 ### How it works — the algorithm inside
 
+#### Step 1 — 128-bit layout
+
+```text
++----------------------+------------------------------+
+| Timestamp (48 bits)  | Randomness (80 bits)         |
++----------------------+------------------------------+
+
+48 + 80 = 128 bits
+```
+
+| Field | Bits | Purpose |
+|-------|------|---------|
+| Timestamp | 48 | Milliseconds since Unix epoch |
+| Random | 80 | Cryptographic randomness for uniqueness |
+
+Displayed as **26 Crockford Base32 characters** (no `I`, `L`, `O`, `U`):
+
+```text
+01JZB5ZQXK9T6F1M8Q2YV3A7RW
+```
+
+Store **`BINARY(16)`** internally; render Base32 at API boundaries.
+
+---
+
+#### Step 2 — Current timestamp
+
+Place **current time in milliseconds** in the high 48 bits:
+
+```text
+2026-06-26 10:30:15.123  →  48-bit timestamp field
+```
+
+Newer ULIDs sort **after** older ones when compared as strings (timestamp dominates the encoding).
+
+---
+
+#### Step 3 — Generate random bits
+
+Fill the remaining **80 bits** from a cryptographically secure random source:
+
+```text
+CSPRNG  →  80 random bits  →  ensures uniqueness within the same millisecond
+```
+
+---
+
+#### Step 4 — Combine and encode
+
 ```text
 function ulid():
     timestamp_ms = 48 bits (Unix epoch)
     random = 80 cryptographically secure bits
-    value = combine(timestamp_ms, random)
-    return crockford_base32_encode(value)   // 26 chars
+    value = combine(timestamp_ms, random)    // 128-bit integer
+    return crockford_base32_encode(value)    // 26 chars
 ```
 
-```mermaid
-flowchart LR
-    T[48-bit timestamp ms] --> Combine[128-bit value]
-    R[80-bit random] --> Combine
-    Combine --> B32[Crockford Base32]
-    B32 --> ULID[26-char string]
+```text
+Timestamp + Random Bits  →  128-bit ULID  →  01JZB5ZQXK9T6F1M8Q2YV3A7RW
 ```
-
-Store `BINARY(16)` internally; expose Base32 at API boundaries.
 
 ---
 
-### ULID vs UUID v4 vs Snowflake
+#### Worked example
 
-| | UUID v4 | ULID | Snowflake |
-|---|---------|------|-----------|
-| Form | 36-char hex | 26-char Base32 | int64 |
-| Sortable | No | Yes (ms) | Yes (ms) |
-| Worker IDs | No | No | Yes |
+```text
+Timestamp:   2026-06-26 10:30:15.123  →  48-bit ms field
+Random:      100110101001...         →  80 bits from CSPRNG
 
-Prefer **UUID v7** when RFC standard compliance matters.
+Final ULID:  01JZB5ZQXK9T6F1M8Q2YV3A7RW
+```
+
+---
+
+#### Sorting example — string order = time order
+
+```text
+10:00:00.000  →  01JZB5ZQ...
+10:00:01.000  →  01JZB5ZR...
+10:00:02.000  →  01JZB5ZS...
+
+Lexicographic sort:
+  01JZB5ZQ...
+  01JZB5ZR...
+  01JZB5ZS...
+```
+
+Creation order is preserved without a separate `created_at` column for range scans (approximate time windows via ID prefix).
+
+---
+
+#### Monotonic ULID — same millisecond ordering
+
+Plain ULIDs in the **same millisecond** are **not** strictly ordered (random tail). A **monotonic factory** on one process **increments** the random portion instead of re-rolling:
+
+```text
+10:00:00.001  →  01JZB5ZQ...001
+10:00:00.001  →  01JZB5ZQ...002
+10:00:00.001  →  01JZB5ZQ...003
+```
+
+Guarantees strict sort order within the same ms on that single generator.
+
+---
+
+#### Why ULIDs are unique
+
+Uniqueness = **timestamp (48 bits) + random (80 bits)**. Two IDs in the same millisecond differ in the 80-bit tail; collision probability is negligible for practical systems (similar spirit to UUID v4 birthday math on 80 bits).
+
+---
+
+#### Complexity
+
+| Operation | Complexity |
+|-----------|------------|
+| Generate ULID | O(1) |
+| Compare ULIDs | O(1) |
+| Storage | 16 bytes (`BINARY(16)`) |
 
 ---
 
 ### Pitfalls and design tips
 
-- **Monotonic ULID** — for strict ordering within the same millisecond on one machine, increment the random component (monotonic factory); plain ULIDs in the same ms are unordered.
+- **Monotonic ULID** — for strict ordering within the same millisecond on one machine, increment the random component (monotonic factory); plain ULIDs in the same ms are unordered across processes.
 - **Crockford Base32** — excludes `I`, `L`, `O`, `U` to avoid human transcription errors; case-insensitive on decode.
-- **80-bit random** — collision probability is negligible for most apps; not as heavy as KSUID’s 128-bit tail for same-second bursts at extreme QPS.
+- **80-bit random** — collision probability is negligible for most apps; not as heavy as KSUID’s 128-bit tail for same-second bursts at extreme QPS — see KSUID (§13.11).
 - **Lexicographic sort = time sort** only when IDs share the same length and encoding — do not mix ULID with UUID strings in one sorted index.
 - **Libraries:** `ulid` (npm, Go, Python); store 16 raw bytes in DB, render Base32 in JSON APIs.
+- **Larger than Snowflake** — 16 bytes vs 8; prefer Snowflake (§13.9) when you need compact integers and can manage worker IDs.
+- **Default when:** you want **sortable string IDs** with **no worker registry**; prefer **UUID v7** (§13.8) when RFC compliance matters in the same stack as v4.
 
 ---
 
@@ -2501,14 +2635,16 @@ Prefer **UUID v7** when RFC standard compliance matters.
 An event pipeline assigns each message a ULID at publish time:
 
 ```text
-event_id = "01ARZ3NDEKTSV4RRFFQ69G5FAV"   # 26-char Crockford Base32
+event_id = "01JZB5ZQXK9T6F1M8Q2YV3A7RW"   # 26-char Crockford Base32
 
 Stored as BINARY(16) in Postgres; rendered as string in JSON APIs.
 ```
 
-**Why ULID here:** log files and database indexes sorted by `event_id` are **roughly time-ordered** — a range query `WHERE event_id BETWEEN '01ARZ3...' AND '01ARZ4...'` approximates a time window without a separate timestamp index. No worker-ID registry needed (unlike Snowflake).
+**Why ULID here:** log files and database indexes sorted by `event_id` are **roughly time-ordered** — a range query `WHERE event_id BETWEEN '01JZB5...' AND '01JZB6...'` approximates a time window without a separate timestamp index. No worker-ID registry needed (unlike Snowflake, §13.9).
 
 **Caveat:** ULIDs in the **same millisecond** are not strictly ordered unless you use a **monotonic ULID** factory on a single process.
+
+Common surfaces: database primary keys, microservice entity IDs, event/transaction IDs, object-storage keys, and REST API resource identifiers.
 
 ---
 
