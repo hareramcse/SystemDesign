@@ -2157,101 +2157,255 @@ Common surfaces: database primary keys, event IDs, transaction IDs, file handles
 
 ### Overview
 
-Twitter needed tweet IDs that were unique across thousands of machines, sortable by time, and compact — without a central database handing out the next integer on every post. Think of a timestamp stamped on each ID, plus a machine number, plus a per-millisecond counter.
+Twitter needed tweet IDs that were unique across thousands of machines, sortable by time, and compact — without a central database handing out the next integer on every post. Think of a timestamp stamped on each ID, plus a datacenter and machine number, plus a per-millisecond counter.
 
-Technically, **Snowflake** packs **41-bit millisecond timestamp + 10-bit worker ID + 12-bit sequence** into one **64-bit integer**. ~4,096 IDs per millisecond per node. Time-ordered and B-tree friendly. Requires **unique worker IDs** and **reliable clocks** (NTP).
+Technically, **Snowflake ID** is a **64-bit** generation scheme (originally from **Twitter**) that packs **41-bit millisecond timestamp + 5-bit datacenter + 5-bit worker + 12-bit sequence** into one integer. ~4,096 IDs per millisecond per worker. Time-ordered and B-tree friendly. Requires **unique worker IDs** and **reliable clocks** (NTP).
 
 ---
 
 ### What problem it fixes
 
-- High-throughput distributed ID generation
-- Sortable numeric PKs smaller than 128-bit UUID
-- No central ID database bottleneck
-
-UUID v4 is random (bad index locality). Auto-increment does not scale across shards.
+- **Central ID bottleneck** — auto-increment needs one database to issue the next integer
+- **Independent generation** — each app server must mint IDs without a round-trip
+- **Sortable numeric PKs** — smaller than 128-bit UUID, better index locality than random UUID v4
+- **Horizontal scale** — thousands of writers across datacenters without ID collisions
 
 ---
 
 ### What it does
 
-Generates a unique, roughly time-sorted **int64** per call. IDs increase with creation time (within clock precision). Reveals approximate creation time.
+Generates a unique, roughly time-sorted **int64** on each machine:
+
+```text
+snowflake_id()  →  pack(timestamp_ms, datacenter_id, worker_id, sequence)  →  64-bit integer
+```
+
+IDs increase with creation time (within millisecond precision). The high bits reveal approximate creation time.
+
+---
+
+### Compared to the alternative
+
+**Auto-increment ID (single database):**
+
+```text
+Database
+
+ID  User
+--------
+1   Alice
+2   Bob
+3   Charlie
+
+Problems: central coordinator, cannot scale writers across shards, merge pain
+```
+
+**Snowflake ID (each server generates independently):**
+
+```text
+Server A  →  195648239482934272
+Server B  →  195648239482934273
+Server C  →  195648239482934274
+
+Globally unique, time-ordered, no central ID database
+```
+
+| | Auto-increment | UUID v4 | Snowflake ID |
+|---|----------------|---------|--------------|
+| Distributed | No | Yes | Yes |
+| Time-ordered | Yes | No | Yes (ms) |
+| Central server | Required | Not required | Not required (worker registry only) |
+| Storage | 4–8 bytes | 16 bytes | 8 bytes |
+| Index locality | Excellent | Poor (random) | Excellent |
+| Coordination | DB sequence | None | Unique worker/datacenter IDs |
+| Clock dependency | No | No (v4) | Yes (NTP) |
+
+Snowflake wins for **high-throughput**, **sortable 64-bit** primary keys in distributed systems. UUID v7 (§13.8) wins when you need **RFC-standard 128-bit** IDs without worker registration. Auto-increment wins on a **single database** with **no clock coordination**.
 
 ---
 
 ### How it works — the algorithm inside
 
+#### Step 1 — 64-bit layout
+
+A Snowflake ID uses **64 bits** (1 sign bit reserved, 63 payload bits):
+
 ```text
-| 0 | timestamp (41) | datacenter (5) | worker (5) | sequence (12) |
++----------+-----------+------------+--------------+
+| Timestamp| Datacenter| Worker ID  | Sequence No. |
++----------+-----------+------------+--------------+
+     41          5            5             12
+
+41 + 5 + 5 + 12 = 63 bits  (+ 1 sign bit = 64 bits total)
 ```
 
-```mermaid
-flowchart LR
-    T[41 bits timestamp ms] --> DC[5 bits datacenter] --> W[5 bits worker] --> S[12 bits sequence]
-```
+| Field | Bits | Purpose |
+|-------|------|---------|
+| Timestamp | 41 | Milliseconds since custom epoch (Twitter: 2010-11-04) |
+| Datacenter ID | 5 | Up to 32 datacenters |
+| Worker ID | 5 | Up to 32 machines per datacenter |
+| Sequence | 12 | Counter within the same millisecond on this worker |
+
+Packed as:
 
 ```text
 id = (timestamp << 22) | (datacenter_id << 17) | (worker_id << 12) | sequence
 ```
 
-#### Generation algorithm
+---
 
-```mermaid
-flowchart LR
-    Gen[Generator] --> Clock{Same ms as last?}
-    Clock -->|Yes| Inc[sequence++]
-    Clock -->|No| Reset[sequence = 0]
-    Inc --> Pack[Bitwise OR and shifts]
-    Reset --> Pack
+#### Step 2 — Current timestamp
+
+Read **current time in milliseconds** (relative to the chosen epoch) and place it in the high 41 bits:
+
+```text
+2026-06-26 10:30:15.123  →  timestamp bits (ms since epoch)
+```
+
+This makes IDs **sortable by creation time** when compared as integers.
+
+---
+
+#### Step 3 — Datacenter ID
+
+Each datacenter gets a fixed ID assigned at deploy time:
+
+```text
+US-East  → 1
+Europe   → 2
+India    → 3
+```
+
+Prevents collisions when two regions generate IDs at the same millisecond with the same worker slot number.
+
+---
+
+#### Step 4 — Worker ID
+
+Each server inside a datacenter gets a **unique worker ID** from a registry (ZooKeeper, etcd, config):
+
+```text
+Server 1 → Worker 0
+Server 2 → Worker 1
+Server 3 → Worker 2
+```
+
+Different workers at the same millisecond still produce different IDs.
+
+---
+
+#### Step 5 — Sequence number
+
+If multiple IDs are generated in the **same millisecond** on the same worker, increment a **12-bit sequence**:
+
+```text
+1st ID in this ms  →  sequence = 0
+2nd ID             →  sequence = 1
+3rd ID             →  sequence = 2
 ```
 
 ```text
+2^12 = 4,096 IDs per millisecond per worker (theoretical max)
+```
+
+When the sequence hits **4095** and another ID is needed in the same ms → **wait for the next millisecond**, then reset sequence to **0**.
+
+---
+
+#### Worked example — pack the fields
+
+```text
+Timestamp (ms)     = 100001
+Datacenter ID      = 3
+Worker ID          = 5
+Sequence           = 17
+
+Pack:  timestamp | datacenter | worker | sequence
+  →  Snowflake ID  195648239482934272  (illustrative composite)
+```
+
+Uniqueness comes from the tuple `(timestamp, datacenter, worker, sequence)` — no two generators with distinct worker IDs can collide if clocks and registry are correct.
+
+---
+
+#### Example timeline — same millisecond burst
+
+Server A generating IDs:
+
+```text
+10:00:00.001  sequence = 0  →  ID …001
+10:00:00.001  sequence = 1  →  ID …002
+10:00:00.001  sequence = 2  →  ID …003
+
+10:00:00.002  sequence resets to 0  →  ID …004
+```
+
+IDs stay unique and monotonically increasing within a single worker (until clock skew).
+
+---
+
+#### Step 6 — Generation loop
+
+```text
 now = currentTimeMs()
-if now < lastTimestamp: wait until caught up    // clock went backward
+if now < lastTimestamp:
+    wait until now >= lastTimestamp     // clock went backward — do not emit
 if now == lastTimestamp:
     sequence = (sequence + 1) & 4095
-    if sequence == 0: wait next ms
+    if sequence == 0:
+        wait until next millisecond     // 4096 IDs already used this ms
 else:
     sequence = 0
 lastTimestamp = now
-return pack(timestamp, worker_id, sequence)
+return pack(timestamp, datacenter_id, worker_id, sequence)
 ```
 
-Uniqueness: time + worker + sequence. ~4M IDs/sec per node.
+Even if two servers share the same millisecond:
+
+- Different **worker** or **datacenter** → different ID
+- Same worker, same ms → **sequence** distinguishes them
 
 **How to calculate throughput per worker:**
 
 ```text
-sequence field = 12 bits → 2^12 = 4,096 IDs per millisecond per worker
+Given:  sequence field = 12 bits
 
-Per worker per second:  4,096 × 1,000 ms = 4,096,000 IDs/sec (theoretical max)
+Step 1 — max IDs per millisecond per worker:
+  2^12 = 4,096
 
-If sequence overflows within the same ms → generator waits for next millisecond
+Step 2 — theoretical max per second per worker:
+  4,096 × 1,000 ms = 4,096,000 IDs/sec
+
+Step 3 — if burst exceeds 4,096/ms:
+  generator blocks until the next millisecond (sequence reset)
+
+Result: plan worker count so per-node rate stays under ~4M IDs/sec;
+        split hot paths across workers if you approach the ceiling.
+
+Sanity check: 4,096/ms is enormous for most APIs — operational risk is duplicate worker IDs, not sequence exhaustion.
 ```
 
 ---
 
-### Snowflake vs alternatives
+#### Complexity
 
-| | Auto-increment | UUID v4 | Snowflake |
-|---|----------------|---------|-----------|
-| Size | 4–8 bytes | 16 bytes | 8 bytes |
-| Coordination | Central DB | None | Worker registry |
-| Sortable | Yes | No | Yes (ms) |
-| Clock dependency | No | No (v4) | Yes |
-
-**Pitfalls:** duplicate worker IDs; NTP step backward without blocking.
+| Operation | Complexity |
+|-----------|------------|
+| Generate ID | O(1) |
+| Compare IDs | O(1) |
+| Storage | 8 bytes (`BIGINT`) |
 
 ---
 
 ### Pitfalls and design tips
 
-- **Worker ID registry is mandatory** — duplicate `(worker_id, timestamp, sequence)` pairs cause ID collisions; use ZooKeeper, etcd, or cloud instance metadata for unique worker IDs.
-- **Clock goes backward** — generator must **block or spin** until `now ≥ lastTimestamp`; never emit IDs with a regressed clock.
-- **41-bit timestamp ms** — Twitter epoch; custom epochs (Sonyflake) extend range; know your layout’s **overflow year**.
-- **~4,096 IDs/ms per worker** — sequence rolls over → wait for next millisecond; burst beyond that stalls the generator.
-- **Sortable but not gapless** — deleted tweets leave holes; do not use Snowflake as a contiguous sequence counter.
-- **Open-source variants:** Twitter Snowflake (archived), **Sonyflake**, **Baidu uid-generator**, Instagram’s custom layouts — same bit-packing idea, different field widths.
+- **Worker ID registry is mandatory** — duplicate `(datacenter_id, worker_id)` at the same millisecond risks collisions; use ZooKeeper, etcd, or cloud instance metadata.
+- **Clock goes backward** — generator must **block or spin** until `now ≥ lastTimestamp`; never emit IDs with a regressed clock (NTP step).
+- **41-bit timestamp ms** — know your **custom epoch** and **overflow year**; variants like **Sonyflake** use different field widths.
+- **~4,096 IDs/ms per worker** — sequence rolls over → wait for next ms; extreme bursts stall that generator thread.
+- **Sortable but not gapless** — deleted rows leave holes; do not treat Snowflake as a contiguous counter.
+- **Open-source variants:** Twitter Snowflake (archived), **Sonyflake**, **Baidu uid-generator**, Instagram’s custom layouts — same bit-packing idea, different widths.
+- **Default when:** you need **compact sortable integers** and can operate a **worker ID registry**; prefer **UUID v7** (§13.8) when you want no worker coordination.
 
 ---
 
@@ -2259,9 +2413,17 @@ If sequence overflows within the same ms → generator waits for next millisecon
 
 Twitter open-sourced the **Snowflake** scheme for tweet IDs: a single 64-bit integer encodes timestamp + machine ID + sequence — sortable and unique without a central database round-trip per tweet. **Discord** message IDs follow the same pattern (timestamp in the high bits, worker/shard ID, increment).
 
-**Why integers, not UUID v4:** feeds and chats sort by ID ≈ sort by creation time, and B-tree indexes on numeric PKs stay sequential (better write locality than random UUIDs).
+```text
+tweet_id   = snowflake()     # 64-bit, time-sortable — good for sharded feeds
+message_id = snowflake()     # Discord-style layout — sortable chat history
 
-**Operational requirement:** each generator machine must have a **unique worker ID** from a registry; duplicate worker IDs at the same millisecond risk collisions.
+Database:  store as BIGINT (8 bytes)
+API JSON:  expose as string "195648239482934272" (JS safe: use string above 2^53)
+```
+
+**Why integers, not UUID v4:** feeds and chats sort by ID ≈ sort by creation time, and B-tree indexes on numeric PKs stay sequential. **Operational requirement:** each generator machine must have a **unique worker ID** from a registry.
+
+Common surfaces: order IDs, payment transaction IDs, event IDs, log correlation, message IDs, and URL-shortener keys.
 
 ---
 
