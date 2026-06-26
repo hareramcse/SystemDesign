@@ -202,9 +202,28 @@ m ≈ −(n · ln p) / (ln 2)²
 
 **Example:** 1 million keys, 1% false-positive target:
 
+**How to calculate:**
+
 ```text
-m ≈ 9.6 million bits  ≈  1.2 MB
-k ≈ 7 hash functions
+Given:  n = 1,000,000 keys,  p = 0.01 (1% false-positive rate)
+
+Step 1 — bits needed (m):
+  ln(p) = ln(0.01) ≈ −4.605
+  (ln 2)² ≈ 0.480
+  m = −(n × ln p) / (ln 2)²
+    = (1,000,000 × 4.605) / 0.480
+    ≈ 9,600,000 bits
+    ≈ 1.2 MB  (divide by 8 for bytes, then ÷ 1024² for MB)
+
+Step 2 — hash functions (k):
+  k = (m / n) × ln(2)
+    ≈ (9.6 × 0.693)
+    ≈ 6.6  →  round to 7 hash functions
+
+Step 3 — sanity check false-positive rate:
+  p ≈ (1 − e^(−kn/m))^k
+    ≈ (1 − e^(−7×1M/9.6M))^7
+    ≈ 1%  ✓
 ```
 
 Rule of thumb: about **10 bits per element** gives roughly **1%** false positives. Double the bit array size to quarter the error rate.
@@ -258,23 +277,26 @@ Use a hash set when you need exact membership and enumeration. Use a Bloom filte
 
 ### Real-world example: stopping cache penetration
 
-An e-commerce API caches product details by `product_id`. Attackers send millions of requests for random IDs that do not exist. Without protection, every miss goes to the database — the cache is useless.
+A product API caches details by `product_id`. Attackers (or bugs) request random IDs that were never issued — every cache miss hits the database (**cache penetration**).
 
-**With a Bloom filter in front of the cache:**
+**Setup (sized using the calculation above):**
 
-1. On startup (or periodically), load all valid product IDs into a Bloom filter — ~1.2 MB for a million products at 1% FP.
-2. On each request, check the filter first.
-3. Filter says **not present** → return 404 immediately; database never touched.
-4. Filter says **possibly present** → check cache; on miss, query database.
+```text
+n = 1,000,000 valid product IDs
+p = 1% acceptable false-positive rate
+→ m ≈ 1.2 MB Bloom filter in memory
+```
+
+**Request path:**
 
 ```text
 Request for product_id K
   → Bloom.contains(K)?
-      NO  → 404 / skip DB
-      YES → cache → DB on miss (rare false positive causes one extra DB read)
+      NO  → return 404 immediately (safe — key never issued)
+      YES → check cache → on miss, query DB (rare false positive = one extra DB read)
 ```
 
-The same pattern appears in **RocksDB** and **LevelDB**: each SSTable file carries a Bloom filter so the engine skips disk reads when a key **definitely** is not in that file. **Cassandra** and **HBase** use similar filters before remote or disk lookups.
+**Where this appears in production:** **RocksDB** and **LevelDB** attach a Bloom filter to each SSTable file so the engine skips disk reads when a key is **definitely not** in that file. **RedisBloom** (`BF.ADD` / `BF.EXISTS`) uses the same pattern in front of a cache or database.
 
 ---
 
@@ -354,6 +376,23 @@ flowchart LR
 
 Typical config: `p = 14` → 16,384 registers → **~12 KB**, error ≈ `1.04 / √m` (~0.8% standard error).
 
+**How to calculate memory and error:**
+
+```text
+Given:  precision p = 14
+
+Step 1 — number of registers:
+  m = 2^p = 2^14 = 16,384 registers
+
+Step 2 — memory (Redis HLL uses 6 bits per register):
+  16,384 × 6 bits = 98,304 bits ≈ 12 KB
+
+Step 3 — standard error (approximate):
+  error ≈ 1.04 / √m
+        ≈ 1.04 / 128
+        ≈ 0.008  →  about 0.8% relative error
+```
+
 ---
 
 ### Walkthrough: two users, four registers
@@ -412,17 +451,25 @@ Do not use HLL for billing or compliance requiring exact counts. Do not confuse 
 
 ---
 
-### Real-world example: unique visitors per CDN edge
+### Real-world example: daily unique visitors (Redis HyperLogLog)
 
-A CDN serves billions of requests daily. Each edge node runs HLL per customer for unique client IPs — ~12 KB per sketch. Hourly, aggregators `PFMERGE` sketches into a global “unique visitors” metric without storing every IP.
+A web app needs “how many **distinct** client IPs visited today?” without storing every IP in a hash set.
+
+**Per-server counting:**
 
 ```text
-PFADD visitors:customer42 "203.0.113.10"
-PFADD visitors:customer42 "198.51.100.5"
-PFCOUNT visitors:customer42  →  approximate distinct count
+# Each app server increments the same Redis key with each new request IP
+PFADD visitors:2025-06-24 "203.0.113.10"
+PFADD visitors:2025-06-24 "198.51.100.5"
+PFADD visitors:2025-06-24 "203.0.113.10"   # duplicate — count stays ~2, not 3
+
+PFCOUNT visitors:2025-06-24
+→ approximate distinct IP count (e.g. 48,231)
 ```
 
-Same idea in **BigQuery** `APPROX_COUNT_DISTINCT`, **Elasticsearch** `cardinality` aggregation, and **Druid** HyperUnique.
+**Why this works:** each `PFADD` updates only a few registers (~12 KB total per key). Duplicates do not inflate the estimate. Multiple app servers can write to the same key; Redis merges updates internally.
+
+**Same idea elsewhere:** BigQuery `APPROX_COUNT_DISTINCT`, Elasticsearch `cardinality` aggregation — all answer “how many uniques?” with bounded memory.
 
 ---
 
@@ -528,6 +575,26 @@ d = ⌈ln(1 / δ)⌉
 
 **Example:** ε = 0.01, δ = 0.001 → `w ≈ 272`, `d ≈ 7`.
 
+**How to calculate:**
+
+```text
+Given:  ε = 0.01 (1% error bound),  δ = 0.001 (0.1% failure probability)
+
+Step 1 — columns (w):
+  w = ⌈e / ε⌉ = ⌈2.718 / 0.01⌉ = ⌈271.8⌉ = 272
+
+Step 2 — rows (d):
+  d = ⌈ln(1 / δ)⌉ = ⌈ln(1000)⌉ = ⌈6.91⌉ = 7
+
+Step 3 — memory (32-bit counters):
+  w × d × 4 bytes = 272 × 7 × 4 = 7,616 bytes ≈ 7.4 KB per sketch
+
+Step 4 — what the guarantee means:
+  With probability 99.9%, estimated count for any key is within
+  ε × N of the true count, where N = total events in the stream.
+  (Heavy keys are estimated more tightly in practice.)
+```
+
 ---
 
 ### Count-Min Sketch vs hash map
@@ -561,11 +628,27 @@ Pair CMS with a heap for **heavy hitters**: promote keys above threshold to exac
 
 ---
 
-### Real-world example: API gateway rate limiting
+### Real-world example: per-key request counting at scale
 
-An API gateway maintains a CMS per route for API-key request counts. Fixed ~2 KB sketch per route handles millions of keys. When `estimate(api_key) > 10,000/min`, throttle or promote to an exact counter — catching abuse without a giant hash map.
+A streaming analytics job tracks “how many events did **this user ID** emit?” across millions of users — storing a hash map `user_id → count` for every user is too large.
 
-Sketches **merge** by adding matrices element-wise across edge nodes for global frequency views.
+**Sketch setup (from calculation above):** `w = 272`, `d = 7` → ~7.4 KB fixed memory, regardless of how many distinct user IDs appear.
+
+**Processing loop:**
+
+```text
+on event(user_id):
+    CMS.update(user_id, +1)          // increment d counter cells
+
+on check(user_id):
+    estimate = CMS.estimate(user_id) // min across d rows
+    if estimate > THRESHOLD:
+        promote to exact per-user counter  // optional, for billing
+```
+
+**Why CMS fits:** estimates **never undercount** — safe for abuse detection where missing a heavy sender is worse than a false alarm. Sketches on different nodes **merge by adding** their counter matrices element-wise.
+
+**Note:** managed API gateways more often use **token buckets** or **Redis INCR** for known clients; CMS shines when key cardinality is huge and you only need approximate per-key counts.
 
 ---
 
@@ -691,11 +774,20 @@ Delete `"car"` → unmark end on `r`; keep nodes because `"cart"` still uses `c 
 
 ---
 
-### Real-world example: search autocomplete
+### Real-world example: search query autocomplete
 
-A search engine stores millions of past queries in a trie. User types `"sys"` → walk to node `s→y→s` → return ranked terminal descendants (`system design`, `systemctl`, …) in milliseconds. No full-table scan.
+A search product stores past queries in a trie. When the user types `sys`:
 
-Routers use trie-style **longest prefix match** for CIDR routing tables.
+```text
+1. Walk root → s → y → s          (O(length) — 3 steps)
+2. From that node, collect all words with isEndOfWord = true
+3. Rank by historical frequency     (trie stores or joins frequency scores)
+4. Return top 5: "system design", "systemctl", …
+```
+
+Each keystroke repeats from the root (or from a cached node for incremental UI). No scan of millions of unrelated queries — only the subtree under the current prefix.
+
+**Why not a hash map?** A hash map finds exact keys in O(1) but cannot list “all keys starting with `sys`” without scanning every entry.
 
 ---
 
@@ -800,9 +892,18 @@ Insert: find predecessors at each level, random height, splice pointers.
 
 ---
 
-### Real-world example: game leaderboard
+### Real-world example: Redis sorted-set leaderboard
 
-`ZADD leaderboard 9850 "player42"` stores scores in a skip list. `ZRANGE leaderboard 0 9` returns top 10 in log time. `ZSCORE` hits the hash table directly. Disk-backed indexes prefer B-trees; skip lists shine **in memory**.
+Redis **`ZSET`** uses a **skip list** plus a **hash table** internally:
+
+```text
+ZADD leaderboard 9850 "player42"    # insert into skip list by score; hash table maps name → score
+ZRANGE leaderboard 0 9              # top 10 players — walk skip list in score order, O(log N + 10)
+ZSCORE leaderboard "player42"       # O(1) via hash table — no skip list walk needed
+ZRANK leaderboard "player42"        # rank by score — skip list traversal
+```
+
+**Why a skip list here:** inserting a new score is O(log N) average with simple pointer updates — easier to implement concurrently than red-black tree rotations. A game with 1 million players can update and fetch top-10 leaderboards in milliseconds in memory.
 
 ---
 
@@ -900,6 +1001,19 @@ Change one byte in block C → `H(C)` changes → `H(CD)` changes → root chang
 - **Hash order matters** — `hash(left || right)` vs `hash(right || left)` must be fixed everywhere; Bitcoin uses ordered pairs.
 - **Odd leaf count** — duplicate last leaf or promote unpaired hash; all verifiers must use the same rule.
 - **Proof size** — `O(log N)` sibling hashes; a tree with 1M leaves needs ~20 hashes (~640 bytes with SHA-256).
+
+**How to calculate proof size:**
+
+```text
+N = number of leaf blocks (must be power of 2, or pad)
+tree height = log₂(N)
+proof hashes needed = tree height  (one sibling per level)
+
+Example: N = 1,048,576 = 2^20
+  → 20 sibling hashes per proof
+  → 20 × 32 bytes (SHA-256) = 640 bytes
+```
+
 - **Not a key-value store** — proves “this chunk is in the set at this root”; lookup by arbitrary key needs a separate index.
 - **Production:** Git objects, Cassandra **anti-entropy repair**, Certificate Transparency logs, IPFS/MerkleDAG, Ethereum Patricia-Merkle trie.
 - **Interview angle:** comparing two replica roots localizes differing subtrees without full table scan — binary search on the tree.
@@ -908,9 +1022,17 @@ Change one byte in block C → `H(C)` changes → `H(CD)` changes → root chang
 
 ### Real-world example: Cassandra anti-entropy repair
 
-Two replicas exchange Merkle roots per partition. Roots differ → walk divergent branches → stream only mismatched SSTable ranges, not the full table.
+Cassandra replicas can drift (missed writes, disk issues). **Anti-entropy repair** syncs them without copying entire tables:
 
-**Git** tree objects are Merkle structures — `git diff` localizes changes. **Blockchain SPV** clients verify a transaction with header + Merkle proof.
+```text
+1. Replica A and Replica B each build a Merkle tree over the same partition's rows
+2. Exchange root hashes
+   → roots match?  partition is in sync — done
+   → roots differ? walk tree level by level to find divergent sub-ranges
+3. Stream only the differing SSTable ranges from the up-to-date replica
+```
+
+**Why Merkle trees:** comparing one root hash is O(1); bisecting the tree localizes **which slice** of data differs — like a binary search on the dataset — instead of comparing every row.
 
 ---
 
@@ -987,6 +1109,18 @@ Typically **eventual consistency** — AP under partition unless quorum protocol
 
 Add node 80 to ring `{10, 50, 120, 200}`. Only keys hashing to ranges now owned by 80 migrate (~K/N keys). Naive modulo hashing would reshuffle nearly everything.
 
+**How to estimate data moved:**
+
+```text
+K = total keys on the ring
+N = number of nodes before join = 4
+
+Keys that move to the new node ≈ K / N  (roughly one ring segment of K/N width)
+
+Example: 400 GB total data, 4 nodes → new 5th node receives ~400 / 4 = ~100 GB
+         (exact amount depends on vnode placement and key distribution)
+```
+
 ---
 
 ### DHT vs centralized hash table
@@ -1010,9 +1144,21 @@ Add node 80 to ring `{10, 50, 120, 200}`. Only keys hashing to ranges now owned 
 
 ---
 
-### Real-world example: Cassandra cluster expansion
+### Real-world example: adding a node to a Cassandra ring
 
-Adding a fourth node with **vnodes** migrates ~25% of partitions. **BitTorrent** trackerless DHT finds peers for content hashes. **IPFS** routes by content address on Kademlia-style overlays.
+Cassandra places data on a **token ring** (consistent hashing with **vnodes**). When you add a 4th node to a 3-node cluster:
+
+```text
+Before: 3 nodes → each owns ~33% of partitions
+After:  4 nodes → each owns ~25% of partitions
+
+New node takes one ring segment → receives ~25% of total data
+Existing nodes each give up ~8% (33% → 25%)
+
+Only ~K/N keys move — not a full reshuffle (unlike hash % N)
+```
+
+**Operational flow:** Cassandra streams partitions to the new node in the background; reads/writes continue with tunable consistency during the move.
 
 ---
 
@@ -1105,7 +1251,18 @@ Sections **13.9–13.11** cover Snowflake, ULID, and KSUID in detail.
 
 ### Real-world example: microservice entity IDs
 
-A user service creates `user_id = uuid_v7()` on registration — no round-trip to an ID service. Orders service does the same for `order_id`. Sharded Postgres stores `BINARY(16)` PKs; APIs expose canonical hex strings. `X-Request-ID: <uuid_v4>` on HTTP calls for distributed tracing.
+A user-registration service generates IDs locally — no call to a central ID server:
+
+```text
+user_id  = uuid_v7()    # 128-bit, time-sortable — good for Postgres PK
+order_id = uuid_v7()    # same pattern in a separate orders service
+
+Database:  store as BINARY(16)  — 16 bytes per row
+API JSON:  expose as canonical hex string "018f3e12-..."
+Tracing:   X-Request-ID: uuid_v4()  — opaque, no sort needed
+```
+
+**Why v7 for PKs:** millisecond timestamp in the high bits keeps B-tree inserts mostly sequential (unlike random v4). **Why v4 for request IDs:** one-off correlation tokens with no ordering requirement.
 
 ---
 
@@ -1176,6 +1333,16 @@ return pack(timestamp, worker_id, sequence)
 
 Uniqueness: time + worker + sequence. ~4M IDs/sec per node.
 
+**How to calculate throughput per worker:**
+
+```text
+sequence field = 12 bits → 2^12 = 4,096 IDs per millisecond per worker
+
+Per worker per second:  4,096 × 1,000 ms = 4,096,000 IDs/sec (theoretical max)
+
+If sequence overflows within the same ms → generator waits for next millisecond
+```
+
 ---
 
 ### Snowflake vs alternatives
@@ -1202,9 +1369,13 @@ Uniqueness: time + worker + sequence. ~4M IDs/sec per node.
 
 ---
 
-### Real-world example: social feed ordering
+### Real-world example: Twitter and Discord snowflake IDs
 
-Tweet/post IDs are Snowflake-style integers — feeds sort by ID ≈ sort by time. Discord message IDs follow a similar pattern. Custom layouts (Sonyflake, Instagram) tune bit widths for their scale.
+Twitter open-sourced the **Snowflake** scheme for tweet IDs: a single 64-bit integer encodes timestamp + machine ID + sequence — sortable and unique without a central database round-trip per tweet. **Discord** message IDs follow the same pattern (timestamp in the high bits, worker/shard ID, increment).
+
+**Why integers, not UUID v4:** feeds and chats sort by ID ≈ sort by creation time, and B-tree indexes on numeric PKs stay sequential (better write locality than random UUIDs).
+
+**Operational requirement:** each generator machine must have a **unique worker ID** from a registry; duplicate worker IDs at the same millisecond risk collisions.
 
 ---
 
@@ -1277,9 +1448,19 @@ Prefer **UUID v7** when RFC standard compliance matters.
 
 ---
 
-### Real-world example: event log IDs
+### Real-world example: event IDs in logs and databases
 
-An event pipeline assigns `event_id = ulid()` per message. Log files and Kafka partitions sort lexicographically by creation time. Consumers range-scan by ULID prefix for time windows.
+An event pipeline assigns each message a ULID at publish time:
+
+```text
+event_id = "01ARZ3NDEKTSV4RRFFQ69G5FAV"   # 26-char Crockford Base32
+
+Stored as BINARY(16) in Postgres; rendered as string in JSON APIs.
+```
+
+**Why ULID here:** log files and database indexes sorted by `event_id` are **roughly time-ordered** — a range query `WHERE event_id BETWEEN '01ARZ3...' AND '01ARZ4...'` approximates a time window without a separate timestamp index. No worker-ID registry needed (unlike Snowflake).
+
+**Caveat:** ULIDs in the **same millisecond** are not strictly ordered unless you use a **monotonic ULID** factory on a single process.
 
 ---
 
@@ -1353,9 +1534,20 @@ Choose KSUID when collision resistance beats millisecond ordering. Choose ULID o
 
 ---
 
-### Real-world example: multi-tenant event ingestion
+### Real-world example: Segment-style event IDs
 
-A SaaS analytics platform assigns `ksuid()` per ingested event. Storage partitions by KSUID prefix (time bucket in seconds). 128-bit randomness keeps IDs unique across thousands of concurrent writers without a central allocator.
+**KSUID** was created at Segment for analytics event IDs: 32-bit second timestamp + 128-bit random, encoded as a 27-character Base62 string.
+
+```text
+event_id = "0ujtsYcgvSTl8PAuAdqWYSMnLOv"
+
+Properties used in production:
+  • URL-safe, no coordination between writers (no worker ID registry)
+  • Prefix sorts by second — useful for partitioning logs by time bucket
+  • 128-bit random tail — very low collision risk when many events share the same second
+```
+
+**Trade-off vs ULID:** coarser time sort (seconds, not milliseconds) in exchange for more randomness per time bucket.
 
 ---
 
