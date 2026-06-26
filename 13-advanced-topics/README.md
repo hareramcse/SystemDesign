@@ -97,13 +97,9 @@ Result:  0  1  1  0  0  1  0  1  1  0
 ```
 
 ```mermaid
-flowchart TB
-    Apple[Insert Apple] --> H1[Hash1 → 2]
-    Apple --> H2[Hash2 → 5]
-    Apple --> H3[Hash3 → 8]
-    H1 --> BA[(Bit array)]
-    H2 --> BA
-    H3 --> BA
+flowchart LR
+    Apple[Insert Apple] --> H[Hash1/2/3 → bits 2, 5, 8]
+    H --> BA[(Bit array — set those bits)]
 ```
 
 ### Lookup — worked example
@@ -579,11 +575,15 @@ Aggregate registers  →  Apply estimator formula  →  Return approximate cardi
 ```
 
 ```mermaid
-flowchart TB
+flowchart LR
     Ins[Insert element] --> Hash[Hash element]
     Hash --> Split[Split: index + ρ]
     Split --> Upd[Update M i = max]
-    Qry[Query cardinality] --> Agg[Aggregate all registers]
+```
+
+```mermaid
+flowchart LR
+    Qry[Query cardinality] --> Agg[Aggregate registers]
     Agg --> Formula[Harmonic mean estimator]
     Formula --> Card[Approximate distinct count]
 ```
@@ -712,13 +712,9 @@ Memory does not grow with the number of distinct elements in the stream.
 **2. Counter matrix** — 2D array `CMS[d][w]`, all initialized to 0.
 
 ```mermaid
-flowchart TB
-    X[item x] --> H1[h1 x → col]
-    X --> H2[h2 x → col]
-    X --> H3[h3 x → col]
-    H1 --> M[(CMS d × w matrix)]
-    H2 --> M
-    H3 --> M
+flowchart LR
+    X[item x] --> H[h1, h2, h3 → columns]
+    H --> M[(CMS d × w matrix — increment)]
 ```
 
 ### Insertion (update operation)
@@ -1522,16 +1518,12 @@ Root     — expected root
 4. Compare with known root — if match, B is valid
 
 ```mermaid
-flowchart BT
+flowchart TB
     Root[Root]
-    AB[H AB]
-    B[H B — prove this]
-    A[H A — in proof]
-    CD[H CD — in proof]
-    Root --> AB
-    Root --> CD
-    AB --> B
-    AB --> A
+    Root --> AB[H AB]
+    Root --> CD[H CD — in proof]
+    AB --> B[H B — prove this]
+    AB --> A[H A — in proof]
 ```
 
 ### Why it works
@@ -1719,15 +1711,8 @@ Ring wraps: 0 → 255 → back to 0
 ```
 
 ```mermaid
-flowchart TB
-    subgraph Ring[Hash ring]
-        direction LR
-        NA((Node A 10))
-        NB((Node B 50))
-        NC((Node C 120))
-        ND((Node D 200))
-        NA --- NB --- NC --- ND --- NA
-    end
+flowchart LR
+    NA((Node A 10)) --- NB((Node B 50)) --- NC((Node C 120)) --- ND((Node D 200)) --- NA
     K["hash(X) = 65"] --> NC
 ```
 
