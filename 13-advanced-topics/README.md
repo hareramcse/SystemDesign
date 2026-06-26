@@ -70,16 +70,27 @@ It does **not** tell you how many items are stored, list members, or delete keys
 
 ---
 
-### How it works — the algorithm inside
+### Compared to the alternative
+
+**Hash set (exact membership):**
 
 ```text
-Input key                    Bit array (fixed m bits)              Output
-─────────                    ────────────────────────              ──────
-product:42  ──hash──►  set k bit positions  ──►  [0,1,1,0,1,…]  DEFINITELY_NOT
-random-id   ──hash──►  any bit = 0?         ──►  (skip DB)       or MAYBE (verify DB)
+Store every key + metadata        Memory = O(n) per distinct key (~tens of bytes each)
+Lookup: exact present / absent    Billions of keys → impractical RAM
 ```
 
-Memory stays **fixed at m bits** whether you insert thousands or billions of keys — unlike a hash set that grows with every key.
+**Bloom filter (approximate membership):**
+
+```text
+Fixed bit array (e.g. ~1 MB)      Memory = O(m) bits — size set at build time
+Lookup: definitely NOT or MAYBE   False positives possible; false negatives never (standard filter)
+```
+
+Bloom wins as a **cheap guard** in front of disk or DB (“skip read if definitely absent”). Hash sets win when you need **exact membership** or enumeration.
+
+---
+
+### How it works — the algorithm inside
 
 #### Step 1 — Hash the key to spread bits uniformly
 
@@ -359,24 +370,27 @@ It does **not** tell you which items were seen, whether a specific item was seen
 
 ---
 
-### How it works — the algorithm inside
+### Compared to the alternative
 
-HyperLogLog never stores the elements themselves. It streams each value through a hash function, updates a small array of **registers**, and later reads those registers to guess how many **distinct** values passed through.
+**Hash set / `COUNT DISTINCT` (exact):**
 
 ```text
-Input stream          Registers (few KB)         Answer
-─────────────         ──────────────────         ──────
-A                     [5, 3, 6, 4, 7, 2, …]     Estimated unique
-B                          ↓                    count ≈ 4
-C                     (fixed size, never
-A                      grows with stream)
-D
-B
+Each unique value stored once     Memory = O(n) — grows with every new distinct ID
+Query: exact cardinality          Billions of uniques → GB of RAM or heavy DB scan
 ```
 
-Memory stays almost constant whether you process thousands or billions of records — that is the whole point.
+**HyperLogLog (approximate):**
+
+```text
+Fixed register array (~12 KB)     Memory = O(1) — same size at 1K or 1B uniques
+Query: estimated cardinality      ~1–2% error; merge across nodes with PFMERGE
+```
+
+HLL wins when you need **streaming distinct counts at scale** and can tolerate small error. Exact sets win for **billing, compliance, or small cardinalities** where wrong counts are unacceptable.
 
 ---
+
+### How it works — the algorithm inside
 
 #### Step 1 — Hash every element
 
@@ -656,13 +670,9 @@ It does not list keys, delete counts (standard CMS), or give exact billing numbe
 
 ---
 
-### How it works — the algorithm inside
+### Compared to the alternative
 
-CMS never stores keys — only a fixed **2D table of counters**. Every insert bumps one cell per row; every query reads those cells and takes the **minimum**.
-
-#### Exact counting vs sketch — why CMS exists
-
-**HashMap (exact):**
+**HashMap (exact per-key counts):**
 
 ```text
 Input stream          HashMap                    Memory grows
@@ -673,9 +683,11 @@ Apple                 Orange → 1
 Orange
 Apple
 Banana
+
+Search / update = O(1) per key    Counts exact
 ```
 
-**Count-Min Sketch (approximate):**
+**Count-Min Sketch (approximate frequencies):**
 
 ```text
 Input stream          Small 2D counter table     Fixed memory
@@ -686,11 +698,15 @@ Apple                 Apple  ≈ 3
 Orange                Banana ≈ 2
 Apple                 Orange ≈ 1
 Banana
+
+Update / query = O(d)             May overcount; never undercounts
 ```
 
-Exact maps are correct but **O(distinct keys)** in RAM. CMS keeps **O(d × w)** counters no matter how many unique API keys, IPs, or search terms appear.
+CMS wins for **fixed-memory per-key frequency** on unbounded streams. Hash maps win for **exact counts** and when distinct key count fits in RAM.
 
 ---
+
+### How it works — the algorithm inside
 
 #### Step 1 — Create the counter matrix
 
@@ -1098,21 +1114,18 @@ Maintains a sorted set with multiple forward-pointer levels per node. Supports s
 
 ---
 
-### How it works — the algorithm inside
+### Compared to the alternative
 
-A skip list is a **sorted linked list with express lanes**. Every key lives on the bottom level; a coin flip may promote it to higher levels so search can **skip** large gaps instead of visiting every node.
-
-#### Plain linked list vs skip list
-
-**Sorted linked list** — find `70` by walking every node:
+**Sorted linked list:**
 
 ```text
 10 → 20 → 30 → 40 → 50 → 60 → 70
 
-Search = O(n)
+Find 70: visit every node     Search = O(n)
+Insert: O(1) if you have the predecessor
 ```
 
-**Skip list** — higher levels hold fewer nodes; search drops down when the next hop would overshoot:
+**Skip list:**
 
 ```text
 Level 2:  10 -----------------> 50 -----------------> 70
@@ -1121,20 +1134,22 @@ Level 1:  10 --------> 30 --------> 50 --------> 70
 
 Level 0:  10 → 20 → 30 → 40 → 50 → 60 → 70
 
-Search ≈ O(log n) average
+Find 70: express lanes + drop down     Search ≈ O(log n) average
 ```
+
+Skip lists win for **in-memory sorted maps** with simple concurrent updates (Redis `ZSET`). Balanced trees win when you need **worst-case O(log n)** guarantees; arrays win for **read-heavy, rarely updated** sorted data.
 
 ---
 
+### How it works — the algorithm inside
+
 #### Step 1 — Base level (Level 0)
 
-Every inserted element is linked into **Level 0** — a ordinary sorted singly linked list:
+Every inserted element is linked into **Level 0** — a sorted singly linked list:
 
 ```text
 Level 0:  10 → 20 → 30 → 40 → 50 → 60 → 70
 ```
-
-No express lanes yet; this alone is correct but slow to search.
 
 ---
 
