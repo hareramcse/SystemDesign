@@ -642,7 +642,7 @@ Streaming systems need **per-key frequency**:
 - Clicks per ad ID
 - Search queries per keyword
 
-Exact counting needs a hash map `key → count` that grows with distinct keys — untenable at billions of keys. CMS trades exactness for a bounded matrix that handles unbounded streams.
+Exact counting needs a hash map `key → count` that grows with distinct keys — untenable at billions of keys. CMS trades exactness for a bounded `d × w` matrix (see comparison below).
 
 ---
 
@@ -725,25 +725,7 @@ Hashing spreads keys across columns uniformly. Without that, a few hot columns w
 
 #### Step 3 — Increment counters on insert
 
-Each insertion adds `+1` (or `+count`) to **one counter in every row**:
-
-**Before inserting `"apple"`:**
-
-```text
-           C0  C1  C2  C3  C4
-H1  -->    0   0   0   0   0
-H2  -->    0   0   0   0   0
-H3  -->    0   0   0   0   0
-```
-
-**After one `"apple"`:**
-
-```text
-           C0  C1  C2  C3  C4
-H1  -->    0   0   1   0   0      ← H1 hit C2
-H2  -->    0   0   0   0   1      ← H2 hit C4
-H3  -->    0   1   0   0   0      ← H3 hit C1
-```
+Each insertion adds `+1` (or `+count`) to **one counter in every row** — the column chosen by that row's hash (Step 2).
 
 ```text
 function update(key, count = 1):
@@ -752,25 +734,15 @@ function update(key, count = 1):
         CMS[i][j] += count
 ```
 
+See the **worked example** below for table state after each insert.
+
 ---
 
 #### Step 4 — Query: take the minimum across rows
 
-To estimate how many times `"apple"` appeared:
-
-1. Hash `"apple"` with all `d` functions.
+1. Hash the key with all `d` functions.
 2. Read the `d` counter values.
-3. Return **`min(...)`** — the smallest value wins.
-
-```text
-Counters for "apple" after many inserts:
-
-H1 → 5
-H2 → 7
-H3 → 5
-
-Estimated count = min(5, 7, 5) = 5
-```
+3. Return **`min(...)`** — the smallest value is the estimate.
 
 ```mermaid
 flowchart LR
@@ -798,30 +770,15 @@ avg(5, 8, 5) = 6   ✗ still high
 min(5, 8, 5) = 5   ✓ closest to true count for apple
 ```
 
-Collisions **add** to counters — they never subtract. So CMS **never underestimates** a key's frequency; it may **overestimate** when other keys share buckets. The minimum across independent rows is the least contaminated row.
-
-```text
-Different keys, same bucket:
-
-"apple"  ──┐
-           ├──► Counter C2  (shared — both increment it)
-"banana" ──┘
-```
+Collisions **add** to counters — they never subtract. So CMS **never underestimates** a key's frequency; it may **overestimate** when other keys share buckets. The minimum across independent rows is the least contaminated estimate.
 
 ---
 
 #### Worked example — `"apple"` twice
 
-Start empty (`d = 3`, `w = 5`):
+Using the empty **3 × 5** matrix from Step 1. Hashes: `H1→C2`, `H2→C4`, `H3→C1`.
 
-```text
-           C0  C1  C2  C3  C4
-H1  -->    0   0   0   0   0
-H2  -->    0   0   0   0   0
-H3  -->    0   0   0   0   0
-```
-
-**Insert `"apple"`** — `H1→C2`, `H2→C4`, `H3→C1`:
+**After first `"apple"`:**
 
 ```text
            C0  C1  C2  C3  C4
@@ -830,7 +787,7 @@ H2  -->    0   0   0   0   1
 H3  -->    0   1   0   0   0
 ```
 
-**Insert `"apple"` again** — same columns, `+1` each:
+**After second `"apple"`** (`+1` on the same three cells):
 
 ```text
            C0  C1  C2  C3  C4
@@ -840,8 +797,6 @@ H3  -->    0   2   0   0   0
 ```
 
 **Query `"apple"`:** `min(2, 2, 2) = 2` ✓
-
-If `"banana"` later shares column C2 in row H1 only, H1 might read `5` while H2/H3 stay `2` — query still returns `min(5, 2, 2) = 2` for `"apple"` (banana inflated H1, not the true apple-only rows).
 
 ---
 
@@ -880,8 +835,6 @@ w = ⌈e / ε⌉
 d = ⌈ln(1 / δ)⌉
 ```
 
-**Example:** ε = 0.01, δ = 0.001 → `w ≈ 272`, `d ≈ 7`.
-
 **How to calculate:**
 
 ```text
@@ -904,26 +857,13 @@ Step 4 — what the guarantee means:
 
 ---
 
-### Count-Min Sketch vs hash map
-
-| | Hash map | CMS |
-|---|----------|-----|
-| Counts | Exact | Approximate (over only) |
-| Memory | O(distinct keys) | O(d × w) fixed |
-| Undercount | No | Never |
-
-Pair CMS with a heap for **heavy hitters**: promote keys above threshold to exact counters.
-
----
-
 ### Pitfalls and design tips
 
 - **Only overestimates, never under** — safe for rate limits and “top talkers”; wrong for exact billing without a promotion path to exact counters.
 - **Point queries only** — estimates frequency of a **known key**; CMS does not list all keys or do range counts without extra structures.
 - **Count-Min vs Count-Median Sketch** — CMS is simpler and one-sided; Count Sketch can underestimate (median of rows) but tighter on some distributions.
 - **Decay / windows** — standard CMS has no time window; use sliding windows (array of sketches), **exponential decay**, or rotate sketches hourly for “requests in last 5 minutes.”
-- **Merge sketches** by element-wise **addition** of counter matrices (same dimensions and hash seeds).
-- **Production:** Apache DataSketches, Redis Stack CMS (where available), stream processors (Flink approximate aggregations).
+- **Production:** Apache DataSketches, Redis Stack CMS (where available), stream processors (Flink approximate aggregations). Pair with a heap for **heavy hitters** — promote keys above threshold to exact counters.
 
 #### Probabilistic sketches — how they differ
 
@@ -945,15 +885,14 @@ A streaming analytics job tracks “how many events did **this user ID** emit?�
 
 ```text
 on event(user_id):
-    CMS.update(user_id, +1)          // increment d counter cells
+    CMS.update(user_id, +1)
 
 on check(user_id):
-    estimate = CMS.estimate(user_id) // min across d rows
-    if estimate > THRESHOLD:
-        promote to exact per-user counter  // optional, for billing
+    if CMS.estimate(user_id) > THRESHOLD:
+        promote to exact per-user counter   // optional, for billing
 ```
 
-**Why CMS fits:** estimates **never undercount** — safe for abuse detection where missing a heavy sender is worse than a false alarm. Sketches on different nodes **merge by adding** their counter matrices element-wise.
+**Why CMS fits:** estimates **never undercount** — safe for abuse detection where missing a heavy sender is worse than a false alarm.
 
 **Note:** managed API gateways more often use **token buckets** or **Redis INCR** for known clients; CMS shines when key cardinality is huge and you only need approximate per-key counts.
 
