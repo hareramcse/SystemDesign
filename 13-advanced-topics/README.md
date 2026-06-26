@@ -1399,50 +1399,180 @@ Not a search index — proves integrity/membership, not arbitrary key lookup.
 
 ---
 
-### How it works — the algorithm inside
+### Compared to the alternative
 
-Dataset `{A, B, C, D}`:
-
-```text
-Leaves:   H(A)  H(B)  H(C)  H(D)
-Parents:  H(AB) = hash(H(A)||H(B))    H(CD) = hash(H(C)||H(D))
-Root:     hash(H(AB) || H(CD))
-```
-
-```mermaid
-flowchart TB
-    Root[Merkle Root]
-    Root --> AB[H AB]
-    Root --> CD[H CD]
-    AB --> HA[H A]
-    AB --> HB[H B]
-    CD --> HC[H C]
-    CD --> HD[H D]
-```
-
-#### Proof verification for element B
-
-Provide siblings `H(A)` and `H(CD)` + known root:
+**Without a Merkle tree** — two servers must compare every block to prove files match:
 
 ```text
-H(AB) = hash(H(A) || H(B))
-recomputed_root = hash(H(AB) || H(CD))
-match known root → B is authentic
+Server A          Server B
+Block1            Block1
+Block2            Block2
+Block3            Block3
+Block4            Block4
+
+Compare all n blocks     Time = O(n)
 ```
 
-Use SHA-256+; document `left || right` concatenation order. Odd leaf count: duplicate last node or promote — both sides must agree.
+**With a Merkle tree** — compare one fingerprint:
 
-| | hash(all data) | Merkle tree |
-|---|----------------|-------------|
+```text
+Server A                    Server B
+Merkle Root = ABC123        Merkle Root = ABC123
+
+Roots match  →  entire dataset identical (under same hash rules)
+Roots differ →  at least one block changed; bisect subtrees to localize
+```
+
+| | `hash(entire file)` | Merkle tree |
+|---|---------------------|-------------|
 | One fingerprint | Yes | Yes (root) |
-| Prove one element | Rehash all | O(log N) proof |
-| Localize changes | No | Bisect subtrees |
+| Prove one block | Rehash everything | O(log n) proof hashes |
+| Localize which block changed | No | Walk divergent subtrees |
 
 ---
 
-### Walkthrough: tamper detection
+### How it works — the algorithm inside
 
-Change one byte in block C → `H(C)` changes → `H(CD)` changes → root changes. Comparing roots alone detects tampering without reading every block.
+#### Step 1 — Divide data into blocks
+
+Split the dataset into fixed-size chunks (file blocks, DB rows, transactions):
+
+```text
+Block A    Block B    Block C    Block D
+```
+
+---
+
+#### Step 2 — Hash every block (leaf hashes)
+
+Hash each block independently. These are **leaf nodes**:
+
+```text
+A  →  H1 = Hash(A)
+B  →  H2 = Hash(B)
+C  →  H3 = Hash(C)
+D  →  H4 = Hash(D)
+```
+
+Use a strong hash (SHA-256 in production). Any byte change in a block changes its leaf hash.
+
+---
+
+#### Step 3 — Pair and hash upward
+
+Concatenate **neighboring** child hashes (fixed left-then-right order) and hash again:
+
+```text
+H12 = Hash(H1 || H2)
+H34 = Hash(H3 || H4)
+```
+
+```text
+        H12              H34
+       /    \            /    \
+     H1     H2         H3     H4
+```
+
+**Odd leaf count:** duplicate the last leaf or promote it unpaired — all builders and verifiers must use the **same rule**.
+
+---
+
+#### Step 4 — Compute the Merkle root
+
+Hash the two parent nodes to produce a single **Merkle root** — one hash representing the whole dataset:
+
+```text
+Root = Hash(H12 || H34)
+```
+
+```text
+             Root
+            /    \
+         H12      H34
+        /  \      /  \
+      H1   H2   H3   H4
+```
+
+Publish `Root`; clients and replicas store or compare it.
+
+---
+
+#### Step 5 — Verify one block (Merkle proof)
+
+To prove **block C** is in the tree, you do **not** need all blocks — only **C** plus **sibling hashes** on the path to the root.
+
+For block C you need:
+
+```text
+Block C
+Sibling at leaf level     = H4
+Sibling at parent level   = H12
+```
+
+**Verification path:**
+
+```text
+Hash(C)  →  must equal H3
+Hash(H3 || H4)  →  H34
+Hash(H12 || H34)  →  Root'
+
+Root' == published Root  →  C is authentic
+```
+
+```text
+function verify(block, proof_siblings[], known_root):
+    h = Hash(block)
+    for each sibling on path from leaf to root:
+        h = Hash(ordered_pair(h, sibling))   // left/right rule fixed
+    return h == known_root
+```
+
+Proof size = **one sibling per tree level** = O(log n) hashes.
+
+**How to calculate proof size:**
+
+```text
+Given:  N = 1,048,576 leaf blocks (= 2^20)
+
+Step 1 — tree height:
+  height = log₂(N) = 20 levels
+
+Step 2 — hashes in one proof:
+  one sibling per level → 20 hashes
+
+Step 3 — bytes (SHA-256):
+  20 × 32 bytes = 640 bytes per proof
+
+Sanity check: N = 4 leaves → height 2 → proof needs H4 + H12 only (2 hashes), matching Step 5 walkthrough.
+```
+
+---
+
+#### Step 6 — What happens when data changes
+
+Modify one byte in **block C**:
+
+```text
+H3  →  H3'   (leaf changes)
+
+H34 →  H34'  (parent changes)
+
+Root → Root' (root changes — entirely different hash)
+```
+
+Comparing **roots alone** detects tampering without reading every block. To find **which** block changed, exchange subtrees and bisect (Cassandra repair, sync protocols).
+
+---
+
+#### Complexity
+
+| Operation | Complexity |
+|-----------|------------|
+| Build tree | O(n) |
+| Verify one block (with proof) | O(log n) |
+| Update one block | O(log n) hashes recomputed to root |
+| Proof size | O(log n) hashes |
+| Space | O(n) hashes stored (or O(1) root only if leaves kept elsewhere) |
 
 ---
 
@@ -1459,22 +1589,10 @@ Change one byte in block C → `H(C)` changes → `H(CD)` changes → root chang
 
 - **Hash order matters** — `hash(left || right)` vs `hash(right || left)` must be fixed everywhere; Bitcoin uses ordered pairs.
 - **Odd leaf count** — duplicate last leaf or promote unpaired hash; all verifiers must use the same rule.
-- **Proof size** — `O(log N)` sibling hashes; a tree with 1M leaves needs ~20 hashes (~640 bytes with SHA-256).
-
-**How to calculate proof size:**
-
-```text
-N = number of leaf blocks (must be power of 2, or pad)
-tree height = log₂(N)
-proof hashes needed = tree height  (one sibling per level)
-
-Example: N = 1,048,576 = 2^20
-  → 20 sibling hashes per proof
-  → 20 × 32 bytes (SHA-256) = 640 bytes
-```
-
+- **Proof size** — O(log N) sibling hashes (~640 bytes for 1M leaves with SHA-256); see calculation in Step 5.
 - **Not a key-value store** — proves “this chunk is in the set at this root”; lookup by arbitrary key needs a separate index.
-- **Production:** Git objects, Cassandra **anti-entropy repair**, Certificate Transparency logs, IPFS/MerkleDAG, Ethereum Patricia-Merkle trie.
+- **Rebuilding cost** — updating one leaf recomputes O(log n) ancestors; batch updates or background rebuild for hot paths.
+- **Production:** Git objects, Cassandra **anti-entropy repair**, Certificate Transparency logs, IPFS/MerkleDAG, Bitcoin/Ethereum block headers.
 - **Interview angle:** comparing two replica roots localizes differing subtrees without full table scan — binary search on the tree.
 
 ---
