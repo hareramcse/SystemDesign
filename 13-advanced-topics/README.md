@@ -123,7 +123,7 @@ Bit at index 4 = 0  →  Definitely Not Present  →  no further checks needed
 ```
 
 ```mermaid
-flowchart TB
+flowchart LR
     Orange[Lookup Orange] --> H[Hashes → 0, 4, 9]
     H --> BA[(Bit array)]
     BA --> Zero{Any bit = 0?}
