@@ -1649,93 +1649,225 @@ No central coordinator for lookup routing (though production systems like Cassan
 
 ---
 
+### Compared to the alternative
+
+**Centralized HashMap (single server):**
+
+```text
+Server
+
+Apple  → Red
+Banana → Yellow
+Mango  → Green
+Orange → Orange
+
+Problems: limited storage, single point of failure, cannot scale horizontally
+```
+
+**Distributed Hash Table:**
+
+```text
+        Node A
+       /      \
+   Node D ---- Node B
+       \      /
+        Node C
+
+Each node stores only keys that hash to its ring segment
+```
+
+| | `hash(key) % N` (naive sharding) | Consistent hashing (DHT ring) |
+|---|----------------------------------|-------------------------------|
+| Add one node | Almost **every** key remaps | Only **~K/N** keys move |
+| Lookup | O(1) to known shard | O(log N) hops (structured DHT) |
+| Coordinator | Often needed for shard map | Routing table on each peer |
+
+DHT wins for **horizontal scale-out** and **peer-to-peer** systems. Central KV wins for **simplicity** and **strong consistency** on a small cluster.
+
+---
+
 ### How it works — the algorithm inside
 
-**Ring assignment:** nodes at IDs 10, 50, 120, 200. `hash("file-X") = 65` → stored at node **120** (first node ID ≥ 65).
+#### Step 1 — Hash the key
 
-```mermaid
-flowchart LR
-    NA((Node A 10)) --- NB((Node B 50)) --- NC((Node C 120)) --- ND((Node D 200)) --- NA
-    K["hash(X) = 65"] --> NC
+Map every key into a large integer space (same range as node IDs):
+
+```text
+Apple   → 23
+Banana  → 67
+Orange  → 91
+Mango   → 40
 ```
 
-**Chord finger table:** shortcuts `node + 2^0`, `node + 2^1`, … for O(log N) lookup.
+The hash determines **where** on the ring the key belongs — not which machine by name.
 
-```mermaid
-flowchart LR
-    N10[Node 10] -->|finger| N50[Node 50]
-    N50 -->|finger| N120[Node 120]
-    N120 --> Val[key value]
+---
+
+#### Step 2 — Place nodes on the hash ring
+
+Each node gets an ID on the same ring (hash of hostname/IP or assigned token):
+
+```text
+Node A → 20
+Node B → 45
+Node C → 70
+Node D → 95
 ```
 
-**Replication:** primary at successor + replicas on next k successors.
+Arrange clockwise on a **hash ring** (conceptually 0 … 2^160−1 for SHA-1-style rings):
 
-**Virtual nodes:** one physical machine claims multiple ring positions for even load.
+```text
+          20 (A)
+        /        \
+   95 (D)        45 (B)
+        \        /
+          70 (C)
+```
 
-**Kademlia:** XOR distance + k-buckets — BitTorrent DHT, Ethereum peer discovery, IPFS.
+---
 
-| Operation | Structured DHT |
-|-----------|----------------|
-| Lookup / insert | O(log N) |
+#### Step 3 — Assign keys to the successor node
 
-Typically **eventual consistency** — AP under partition unless quorum protocols added (Cassandra tunable consistency is separate).
+Store each key on the **first node clockwise** whose ID is **≥ key hash** (the **successor**). Wrap around: if the hash is past the last node, the first node owns it.
 
-**How to calculate — DHT lookup hop count (Chord / Kademlia):**
+**Apple** (hash 23): between 20 (A) and 45 (B) → **Node B**
+
+```text
+20 (A)  →  23  →  45 (B)     owner = B
+```
+
+**Orange** (hash 91): between 70 (C) and 95 (D) → **Node D**
+
+```text
+70 (C)  →  91  →  95 (D)     owner = D
+```
+
+```text
+function owner(key):
+    h = hash(key)
+    return first node on ring where node.id >= h   // clockwise, wrap at end
+```
+
+---
+
+#### Step 4 — Retrieve a key
+
+Same rule as insert — no central directory:
+
+```text
+get("Apple"):
+  h = 23
+  start at any node → route clockwise → land on Node B → return value
+```
+
+Structured DHTs (**Chord**, **Kademlia**) use **routing tables** (finger table / k-buckets) so each hop skips many nodes — **O(log N)** hops instead of walking the ring one node at a time.
+
+```text
+Chord:  node stores fingers to successors at +1, +2, +4, +8, … on the ring
+Kademlia:  XOR distance buckets — used in BitTorrent DHT, IPFS, Ethereum peer discovery
+```
+
+---
+
+#### Worked example — four keys on four nodes
+
+```text
+Nodes:  20(A)   45(B)   70(C)   95(D)
+
+Keys:   Apple→23   Mango→40   Banana→67   Orange→91
+
+Assignment:
+  Apple   → B   (23 ∈ (20, 45])
+  Mango   → B   (40 ∈ (20, 45])
+  Banana  → C   (67 ∈ (45, 70])
+  Orange  → D   (91 ∈ (70, 95])
+```
+
+Each physical node holds only its segment's key-value pairs.
+
+---
+
+#### Step 5 — New node joins
+
+Add **Node E** at ID **60**:
+
+```text
+Before:  20(A) — 45(B) — 70(C) — 95(D)
+
+After:   20(A) — 45(B) — 60(E) — 70(C) — 95(D)
+```
+
+Only keys that hashed into the range now owned by **E** — roughly **(45, 60]** — migrate from B to E. Keys on A, C, D stay put.
+
+```text
+Before:  45(B) ----------------> 70(C)
+After:   45(B) ----> 60(E) ----> 70(C)
+```
+
+**How to calculate keys moved on join:**
+
+```text
+Given:  K = total keys on ring,  N = nodes before join = 4
+
+Keys migrating to new node ≈ K / N   (one segment of width ~1/N of the ring)
+
+Example: 400 GB total, add 5th node → new node receives ~400/4 = ~100 GB
+         (vnodes and skew can shift exact share)
+
+Sanity check: naive hash % N would remap ~100% of keys — why DHT uses consistent hashing.
+```
+
+---
+
+#### Step 6 — Node failure and replication
+
+If **Node C** (70) fails, its keys are served by the **next clockwise** node (D at 95) until C returns or data is re-replicated.
+
+Production DHTs store **replicas** on the next **k** successors so one failure does not lose data:
+
+```text
+Primary: successor node
+Replicas: next k nodes clockwise on the ring
+```
+
+**Virtual nodes (vnodes):** one physical host claims many ring positions (e.g. 256 tokens in Cassandra) so load stays balanced when key hashes are skewed.
+
+---
+
+#### Complexity
+
+| Operation | Complexity |
+|-----------|------------|
+| Insert / search / delete (structured DHT) | O(log N) hops |
+| Add / remove node | O(log N) routing update + **~K/N** key migration |
+| Space per node | O(K/N) keys (+ replicas) |
+
+**How to calculate — lookup hop count (Chord / Kademlia):**
 
 ```text
 Given:  N = 1,024 nodes on the ring
-        Each node maintains finger table / k-buckets routing to successors at distances 2^i
-        Structured DHT lookup complexity O(log N) hops
+        Finger table / k-buckets route at distances 2^i (Chord) or XOR buckets (Kademlia)
 
-Step 1 — hops for Chord-style finger routing:
-  hops ≈ log₂(N) = log₂(1024) = 10 hops worst-case per lookup
+Step 1 — worst-case hops:
+  hops ≈ log₂(N) = log₂(1024) = 10
 
-Step 2 — example trace (simplified):
-  Start node 10, target key hashes to node ID 900
-  Hop 1: finger to node ≥ 10 + 2^9 = 522  →  jump to 522
-  Hop 2: finger to node ≥ 522 + 2^8 = 778  →  jump to 778
-  … each hop at least halves remaining ring distance → ≤ 10 hops
+Step 2 — trace (simplified Chord):
+  Start node 10, key hashes to ID 900
+  Hop 1: finger to ≥ 10 + 2^9 = 522
+  Hop 2: finger to ≥ 522 + 2^8 = 778
+  … each hop halves remaining distance → ≤ 10 hops
 
-Step 3 — Kademlia (k = 20 buckets):
-  hops ≈ log₂(N) similarly; each step reduces XOR distance to target ID
-  At N = 1,000,000: hops ≈ log₂(1,000,000) ≈ 20
+Step 3 — at N = 1,000,000:
+  hops ≈ log₂(1,000,000) ≈ 20
 
-Step 4 — latency estimate:
-  10 hops × 2 ms RTT per hop (WAN) ≈ 20 ms routing overhead per get(key)
-  (in-datacenter: 10 × 0.1 ms ≈ 1 ms)
+Step 4 — latency (rough):
+  10 hops × 2 ms WAN RTT ≈ 20 ms routing overhead per get(key)
+  same hops × 0.1 ms LAN ≈ 1 ms
 
-Result: 1,024-node DHT → ~10 hops; 1M nodes → ~20 hops — scalable routing without central directory.
-
-Sanity check: unstructured flooding is O(N); DHT's log N is why BitTorrent/IPFS use Kademlia at scale.
+Sanity check: unstructured flooding is O(N); DHT log N is why BitTorrent/IPFS use Kademlia.
 ```
 
----
-
-### Walkthrough: node join
-
-Add node 80 to ring `{10, 50, 120, 200}`. Only keys hashing to ranges now owned by 80 migrate (~K/N keys). Naive modulo hashing would reshuffle nearly everything.
-
-**How to estimate data moved:**
-
-```text
-K = total keys on the ring
-N = number of nodes before join = 4
-
-Keys that move to the new node ≈ K / N  (roughly one ring segment of K/N width)
-
-Example: 400 GB total data, 4 nodes → new 5th node receives ~400 / 4 = ~100 GB
-         (exact amount depends on vnode placement and key distribution)
-```
-
----
-
-### DHT vs centralized hash table
-
-| | Central KV | DHT |
-|---|------------|-----|
-| Coordinator | Required | None for routing |
-| Scale-out | Limited | Horizontal |
-| Key movement on resize | N/A or full reshuffle | ~K/N with consistent hashing |
+Typically **eventual consistency** during join/leave — quorum protocols (Cassandra tunable consistency) sit on top of the ring.
 
 ---
 
@@ -1744,7 +1876,7 @@ Example: 400 GB total data, 4 nodes → new 5th node receives ~400 / 4 = ~100 GB
 - **Hot spots on the ring** — without **virtual nodes (vnodes)**, a few physical machines can own disproportionate key ranges; Cassandra commonly uses 256 vnodes per host.
 - **Not instant consistency** — DHT routing is **eventually consistent**; reads during node join/leave may miss or return stale values until stabilization.
 - **Chord vs Kademlia:** Chord uses finger tables on a numeric ring; **Kademlia** uses XOR metric + k-buckets — better for peer churn (BitTorrent, IPFS).
-- **Cassandra ≠ pure DHT** — uses ring + tokens + tunable quorum reads/writes; ops tooling and replication factor are first-class.
+- **Production:** Cassandra, Dynamo, Riak (ring + tokens); BitTorrent DHT, IPFS, Ethereum peer discovery (Kademlia).
 - **Naive `hash % N` still appears** — in caches with fixed shard count; use **consistent hashing with virtual nodes** when N changes often.
 - **Interview angle:** explain why only ~K/N keys move when a node joins — keys belong to successor on the ring, not modulo slot index.
 
