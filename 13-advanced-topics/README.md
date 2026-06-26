@@ -441,7 +441,7 @@ After processing the stream, every register holds a small integer. HyperLogLog c
 E ≈ α_m × m² / Σ(2^−M[i])
 ```
 
-`α_m` is a constant that depends on `m`. You do not need to implement this by hand — Redis, BigQuery, and other libraries handle it. The intuition: if many registers hold large values, the stream probably contained many unique elements; if most registers are still near zero, the distinct count is probably small.
+`α_m` is a constant that depends on `m`. You do not need to implement this by hand — Redis, BigQuery, and other libraries handle it. The intuition: if many registers hold large values, the stream probably contained many unique elements; if most registers are still near zero, the distinct count is probably small. **HLL++** adds bias correction when the true count is small (roughly under ~1,000).
 
 ```mermaid
 flowchart LR
@@ -510,6 +510,16 @@ M_merged[i] = max(M_A[i], M_B[i])   for every register i
 
 No raw events need to be shipped — only a few kilobytes per node. Redis exposes this as `PFMERGE`.
 
+```mermaid
+flowchart LR
+    N1[Node 1 HLL] --> Merge[PFMERGE / max per register]
+    N2[Node 2 HLL] --> Merge
+    N3[Node 3 HLL] --> Merge
+    Merge --> Est[Combined cardinality estimate]
+```
+
+Each edge server counts locally; a central job merges sketches without shipping raw IPs.
+
 ---
 
 #### Complexity
@@ -539,38 +549,6 @@ Step 3 — standard error (approximate):
         ≈ 1.04 / 128
         ≈ 0.008  →  about 0.8% relative error
 ```
-
----
-
-### Walkthrough: two users, four registers
-
-Registers `M = [0, 0, 0, 0]`:
-
-```text
-add("alice"):  index = 2, ρ = 3  →  M[2] = 3
-add("bob"):    index = 2, ρ = 5  →  M[2] = max(3, 5) = 5
-add("alice"):  duplicate — same hash, no change to max
-```
-
-After millions of distinct IDs, register values rise; the estimator infers cardinality from the distribution. **HLL++** adds bias correction for small sets (< ~1000).
-
----
-
-### Merging sketches across nodes
-
-```text
-M_merged[i] = max(M1[i], M2[i])   for all registers i
-```
-
-```mermaid
-flowchart LR
-    N1[Node 1 HLL] --> Merge[PFMERGE / max per register]
-    N2[Node 2 HLL] --> Merge
-    N3[Node 3 HLL] --> Merge
-    Merge --> Est[Combined cardinality estimate]
-```
-
-Each edge server counts locally; central job merges without shipping raw IPs.
 
 ---
 
@@ -614,9 +592,7 @@ PFCOUNT visitors:2025-06-24
 → approximate distinct IP count (e.g. 48,231)
 ```
 
-**Why this works:** each `PFADD` updates only a few registers (~12 KB total per key). Duplicates do not inflate the estimate. Multiple app servers can write to the same key; Redis merges updates internally.
-
-**Same idea elsewhere:** BigQuery `APPROX_COUNT_DISTINCT`, Elasticsearch `cardinality` aggregation — all answer “how many uniques?” with bounded memory.
+**At scale:** the entire sketch for a day fits in ~12 KB per Redis key; many app servers can `PFADD` the same key concurrently without shipping raw IPs to a central counter.
 
 ---
 
