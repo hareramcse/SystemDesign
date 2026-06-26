@@ -25,60 +25,130 @@
 
 ## 13.1 Bloom Filters
 
-### Definition
+### What this topic is about
 
-A **Bloom filter** is a probabilistic data structure used to quickly determine whether an element is **possibly present** in a set. It is extremely memory efficient and very fast.
+Imagine a library with a billion books and no card catalogue. Every time someone asks for a title, a librarian walks every aisle to see if it exists. That is what happens when a large system checks a database or disk for every key — costly, slow, and mostly wasteful, because most lookups are for things that were **never stored**.
 
-A Bloom filter returns exactly two answers:
+A **Bloom filter** is a compact in-memory shortcut invented by Burton Bloom in 1970. It does not store the actual keys. It stores only a pattern of bits built from those keys. When you ask “might this key exist?”, the filter answers in microseconds — using a tiny fraction of the memory a full list would need.
 
-1. **Definitely not present** — the element was never inserted.
-2. **Possibly present** — the element may exist; confirm with the backing store.
+Think of it as a **quick first question** before the expensive one. It cannot replace the database, but it can save you from asking the database thousands of times per second for keys you already know do not exist.
 
-It can **never** incorrectly report that an existing item is absent. It may occasionally report that a non-existing item is present — this is a **false positive**.
+---
 
-### Why Bloom filters exist
+### What problem it fixes
 
-Systems store billions of identifiers: user IDs, session tokens, URLs, product IDs, cache keys, email addresses. Checking a database on every lookup is expensive.
+Large systems repeatedly ask membership questions:
 
-Instead, check the Bloom filter first:
+- Does this user ID exist?
+- Have we crawled this URL before?
+- Is this product ID in our cache?
+- Could this key be on disk in this SSTable?
+
+Storing every key in a hash set works but consumes enormous RAM — billions of URLs at ~50 bytes each can mean tens of gigabytes. Querying the database or disk on every miss is even worse when attackers or bugs send millions of requests for keys that **never existed** (cache penetration).
+
+The Bloom filter fixes this trade-off:
 
 ```text
-Bloom says "not present"  →  skip database lookup
-Bloom says "possibly present"  →  query database to confirm
+Bloom says "definitely NOT here"  →  skip the expensive lookup (safe)
+Bloom says "MAYBE here"         →  check the real store to confirm
 ```
 
-This reduces database traffic dramatically while accepting a small false-positive rate.
+It accepts a small, tunable rate of **false positives** (saying “maybe” when the key was never inserted) in exchange for huge memory savings and speed. It **never** gives a false negative on a standard filter — if something was inserted, it will not say “definitely not here.”
 
-### Basic idea
+---
 
-Instead of storing actual values, a Bloom filter stores **bits only**.
+### A layman analogy: the nightclub stamp pad
+
+Picture a nightclub with a stamp pad instead of a full guest list.
+
+When a guest enters, the bouncer stamps **three random spots** on a long strip of paper (not three fixed spots — the spots depend on the guest’s name via hash functions).
+
+When someone returns later, the bouncer checks those same three spots. If **any spot is unstamped**, that person was **never admitted** — certain. If **all three are stamped**, they **might** have been admitted — but another guest could have stamped overlapping spots, so the bouncer still checks the real list at the door.
+
+That is exactly how a Bloom filter behaves:
+
+| Nightclub | Bloom filter |
+|-----------|--------------|
+| Stamp pad strip | Bit array |
+| Three stamp positions per guest | Three hash positions per key |
+| Unstamped spot → never entered | Any 0 bit → definitely not inserted |
+| All stamped → check real list | All 1 bits → possibly present, confirm store |
+
+The pad is tiny compared to writing down every guest’s full name. The cost is occasional extra ID checks when stamps overlap by coincidence.
+
+---
+
+### What it does
+
+A Bloom filter supports two operations on a set of keys:
+
+**Insert** — record that a key was seen (set bits in the array).
+
+**Lookup (membership test)** — answer one of two things only:
+
+1. **Definitely not present** — this key was never inserted.
+2. **Possibly present** — this key might exist; go verify with the authoritative source (database, disk, cache).
+
+It does **not** tell you how many items are stored, list members, or delete keys in the standard form. It is a **probabilistic set membership sketch**, not a full database.
+
+---
+
+### How it works — the algorithm inside
+
+Internally, a Bloom filter is just two things:
+
+1. A **bit array** of size `m`, all zeros at the start.
+2. **`k` independent hash functions**, each mapping a key to an index from `0` to `m − 1`.
+
+Hash functions spread keys pseudo-randomly across the array. Using **multiple** hashes reduces the chance that unrelated keys accidentally line up on the same bits.
+
+#### Insert algorithm
 
 ```text
-Bit array (size m), initially all zeros:
+function insert(key):
+    for i = 1 to k:
+        index = hash_i(key)
+        bit_array[index] = 1    // set to 1; already-1 stays 1
+```
 
+#### Lookup algorithm
+
+```text
+function lookup(key):
+    for i = 1 to k:
+        index = hash_i(key)
+        if bit_array[index] == 0:
+            return DEFINITELY_NOT_PRESENT
+    return POSSIBLY_PRESENT    // all k bits are 1 — confirm downstream
+```
+
+Both operations run in **O(k)** time — constant with respect to how many keys were inserted, because `k` is fixed at design time (often around 7 for a 1% false-positive target).
+
+```mermaid
+flowchart LR
+    Item[Key] --> Hash[k hash functions]
+    Hash --> Bits[Bit positions in array]
+    Bits --> Insert[Insert: set bits to 1]
+    Bits --> Check[Lookup: check bits]
+    Check --> Any0{Any bit = 0?}
+    Any0 -->|Yes| DefNot[Definitely not present]
+    Any0 -->|No| Maybe[Possibly present — verify store]
+```
+
+---
+
+### Walkthrough: inserting and looking up fruit names
+
+Use a toy bit array of size 10 and three hash functions.
+
+**Start:** all zeros.
+
+```text
 Index:  0  1  2  3  4  5  6  7  8  9
 Bits:   0  0  0  0  0  0  0  0  0  0
 ```
 
-No objects are stored — only a compact bit vector.
-
-### Main components
-
-**1. Bit array** — stores only 0s and 1s. Memory usage is very small compared to storing full keys.
-
-**2. Multiple hash functions** — Bloom filters use `k` independent hash functions, not one. Each function maps an element to a different index in the bit array.
-
-```text
-Hash1(x)  →  index i₁
-Hash2(x)  →  index i₂
-Hash3(x)  →  index i₃
-```
-
-### Insertion — worked example
-
-Bit array size = 10, all bits start at 0.
-
-**Insert `"Apple"`:**
+**Insert `"Apple"`** — hashes land at positions 2, 5, 8:
 
 ```text
 Hash1(Apple) = 2    Hash2(Apple) = 5    Hash3(Apple) = 8
@@ -86,266 +156,143 @@ Hash1(Apple) = 2    Hash2(Apple) = 5    Hash3(Apple) = 8
 Result:  0  0  1  0  0  1  0  0  1  0
 ```
 
-**Insert `"Banana"`:**
+**Insert `"Banana"`** — positions 1, 5, 7. Position 5 was already 1 from Apple; that overlap is normal.
 
 ```text
 Hash1(Banana) = 1    Hash2(Banana) = 5    Hash3(Banana) = 7
 
-Position 5 is already 1 — that is fine. Multiple elements share bits.
-
 Result:  0  1  1  0  0  1  0  1  1  0
 ```
 
-```mermaid
-flowchart LR
-    Apple[Insert Apple] --> H[Hash1/2/3 → bits 2, 5, 8]
-    H --> BA[(Bit array — set those bits)]
-```
+**Lookup `"Apple"`** — check 2, 5, 8 → all 1 → **possibly present** (and it really is).
 
-### Lookup — worked example
+**Lookup `"Orange"`** — hashes to 0, 4, 9. Bit 4 is still 0 → **definitely not present**. No need to hit the database.
 
-**Check `"Apple"`:**
+This is the filter doing its best work: a cheap, certain rejection.
 
-```text
-Hash1(Apple) = 2    Hash2(Apple) = 5    Hash3(Apple) = 8
-Bits at 2, 5, 8 → all 1  →  Possibly Present
-```
+---
 
-**Check `"Orange"`:**
+### False positives — when the filter is wrong (in one direction only)
+
+A **false positive** means the filter says “possibly present” for a key that was **never** inserted.
+
+Continuing the fruit example — suppose `"Orange"` hashes to positions 2, 5, and 7. All three are already 1 because of Apple and Banana, even though Orange was never added:
 
 ```text
-Hash1(Orange) = 0    Hash2(Orange) = 4    Hash3(Orange) = 9
-Bit at index 4 = 0  →  Definitely Not Present  →  no further checks needed
+Apple  →  bits 2, 5, 8
+Banana →  bits 1, 5, 7
+Orange →  bits 2, 5, 7   (never inserted, but all bits are 1)
 ```
 
-```mermaid
-flowchart LR
-    Orange[Lookup Orange] --> H[Hashes → 0, 4, 9]
-    H --> BA[(Bit array)]
-    BA --> Zero{Any bit = 0?}
-    Zero -->|Yes at index 4| No[Definitely Not Present]
-    Zero -->|All bits = 1| Maybe[Possibly Present]
-```
+The filter cannot tell Orange apart from a real member without checking the real store. That extra DB read is the price of sharing bits.
 
-### Workflow
+A **false negative** (saying “not present” when the key **was** inserted) does **not** happen in a standard Bloom filter, as long as bits are never cleared and the key was inserted correctly. Every inserted key leaves all its bits set to 1 permanently.
 
-**Insert:**
+False positives rise when:
+
+- Too many keys are packed into too small an array.
+- Too few or too many hash functions are used.
+- Hash functions cluster keys on the same bits.
+
+They fall when you allocate more bits per expected key and choose `k` using the sizing formulas below.
+
+---
+
+### Sizing the filter — choosing `m`, `k`, and acceptable error
+
+Before deployment you decide:
+
+- `n` — how many keys you expect to insert.
+- `p` — maximum false-positive rate you can tolerate (e.g. 1%).
+
+**Optimal number of hash functions:**
 
 ```text
-Item  →  k hash functions  →  bit positions  →  set bits to 1
+k = (m / n) × ln(2)     ≈ 0.693 × (m / n)
 ```
 
-**Search:**
-
-```text
-Item  →  k hash functions  →  check bits
-  Any bit = 0  →  Definitely Not Present
-  All bits = 1  →  Possibly Present
-```
-
-```mermaid
-flowchart LR
-    Item[Item] --> Hash[k hash functions]
-    Hash --> Bits[Bit positions]
-    Bits --> Insert[Set bits — insert]
-    Bits --> Check[Check bits — lookup]
-    Check --> Any0{Any bit = 0?}
-    Any0 -->|Yes| DefNot[Definitely Not Present]
-    Any0 -->|No| Maybe[Possibly Present]
-```
-
-### Properties
-
-| Property | Detail |
-|----------|--------|
-| **Insert** | O(k) — `k` = number of hash functions |
-| **Lookup** | O(k) |
-| **Memory** | Only bits stored; actual objects not stored |
-| **Exact count** | Cannot know how many items exist without extra structures |
-| **Mergeable** | OR two bit arrays to union approximate sets (useful across shards) |
-
-### False positives
-
-A **false positive** means the Bloom filter says "possibly present" but the item was never inserted.
-
-**Example:** Existing items `Apple`, `Banana`, `Mango` set bits at positions 2, 4, 7. Now `Orange` hashes to 2, 4, 7 — all bits are already 1. The filter returns "possibly present" even though `Orange` was never inserted.
-
-**Why they happen:** different elements hash to the same bit positions.
-
-```text
-Apple  →  2, 7, 9
-Banana →  2, 5, 9
-Orange →  2, 5, 7   (never inserted, but bits 2, 5, 7 are all 1)
-```
-
-### False negatives
-
-A **false negative** means the filter says "definitely not present" when the item actually exists.
-
-A **standard Bloom filter never produces false negatives.** If an item was inserted correctly and bits have not been removed or corrupted, every required bit remains set.
-
-### Probability of false positives
-
-False positives **increase** when:
-
-- More elements are inserted
-- The bit array becomes full
-- Too few bits are available
-- Poor or correlated hash functions are used
-
-False positives **decrease** when:
-
-- The bit array is larger
-- Hash functions are well distributed
-- The number of hash functions is optimal
-- Fewer elements are inserted relative to capacity
-
-### Choosing the number of hash functions
-
-| Situation | Effect |
-|-----------|--------|
-| **Too few** hash functions | Less information stored; higher false-positive rate |
-| **Too many** hash functions | More CPU work; more bits set to 1; false positives eventually increase |
-
-**Optimal `k` given bit array size `m` and expected elements `n`:**
-
-```text
-k = (m / n) × ln(2)     where ln(2) ≈ 0.693
-```
-
-**False-positive probability:**
+**Approximate false-positive probability:**
 
 ```text
 p ≈ (1 − e^(−kn/m))^k
 ```
 
-**Bits needed for target `p` and expected `n`:**
+**Bits needed for target `p` and `n`:**
 
 ```text
 m ≈ −(n · ln p) / (ln 2)²
 ```
 
-**Worked example:** `n = 1,000,000` keys, target `p = 0.01` (1%):
+**Example:** 1 million keys, 1% false-positive target:
 
 ```text
-m ≈ −(10⁶ × ln 0.01) / (ln 2)² ≈ 9.6M bits ≈ 1.2 MB
-k ≈ (9.6M / 10⁶) × 0.693 ≈ 7 hash functions
+m ≈ 9.6 million bits  ≈  1.2 MB
+k ≈ 7 hash functions
 ```
 
-| `n` (at capacity) | `m` (bits) | `k` | Approx `p` |
-|-------------------|------------|-----|------------|
-| 1M | 1.2 MB | 7 | 1% |
-| 10M | 12 MB | 7 | 1% |
-| 1M | 600 KB | 7 | ~10% (undersized) |
+Rule of thumb: about **10 bits per element** gives roughly **1%** false positives. Double the bit array size to quarter the error rate.
 
-**Sizing rule of thumb:** allocate ~10 bits per element for ~1% FP rate; double `m` to quarter `p`.
+Compared to storing 1 billion URLs in a hash set (~50 GB), a Bloom filter for the same membership checks might use **hundreds of megabytes** — orders of magnitude less, with a known false-positive rate you size upfront.
 
-### Memory efficiency
+---
 
-Suppose **1 billion URLs**, average 50 bytes each stored in a hash set:
+### Variants worth knowing
+
+| Variant | What it adds |
+|---------|--------------|
+| **Counting Bloom filter** | Small counters per slot instead of single bits — supports safe delete (increment on insert, decrement on delete). |
+| **Scalable Bloom filter** | Stack a new filter when the current one fills — unbounded growth with controlled error. |
+| **Blocked / partitioned** | Cache-friendly layouts for high-QPS systems like RocksDB. |
+
+Standard Bloom filters **cannot delete** by clearing a bit — another key may share that bit:
 
 ```text
-Hash set memory  ≈  50 GB
-Bloom filter     ≈  hundreds of MB  (depending on target false-positive rate)
+Apple and Banana both set bit 5.
+Clearing bit 5 to "remove Apple" would break Banana.
 ```
 
-The trade-off is a controlled false-positive rate in exchange for orders-of-magnitude less memory.
-
-### Deleting elements
-
-Standard Bloom filters **do not support deletion.** Multiple elements may share the same bit.
-
-```text
-Apple sets bit 5.  Banana also sets bit 5.
-Clearing bit 5 to "delete Apple" would incorrectly remove Banana.
-```
-
-### Bloom filter variants
-
-**Counting Bloom filter** — stores small counters per slot instead of single bits. Insert increments; delete decrements. Supports safe deletion at the cost of more memory.
-
-```text
-Normal:     0  1  0  1  0
-Counting:   0  2  0  3  1   →  delete one item:  0  1  0  2  1
-```
-
-**Scalable Bloom filter** — when a filter fills up and false positives climb, add a new filter for new insertions. Older filters stay read-only. Supports unlimited growth with controlled FP rate.
-
-**Partitioned Bloom filter** — divide the bit array into partitions; each hash function maps to a different partition. Better uniform distribution and cache locality.
-
-**Blocked Bloom filter** — memory divided into cache-friendly blocks; all hash computations for an element stay within one block. Fewer CPU cache misses; common in high-performance systems.
-
-**Compressed Bloom filter** — compress the bit array before network transmission. Reduces bandwidth when filters are exchanged between servers; adds compression/decompression overhead.
+---
 
 ### Bloom filter vs hash set
 
 | | Hash set | Bloom filter |
 |---|----------|--------------|
-| **Stores** | Actual values | Bits only |
-| **Lookup** | O(1) average | O(k) |
-| **Memory** | High | Very low |
-| **False positives** | No | Yes |
-| **False negatives** | No | No (standard version) |
-| **Deletion** | Yes | No (standard version) |
-| **Enumerate members** | Yes | No |
+| Stores actual keys | Yes | No — bits only |
+| Memory | High (O(n)) | Very low (fixed `m`) |
+| Lookup | O(1) average | O(k) |
+| False positives | Never | Yes — tunable |
+| False negatives | Never | Never (standard) |
+| Delete / list members | Yes | No (standard) |
 
-### Real-world use cases
+Use a hash set when you need exact membership and enumeration. Use a Bloom filter when you need a **cheap pre-filter** in front of something expensive.
 
-1. **Database query optimization** — avoid unnecessary lookups when key definitely does not exist.
-2. **Cache systems** — prevent cache penetration for keys that definitely do not exist.
-3. **Web crawlers** — track visited URLs without revisiting pages.
-4. **CDNs** — check whether content may exist on an edge server before forwarding.
-5. **Distributed databases** — check probable key existence before remote node queries (Cassandra, HBase SSTable filters).
-6. **Storage systems** — RocksDB/LevelDB per-SSTable Bloom filters skip disk reads.
-7. **Email spam filtering** — known spam signatures before expensive logic.
-8. **Networking** — fast membership checks in routers and forwarding tables.
+---
 
-**Cache flow:**
+### Real-world example: stopping cache penetration
+
+An e-commerce API caches product details by `product_id`. Attackers send millions of requests for random IDs that do not exist. Without protection, every miss goes to the database — the cache is useless.
+
+**With a Bloom filter in front of the cache:**
+
+1. On startup (or periodically), load all valid product IDs into a Bloom filter — ~1.2 MB for a million products at 1% FP.
+2. On each request, check the filter first.
+3. Filter says **not present** → return 404 immediately; database never touched.
+4. Filter says **possibly present** → check cache; on miss, query database.
 
 ```text
-Request key K
+Request for product_id K
   → Bloom.contains(K)?
-      NO  → return 404 / cache miss (skip DB)
-      YES → GET cache → on miss, query DB (FP may cause extra DB hit)
+      NO  → 404 / skip DB
+      YES → cache → DB on miss (rare false positive causes one extra DB read)
 ```
 
-### Advantages
+The same pattern appears in **RocksDB** and **LevelDB**: each SSTable file carries a Bloom filter so the engine skips disk reads when a key **definitely** is not in that file. **Cassandra** and **HBase** use similar filters before remote or disk lookups.
 
-- Extremely memory efficient
-- Fast insertion and lookup (O(k))
-- Simple implementation; scales to massive datasets
-- Reduces database load and network traffic
-- No false negatives in standard Bloom filters
-
-### Limitations
-
-- False positives are possible — always confirm with authoritative store
-- Standard version cannot delete elements
-- Actual values are not stored; member count not directly known
-- Performance degrades as the bit array fills beyond design capacity
-- Requires careful sizing of `m` and `k`
-
-### Best practices
-
-- Size for expected `n` and target `p` upfront; rebuild or add scalable filters when `n` grows.
-- Treat "possibly present" as a hint — confirm before writes.
-- Use counting Bloom filters when deletes are required.
-- Use blocked/partitioned variants in latency-sensitive paths.
-
-### Common mistakes
-
-- Undersized filter → FP rate climbs silently as `n` grows
-- Using Bloom as the only dedup layer without confirming positives
-- Deleting from a standard Bloom filter by clearing bits
-- Too many or too few hash functions without using the `k = (m/n) × ln(2)` formula
+---
 
 ### Summary
 
-```text
-Bloom filter = bit array + k hash functions; "definitely not" or "possibly present"
-No false negatives; false positives controlled by m, k, n; confirm positives with backing store
-Variants: counting (delete), scalable (grow), blocked/partitioned (performance)
-```
+A Bloom filter is a tiny bit array plus `k` hash functions that answers “might this key exist?” in constant time. It **never** wrongly clears a real member, but may occasionally send you to the database for a key that was never there. Size it with `m`, `n`, and `k` for your target error rate, treat “possibly present” as a hint, and always confirm with the real store. Used well, it is one of the most practical tools in large-scale system design — a stamp pad in front of the full guest list.
 
 ---
 
