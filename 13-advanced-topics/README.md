@@ -245,6 +245,17 @@ Use a hash set when you need exact membership and enumeration. Use a Bloom filte
 
 ---
 
+### Pitfalls and design tips
+
+- **Standard Bloom cannot delete** — clearing a bit breaks other keys; use a **counting Bloom filter**, **cuckoo filter**, or periodic full rebuild when membership shrinks.
+- **Simulate `k` hashes cheaply** with double hashing: `g_i(x) = h1(x) + i × h2(x) mod m` — one pass, fewer hash calls.
+- **Size for peak `n`** — once the filter is overfilled, false-positive rate climbs fast; monitor FP rate or rebuild when key count grows past the design target.
+- **Not for cardinality** — “how many unique keys?” is HyperLogLog ([13.2](#132-hyperloglog)), not Bloom.
+- **Production:** RedisBloom (`BF.ADD` / `BF.EXISTS`), Guava `BloomFilter`, RocksDB/LevelDB per-SSTable filters.
+- **Union of filters** (same `m`, `k`, hash seeds): bitwise OR of bit arrays — useful when merging shard-level filters.
+
+---
+
 ### Real-world example: stopping cache penetration
 
 An e-commerce API caches product details by `product_id`. Attackers send millions of requests for random IDs that do not exist. Without protection, every miss goes to the database — the cache is useless.
@@ -390,6 +401,17 @@ Do not use HLL for billing or compliance requiring exact counts. Do not confuse 
 
 ---
 
+### Pitfalls and design tips
+
+- **Sketches must share the same precision** (`p`, register count) to merge — mixing precisions invalidates `PFMERGE`.
+- **Duplicates do not increase the count** — only distinct values matter; re-adding the same user ID is a no-op.
+- **Small sets are biased** — use **HLL++** bias correction, or exact counting below ~1,000 uniques then switch to HLL.
+- **Not membership** — HLL cannot answer “have we seen this IP before?” (Bloom filter or hash set).
+- **Production:** Redis `PFADD` / `PFCOUNT` / `PFMERGE`, BigQuery `APPROX_COUNT_DISTINCT`, Elasticsearch `cardinality`, Postgres `hyperloglog` extension, Druid HyperUnique.
+- **Interview angle:** explain why max-per-register merge works — each register tracks the “longest zero run” seen for its bucket; union of streams takes the max across nodes.
+
+---
+
 ### Real-world example: unique visitors per CDN edge
 
 A CDN serves billions of requests daily. Each edge node runs HLL per customer for unique client IPs — ~12 KB per sketch. Hourly, aggregators `PFMERGE` sketches into a global “unique visitors” metric without storing every IP.
@@ -520,6 +542,25 @@ Pair CMS with a heap for **heavy hitters**: promote keys above threshold to exac
 
 ---
 
+### Pitfalls and design tips
+
+- **Only overestimates, never under** — safe for rate limits and “top talkers”; wrong for exact billing without a promotion path to exact counters.
+- **Point queries only** — estimates frequency of a **known key**; CMS does not list all keys or do range counts without extra structures.
+- **Count-Min vs Count-Median Sketch** — CMS is simpler and one-sided; Count Sketch can underestimate (median of rows) but tighter on some distributions.
+- **Decay / windows** — standard CMS has no time window; use sliding windows (array of sketches), **exponential decay**, or rotate sketches hourly for “requests in last 5 minutes.”
+- **Merge sketches** by element-wise **addition** of counter matrices (same dimensions and hash seeds).
+- **Production:** Apache DataSketches, Redis Stack CMS (where available), stream processors (Flink approximate aggregations).
+
+#### Probabilistic sketches — how they differ
+
+| Question | Structure | Section |
+|----------|-----------|---------|
+| “Might this key exist?” | Bloom filter | [13.1](#131-bloom-filters) |
+| “How many **unique** values?” | HyperLogLog | [13.2](#132-hyperloglog) |
+| “How many times did **this key** appear?” | Count-Min Sketch | [13.3](#133-count-min-sketch) |
+
+---
+
 ### Real-world example: API gateway rate limiting
 
 An API gateway maintains a CMS per route for API-key request counts. Fixed ~2 KB sketch per route handles millions of keys. When `estimate(api_key) > 10,000/min`, throttle or promote to an exact counter — catching abuse without a giant hash map.
@@ -640,6 +681,16 @@ Delete `"car"` → unmark end on `r`; keep nodes because `"cart"` still uses `c 
 
 ---
 
+### Pitfalls and design tips
+
+- **Memory can explode** — one node per character per distinct prefix path; sparse dictionaries with long shared prefixes help; **radix trees** compress single-child chains.
+- **Unicode** — one logical character may be multiple bytes; normalize (NFC) and index by code points or graphemes, not raw UTF-8 bytes, for correct prefix behavior.
+- **Ranking autocomplete** — trie returns candidates; production systems attach **frequency scores** at terminal nodes and sort top-K (not just DFS order).
+- **IP routing** uses **Patricia/radix tries** on bits for longest-prefix match — same idea, binary branches per bit.
+- **Production:** Elasticsearch completion suggester, Redis lacks native trie but uses other structures; Linux kernel FIB (routing) uses radix trees.
+
+---
+
 ### Real-world example: search autocomplete
 
 A search engine stores millions of past queries in a trie. User types `"sys"` → walk to node `s→y→s` → return ranked terminal descendants (`system design`, `systemctl`, …) in milliseconds. No full-table scan.
@@ -739,6 +790,16 @@ Insert: find predecessors at each level, random height, splice pointers.
 
 ---
 
+### Pitfalls and design tips
+
+- **Worst case O(n)** if random levels are unlucky — probability vanishingly small at scale; not acceptable for hard real-time guarantees (use balanced tree).
+- **`p = 1/2` vs `p = 1/4`** — lower promotion probability = fewer express lanes, less memory overhead, slightly taller expected search path.
+- **Why Redis uses skip lists** — simpler **lock-free concurrent** insert/delete than red-black tree rotations; William Pugh (1989) designed them as a simpler AVL alternative.
+- **Duplicate keys** — sorted multiset needs tie-breaking by member name (Redis stores unique member per score).
+- **Disk-backed data** — B-trees win on disk (page locality); skip lists target **in-memory** indexes.
+
+---
+
 ### Real-world example: game leaderboard
 
 `ZADD leaderboard 9850 "player42"` stores scores in a skip list. `ZRANGE leaderboard 0 9` returns top 10 in log time. `ZSCORE` hits the hash table directly. Disk-backed indexes prefer B-trees; skip lists shine **in memory**.
@@ -831,6 +892,17 @@ Change one byte in block C → `H(C)` changes → `H(CD)` changes → root chang
 |---------|-----|
 | **Merkle Patricia tree** | Ethereum state — trie + hashing |
 | **Sparse Merkle tree** | Full key space for ZK proofs |
+
+---
+
+### Pitfalls and design tips
+
+- **Hash order matters** — `hash(left || right)` vs `hash(right || left)` must be fixed everywhere; Bitcoin uses ordered pairs.
+- **Odd leaf count** — duplicate last leaf or promote unpaired hash; all verifiers must use the same rule.
+- **Proof size** — `O(log N)` sibling hashes; a tree with 1M leaves needs ~20 hashes (~640 bytes with SHA-256).
+- **Not a key-value store** — proves “this chunk is in the set at this root”; lookup by arbitrary key needs a separate index.
+- **Production:** Git objects, Cassandra **anti-entropy repair**, Certificate Transparency logs, IPFS/MerkleDAG, Ethereum Patricia-Merkle trie.
+- **Interview angle:** comparing two replica roots localizes differing subtrees without full table scan — binary search on the tree.
 
 ---
 
@@ -927,6 +999,17 @@ Add node 80 to ring `{10, 50, 120, 200}`. Only keys hashing to ranges now owned 
 
 ---
 
+### Pitfalls and design tips
+
+- **Hot spots on the ring** — without **virtual nodes (vnodes)**, a few physical machines can own disproportionate key ranges; Cassandra commonly uses 256 vnodes per host.
+- **Not instant consistency** — DHT routing is **eventually consistent**; reads during node join/leave may miss or return stale values until stabilization.
+- **Chord vs Kademlia:** Chord uses finger tables on a numeric ring; **Kademlia** uses XOR metric + k-buckets — better for peer churn (BitTorrent, IPFS).
+- **Cassandra ≠ pure DHT** — uses ring + tokens + tunable quorum reads/writes; ops tooling and replication factor are first-class.
+- **Naive `hash % N` still appears** — in caches with fixed shard count; use **consistent hashing with virtual nodes** when N changes often.
+- **Interview angle:** explain why only ~K/N keys move when a node joins — keys belong to successor on the ring, not modulo slot index.
+
+---
+
 ### Real-world example: Cassandra cluster expansion
 
 Adding a fourth node with **vnodes** migrates ~25% of partitions. **BitTorrent** trackerless DHT finds peers for content hashes. **IPFS** routes by content address on Kademlia-style overlays.
@@ -1006,6 +1089,17 @@ M = version, N = variant
 | B-tree locality | Poor | Good | Good | Good | Good |
 
 Sections **13.9–13.11** cover Snowflake, ULID, and KSUID in detail.
+
+---
+
+### Pitfalls and design tips
+
+- **Store as `BINARY(16)`** in databases — `CHAR(36)` wastes space and slows indexes; convert to string only at API boundaries.
+- **UUID v1 leaks MAC address** — privacy risk; avoid for client-visible IDs; prefer v4/v7.
+- **v3/v5 are deterministic** — same namespace + name → same UUID; great for idempotent imports, dangerous if you expected randomness.
+- **v4 primary keys fragment B-trees** — random insertion scatters index pages; **v7**, ULID, or Snowflake improve write locality on clustered indexes.
+- **Nil UUID** (`00000000-0000-0000-0000-000000000000`) — valid sentinel for “unset” in some schemas; do not generate randomly.
+- **Default for new systems:** **UUID v7** (RFC 9562) unless you need 64-bit numeric IDs (Snowflake) or URL-safe strings (ULID).
 
 ---
 
@@ -1097,6 +1191,17 @@ Uniqueness: time + worker + sequence. ~4M IDs/sec per node.
 
 ---
 
+### Pitfalls and design tips
+
+- **Worker ID registry is mandatory** — duplicate `(worker_id, timestamp, sequence)` pairs cause ID collisions; use ZooKeeper, etcd, or cloud instance metadata for unique worker IDs.
+- **Clock goes backward** — generator must **block or spin** until `now ≥ lastTimestamp`; never emit IDs with a regressed clock.
+- **41-bit timestamp ms** — Twitter epoch; custom epochs (Sonyflake) extend range; know your layout’s **overflow year**.
+- **~4,096 IDs/ms per worker** — sequence rolls over → wait for next millisecond; burst beyond that stalls the generator.
+- **Sortable but not gapless** — deleted tweets leave holes; do not use Snowflake as a contiguous sequence counter.
+- **Open-source variants:** Twitter Snowflake (archived), **Sonyflake**, **Baidu uid-generator**, Instagram’s custom layouts — same bit-packing idea, different field widths.
+
+---
+
 ### Real-world example: social feed ordering
 
 Tweet/post IDs are Snowflake-style integers — feeds sort by ID ≈ sort by time. Discord message IDs follow a similar pattern. Custom layouts (Sonyflake, Instagram) tune bit widths for their scale.
@@ -1159,6 +1264,16 @@ Store `BINARY(16)` internally; expose Base32 at API boundaries.
 | Worker IDs | No | No | Yes |
 
 Prefer **UUID v7** when RFC standard compliance matters.
+
+---
+
+### Pitfalls and design tips
+
+- **Monotonic ULID** — for strict ordering within the same millisecond on one machine, increment the random component (monotonic factory); plain ULIDs in the same ms are unordered.
+- **Crockford Base32** — excludes `I`, `L`, `O`, `U` to avoid human transcription errors; case-insensitive on decode.
+- **80-bit random** — collision probability is negligible for most apps; not as heavy as KSUID’s 128-bit tail for same-second bursts at extreme QPS.
+- **Lexicographic sort = time sort** only when IDs share the same length and encoding — do not mix ULID with UUID strings in one sorted index.
+- **Libraries:** `ulid` (npm, Go, Python); store 16 raw bytes in DB, render Base32 in JSON APIs.
 
 ---
 
@@ -1225,6 +1340,16 @@ Base62 is **case-sensitive** — normalize comparison carefully.
 | Encoding | Base32 (case-insensitive) | Base62 |
 
 Choose KSUID when collision resistance beats millisecond ordering. Choose ULID or UUID v7 when ms ordering matters.
+
+---
+
+### Pitfalls and design tips
+
+- **Second-level granularity** — many IDs in the same second sort by random payload, not creation order; use ULID/Snowflake if you need ms ordering.
+- **Base62 is case-sensitive** — normalize to one case before compare; URLs may be lowercased by clients.
+- **160 bits (20 bytes)** — slightly larger than UUID/ULID; plan column width and index size accordingly.
+- **Custom epoch** — KSUID timestamp is offset from a fixed epoch (not always Unix); check library docs when decoding time from prefix.
+- **When KSUID shines:** high-volume event streams (Segment-style analytics) where 128-bit randomness per second bucket avoids coordination without worker IDs.
 
 ---
 
