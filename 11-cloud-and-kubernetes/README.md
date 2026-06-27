@@ -947,7 +947,7 @@ A misconfigured security group is the most common exposure vector — not the VP
 - **IP exhaustion on VPC CNI** — one IP per pod; a `/24` pod subnet holds ~251 assignable addresses, not thousands of pods.
 - **NAT gateway cost** — one NAT per AZ for HA adds hundreds of dollars/month plus egress; consider VPC endpoints for S3/DynamoDB.
 - **Security groups are stateful; NACLs are stateless** — debugging "works one way" often means missing return path on NACL.
-- **Peering is non-transitive** — Aâ†”B and Bâ†”C does not connect Aâ†”C; use Transit Gateway or mesh for many VPCs.
+- **Peering is non-transitive** — A↔B and B↔C does not connect A↔C; use Transit Gateway or mesh for many VPCs.
 - **When default VPC is OK** — experiments only; production deserves explicit CIDR planning and private subnets.
 - **Production:** three-tier layout (public LB, private app, private DB); no IGW route on database subnets.
 
@@ -1067,7 +1067,7 @@ The web server needs a public IP (or sits behind a load balancer with one). The 
 
 ### Pitfalls and design tips
 
-- **Public subnet â‰  must have public IP** — route to IGW enables outbound; assign public IPs only where needed.
+- **Public subnet ≠ must have public IP** — route to IGW enables outbound; assign public IPs only where needed.
 - **PrivateLink vs peering** — PrivateLink exposes a service without full VPC routing mesh; peering shares entire CIDRs.
 - **DNS split-horizon** — Route 53 private hosted zones resolve internal names only inside the VPC.
 - **LB idle timeout vs app keep-alive** — ALB default 60s can clip long HTTP connections; align with server timeouts.
@@ -1192,8 +1192,8 @@ Copy 1 (server A) + Copy 2 (server B) + Copy 3 (server C)
 - **Egress dominates at scale** — serving video from S3 cross-region costs more than storage; put CloudFront or regional origins close to users.
 - **Block volumes are AZ-local** — EBS attaches only in the same AZ; snapshots restore to any AZ but take time.
 - **Object LIST is not instantaneous** — massive buckets need prefix design; do not treat S3 like a POSIX directory tree.
-- **11 nines durability â‰  backup** — accidental deletes and ransomware need versioning, Object Lock, or cross-account replication.
-- **When object vs block** — media/logs/backups â†’ object; database/VM disk â†’ block; shared POSIX â†’ managed file (EFS, Filestore).
+- **11 nines durability ≠ backup** — accidental deletes and ransomware need versioning, Object Lock, or cross-account replication.
+- **When object vs block** — media/logs/backups → object; database/VM disk → block; shared POSIX → managed file (EFS, Filestore).
 - **Production:** S3 Intelligent-Tiering or lifecycle rules; gp3 EBS; monitor request rate throttling on hot prefixes.
 
 ---
@@ -1632,8 +1632,8 @@ Both containers share the same read-only image layers but have separate writable
 
 ### Pitfalls and design tips
 
-- **Docker Desktop â‰  production runtime** — EKS/GKE nodes run containerd; test images against containerd in CI.
-- **Root in container â‰ˆ root on host** — run as non-root `USER`, drop capabilities, read-only root filesystem where possible.
+- **Docker Desktop ≠ production runtime** — EKS/GKE nodes run containerd; test images against containerd in CI.
+- **Root in container ≈ root on host** — run as non-root `USER`, drop capabilities, read-only root filesystem where possible.
 - **`:latest` tag drift** — pin digests or immutable version tags in Kubernetes manifests.
 - **When VMs still win** — Windows workloads without container support, hardware dongles, or strict per-VM licensing.
 - **Production:** BuildKit cache mounts, multi-stage builds, scan images in CI (Trivy, ECR scanning).
@@ -2329,7 +2329,7 @@ With limit:    cgroup cpu quota → container throttled at 2 cores equivalent
 
 ### Pitfalls and design tips
 
-- **requests â‰  limits** — Burstable QoS can be CPU-throttled to limits; Guaranteed QoS needs requests = limits.
+- **requests ≠ limits** — Burstable QoS can be CPU-throttled to limits; Guaranteed QoS needs requests = limits.
 - **CPU limits cause latency cliffs** — CFS quota throttling shows up as tail latency; consider requests without tight CPU caps for latency-sensitive apps.
 - **Memory limit OOM kills the whole container** — JVM and Go runtimes need headroom above heap settings.
 - **`pids.max`** — fork bombs hit cgroup process limits before node PID exhaustion — set explicitly for untrusted code.
@@ -2837,7 +2837,7 @@ flowchart LR
 ### Pitfalls and design tips
 
 - **`maxUnavailable` / `maxSurge` trade-offs** — zero `maxUnavailable` needs spare capacity; high `maxSurge` speeds deploy but spikes resource use.
-- **Readiness â‰  liveness** — readiness removes pod from Service endpoints; liveness restarts container — misconfigured liveness causes restart loops.
+- **Readiness ≠ liveness** — readiness removes pod from Service endpoints; liveness restarts container — misconfigured liveness causes restart loops.
 - **Rollout stuck** — failing readiness on new pods pauses rollout; `kubectl rollout status` and events are first debug steps.
 - **Recreate strategy** — brief downtime acceptable for schema migrations that break old/new coexistence.
 - **Production:** RollingUpdate default; set `revisionHistoryLimit`; use `kubectl rollout undo` tested in staging.
@@ -3668,7 +3668,7 @@ flowchart LR
 - **Updates do not hot-reload** — mounted ConfigMaps sync eventually (~minutes); env vars need pod restart.
 - **1 MiB size limit** — split large configs or use init containers + volumes.
 - **When volume vs env** — files allow app-side reload watchers; env is simpler but static until restart.
-- **Production:** `kubectl rollout restart` after ConfigMap change; Helm values â†’ ConfigMap templates.
+- **Production:** `kubectl rollout restart` after ConfigMap change; Helm values → ConfigMap templates.
 - **Immutable ConfigMaps** — `immutable: true` prevents accidental key deletion and improves kubelet sync performance.
 
 ---
@@ -3883,7 +3883,7 @@ flowchart LR
 
 ### Pitfalls and design tips
 
-- **Pending â‰  always need nodes** — check taints, affinity, resource requests, and PVC topology before scaling cluster.
+- **Pending ≠ always need nodes** — check taints, affinity, resource requests, and PVC topology before scaling cluster.
 - **Requests drive scheduling** — pods with no CPU/memory requests pack optimistically and then get OOM-throttled.
 - **Topology spread** — `topologySpreadConstraints` beat naive anti-affinity for zone balance.
 - **Custom schedulers** — GPU sharing (NVIDIA device plugin), batch (Volcano), or bin-packing plugins for special cases.
@@ -4120,7 +4120,7 @@ flowchart LR
 ### Pitfalls and design tips
 
 - **Operator bugs are cluster-wide** — test Operator upgrades in staging; pin Operator version like cluster version.
-- **CRD versioning** — `v1alpha1` â†’ `v1` migrations need conversion webhooks or manual object edits.
+- **CRD versioning** — `v1alpha1` → `v1` migrations need conversion webhooks or manual object edits.
 - **When Helm is enough** — stateless apps without day-2 reconciliation loops do not need an Operator.
 - **Webhook failures block API** — validating/mutating webhooks for CRDs must be HA; failurePolicy matters.
 - **Production:** cert-manager, prometheus-operator, Strimzi (Kafka), Crossplane; leader-elected Operator replicas.
