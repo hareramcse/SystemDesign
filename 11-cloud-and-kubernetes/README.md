@@ -2857,7 +2857,7 @@ A SaaS company runs `user-api` as a Deployment with 6 replicas, CPU/memory reque
 
 Pods are like hotel guests who check out and get a new room number every night. If you want to send them mail, you need a permanent front desk address that always forwards to whoever is currently in the right room. A **Service** is that stable front desk — a fixed DNS name and virtual IP that load-balances to the right pods even as they come and go.
 
-Technically, a Service is a Kubernetes **ClusterIP** (virtual IP) plus **Endpoints** (or EndpointSlice) listing pod IPs that match a **label selector**. **kube-proxy** (or eBPF dataplane) implements load balancing on each node. Types include **ClusterIP** (internal default), **NodePort** (host port on every node), **LoadBalancer** (cloud LB), and **ExternalName** (CNAME to external DNS). Services enable **service discovery** via DNS: `my-svc.namespace.svc.cluster.local`.
+Technically, a Service is a Kubernetes object that exposes a **stable virtual IP (ClusterIP)** and **DNS name** (`my-svc.namespace.svc.cluster.local`) backed by **Endpoints** (or **EndpointSlices**) listing the current pod IPs that match a **label selector**. **kube-proxy** (or an eBPF dataplane such as Cilium) programs load balancing on each node. The `type` field controls **how** traffic reaches that VIP — internal only (**ClusterIP**), via every node's IP (**NodePort**), via a cloud load balancer (**LoadBalancer**), or as a DNS alias (**ExternalName**). **Headless** Services (`clusterIP: None`) skip the VIP and return pod DNS records directly for StatefulSets and client-side discovery.
 
 ---
 
@@ -2891,53 +2891,209 @@ Services:
 
 **Abstraction over pod churn** — endpoints update automatically when pods are replaced.
 
-**Exposure tiers** — ClusterIP (internal), NodePort, LoadBalancer, ExternalName.
+**Exposure tiers** — ClusterIP (internal), NodePort, LoadBalancer, ExternalName, Headless.
 
-They do **not** route by HTTP host/path (use **Ingress**), terminate TLS for multiple hosts by themselves, or guarantee sticky sessions unless configured.
+They do **not** route by HTTP host/path (use **Ingress** or **Gateway API**), terminate TLS for multiple hosts by themselves, or guarantee sticky sessions unless `sessionAffinity` is set.
+
+---
+
+### Compared to the alternative
+
+**Calling pod IPs directly:**
+
+```text
+Frontend → 10.244.1.8:8080   (pod restarts → IP changes → outage)
+```
+
+**Calling a Service by name:**
+
+```text
+Frontend → http://backend-svc:8080   (DNS → stable VIP → any ready pod)
+```
+
+| | Pod IP | Service (ClusterIP) | NodePort | LoadBalancer | Ingress + ClusterIP |
+|---|--------|---------------------|----------|--------------|---------------------|
+| **Stable address** | No | Yes (VIP + DNS) | Yes (node IP + port) | Yes (cloud IP) | Yes (one host/path router) |
+| **Reachable from internet** | No | No | Yes (if nodes/firewall allow) | Yes | Yes (HTTP/HTTPS) |
+| **Cost** | Free | Free | Free (no cloud LB) | $ per LB | One LB for many apps |
+| **Best for** | Debugging only | East-west microservices | Dev, bare metal edge | Public TCP/UDP, single service | Many HTTP apps on one IP |
+
+Use **ClusterIP** for almost all in-cluster traffic. Use **LoadBalancer** or **Ingress** for north-south exposure — not raw pod IPs.
 
 ---
 
 ### How it works — the architecture inside
 
-#### Basic path
+#### Core mechanism — VIP, endpoints, kube-proxy
+
+Every Service (except ExternalName and Headless) gets a **cluster-internal virtual IP**. Traffic to that IP is distributed to **ready** pod IPs in the Endpoints object:
 
 ```mermaid
 flowchart LR
-    Client[Client] --> Svc[Service ClusterIP]
-    Svc --> P1[Pod 1]
-    Svc --> P2[Pod 2]
+    Client[Client pod] --> DNS[CoreDNS]
+    DNS --> Svc[Service ClusterIP]
+    Svc --> EP[Endpoints]
+    EP --> P1[Pod 1]
+    EP --> P2[Pod 2]
 ```
 
-#### Service types
+```text
+1. You create Service with selector app=backend
+2. Deployment pods with label app=backend register as endpoints
+3. kube-proxy on each node programs rules: VIP:port → pod IP:port
+4. Pod dies → Endpoints update → same Service name still works
+```
+
+**Readiness matters:** only pods passing **readiness** probes appear in Endpoints.
+
+---
+
+#### ClusterIP (default)
+
+`type: ClusterIP` — **internal only**. The VIP is routable only inside the cluster. Use for **east-west** traffic: `orders-api` → `inventory-svc`.
+
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: inventory-svc
+spec:
+  type: ClusterIP          # default if omitted
+  selector:
+    app: inventory
+  ports:
+    - port: 8080           # port on the Service VIP
+      targetPort: 8080     # port on the pod
+```
+
+```text
+Caller uses:  http://inventory-svc.default.svc.cluster.local:8080
+```
+
+**When to use:** microservices that must **not** be reached from the public internet.
+
+**When not to use alone:** exposing a public website — add NodePort, LoadBalancer, or Ingress.
+
+---
+
+#### NodePort
+
+`type: NodePort` — opens the same **high port** (default **30000–32767**) on **every node's IP**. Traffic: `NodeIP:NodePort` → Service → pods.
+
+```yaml
+spec:
+  type: NodePort
+  ports:
+    - port: 80
+      targetPort: 8080
+      nodePort: 30080
+```
 
 ```mermaid
 flowchart LR
-    App[In-cluster app] --> CI[ClusterIP]
-    CI --> Pods1[Pods]
-    Net[Internet] --> LB[LoadBalancer]
-    Net --> NP[NodePort]
-    LB --> Svc[Service]
-    NP --> Svc
-    Svc --> Pods2[Pods]
+    User[External client] --> NIP[Node IP :30080]
+    NIP --> NP[NodePort Service]
+    NP --> Pods[Backend pods]
 ```
 
-| Type | Access | Typical use |
-|------|--------|-------------|
-| **ClusterIP** | Internal only | Backend APIs, databases |
-| **NodePort** | Node IP + fixed port | Dev, bare-metal edge |
-| **LoadBalancer** | Cloud public IP | Production public services |
-| **ExternalName** | DNS alias | External SaaS |
+**When to use:** local dev/demos, bare-metal without cloud LB, debugging before Ingress.
+
+**When not to use in production (usually):** many public HTTP services (use Ingress), or when cloud LoadBalancer is available.
+
+**Note:** `LoadBalancer` Services often create a NodePort automatically under the hood.
+
+---
+
+#### LoadBalancer
+
+`type: LoadBalancer` — cloud controller (AWS, GCP, Azure, MetalLB) provisions an **external load balancer** forwarding to the Service.
+
+```yaml
+spec:
+  type: LoadBalancer
+  ports:
+    - port: 443
+      targetPort: 8443
+```
+
+```mermaid
+flowchart LR
+    Internet[Internet] --> CLB[Cloud load balancer]
+    CLB --> Svc[LoadBalancer Service]
+    Svc --> Pods[Pods]
+```
+
+**When to use:** one **public TCP/UDP** service (game servers, MQTT, non-HTTP TLS), or a single simple public API.
+
+**When not to use:** many HTTP microservices — cost of one LB per Service; prefer **Ingress** + ClusterIP backends.
+
+---
+
+#### ExternalName
+
+`type: ExternalName` — Kubernetes DNS returns a **CNAME** to an external hostname (no proxy, no Endpoints).
+
+```yaml
+spec:
+  type: ExternalName
+  externalName: payments.saas-provider.com
+```
+
+**When to use:** stable in-cluster DNS alias for external SaaS.
+
+**Limitations:** DNS only — no port remapping, no TLS, no health checks.
+
+---
+
+#### Headless Service (`clusterIP: None`)
+
+No virtual IP. DNS returns **A records per ready pod** (StatefulSets: `pod-0.my-svc`).
+
+```yaml
+spec:
+  clusterIP: None
+  selector:
+    app: kafka
+```
+
+**When to use:** StatefulSets, Kafka/Cassandra client discovery, client-side load balancing.
+
+**When not to use:** standard stateless Deployments — ClusterIP is simpler.
+
+---
+
+#### Choosing a Service type
+
+```text
+Caller inside the cluster?  → ClusterIP
+Public HTTP/HTTPS, many routes?  → Ingress or Gateway API → ClusterIP backends
+Public TCP/UDP, one service?  → LoadBalancer
+External hostname alias only?  → ExternalName
+StatefulSet per-pod DNS?  → Headless
+```
+
+| Scenario | Recommended type | Why |
+|----------|-------------------|-----|
+| Microservice A calls B | **ClusterIP** | Stable internal DNS |
+| 3 public web apps on different hostnames | **ClusterIP** + **Ingress** | One LB, shared TLS |
+| Public REST API (single service) | **LoadBalancer** or Ingress | L4 vs L7 needs |
+| Mobile game UDP server | **LoadBalancer** | Ingress is HTTP-only |
+| External Stripe API alias | **ExternalName** | CNAME in cluster DNS |
+| Kafka StatefulSet | **Headless** | Per-broker DNS |
+| Minikube local test | **NodePort** or port-forward | No cloud LB |
+
+---
 
 #### Endpoint updates on pod replacement
 
 ```text
-Before: Service → Pod A, Pod B
+Before: Service inventory-svc → Pod A, Pod B
 Pod A fails → Service → Pod C, Pod B (same Service DNS/IP)
 ```
 
 ---
 
-### Walkthrough: frontend calling backend
+#### Worked example — frontend calling backend
 
 ```mermaid
 flowchart LR
@@ -2957,18 +3113,39 @@ flowchart LR
 
 ### Pitfalls and design tips
 
-- **ClusterIP is cluster-internal only** — external users need LoadBalancer, NodePort, or Ingress.
-- **Selector mismatch** — Service with no matching pods silently drops traffic; check Endpoints object.
-- **kube-proxy modes** — iptables vs IPVS vs eBPF (Cilium) change connection behavior at scale.
-- **Headless Service (`clusterIP: None`)** — required for StatefulSet stable DNS (`pod-0.service`).
-- **Production:** ClusterIP for east-west; one Ingress or Gateway for north-south HTTP.
-- **ExternalName** — CNAME only; no port mapping — good for external SaaS aliases, not TCP proxying.
+#### When to use (and when not to)
+
+- **Default to ClusterIP** for every Deployment — expose north-south only at Ingress/Gateway/LB.
+- **One LoadBalancer per microservice** does not scale on cost — reserve it for L4 public endpoints.
+- **NodePort for internet production** — awkward; prefer Ingress or cloud LB.
+- **ExternalName** for DNS aliases only — not TCP proxying.
+
+#### Common mistakes
+
+- **Selector mismatch** — empty Endpoints → black hole; run `kubectl get endpoints`.
+- **ClusterIP for external users** — internet cannot reach ClusterIP VIPs.
+- **Headless + stateless Deployment** — clients get all pod IPs; use ClusterIP for kube-proxy LB.
+- **Ingress without controller** — Ingress resource alone does nothing.
+
+#### Production notes
+
+- **East-west:** ClusterIP + NetworkPolicy.
+- **North-south HTTP:** Ingress or Gateway API → ClusterIP backends.
+- **North-south TCP/UDP:** LoadBalancer or Gateway.
+- **kube-proxy:** iptables vs IPVS vs eBPF (Cilium) at scale.
+- **MetalLB:** LoadBalancer semantics on bare metal.
 
 ---
 
 ### Real-world example: internal microservice mesh
 
-A video platform runs `upload-api` (LoadBalancer) and `transcode-worker` (ClusterIP only). Upload API accepts public traffic via AWS NLB → LoadBalancer Service → pods. It calls `metadata-svc` and `queue-svc` by DNS inside the cluster — both ClusterIP. Transcode workers scale 0–50 via HPA; the queue Service always reaches whichever workers are ready. Misconfigured selectors once sent traffic to `app=transcode-old` pods; fixing the Service selector restored routing without redeploying clients.
+**Problem:** A video platform must accept public uploads while internal workers stay private and scale independently.
+
+**Naive failure:** Every service gets `type: LoadBalancer` — three cloud LBs, high cost, no shared TLS.
+
+**How Services fixed it:** `upload-api` uses **LoadBalancer** (or Ingress) for public ingress. `transcode-worker` and `metadata-svc` use **ClusterIP** only — internal DNS calls. Workers scale 0–50 via HPA; queue Service reaches whichever pods are ready.
+
+**Outcome:** One paid edge path for users; no LB cost for east-west traffic. Fixing a misconfigured selector restored routing without redeploying clients.
 
 ---
 
