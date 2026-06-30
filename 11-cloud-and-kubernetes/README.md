@@ -506,7 +506,7 @@ Regions provide **geographically scoped cloud capacity**:
 
 **Service catalog** — not every service is available in every region; you choose based on features and proximity.
 
-A region contains multiple **availability zones** (see [11.2 â€” Availability zones](#availability-zones) and [Multi-region deployment](#multi-region-deployment) under [11.2](#112-regions-azs-multi-region)).
+A region contains multiple **availability zones** (see [11.2 â€” Availability zones](#availability-zones) and [Multi-region deployment](#multi-region-deployment) under [11.2](#112-regions-azs-multiregion)).
 
 ---
 

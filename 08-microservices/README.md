@@ -1965,6 +1965,8 @@ Sanity check: 50-hop deep call graphs are an architecture smell — mesh overhea
 
 ## 8.11 Resilience Patterns: Circuit Breaker, Retry & Bulkhead
 
+<a id="circuit-breaker"></a>
+
 ### Overview
 
 Your home circuit breaker trips when wiring overheats — cutting power before the whole house burns. In software, a **circuit breaker** stops sending requests to a failing dependency, failing fast instead of piling up blocked threads and timeouts that crash the caller.

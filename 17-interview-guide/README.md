@@ -640,7 +640,7 @@ You answered operational questions without redrawing the whole system — trade-
 
 Reading about system design is not the same as **performing** it aloud in 45 minutes. This section is a full dress rehearsal — requirements through failures — for a classic prompt: build a service like `bit.ly` that maps short codes to long URLs.
 
-Technically, it stitches together [17.1](#171-interview-framework) through [17.6](#176-trade-offs-and-failure-modes) into one timed narrative: clarify scope, estimate scale, draw HLD, deep-dive read and write paths, then close with trade-offs and monitoring. Practice it on a whiteboard until phase transitions feel automatic.
+Technically, it stitches together [17.1](#171-interview-framework) through [17.6](#176-tradeoffs-and-failure-modes) into one timed narrative: clarify scope, estimate scale, draw HLD, deep-dive read and write paths, then close with trade-offs and monitoring. Practice it on a whiteboard until phase transitions feel automatic.
 
 ---
 
@@ -665,10 +665,10 @@ Use this as a script to practice; replace pieces for other prompts while keeping
 | Phase | Minutes | Section |
 |-------|---------|---------|
 | Requirements | 5 | [17.2](#172-requirements-gathering) |
-| Estimation | 3 | [17.3](#173-back-of-envelope-estimation) |
-| High-level design | 10 | [17.4](#174-high-level-design) |
+| Estimation | 3 | [17.3](#173-backofenvelope-estimation) |
+| High-level design | 10 | [17.4](#174-highlevel-design) |
 | Deep dives | 15 | [17.5](#175-deep-dives) |
-| Trade-offs & failures | 5 | [17.6](#176-trade-offs-and-failure-modes) |
+| Trade-offs & failures | 5 | [17.6](#176-tradeoffs-and-failure-modes) |
 
 ---
 

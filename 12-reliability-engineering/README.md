@@ -24,7 +24,7 @@
 
 Picture a hospital that cannot afford to lose power during surgery — so it runs on two independent electrical feeds and switches automatically if one fails. **High availability (HA)** is the same idea for software: when a server, disk, or network link fails, users should barely notice because spare capacity takes over.
 
-Technically, HA means eliminating **single points of failure (SPOFs)** through **redundancy**, detecting failures quickly ([12.2](#122-failure-detection)), and **failing over** to healthy components — often in seconds. It targets **component-level** outages inside a site; catastrophic regional loss needs disaster recovery ([12.4 â€” Disaster recovery](#disaster-recovery)). Common patterns are **active-active** ([12.3](#123-active-active-active-passive)) and **active-passive** ([12.3 â€” Active-passive](#active-passive)).
+Technically, HA means eliminating **single points of failure (SPOFs)** through **redundancy**, detecting failures quickly ([12.2](#122-failure-detection)), and **failing over** to healthy components — often in seconds. It targets **component-level** outages inside a site; catastrophic regional loss needs disaster recovery ([12.4 â€” Disaster recovery](#disaster-recovery)). Common patterns are **active-active** ([12.3](#123-activeactive-activepassive)) and **active-passive** ([12.3 â€” Active-passive](#active-passive)).
 
 ---
 

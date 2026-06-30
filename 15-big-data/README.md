@@ -725,7 +725,7 @@ Auditors can answer "what address did we ship to on 2023-06-01?" because dimensi
 | Quality gate | Before load | After load (dbt tests) |
 | Best when | Legacy DW, strict pre-load governance | Cloud DW with elastic SQL/Spark |
 
-See [15.7 ELT](#157-elt) for the modern cloud-native flip.
+See [15.3 — ELT](#elt) for the modern cloud-native flip.
 
 ---
 
@@ -745,6 +745,8 @@ Large banks historically ran Informatica PowerCenter on staging servers: extract
 
 ---
 
+
+<a id="elt"></a>
 
 ### ELT
 
@@ -889,7 +891,7 @@ flowchart LR
 
 **Partitioning** — `s3://lake/events/dt=2024-01-15/hour=14/` enables partition pruning; queries that filter on `dt` skip most objects.
 
-**Table formats** (Delta, Iceberg, Hudi) add ACID transactions, time travel, and schema evolution on top of Parquet files — bridge toward lakehouse ([15.10](#1510-lakehouse-architecture)).
+**Table formats** (Delta, Iceberg, Hudi) add ACID transactions, time travel, and schema evolution on top of Parquet files — bridge toward lakehouse ([15.4 — Lakehouse architecture](#lakehouse-architecture)).
 
 ---
 
@@ -914,7 +916,7 @@ Without catalog and ownership, bronze fills with orphan paths — the **data swa
 - **Small files** — streaming ingest creates millions of files; schedule compaction jobs.
 - **Governance** — classify PII at bronze; mask before gold exposure.
 - **Query performance varies** — unlike warehouse MPP, lake SQL depends on file layout, stats, and partition design.
-- **Pair with warehouse** — lake for raw/history/ML; warehouse ([15.9](#159-data-warehouse)) for certified BI when teams want managed SQL SLAs.
+- **Pair with warehouse** — lake for raw/history/ML; warehouse ([15.4 — Data warehouse](#data-warehouse)) for certified BI when teams want managed SQL SLAs.
 
 ---
 
@@ -924,6 +926,8 @@ Netflix stores exabytes of operational and viewing data on S3. Apache Iceberg (b
 
 ---
 
+
+<a id="data-warehouse"></a>
 
 ### Data warehouse
 
@@ -1032,6 +1036,8 @@ Marketplace companies consolidate orders, dasher activity, and merchant metrics 
 
 ---
 
+
+<a id="lakehouse-architecture"></a>
 
 ### Lakehouse architecture
 

@@ -558,7 +558,7 @@ Kubernetes clusters run **kube-state-metrics** and node exporters into Prometheu
 
 If logs are diary entries and metrics are daily step counts, a **trace** is a GPS route for one trip — every stop, how long you waited, and where you got stuck. **Distributed tracing** follows a single request as it hops through API gateways, microservices, queues, and databases.
 
-Technically, a **trace** is a tree of **spans**: each span is one unit of work (HTTP call, DB query) with start time, duration, status, and attributes. A shared **trace ID** links spans across processes via propagated headers (W3C `traceparent`). Tools like Jaeger, Zipkin, and Grafana Tempo store and visualize traces as waterfall timelines. **See [9.8](#96-observability-stack--trace-id-to-grafana)** for how tracing fits with metrics, logs, and Grafana.
+Technically, a **trace** is a tree of **spans**: each span is one unit of work (HTTP call, DB query) with start time, duration, status, and attributes. A shared **trace ID** links spans across processes via propagated headers (W3C `traceparent`). Tools like Jaeger, Zipkin, and Grafana Tempo store and visualize traces as waterfall timelines. **See [9.6](#96-observability-stack-trace-id-to-grafana)** for how tracing fits with metrics, logs, and Grafana.
 
 ---
 
@@ -672,7 +672,7 @@ Uber pioneered heavy tracing at scale (Jaeger originated there). A rider request
 
 Before USB-C, every phone needed a different charger. Observability had the same problem — one vendor SDK for metrics, another for traces, another for logs, and switching backends meant rewriting instrumentation. **OpenTelemetry (OTel)** is the USB-C of telemetry: instrument once, export anywhere.
 
-Technically, OpenTelemetry is a CNCF project providing APIs, SDKs, auto-instrumentation agents, the **OTLP** protocol, and the **OpenTelemetry Collector** — a vendor-neutral pipeline that receives, processes, samples, and routes logs, metrics, and traces to Prometheus, Jaeger, Datadog, or cloud backends without recompiling applications. **See [9.8](#96-observability-stack--trace-id-to-grafana)** for how OTel relates to Micrometer, Prometheus, and Grafana.
+Technically, OpenTelemetry is a CNCF project providing APIs, SDKs, auto-instrumentation agents, the **OTLP** protocol, and the **OpenTelemetry Collector** — a vendor-neutral pipeline that receives, processes, samples, and routes logs, metrics, and traces to Prometheus, Jaeger, Datadog, or cloud backends without recompiling applications. **See [9.6](#96-observability-stack-trace-id-to-grafana)** for how OTel relates to Micrometer, Prometheus, and Grafana.
 
 ---
 
@@ -786,7 +786,7 @@ Grafana Labs dogfoods **Grafana Alloy** (OTel Collector distribution) receiving 
 
 A package shipped through five warehouses needs the same tracking number on every manifest. A **correlation ID** (request ID) is that tracking number for software — one unique value assigned when a request enters your system and copied into every downstream call and log line.
 
-Technically, it is usually a UUID generated at the **edge** (API gateway, load balancer, or first service), passed via HTTP headers (`X-Correlation-ID`, `X-Request-ID`) or message metadata (Kafka headers), and included as a structured log field on every event for that request. It complements distributed tracing: trace IDs power spans; correlation IDs (often identical to trace ID in OTel stacks) power log search. **See [9.8](#96-observability-stack--trace-id-to-grafana)** for how IDs tie logs, traces, and metrics together.
+Technically, it is usually a UUID generated at the **edge** (API gateway, load balancer, or first service), passed via HTTP headers (`X-Correlation-ID`, `X-Request-ID`) or message metadata (Kafka headers), and included as a structured log field on every event for that request. It complements distributed tracing: trace IDs power spans; correlation IDs (often identical to trace ID in OTel stacks) power log search. **See [9.6](#96-observability-stack-trace-id-to-grafana)** for how IDs tie logs, traces, and metrics together.
 
 ---
 
