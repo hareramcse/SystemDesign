@@ -2338,7 +2338,7 @@ A product catalog lives in **PostgreSQL**. On each `INSERT`/`UPDATE` to `product
 
 You would not mail a wedding invitation and update the guest spreadsheet in two separate buildings hoping both succeed. The **outbox pattern** writes the guest row and the "send invitation" note in the **same ledger transaction**; a clerk mails invitations later from the outbox tray. Database and "intent to publish" commit together — no half-done state.
 
-Technically, the **outbox pattern** stores a pending event row in an **outbox table** inside the same database transaction as the business write. A **relay** (polling process or CDC connector) reads unpublished outbox rows and publishes to the message broker asynchronously — eliminating dual-write inconsistency without two-phase commit across DB and Kafka.
+Technically, the **outbox pattern** stores a pending event row in an **outbox table** inside the same database transaction as the business write. A **relay** (polling process or CDC connector) reads unpublished outbox rows and publishes to the message broker asynchronously — eliminating dual-write inconsistency without two-phase commit across DB and Kafka. In microservices, outbox is the standard companion to **saga** choreography — see [8.9 Distributed Transactions](../08-microservices/README.md#89-distributed-transactions).
 
 ---
 

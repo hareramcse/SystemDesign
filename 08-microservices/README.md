@@ -16,6 +16,7 @@
 | 8.6 | [DDD](#86-ddd) |
 | 8.7 | [Bounded Context](#87-bounded-context) |
 | 8.8 | [Hexagonal Architecture](#88-hexagonal-architecture) |
+| 8.9 | [Distributed Transactions](#89-distributed-transactions) |
 | 8.12 | [Service Registry](#812-service-registry) |
 | 8.14 | [Service Mesh](#814-service-mesh) |
 | 8.15 | [Sidecar Pattern](#815-sidecar-pattern) |
@@ -220,7 +221,7 @@ One deployable; each module exposes a narrow public API. Transaction module call
 
 Imagine a hospital where cardiology, radiology, pharmacy, and billing are separate departments — each with its own staff, budget, and records room, coordinating over phone and forms instead of sharing one desk. A **microservices** architecture splits software the same way: small, independently deployable services, each owning a business capability and usually its own database.
 
-Technically, **microservices** decompose an application into **autonomous services** that communicate over the network (REST, gRPC, message queues). Each service encapsulates one bounded context (8.7), deploys on its own cadence, scales independently, and persists data in a **service-owned database** — no shared mutable schema across services. Distributed concerns — discovery (8.12), resilience (8.16–8.18), sagas (8.19), observability — become first-class platform requirements.
+Technically, **microservices** decompose an application into **autonomous services** that communicate over the network (REST, gRPC, message queues). Each service encapsulates one bounded context (8.7), deploys on its own cadence, scales independently, and persists data in a **service-owned database** — no shared mutable schema across services. Distributed concerns — discovery (8.12), resilience (8.16–8.18), distributed transactions (8.9), sagas (8.19), observability — become first-class platform requirements.
 
 ---
 
@@ -303,7 +304,7 @@ flowchart LR
 | **Independent deploy** | No | No | Yes |
 | **Independent scale** | No | No | Yes |
 | **Network latency** | None | None | Every cross-service call |
-| **Distributed transactions** | N/A | N/A | Sagas (8.19), not 2PC |
+| **Distributed transactions** | N/A | N/A | Sagas + outbox (8.9), not 2PC across services |
 | **Operational cost** | Low | Low | High |
 
 ---
@@ -900,6 +901,310 @@ com.ecommerce
 ### Real-world example
 
 **Allegro** (Polish e-commerce) adopted hexagonal architecture for payment processing: the `Payment` domain core defines `PaymentGateway` as an outbound port. Production uses a Przelewy24 adapter; integration tests use an in-memory fake. When Allegro added Apple Pay, engineers shipped a new adapter without modifying `ChargePaymentUseCase` or aggregate invariants. Domain unit tests run in milliseconds with no network — adapter tests run separately against sandbox APIs.
+
+---
+
+## 8.9 Distributed Transactions
+
+### Overview
+
+Imagine splitting a bank transfer across three branches that each keep their own ledger — you cannot walk to one counter and ask them to lock all three books at once. **Distributed transactions** in microservices face the same constraint: each service owns its database, yet business workflows (checkout, booking, payout) must stay coherent when steps fail halfway through.
+
+Technically, microservices abandon a single global `BEGIN … COMMIT` across services. Instead you choose among **coordination protocols** (two-phase commit, three-phase commit), **workflow patterns** (saga with compensating actions), and **reliability patterns** (transaction outbox) depending on how strong consistency must be, how long the workflow runs, and whether a message broker sits between steps. This section is the **microservices hub** for those choices; protocol depth for 2PC/3PC lives in [5.17](../05-distributed-databases/README.md#517-two-phase-commit) and [5.18](../05-distributed-databases/README.md#518-three-phase-commit), outbox relay mechanics in [6.20](../06-messaging-and-events/README.md#620-outbox-pattern), and saga execution styles in [8.19](#819-saga-pattern), [8.20](#820-choreography), and [8.21](#821-orchestration).
+
+---
+
+### What problem it fixes
+
+**Monolith** — one database:
+
+```text
+BEGIN → INSERT order, UPDATE inventory, INSERT payment → COMMIT or ROLLBACK
+```
+
+One failure rolls back everything atomically.
+
+**Microservices** — separate databases:
+
+```text
+Order service DB  ·  Payment service DB  ·  Inventory service DB
+```
+
+Naive approaches fail:
+
+| Naive approach | Failure mode |
+|----------------|--------------|
+| HTTP call chain with no rollback | Payment fails after inventory reserved — stuck state |
+| Dual write: DB + Kafka without outbox | Order saved, event lost — downstream never runs |
+| 2PC across HTTP microservices | High latency, blocking, coordinator SPOF, poor partition behavior |
+
+Distributed transaction patterns answer: **how do we keep the business correct when there is no single database transaction?**
+
+---
+
+### What it does — the four patterns at a glance
+
+| Pattern | Consistency | How it works | Typical use in microservices |
+|---------|-------------|--------------|------------------------------|
+| **Two-phase commit (2PC)** | Strong (atomic all-or-nothing) | Coordinator: Prepare → unanimous YES → Commit | Rare across HTTP services; XA/JTA across co-located databases |
+| **Three-phase commit (3PC)** | Strong (with timing assumptions) | Prepare → Pre-commit → Commit; reduces blocking vs 2PC in theory | Almost never raw across microservices; know for interviews |
+| **Saga** | Eventual (compensating undo) | Sequence of **local** transactions; compensate on failure | Checkout, booking, payout — default for cross-service workflows |
+| **Transaction outbox** | Atomic write + async publish | Business row + outbox row in **one DB txn**; relay publishes later | Reliable events for choreography sagas; avoids dual-write |
+
+```text
+Strong consistency, short, few participants  →  2PC (usually inside one platform, not across 10 HTTP APIs)
+Long-running, many services, partitions OK   →  Saga (+ outbox for event steps)
+DB commit must match event publish           →  Transaction outbox (not 2PC to Kafka)
+```
+
+---
+
+### Compared to the alternative
+
+**Single-database ACID transaction** (modular monolith or one service per aggregate):
+
+```text
+Pros: simple rollback, immediate consistency, one lock domain
+Cons: does not span independently deployed services with separate DBs
+```
+
+**Distributed patterns trade atomicity for autonomy:**
+
+| | Single DB txn | 2PC | Saga + outbox |
+|---|---------------|-----|---------------|
+| **Atomicity** | Full ACID | All-or-nothing across participants | Per-step ACID; global eventual |
+| **Locks** | One database | Held across prepare phase | None across services |
+| **Failure handling** | Rollback | Block or abort all | Compensate completed steps |
+| **Latency** | Low | High (2+ round trips) | Async-friendly |
+| **Microservices default?** | N/A (one DB) | No | Yes |
+
+---
+
+### How it works — the architecture inside
+
+#### The coordination problem
+
+```mermaid
+flowchart LR
+    O[Order service] --> ODB[(Order DB)]
+    P[Payment service] --> PDB[(Payment DB)]
+    I[Inventory service] --> IDB[(Inventory DB)]
+    O -->|HTTP or events| P
+    P -->|HTTP or events| I
+```
+
+Each box commits **locally**. The patterns below decide how those local commits relate.
+
+---
+
+#### Two-phase commit (2PC)
+
+A **coordinator** (transaction manager, app server, or workflow engine) runs two rounds:
+
+```text
+Phase 1 — Prepare:  "Can you commit?"  → each participant votes YES/NO, holds locks
+Phase 2 — Commit:   all YES → COMMIT everyone; any NO → ROLLBACK everyone
+```
+
+```mermaid
+flowchart LR
+    C[Coordinator] --> O[Order DB]
+    C --> P[Payment DB]
+    C --> I[Inventory DB]
+    C --> P1[Prepare]
+    P1 --> P2[Commit or Rollback]
+```
+
+**When to use in microservices:**
+
+- **Inside** a platform: Java **JTA/XA** across two JDBC datasources, some message brokers with XA, Spanner-style globally consistent stores.
+- **Avoid** classic 2PC across arbitrary REST/gRPC microservices — blocking, tight coupling, coordinator failure leaves participants stuck in **prepared** state.
+
+**When not to use:** user-facing checkout over WAN; many participants; long-running steps.
+
+See [5.17 Two Phase Commit](../05-distributed-databases/README.md#517-two-phase-commit) for message counts, blocking diagram, and XA example.
+
+---
+
+#### Three-phase commit (3PC)
+
+Adds a **pre-commit** phase so participants learn the coordinator intends to commit before the final commit:
+
+```text
+Prepare → Pre-commit → Commit
+```
+
+```mermaid
+flowchart LR
+    P[Prepare] --> PC[Pre-commit]
+    PC --> C[Commit]
+```
+
+**Intent:** if the coordinator dies after pre-commit, participants can sometimes complete or abort on timeout instead of blocking forever (requires **bounded network delay** assumptions).
+
+**When to use in microservices:** practically **never** as a hand-rolled protocol between services. Production uses **Raft/Paxos**, Spanner, or **sagas** instead.
+
+**When to know it:** interviews — explain 2PC blocking, how pre-commit helps in theory, why real systems moved to consensus or sagas.
+
+See [5.18 Three Phase Commit](../05-distributed-databases/README.md#518-three-phase-commit) for phase detail and overhead math.
+
+---
+
+#### Saga pattern
+
+A **saga** is an ordered sequence of **local transactions**, one per service. If step *n* fails, run **compensating transactions** for steps *1 … n−1* (semantic undo: `releaseInventory`, `cancelOrder`).
+
+```text
+Happy:  create order → reserve stock → charge card → ship
+Fail:   charge fails → release stock → cancel order
+```
+
+```mermaid
+sequenceDiagram
+    participant O as Order
+    participant I as Inventory
+    participant P as Payment
+    O->>O: Create order
+    O->>I: Reserve
+    I-->>O: OK
+    O->>P: Charge
+    P-->>O: FAIL
+    O->>I: Compensate release
+    O->>O: Compensate cancel
+```
+
+| | 2PC | Saga |
+|---|-----|------|
+| Global consistency | Immediate | Eventual |
+| Rollback | Automatic DB rollback | Compensation (business logic) |
+| Cross-service fit | Poor | Good |
+| Irreversible steps | N/A | Need manual fix (email sent, package shipped) |
+
+**Execution styles:**
+
+| Style | How | Section |
+|-------|-----|---------|
+| **Choreography** | Services react to events on a bus | [8.20](#820-choreography) |
+| **Orchestration** | Central workflow engine drives steps | [8.21](#821-orchestration) |
+
+Deep dive: [8.19 Saga Pattern](#819-saga-pattern).
+
+---
+
+#### Transaction outbox pattern
+
+The **outbox** solves **dual-write**: you cannot atomically commit PostgreSQL and publish to Kafka in one transaction.
+
+```text
+Wrong:  save order → kafka.send()     (either step can fail alone)
+Right:  BEGIN → INSERT order + INSERT outbox row → COMMIT → relay publishes async
+```
+
+```mermaid
+flowchart LR
+    subgraph Txn[Single DB transaction]
+        BR[Business row]
+        OB[Outbox row]
+    end
+    Txn --> Commit[COMMIT]
+    Commit --> Relay[Relay or Debezium CDC]
+    Relay --> Bus[Kafka]
+    Bus --> Saga[Saga consumers]
+```
+
+**Role in microservices:**
+
+- **Choreography sagas** — each step commits locally and publishes the next event via outbox (no ghost events, no lost events).
+- **Not a global transaction** — outbox guarantees **this service's** write and publish intent are atomic; downstream sagas still use eventual consistency.
+- **Preferred over 2PC** for DB + broker — higher availability, no blocking coordinator.
+
+Relay detail, schema, and lag alerts: [6.20 Outbox Pattern](../06-messaging-and-events/README.md#620-outbox-pattern).
+
+---
+
+#### Choosing a pattern
+
+```text
+Need atomic commit across 2 JDBC datasources in one JVM?     → 2PC / XA (careful)
+Need cross-service checkout over 5 HTTP APIs?                → Saga
+Need "saved to DB" and "event on bus" to match?              → Transaction outbox
+Need strong global ACID across arbitrary microservices?      → Reconsider architecture (often wrong goal)
+```
+
+| Scenario | Recommended | Avoid |
+|----------|-------------|-------|
+| E-commerce order + payment + inventory | Saga (orchestrated or choreographed) + outbox per step | 2PC across services |
+| Order service emits `OrderCreated` reliably | Transaction outbox | `save()` then `kafka.send()` |
+| Legacy app server, two SQL databases | 2PC / JTA | Saga if you can refactor |
+| Interview: "how fix 2PC blocking?" | Name 3PC, Raft, or saga | Claim 3PC is production default |
+
+**Typical production stack:**
+
+```text
+Each service:  local ACID + transaction outbox
+Workflow:      saga (Temporal / Camunda / event choreography)
+Observability: saga_id / correlation ID on every step
+Never:         distributed 2PC across REST microservices
+```
+
+---
+
+#### Worked example — checkout failure path
+
+```text
+1. Order service: INSERT order PENDING + outbox OrderCreated     (local txn)
+2. Relay publishes OrderCreated
+3. Inventory: UPDATE stock + outbox InventoryReserved           (local txn)
+4. Payment: charge fails
+5. Payment publishes PaymentFailed (or Order orchestrator compensates)
+6. Inventory: release stock + outbox InventoryReleased
+7. Order: status CANCELLED + outbox OrderCancelled
+
+No 2PC — four independent databases, consistent business outcome after compensation.
+```
+
+---
+
+### Pitfalls and design tips
+
+#### When to use (and when not to)
+
+- **Default for microservices:** saga + transaction outbox per emitting service.
+- **2PC:** only when both participants support XA and latency/partition risk is acceptable (often same data center, same platform).
+- **3PC:** understand for theory; do not build custom 3PC between Spring Boot services.
+- **Outbox:** any time a local DB write must trigger async downstream work.
+
+#### Common mistakes
+
+- **2PC across HTTP** — timeouts, no standard prepare/commit, operational nightmare.
+- **Saga without idempotency** — at-least-once events double-charge or double-release; key by `saga_id` + step.
+- **Saga without outbox** — events published before DB commit or lost after commit.
+- **Compensation as afterthought** — "refund" and "cancel shipment" must be designed with forward steps.
+- **Treating outbox as a distributed transaction** — it fixes **one** service's dual-write, not global atomicity.
+
+#### Production notes
+
+- Persist **saga state** (`PENDING`, `COMPENSATING`, `FAILED`) for stuck-saga alerts and manual recovery.
+- Use **orchestration** (8.21) when branching/timeouts dominate; **choreography** (8.20) for simple linear pipelines.
+- **Inbox pattern** (6.20) pairs with outbox for idempotent consumption on the receiver side.
+- **Interview:** monolith = one ACID; microservices = saga + eventual consistency + outbox for reliable events.
+
+---
+
+### Real-world example: travel booking
+
+**Problem:** A travel app books flight, hotel, and car across three services with separate databases. Payment can fail after flight is held.
+
+**Naive failure:** Synchronous HTTP chain with no compensation — flight held, hotel booked, payment declined; support manually unwinds.
+
+**How patterns combine:**
+
+- **No 2PC** across three cloud APIs — latency and locks unacceptable.
+- **Saga (orchestrated):** Temporal workflow runs `holdFlight` → `bookHotel` → `bookCar` → `chargeCard`; on `chargeCard` failure, runs compensations in reverse order.
+- **Transaction outbox:** each service writes booking state + outbox event in one DB transaction; relay publishes to Kafka so choreography consumers never see phantom bookings.
+- **3PC:** not used — team chose saga explicitly after a prior JTA experiment blocked during coordinator maintenance.
+
+**Outcome:** Temporary inconsistency during the saga (flight held for 30 s) is acceptable; business rules converge to either fully booked or fully cancelled. Ops dashboard shows `saga_id` across all three services for support.
 
 ---
 
@@ -1702,7 +2007,7 @@ public PaymentResponse processPayment() { /* remote call */ }
 
 Booking a vacation involves flight, hotel, and car — if payment fails after the flight is held, you need to cancel the flight and release the hotel, not pretend nothing happened. A **saga** coordinates a multi-step business process across independent services using **local transactions** and **compensating actions** instead of one giant database transaction.
 
-Technically, the **saga pattern** replaces distributed two-phase commit (2PC) with a sequence of **local ACID transactions**, each in one service's database. If a later step fails, earlier steps run **compensating transactions** (semantic undo: `releaseInventory`, `cancelOrder`). Consistency is **eventual** — there is no global lock, and the system converges to a valid state after forward or compensate steps complete.
+Technically, the **saga pattern** replaces distributed two-phase commit (2PC) with a sequence of **local ACID transactions**, each in one service's database. If a later step fails, earlier steps run **compensating transactions** (semantic undo: `releaseInventory`, `cancelOrder`). Consistency is **eventual** — there is no global lock, and the system converges to a valid state after forward or compensate steps complete. For how sagas compare to 2PC, 3PC, and the transaction outbox, see [8.9 Distributed Transactions](#89-distributed-transactions).
 
 ---
 
@@ -1720,7 +2025,7 @@ BEGIN → update orders, payment, inventory → COMMIT or ROLLBACK
 Order DB · Payment DB · Inventory DB
 ```
 
-2PC across three databases is slow, blocks on failure, and does not scale. A network partition during 2PC leaves participants in ambiguous states. Sagas provide a **practical alternative** for long-running, cross-service workflows.
+2PC across three databases is slow, blocks on failure, and does not scale. A network partition during 2PC leaves participants in ambiguous states. Sagas provide a **practical alternative** for long-running, cross-service workflows. See [8.9](#89-distributed-transactions) for the full comparison with 2PC, 3PC, and transaction outbox.
 
 **Failure without saga:**
 
@@ -1821,14 +2126,7 @@ Sanity check: sum of step timeouts > user patience → return 202 + poll;
              choreography needs the same budget on consumer processing deadlines.
 ```
 
-**Saga vs 2PC:**
-
-| | Saga | 2PC |
-|---|------|-----|
-| Scalability | High | Low |
-| Availability | High | Lower under partition |
-| Rollback | Compensation (semantic) | Automatic DB rollback |
-| Consistency | Eventual | Immediate |
+**Saga vs 2PC:** see comparison table in [8.9](#89-distributed-transactions).
 
 **Technologies:**
 
@@ -1843,7 +2141,7 @@ Sanity check: sum of step timeouts > user patience → return 202 + poll;
 
 - **Compensation is not free** — "email sent" or "package shipped" cannot be fully undone; design compensations upfront, accept manual intervention for irreversible steps.
 - **Idempotent handlers** — at-least-once delivery means duplicate events; dedup by `saga_id` + step.
-- **Outbox pattern** — publish events only after local DB commit to avoid ghost sagas.
+- **Outbox pattern** — publish events only after local DB commit to avoid ghost sagas; see [8.9](#89-distributed-transactions) and [6.20](../06-messaging-and-events/README.md#620-outbox-pattern).
 - **Interview angle:** saga = eventual consistency; name choreography vs orchestration trade-offs.
 - **Stuck sagas** — alert on `PENDING` past SLA; support manual compensation in ops tooling.
 

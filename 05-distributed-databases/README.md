@@ -1928,7 +1928,7 @@ R + 3 > 5  →  R ≥ 3
 
 Picture a travel booking where you pay for a flight, reserve a hotel, and rent a car. If the flight charges your card but the hotel is sold out, you want the whole trip cancelled — not a charge with no room. A **distributed transaction** is that same all-or-nothing guarantee stretched across separate databases and services that do not share one machine.
 
-Technically, a distributed transaction coordinates multiple independent participants — payment, inventory, order services each with their own store — so they reach a single outcome: **commit everywhere** or **rollback everywhere**. A coordinator drives the protocol; participants vote and apply the decision. The goal is atomicity across system boundaries, not just inside one database.
+Technically, a distributed transaction coordinates multiple independent participants — payment, inventory, order services each with their own store — so they reach a single outcome: **commit everywhere** or **rollback everywhere**. A coordinator drives the protocol; participants vote and apply the decision. The goal is atomicity across system boundaries, not just inside one database. **Microservices** usually implement this with sagas and transaction outbox rather than classic 2PC — see [8.9 Distributed Transactions](../08-microservices/README.md#89-distributed-transactions).
 
 ---
 
@@ -2070,7 +2070,7 @@ Sanity check: adding a 4th participant adds another RTT pair — 2PC latency
 
 Two-phase commit (2PC) is like a group dinner where everyone confirms they can pay their share before anyone's card is charged. Phase 1 asks "are you ready?"; phase 2 says "charge everyone" or "cancel the whole bill." No one commits alone — the coordinator waits for unanimous readiness first.
 
-Technically, **2PC** is the standard distributed transaction protocol with two rounds: **Prepare** (participants vote YES/NO) and **Commit** or **Rollback** (coordinator broadcasts the decision). It guarantees atomicity when all participants and the coordinator eventually recover, but it is vulnerable to **blocking** if the coordinator fails after prepare.
+Technically, **2PC** is the standard distributed transaction protocol with two rounds: **Prepare** (participants vote YES/NO) and **Commit** or **Rollback** (coordinator broadcasts the decision). It guarantees atomicity when all participants and the coordinator eventually recover, but it is vulnerable to **blocking** if the coordinator fails after prepare. For when to use 2PC vs saga vs outbox in **microservices**, see [8.9 Distributed Transactions](../08-microservices/README.md#89-distributed-transactions).
 
 ---
 
@@ -2194,7 +2194,7 @@ For N = 3: 2×3 + 2 = **8 messages** minimum per transaction.
 
 Three-phase commit (3PC) adds a middle checkpoint to 2PC — like confirming "we're definitely going to pay" before anyone's card is actually charged. The extra round gives participants more information about the coordinator's intent, which can reduce indefinite blocking when timing assumptions hold.
 
-Technically, **3PC** extends 2PC with a **pre-commit** phase between prepare and commit: Prepare → Pre-commit → Commit. Participants learn the coordinator has decided to commit before the final commit step, so a minority partition can sometimes timeout and abort safely instead of waiting forever.
+Technically, **3PC** extends 2PC with a **pre-commit** phase between prepare and commit: Prepare → Pre-commit → Commit. Participants learn the coordinator has decided to commit before the final commit step, so a minority partition can sometimes timeout and abort safely instead of waiting forever. Microservices rarely use raw 3PC — see [8.9](../08-microservices/README.md#89-distributed-transactions) for practical alternatives.
 
 ---
 
