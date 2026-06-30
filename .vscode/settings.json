@@ -1,0 +1,10 @@
+{
+  // Static Mermaid in markdown preview — no zoom/pan toolbar on diagrams
+  "markdown-mermaid.controls.show": "never",
+  "markdown-mermaid.mouseNavigation.enabled": "never",
+
+  // If the separate "Markdown Mermaid Zoom" extension is installed
+  "markdownMermaidZoom.controls.show": "never",
+  "markdownMermaidZoom.fullscreen": false,
+  "markdownMermaidZoom.resizable": false
+}
