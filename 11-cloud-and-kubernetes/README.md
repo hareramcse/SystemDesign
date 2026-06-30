@@ -8,45 +8,31 @@
 
 | # | Sub-topic |
 |---|-----------|
-| 11.1 | [IaaS](#111-iaas) |
-| 11.2 | [PaaS](#112-paas) |
-| 11.3 | [SaaS](#113-saas) |
-| 11.4 | [Serverless](#114-serverless) |
-| 11.5 | [Regions](#115-regions) |
-| 11.6 | [Availability Zones](#116-availability-zones) |
-| 11.7 | [Multi Region Deployment](#117-multi-region-deployment) |
-| 11.8 | [VPC](#118-vpc) |
-| 11.9 | [Cloud Networking](#119-cloud-networking) |
-| 11.10 | [Cloud Storage](#1110-cloud-storage) |
-| 11.11 | [Managed Databases](#1111-managed-databases) |
-| 11.12 | [Autoscaling](#1112-autoscaling) |
-| 11.13 | [Docker](#1113-docker) |
-| 11.14 | [Container Runtime](#1114-container-runtime) |
-| 11.15 | [Container Images](#1115-container-images) |
-| 11.16 | [Image Layers](#1116-image-layers) |
-| 11.17 | [Namespaces](#1117-namespaces) |
-| 11.18 | [cgroups](#1118-cgroups) |
-| 11.19 | [Kubernetes](#1119-kubernetes) |
-| 11.20 | [Pods](#1120-pods) |
-| 11.21 | [ReplicaSets](#1121-replicasets) |
-| 11.22 | [Deployments](#1122-deployments) |
-| 11.23 | [Services](#1123-services) |
-| 11.24 | [Ingress](#1124-ingress) |
-| 11.25 | [StatefulSets](#1125-statefulsets) |
-| 11.26 | [DaemonSets](#1126-daemonsets) |
-| 11.27 | [Jobs](#1127-jobs) |
-| 11.28 | [CronJobs](#1128-cronjobs) |
-| 11.29 | [ConfigMaps](#1129-configmaps) |
-| 11.30 | [Secrets](#1130-secrets) |
-| 11.31 | [Scheduler](#1131-scheduler) |
-| 11.32 | [etcd](#1132-etcd) |
-| 11.33 | [Operators](#1133-operators) |
-| 11.34 | [HPA](#1134-hpa) |
-| 11.35 | [Cluster Autoscaler](#1135-cluster-autoscaler) |
+| 11.1 | [Cloud Service Models](#111-cloud-service-models) |
+| 11.2 | [Regions, AZs & Multi-Region](#112-regions-azs-multi-region) |
+| 11.3 | [VPC](#113-vpc) |
+| 11.4 | [Cloud Networking](#114-cloud-networking) |
+| 11.5 | [Cloud Storage](#115-cloud-storage) |
+| 11.6 | [Managed Databases](#116-managed-databases) |
+| 11.7 | [Autoscaling, HPA & Cluster Autoscaler](#117-autoscaling-hpa-cluster-autoscaler) |
+| 11.8 | [Containers & Images](#118-containers-images) |
+| 11.9 | [Namespaces](#119-namespaces) |
+| 11.10 | [cgroups](#1110-cgroups) |
+| 11.11 | [Kubernetes](#1111-kubernetes) |
+| 11.12 | [Pods, ReplicaSets & Deployments](#1112-pods-replicasets-deployments) |
+| 11.13 | [Services](#1113-services) |
+| 11.14 | [Ingress](#1114-ingress) |
+| 11.15 | [StatefulSets](#1115-statefulsets) |
+| 11.16 | [DaemonSets](#1116-daemonsets) |
+| 11.17 | [Jobs & CronJobs](#1117-jobs-cronjobs) |
+| 11.18 | [ConfigMaps & Secrets](#1118-configmaps-secrets) |
+| 11.19 | [Scheduler](#1119-scheduler) |
+| 11.20 | [etcd](#1120-etcd) |
+| 11.21 | [Operators](#1121-operators) |
 
 ---
 
-## 11.1 IaaS
+## 11.1 Cloud Service Models
 
 ### Overview
 
@@ -146,9 +132,9 @@ You retain full control over patches, kernel tuning, and runtime versions — an
 
 ---
 
-## 11.2 PaaS
+### PaaS
 
-### Overview
+#### Overview
 
 Think of a fully equipped commercial kitchen — ovens, dishwashers, and health inspections are taken care of; you only bring recipes and cook. **Platform as a Service (PaaS)** gives developers a ready runtime and deployment pipeline so they write code and push it without provisioning servers or patching operating systems.
 
@@ -156,7 +142,7 @@ Technically, PaaS sits above IaaS: the provider manages servers, OS, runtime, mi
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 Teams building web apps and APIs spend too much time on undifferentiated ops:
 
@@ -169,7 +155,7 @@ PaaS trades infrastructure control for faster time-to-production and lower maint
 
 ---
 
-### What it does
+#### What it does
 
 PaaS provides a **managed application platform**:
 
@@ -185,7 +171,7 @@ You manage application code, app-level configuration, and data; the provider man
 
 ---
 
-### How it works — the architecture inside
+#### How it works — the architecture inside
 
 #### Platform stack
 
@@ -216,7 +202,7 @@ Request arrives → platform routes to healthy instance → auto-scales replicas
 
 ---
 
-### Walkthrough: REST API on Heroku
+#### Walkthrough: REST API on Heroku
 
 1. Developer connects a GitHub repo to Heroku; `main` branch auto-deploys.
 2. Platform detects a `package.json`, runs `npm install`, starts Node on a dyno.
@@ -228,7 +214,7 @@ The team never SSHs into a server; all changes flow through code and platform co
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **Platform constraints** — no custom kernel modules, limited background workers, capped request duration; read App Service / Heroku limits before committing.
 - **Vendor coupling** — platform-specific bindings (Azure Storage SDK wired to App Service) complicate migration; prefer 12-factor config externalized to env vars.
@@ -239,15 +225,15 @@ The team never SSHs into a server; all changes flow through code and platform co
 
 ---
 
-### Real-world example: internal tools on Azure App Service
+#### Real-world example: internal tools on Azure App Service
 
 An enterprise ships dozens of internal REST APIs on Azure App Service. Each API is a separate app with staging slots for blue-green deploys. Azure handles OS updates across the fleet overnight; developers only merge pull requests. They accept platform constraints — no custom kernel modules — in exchange for shipping features weekly instead of monthly.
 
 ---
 
-## 11.3 SaaS
+### SaaS
 
-### Overview
+#### Overview
 
 Using Gmail or Zoom is like dining at a restaurant — you sit down, order, and eat; you do not own the kitchen, hire the chef, or fix the dishwasher. **Software as a Service (SaaS)** delivers complete applications over the internet: users open a browser or app and work immediately with no installation or server management.
 
@@ -255,7 +241,7 @@ Technically, SaaS is the highest layer of the cloud stack. The provider runs inf
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 Running business software on-premises creates heavy overhead:
 
@@ -268,7 +254,7 @@ SaaS shifts software from a capital project to an operational subscription with 
 
 ---
 
-### What it does
+#### What it does
 
 SaaS delivers **ready-to-use software** as a multi-tenant cloud service:
 
@@ -284,7 +270,7 @@ Users manage their data, account settings, and how they use the product; the pro
 
 ---
 
-### How it works — the architecture inside
+#### How it works — the architecture inside
 
 #### Request path
 
@@ -305,7 +291,7 @@ All tenants share app servers; data separated by tenant key, schema, or dedicate
 
 ---
 
-### IaaS vs PaaS vs SaaS
+#### IaaS vs PaaS vs SaaS
 
 | Feature | IaaS | PaaS | SaaS |
 |---------|------|------|------|
@@ -335,7 +321,7 @@ flowchart LR
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **Data portability** — exporting years of CRM or ERP data at contract end is painful; negotiate API/export terms upfront.
 - **Customization ceiling** — deep product logic belongs in your code, not forced into SaaS workflow hacks.
@@ -346,15 +332,15 @@ flowchart LR
 
 ---
 
-### Real-world example: Salesforce multi-tenant CRM
+#### Real-world example: Salesforce multi-tenant CRM
 
 Salesforce runs a **multi-tenant SaaS** CRM: each customer org shares the same application release train (three major seasonal updates per year documented on trust.salesforce.com). Admins configure objects, flows, and roles in Setup; end users access via browser or mobile with no on-prem install. Customer data is logically isolated per org ID in shared infrastructure — the trade-off is limited low-level customization versus zero server patching and global availability SLAs published by the vendor.
 
 ---
 
-## 11.4 Serverless
+### Serverless
 
-### Overview
+#### Overview
 
 Imagine paying a taxi meter that runs only while you ride — no car payments, no garage, no oil changes. **Serverless computing** lets developers deploy functions or small services that run on demand; the cloud provider provisions servers, scales them, and tears them down when idle. Servers still exist — you simply never manage them.
 
@@ -362,7 +348,7 @@ Technically, serverless (often **Function as a Service**, FaaS) executes code in
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 Always-on servers waste money and ops effort for spiky or intermittent workloads:
 
@@ -375,7 +361,7 @@ Serverless matches cost and capacity to actual execution.
 
 ---
 
-### What it does
+#### What it does
 
 Serverless platforms **run your code on events** with automatic operations:
 
@@ -391,7 +377,7 @@ You manage function code, business logic, configuration, and persistent data in 
 
 ---
 
-### How it works — the architecture inside
+#### How it works — the architecture inside
 
 #### Execution lifecycle
 
@@ -452,7 +438,7 @@ flowchart LR
 
 ---
 
-### Walkthrough: image thumbnail API
+#### Walkthrough: image thumbnail API
 
 1. Mobile app uploads a photo to S3; an object-created event fires.
 2. Lambda pulls the image, generates thumbnails, writes them to another bucket.
@@ -464,7 +450,7 @@ Persistent metadata lives in DynamoDB; the function holds no local state between
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **Cold starts** — idle functions pay latency on first invoke; provisioned concurrency or minimum instances trade cost for steady p99.
 - **Timeout ceilings** — AWS Lambda max 15 minutes; long ETL belongs on Batch/Fargate, not FaaS.
@@ -475,13 +461,13 @@ Persistent metadata lives in DynamoDB; the function holds no local state between
 
 ---
 
-### Real-world example: webhook processor on AWS Lambda
+#### Real-world example: webhook processor on AWS Lambda
 
 A fintech startup handles payment webhooks from Stripe via API Gateway → Lambda. Each webhook validates a signature, updates Postgres through RDS Proxy, and publishes to SNS. Average traffic is 50 invocations per minute; month-end peaks hit 10,000 per minute without pre-provisioned servers. The team pays roughly $40/month in Lambda compute versus an estimated $200/month for two always-on EC2 instances — and ships new handler logic with a single `terraform apply`.
 
 ---
 
-## 11.5 Regions
+## 11.2 Regions, AZs & Multi-Region
 
 ### Overview
 
@@ -516,7 +502,7 @@ Regions provide **geographically scoped cloud capacity**:
 
 **Service catalog** — not every service is available in every region; you choose based on features and proximity.
 
-A region contains multiple **availability zones** ([11.6](#116-availability-zones)); multi-region strategies build on top ([11.7](#117-multi-region-deployment)).
+A region contains multiple **availability zones** (see [11.2 â€” Availability zones](#availability-zones) and [Multi-region deployment](#multi-region-deployment) under [11.2](#112-regions-azs-multi-region)).
 
 ---
 
@@ -584,9 +570,9 @@ Netflix-style architectures place **origin storage** in multiple AWS regions (e.
 
 ---
 
-## 11.6 Availability Zones
+### Availability zones
 
-### Overview
+#### Overview
 
 Within one city, a hospital might have a main campus and a backup clinic on separate power grids — if one campus loses electricity, the other keeps running. **Availability zones (AZs)** are the cloud version: physically separate data centers (or groups of data centers) inside a single region, each with independent power, cooling, and networking, linked by low-latency private fiber.
 
@@ -594,7 +580,7 @@ Technically, an AZ is a failure domain smaller than a region. Deploying across t
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 A single data center is a single point of failure:
 
@@ -607,7 +593,7 @@ Multi-AZ design survives AZ-level failures while keeping replicas close enough f
 
 ---
 
-### What it does
+#### What it does
 
 Availability zones enable **high availability within a region**:
 
@@ -623,7 +609,7 @@ One region commonly offers three or more AZs (for example, Mumbai: `ap-south-1a`
 
 ---
 
-### How it works — the architecture inside
+#### How it works — the architecture inside
 
 #### Region with multiple AZs
 
@@ -665,7 +651,7 @@ AZ-1 fails → promote replica in AZ-2 → applications reconnect via same regio
 
 ---
 
-### Walkthrough: AZ failure with load balancer
+#### Walkthrough: AZ failure with load balancer
 
 1. Production API runs two instances per AZ across AZ-1 and AZ-2 behind an ALB.
 2. AZ-1 loses power at 3:14 AM; health checks on AZ-1 targets fail within 10 seconds.
@@ -675,7 +661,7 @@ AZ-1 fails → promote replica in AZ-2 → applications reconnect via same regio
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **AZ labels are logical** — `1a` in two accounts may map to different physical buildings; spread across AZs, not just names.
 - **Cross-AZ traffic bills** — RDS multi-AZ and Kafka replication incur per-GB charges in many clouds.
@@ -686,15 +672,15 @@ AZ-1 fails → promote replica in AZ-2 → applications reconnect via same regio
 
 ---
 
-### Real-world example: Kubernetes across three AZs
+#### Real-world example: Kubernetes across three AZs
 
 A SaaS company runs an EKS cluster with node groups spread across three AZs in `eu-west-1`. The AWS Load Balancer Controller registers pod IPs in all zones. When `eu-west-1a` suffered a networking incident, Kubernetes rescheduled evicted pods onto nodes in `1b` and `1c`; the external ALB removed unhealthy targets automatically. Regional latency for European users stayed under 50 ms because all AZs sit within the same metro area.
 
 ---
 
-## 11.7 Multi Region Deployment
+### Multi-region deployment
 
-### Overview
+#### Overview
 
 Imagine a airline operating hubs in New York and Frankfurt — if a snowstorm closes JFK, flights reroute through Frankfurt so passengers still reach their destinations. **Multi-region deployment** runs the same application in two or more cloud regions so regional disasters, outages, or latency walls do not take the whole service offline.
 
@@ -702,7 +688,7 @@ Technically, this architecture duplicates (or partitions) compute, storage, and 
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 Even multi-AZ deployments fail when the entire region is impaired:
 
@@ -715,7 +701,7 @@ Multi-region design survives **region-level** failures and serves a worldwide us
 
 ---
 
-### What it does
+#### What it does
 
 Multi-region deployment provides **geographic redundancy and global reach**:
 
@@ -731,7 +717,7 @@ Architectures are typically **active-passive** (one region serves, one standby) 
 
 ---
 
-### How it works — the architecture inside
+#### How it works — the architecture inside
 
 #### Active-passive
 
@@ -793,7 +779,7 @@ Async: Write → Region A → success response (Region B catches up later)
 
 ---
 
-### Walkthrough: e-commerce failover
+#### Walkthrough: e-commerce failover
 
 1. Storefront runs active-active in `us-east-1` and `eu-west-1` behind Route 53 latency-based routing.
 2. Product catalog reads from regional Redis caches; writes go to a primary DB in us-east-1 with async replica in eu-west-1.
@@ -803,7 +789,7 @@ Async: Write → Region A → success response (Region B catches up later)
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **Active-active is hard** — conflict resolution, cart merges, and idempotency keys are mandatory; do not assume "replicate and forget."
 - **Async replication implies RPO > 0** — document acceptable data loss windows; synchronous cross-region writes add latency.
@@ -814,13 +800,13 @@ Async: Write → Region A → success response (Region B catches up later)
 
 ---
 
-### Real-world example: multi-region payments with data residency
+#### Real-world example: multi-region payments with data residency
 
 HSBC and similar global banks document **active-active or active-passive regions** per jurisdiction — EU payment traffic stays in EU regions (`eu-central-1`, `eu-west-1`) to satisfy GDPR, while US traffic uses `us-east-1`. Route 53 or Azure Traffic Manager health-checks regional API gateways; on regional impairment, DNS shifts to a pre-provisioned secondary region. Writes replicate asynchronously (typical RPO of seconds to minutes); read-only failover paths are tested in game days. Cross-region writes are avoided for accounts bound to a home region — routing is per-customer, not global anycast.
 
 ---
 
-## 11.8 VPC
+## 11.3 VPC
 
 ### Overview
 
@@ -959,7 +945,7 @@ A fintech runs Kubernetes worker nodes entirely in private subnets across three 
 
 ---
 
-## 11.9 Cloud Networking
+## 11.4 Cloud Networking
 
 ### Overview
 
@@ -1089,7 +1075,7 @@ During a flash sale, the team adds more web and API instances in the same subnet
 
 ---
 
-## 11.10 Cloud Storage
+## 11.5 Cloud Storage
 
 ### Overview
 
@@ -1208,7 +1194,7 @@ When one availability zone experiences an outage, replicated object copies in an
 
 ---
 
-## 11.11 Managed Databases
+## 11.6 Managed Databases
 
 ### Overview
 
@@ -1369,7 +1355,7 @@ The team never SSHs into a database server. They spend engineering time on appli
 
 ---
 
-## 11.12 Autoscaling
+## 11.7 Autoscaling, HPA & Cluster Autoscaler
 
 ### Overview
 
@@ -1507,7 +1493,7 @@ Sanity check: if CPU stays high after adding nodes, the bottleneck is DB or lock
 - **Cooldown vs responsiveness** — short cooldown reacts fast but flaps; long cooldown saves money but lags spikes.
 - **Minimum size sets floor cost** — `min=2` means two instances 24/7 even at midnight.
 - **Production:** target tracking scaling on ALB request count per target; pair ASG with scheduled scaling for known events.
-- **HPA + Cluster Autoscaler** — application autoscaling and node autoscaling are complementary layers ([11.34](#1134-hpa), [11.35](#1135-cluster-autoscaler)).
+- **HPA + Cluster Autoscaler** — application autoscaling and node autoscaling are complementary layers ([11.7 â€” HPA](#hpa) and [Cluster autoscaler](#cluster-autoscaler) ([11.7](#117-autoscaling-hpa-cluster-autoscaler))).
 
 ---
 
@@ -1517,7 +1503,249 @@ High-traffic ticket on-sales are a documented use case for AWS Auto Scaling behi
 
 ---
 
-## 11.13 Docker
+### HPA
+
+#### Overview
+
+Imagine a call center that opens extra phone stations when hold times climb and closes them when queues drain — automatically, without a manager refreshing dashboards every minute. The **Horizontal Pod Autoscaler (HPA)** does that for pods: it raises or lowers replica count based on metrics like CPU, memory, or custom request rate.
+
+Technically, HPA is a controller that periodically compares current metrics (from **Metrics Server** or custom metrics APIs) against targets you define. It patches the `replicas` field on a Deployment, StatefulSet, or other scale target. It respects `minReplicas` and `maxReplicas` bounds and applies stabilization windows to avoid flapping.
+
+---
+
+#### What problem it fixes
+
+Fixed replica counts waste money or fail under load:
+
+- Black Friday traffic overwhelms three static pods → errors and lost revenue
+- Overnight idle capacity runs ten pods at 5% CPU → unnecessary cloud spend
+- Manual `kubectl scale` reacts too slowly and does not scale down when traffic drops
+
+HPA closes the loop between observed load and replica count without human intervention.
+
+---
+
+#### What it does
+
+HPA:
+
+**Monitors metrics** — default CPU utilization; also memory, custom app metrics (queue depth), or external metrics (Pub/Sub lag).
+
+**Calculates desired replicas** — e.g. target 60% CPU; if current average is 90% across two pods, scale toward three.
+
+**Updates scale targets** — writes new replica count to Deployment → ReplicaSet creates or terminates pods.
+
+**Enforces bounds** — never below `minReplicas` or above `maxReplicas`.
+
+**Waits before acting** — scale-up and scale-down stabilization windows prevent thrashing on brief spikes.
+
+**How to calculate:** HPA desired replicas (CPU):
+
+```text
+Given: currentReplicas = 2, average CPU utilization = 90%, target = 60%
+
+desiredReplicas = ceil(2 x (90 / 60)) = ceil(2 x 1.5) = ceil(3.0) = 3
+
+HPA patches Deployment to 3 replicas; expect average CPU ~ 90% x 2/3 ~ 60% if load is flat
+Respect minReplicas and maxReplicas — result is clamped to that range
+Sanity check: if metrics show 90% but pods are throttled by low limits, fix limits before trusting HPA.
+```
+
+**Does not add nodes** — if the cluster lacks capacity, new pods stay Pending until Cluster Autoscaler ([11.7 â€” Cluster autoscaler](#cluster-autoscaler)) provisions nodes.
+
+---
+
+#### How it works — the architecture inside
+
+```mermaid
+flowchart LR
+    MS[Metrics Server] --> HPA[HPA controller]
+    HPA -->|adjust replicas| Dep[Deployment]
+    Dep --> RS[ReplicaSet]
+    RS --> Pods[Pods]
+```
+
+#### HPA with Cluster Autoscaler
+
+```mermaid
+flowchart LR
+    Traffic[Traffic spike] --> HPA[HPA scale up pods]
+    HPA --> Pending[Pods Pending]
+    Pending --> CA[Cluster Autoscaler]
+    CA --> Nodes[New worker nodes]
+    Nodes --> Sched[Scheduler places pods]
+```
+
+#### HPA vs VPA vs manual scale
+
+| | HPA | VPA | Manual `kubectl scale` |
+|---|-----|-----|------------------------|
+| **Changes** | Pod count | CPU/memory per pod | Pod count |
+| **Trigger** | Metrics | Resource usage analysis | Human |
+| **Best for** | Variable traffic | Right-sizing requests | Fixed workloads |
+
+---
+
+#### Walkthrough: API tier during a traffic spike
+
+```mermaid
+flowchart LR
+    Users[Users] --> Ing[Ingress]
+    Ing --> Svc[Service]
+    Svc --> P1[Pod]
+    Svc --> P2[Pod]
+    MS[Metrics Server] --> HPA[HPA target CPU 60%]
+    HPA --> Dep[Deployment replicas]
+```
+
+1. Deployment runs `minReplicas: 2`, `maxReplicas: 20`; HPA targets 60% average CPU.
+2. Morning traffic holds CPU at 25% — HPA leaves two pods running.
+3. A marketing push drives CPU to 85%; HPA calculates need for ~5 pods and patches the Deployment.
+4. ReplicaSet creates three additional pods; if nodes are full, pods Pending trigger Cluster Autoscaler.
+5. Traffic subsides; after the scale-down stabilization window, HPA reduces replicas toward the minimum.
+
+---
+
+#### Pitfalls and design tips
+
+- **Metrics Server required** — CPU/memory HPA needs metrics-server or equivalent; custom metrics need Prometheus Adapter or KEDA.
+- **Unset limits break CPU %** — HPA CPU utilization is `% of request`; missing requests make metrics meaningless.
+- **Does not add nodes** — Pending pods after HPA scale-up need Cluster Autoscaler ([11.7 â€” Cluster autoscaler](#cluster-autoscaler)).
+- **When KEDA** — scale on queue length, Kafka lag, or cloud metrics; supports scale-to-zero patterns.
+- **Production:** configure `behavior` scale-up/down stabilization; avoid scaling on memory unless app is memory-bound.
+- **Flapping** — too-aggressive scale-down kills pods still draining; use `minReplicas` floor for HA.
+
+---
+
+#### Real-world example: HPA with Prometheus Adapter
+
+The **Kubernetes Prometheus Adapter** exposes custom metrics (e.g. `http_requests_per_second`) to the HPA API. Retailers often run `minReplicas: 4` across zones for HA and `maxReplicas: 80` for sale events, with `behavior.scaleUp.stabilizationWindowSeconds: 0` for fast scale-out and `scaleDown: 300` to avoid flapping. The HPA formula still applies to custom metrics the same way as CPU — current replicas times (current metric / target metric), clamped to min/max.
+
+---
+
+### Cluster autoscaler
+
+#### Overview
+
+HPA adds more pods, but pods need somewhere to run — like hiring extra staff (pods) when busy, but also opening another branch (worker node) when the building is full. **Cluster Autoscaler** adjusts the number of worker nodes in the cluster: it asks the cloud provider (or equivalent) to add VMs when pods cannot be scheduled, and removes underused nodes when safe.
+
+Technically, Cluster Autoscaler watches for pods stuck in `Pending` because of insufficient CPU, memory, or other schedulable resources — not because of affinity or taints they can never satisfy. It increases the node group's desired size via the cloud API. For scale-down, it evicts pods from mostly idle nodes and deletes the VM after drains complete.
+
+---
+
+#### What problem it fixes
+
+Static node pools create two painful extremes:
+
+- **Under-provisioned** — HPA creates pods but Scheduler cannot place them; users see errors until someone manually adds nodes
+- **Over-provisioned** — teams pay 24/7 for peak-capacity nodes that sit empty most nights
+
+Cluster Autoscaler ties infrastructure size to actual schedulable demand, complementing HPA's application-level scaling.
+
+---
+
+#### What it does
+
+Cluster Autoscaler:
+
+**Scales up node groups** — when unschedulable pods exist and the autoscaler determines adding a node would help, it increases the managed group's target size.
+
+**Scales down idle nodes** — identifies nodes whose pods can move elsewhere, cordons, drains, and deletes the instance.
+
+**Respects constraints** — honors `min`/`max` node group sizes, budgets, and labels; skips scale-down for pods with local storage or certain annotations.
+
+**Integrates with cloud providers** — AWS Auto Scaling Groups, GKE node pools, Azure VMSS — not applicable on bare metal without similar machinery.
+
+**Works with Scheduler** — does not assign pods; adds capacity so Scheduler can bind Pending pods.
+
+**Takes minutes** — new nodes must boot, join the cluster, and pass readiness before scheduling completes.
+
+---
+
+#### How it works — the architecture inside
+
+```mermaid
+flowchart LR
+    Pod[Unschedulable pod] --> Sched[Scheduler]
+    Sched --> Pending[Pending]
+    Pending --> CA[Cluster Autoscaler]
+    CA --> Cloud[Cloud API]
+    Cloud --> Node[New worker node]
+    Node --> Sched
+    Sched --> Running[Pod running]
+```
+
+#### Scale-down path
+
+```mermaid
+flowchart LR
+    CA[Cluster Autoscaler] --> Idle[Detect underused node]
+    Idle --> Cordon[Cordon and drain]
+    Cordon --> Delete[Delete VM]
+    Delete --> Pool[Smaller node pool]
+```
+
+#### HPA vs Cluster Autoscaler
+
+| | HPA | Cluster Autoscaler |
+|---|-----|-------------------|
+| **Scales** | Pod replicas | Worker nodes |
+| **Signal** | CPU, memory, custom metrics | Pending pods / node utilization |
+| **Layer** | Application | Infrastructure |
+| **Speed** | Seconds to tens of seconds | Often 2–5+ minutes |
+
+#### Cluster Autoscaler vs Scheduler
+
+| | Cluster Autoscaler | Scheduler |
+|---|-------------------|-----------|
+| **Action** | Add or remove nodes | Assign pod to existing node |
+| **Trigger** | Unschedulable pods, idle nodes | New unbound pod |
+
+---
+
+#### Walkthrough: end-to-end scaling event
+
+```mermaid
+flowchart LR
+    Traffic[Traffic surge] --> HPA[HPA adds pods]
+    HPA --> Pending[Pods Pending no CPU]
+    Pending --> CA[Cluster Autoscaler]
+    CA --> ASG[Auto Scaling Group plus 2 nodes]
+    ASG --> Join[Nodes join cluster]
+    Join --> Sched[Scheduler binds pods]
+    Sched --> OK[All pods Running]
+```
+
+1. HPA increases Deployment from 10 to 25 replicas during a flash sale.
+2. Fifteen new pods stay Pending — each requests 500m CPU; existing nodes have no room.
+3. Cluster Autoscaler detects unschedulable pods and increases the node group from 5 to 8.
+4. Cloud launches three VMs; kubelets register; Scheduler places Pending pods over ~3 minutes.
+5. After the sale, HPA scales pods down; Cluster Autoscaler eventually removes empty nodes, respecting scale-down delay settings.
+
+---
+
+#### Pitfalls and design tips
+
+- **Ignores affinity-only Pending** — CA scales on resource deficit, not when pod demands GPU node that does not exist.
+- **Scale-down is slow** — cordon, drain, pod rescheduling take minutes; do not expect instant node removal.
+- **`min` node group size** — sets cost floor; rightsizing instance types matters as much as node count.
+- **Local storage blocks eviction** — pods with `emptyDir` or local PV may pin nodes; annotate safe-to-evict where appropriate.
+- **Production:** align node pool instance types with pod resource histogram; separate pools for system vs workload.
+- **Over-provisioned pools fight CA** — manual `desiredSize` changes conflict with autoscaler; let CA own desired count.
+
+---
+
+#### Real-world example: GKE Cluster Autoscaler node pools
+
+Google documents **GKE Cluster Autoscaler** resizing node pools when pods are unschedulable due to insufficient CPU/memory. A typical SaaS setup uses separate pools (`general` vs `compute-optimized`); HPA scales API Deployments; pending pods trigger CA to grow the matching pool. Scale-down respects PodDisruptionBudgets and skips nodes with local storage. The `cluster-autoscaler.kubernetes.io/safe-to-evict: "true"` annotation on short-lived pods helps CA consolidate workloads before removing nodes.
+
+---
+
+[<- Back to master index](../README.md)
+
+---
+
+## 11.8 Containers & Images
 
 ### Overview
 
@@ -1660,9 +1888,9 @@ When a security patch is needed, the developer updates the base image line to `n
 
 ---
 
-## 11.14 Container Runtime
+### Container runtime
 
-### Overview
+#### Overview
 
 If a container image is a blueprint, the container runtime is the construction crew that reads the blueprint and actually builds the house. Without it, an image is just inert files on disk — the runtime creates the isolated process, wires up networking, attaches storage, and enforces resource limits.
 
@@ -1670,7 +1898,7 @@ Technically, a **container runtime** is low-level software that pulls images, cr
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 Higher-level tools (Docker CLI, Kubernetes) should not embed OS-specific process management. Someone must translate "run this image with 2 GB RAM and its own network stack" into kernel syscalls.
 
@@ -1684,7 +1912,7 @@ The runtime fixes this by providing a stable execution layer between images and 
 
 ---
 
-### What it does
+#### What it does
 
 A container runtime:
 
@@ -1700,7 +1928,7 @@ In Kubernetes: `kubelet → CRI → container runtime → container inside pod`.
 
 ---
 
-### How it works — the architecture inside
+#### How it works — the architecture inside
 
 ```text
 Container image → container runtime → namespaces + cgroups → OS kernel → hardware
@@ -1748,7 +1976,7 @@ CRI decouples Kubernetes from any single runtime implementation. The kubelet cal
 
 ---
 
-### Walkthrough: runtime vs image vs orchestrator
+#### Walkthrough: runtime vs image vs orchestrator
 
 | Layer | Role | Example |
 |-------|------|---------|
@@ -1764,7 +1992,7 @@ Registry → pull image → kubelet tells runtime → pod on cluster node
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **dockershim removed** — Kubernetes 1.24+ requires CRI-native runtimes (containerd, CRI-O); do not depend on Docker inside kubelet.
 - **CRI is the contract** — kubelet talks CRI; swapping runtimes should not require app changes.
@@ -1775,7 +2003,7 @@ Registry → pull image → kubelet tells runtime → pod on cluster node
 
 ---
 
-### Real-world example
+#### Real-world example
 
 A Kubernetes cluster on AWS EKS uses **containerd** as its runtime on every worker node. When a deployment rolls out a new version:
 
@@ -1789,9 +2017,9 @@ Developers still use Docker locally to build images, but production nodes never 
 
 ---
 
-## 11.15 Container Images
+### Container images
 
-### Overview
+#### Overview
 
 A container image is a sealed, portable box that holds everything your application needs to run — the code, the language runtime, system libraries, and default configuration. You ship the box to any server; whoever opens it gets the exact same contents, every time.
 
@@ -1799,7 +2027,7 @@ Technically, a **container image** is an immutable, read-only filesystem assembl
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 Shipping applications traditionally meant installing dependencies on each server, hoping versions match, and fearing that a manual change on one machine will never be reproduced elsewhere.
 
@@ -1812,7 +2040,7 @@ Container images fix:
 
 ---
 
-### What it does
+#### What it does
 
 A container image packages:
 
@@ -1831,7 +2059,7 @@ Key properties:
 
 ---
 
-### How it works — the architecture inside
+#### How it works — the architecture inside
 
 ```text
 Application code + runtime + libraries + base OS layer → stacked read-only layers → image
@@ -1884,7 +2112,7 @@ Deploy 1.1; rollback = redeploy 1.0 (still available)
 
 ---
 
-### Walkthrough: image vs container vs VM image
+#### Walkthrough: image vs container vs VM image
 
 | | Container image | Running container | VM image |
 |---|-----------------|-------------------|----------|
@@ -1896,7 +2124,7 @@ Deploy 1.1; rollback = redeploy 1.0 (still available)
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **Secrets baked into layers** — remain in registry history forever; use runtime Secrets or build-args only for non-secret build metadata.
 - **Digest pinning** — `image@sha256:...` guarantees deploy content; tags can be overwritten.
@@ -1907,7 +2135,7 @@ Deploy 1.1; rollback = redeploy 1.0 (still available)
 
 ---
 
-### Real-world example
+#### Real-world example
 
 A machine-learning team packages its inference service as a container image. The `Dockerfile` uses a multi-stage build:
 
@@ -1920,9 +2148,9 @@ Production Kubernetes pulls `inference@sha256:abc123...` (digest pinning) so no 
 
 ---
 
-## 11.16 Image Layers
+### Image layers
 
-### Overview
+#### Overview
 
 Image layers are like transparent slides stacked on a projector — each slide adds something new (a library, a config file, your app code), and the final picture is the combination of all of them. When you change only the top slide, you do not redraw the slides below; you reuse them as-is.
 
@@ -1930,7 +2158,7 @@ Technically, **image layers** are read-only filesystem diffs produced by each in
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 Rebuilding an entire operating system and dependency tree on every code commit would make CI unbearably slow and waste bandwidth pushing full images to registries.
 
@@ -1943,7 +2171,7 @@ Layers fix:
 
 ---
 
-### What it does
+#### What it does
 
 Each Dockerfile instruction creates one layer:
 
@@ -1965,7 +2193,7 @@ When a container starts, all image layers are mounted read-only; a **writable co
 
 ---
 
-### How it works — the architecture inside
+#### How it works — the architecture inside
 
 **Stack model:**
 
@@ -2017,7 +2245,7 @@ Bad:   COPY app code → install dependencies (app change invalidates dep layer 
 
 ---
 
-### Walkthrough: layer reuse across versions
+#### Walkthrough: layer reuse across versions
 
 **Image v1.0:**
 
@@ -2042,7 +2270,7 @@ Registry and host store Layer 1 and Layer 2 once. Pulling v1.1 downloads only th
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **Instruction order drives cache** — copy `package.json` and install deps before `COPY . .` so code edits do not bust dependency layers.
 - **Large single RUN layers** — invalidate cache on any line change; group apt installs, clean caches in same layer.
@@ -2053,7 +2281,7 @@ Registry and host store Layer 1 and Layer 2 once. Pulling v1.1 downloads only th
 
 ---
 
-### Real-world example
+#### Real-world example
 
 A CI pipeline builds twenty microservices, all `FROM eclipse-temurin:17-jre-alpine`. Each service Dockerfile copies its JAR as the final layer. The base JRE layer is identical across all twenty images.
 
@@ -2063,7 +2291,7 @@ The platform team notices image bloat from a `RUN apt-get update && apt-get inst
 
 ---
 
-## 11.17 Namespaces
+## 11.9 Namespaces
 
 ### Overview
 
@@ -2201,7 +2429,7 @@ A security audit confirms that user namespaces map container root (UID 0 inside)
 
 ---
 
-## 11.18 cgroups
+## 11.10 cgroups
 
 ### Overview
 
@@ -2358,7 +2586,9 @@ During a batch job spike, the platform's cluster autoscaler adds nodes, but cgro
 
 A post-mortem on a pre-cgroup bare-metal era outage noted one tenant's fork bomb exhausted the host PID table. Today, `pids.max` in the cgroup stops the bomb at 200 processes, leaving the node healthy for everyone else.
 
-## 11.19 Kubernetes
+---
+
+## 11.11 Kubernetes
 
 ### Overview
 
@@ -2483,7 +2713,7 @@ A fintech team runs three microservices on **Amazon EKS**. Each service is a **D
 
 ---
 
-## 11.20 Pods
+## 11.12 Pods, ReplicaSets & Deployments
 
 ### Overview
 
@@ -2610,9 +2840,9 @@ An e-commerce API runs one container per pod in production. After adopting **Ist
 
 ---
 
-## 11.21 ReplicaSets
+### ReplicaSets
 
-### Overview
+#### Overview
 
 Imagine a concert venue that must always have exactly three ticket scanners running. If one scanner breaks, a supervisor immediately rolls out a replacement — not four scanners, not two, always three. A **ReplicaSet** is that supervisor for pods: it keeps a fixed number of identical copies running.
 
@@ -2620,7 +2850,7 @@ Technically, a ReplicaSet is a **controller** that watches pods matching a **lab
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 A single pod is a single point of failure:
 
@@ -2632,7 +2862,7 @@ Running N identical pods by hand means constantly counting processes across node
 
 ---
 
-### What it does
+#### What it does
 
 ReplicaSets:
 
@@ -2648,7 +2878,7 @@ They do **not** roll out new image versions safely (use Deployment), manage stab
 
 ---
 
-### How it works — the architecture inside
+#### How it works — the architecture inside
 
 #### Control loop
 
@@ -2695,7 +2925,7 @@ Developers interact with **Deployments**; Deployments create and manage ReplicaS
 
 ---
 
-### Walkthrough: pod failure and recovery
+#### Walkthrough: pod failure and recovery
 
 ```mermaid
 flowchart LR
@@ -2715,7 +2945,7 @@ flowchart LR
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **No rolling updates** — changing pod template in-place does not safely roll; use Deployments.
 - **Selector is immutable** — changing labels requires a new ReplicaSet object.
@@ -2726,15 +2956,15 @@ flowchart LR
 
 ---
 
-### Real-world example: legacy controller before Deployment
+#### Real-world example: legacy controller before Deployment
 
 An internal tool still applied raw ReplicaSet YAML in a dev cluster: `replicas: 2`, `image: tool:v1`. When a developer scaled to `replicas: 5`, two pods became five within a minute. Updating the image required manually deleting the ReplicaSet and creating a new one — brief downtime. The team migrated to **Deployments** so `kubectl set image` triggers rolling updates and `kubectl rollout undo` restores the previous ReplicaSet. ReplicaSets still exist in the cluster; they are just managed by Deployments rather than edited directly.
 
 ---
 
-## 11.22 Deployments
+### Deployments
 
-### Overview
+#### Overview
 
 A Deployment is like a restaurant manager who not only keeps three cooks on shift but also swaps in new recipes one cook at a time so the kitchen never closes. You tell the manager the menu version and head count; they handle hiring, firing, and gradual recipe changes. A **Deployment** is the primary production object for **stateless** apps in Kubernetes.
 
@@ -2742,7 +2972,7 @@ Technically, a Deployment manages **ReplicaSets**, which manage **pods**. You up
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 ReplicaSets keep pod count steady but cannot safely change the pod template:
 
@@ -2754,7 +2984,7 @@ Teams need **versioned, gradual rollouts** and **one command to undo**. Deployme
 
 ---
 
-### What it does
+#### What it does
 
 Deployments provide:
 
@@ -2774,7 +3004,7 @@ Best for **stateless** workloads (web APIs, workers that don't store local state
 
 ---
 
-### How it works — the architecture inside
+#### How it works — the architecture inside
 
 #### Object hierarchy
 
@@ -2814,7 +3044,7 @@ Rollback → reactivate Revision 2's ReplicaSet
 
 ---
 
-### Walkthrough: CI/CD rolling deploy
+#### Walkthrough: CI/CD rolling deploy
 
 ```mermaid
 flowchart LR
@@ -2834,7 +3064,7 @@ flowchart LR
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **`maxUnavailable` / `maxSurge` trade-offs** — zero `maxUnavailable` needs spare capacity; high `maxSurge` speeds deploy but spikes resource use.
 - **Readiness ≠ liveness** — readiness removes pod from Service endpoints; liveness restarts container — misconfigured liveness causes restart loops.
@@ -2845,13 +3075,13 @@ flowchart LR
 
 ---
 
-### Real-world example: stateless REST API
+#### Real-world example: stateless REST API
 
 A SaaS company runs `user-api` as a Deployment with 6 replicas, CPU/memory requests, liveness and readiness HTTP probes on `/health`, and a **RollingUpdate** with `maxUnavailable: 1`. GitHub Actions pushes to GCR; Flux updates the cluster. During deploy, at most one pod is unavailable; the Service load-balances across the rest. **HPA** scales 6→20 replicas on CPU > 70%. Session state lives in Redis — pods are interchangeable. A bad release (panic on startup) fails readiness checks; rollout stalls; on-call runs `rollout undo` and the previous ReplicaSet serves traffic within two minutes.
 
 ---
 
-## 11.23 Services
+## 11.13 Services
 
 ### Overview
 
@@ -3089,7 +3319,7 @@ flowchart LR
 
 ---
 
-## 11.24 Ingress
+## 11.14 Ingress
 
 ### Overview
 
@@ -3216,7 +3446,7 @@ A B2B platform gives each customer a subdomain: `acme.app.com`, `globex.app.com`
 
 ---
 
-## 11.25 StatefulSets
+## 11.15 StatefulSets
 
 ### Overview
 
@@ -3340,7 +3570,7 @@ A streaming team runs Apache Kafka with a StatefulSet (or Strimzi operator, whic
 
 ---
 
-## 11.26 DaemonSets
+## 11.16 DaemonSets
 
 ### Overview
 
@@ -3453,7 +3683,7 @@ An infrastructure team runs the Datadog agent as a DaemonSet in every cluster (E
 
 ---
 
-## 11.27 Jobs
+## 11.17 Jobs & CronJobs
 
 ### Overview
 
@@ -3576,9 +3806,9 @@ A media company processes uploaded images with a Job: `completions: 50`, `parall
 
 ---
 
-## 11.28 CronJobs
+### CronJobs
 
-### Overview
+#### Overview
 
 Imagine a night watchman who patrols on a fixed schedule without anyone calling them — the rounds are built in. A **CronJob** is Kubernetes' version of that: it runs batch work on a timetable (backups, cleanups, reports) by creating a new **Job** each time the clock hits the cron expression.
 
@@ -3586,7 +3816,7 @@ Technically, a CronJob is a controller that watches a cron schedule and spawns *
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 Without CronJobs, recurring tasks depend on humans or external cron daemons on individual servers:
 
@@ -3598,7 +3828,7 @@ CronJobs move scheduled batch work into the cluster control plane: same image, s
 
 ---
 
-### What it does
+#### What it does
 
 A CronJob:
 
@@ -3614,7 +3844,7 @@ A CronJob:
 
 ---
 
-### How it works — the architecture inside
+#### How it works — the architecture inside
 
 ```mermaid
 flowchart LR
@@ -3656,7 +3886,7 @@ flowchart LR
 
 ---
 
-### Walkthrough: nightly database backup
+#### Walkthrough: nightly database backup
 
 ```mermaid
 flowchart LR
@@ -3674,7 +3904,7 @@ flowchart LR
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **Schedules are UTC by default** — document timezone explicitly (`CRON_TZ` or UTC conversion) for on-call handoffs.
 - **`concurrencyPolicy: Forbid`** — skips overlapping runs; right for backups that must not stack.
@@ -3685,13 +3915,13 @@ flowchart LR
 
 ---
 
-### Real-world example: SaaS log retention
+#### Real-world example: SaaS log retention
 
 A multi-tenant SaaS platform runs a CronJob every six hours that deletes log partitions older than 90 days. `concurrencyPolicy: Forbid` prevents two cleanup Jobs from competing for the same tables. `successfulJobsHistoryLimit: 3` keeps recent Job records for debugging without cluttering etcd. Alerts fire on `CronJob` → `Job` → `Failed` so on-call knows a scheduled maintenance window was missed.
 
 ---
 
-## 11.29 ConfigMaps
+## 11.18 ConfigMaps & Secrets
 
 ### Overview
 
@@ -3725,7 +3955,7 @@ A ConfigMap:
 
 **Updates without image rebuild** — edit the ConfigMap, roll pods to pick up changes.
 
-**Stays non-sensitive** — passwords and keys belong in **Secrets** ([11.30](#1130-secrets)), not ConfigMaps; ConfigMap data is stored unencrypted in etcd by default.
+**Stays non-sensitive** — passwords and keys belong in **Secrets** ([11.18 â€” Secrets](#secrets)), not ConfigMaps; ConfigMap data is stored unencrypted in etcd by default.
 
 ---
 
@@ -3796,9 +4026,9 @@ An e-commerce team stores `ENABLE_BNPL=true` and `CART_TIMEOUT_SECONDS=900` in a
 
 ---
 
-## 11.30 Secrets
+### Secrets
 
-### Overview
+#### Overview
 
 A hotel gives guests a room key card instead of engraving the door code into the room itself — credentials stay separate and can be revoked without rebuilding the room. A **Secret** is Kubernetes' object for sensitive data: database passwords, API keys, TLS certificates, and registry pull credentials, injected into pods at runtime like ConfigMaps but intended for confidential values.
 
@@ -3806,7 +4036,7 @@ Technically, Secrets are API objects with typed variants (`Opaque`, `kubernetes.
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 Embedding credentials in images or Git repos creates security and operations risk:
 
@@ -3818,7 +4048,7 @@ Secrets externalize sensitive values so credentials rotate independently of appl
 
 ---
 
-### What it does
+#### What it does
 
 A Secret:
 
@@ -3834,7 +4064,7 @@ A Secret:
 
 ---
 
-### How it works — the architecture inside
+#### How it works — the architecture inside
 
 ```mermaid
 flowchart LR
@@ -3864,7 +4094,7 @@ flowchart LR
 
 ---
 
-### Walkthrough: TLS for an Ingress backend
+#### Walkthrough: TLS for an Ingress backend
 
 ```mermaid
 flowchart LR
@@ -3881,7 +4111,7 @@ flowchart LR
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **Base64 is not encryption** — anyone with etcd or API read access sees values; enable encryption at rest.
 - **Env vars leak** — visible in `/proc` and crash dumps; prefer volume mounts for credentials.
@@ -3892,13 +4122,13 @@ flowchart LR
 
 ---
 
-### Real-world example: multi-tenant API keys
+#### Real-world example: multi-tenant API keys
 
 A B2B API platform stores each customer's webhook signing secret in a dedicated Secret per namespace. The Deployment mounts secrets as files; the app reads `/var/secrets/signing-key` at startup. RBAC grants only the platform namespace's service account `get` on Secrets in that namespace. Quarterly rotation updates the Secret object and triggers a rolling restart — no image change, no credential in the container registry.
 
 ---
 
-## 11.31 Scheduler
+## 11.19 Scheduler
 
 ### Overview
 
@@ -3932,7 +4162,7 @@ The Scheduler:
 
 **Binds the pod** — assigns `spec.nodeName`; kubelet on that node pulls images and starts containers.
 
-**Leaves pods Pending** — if no node fits, the pod stays Pending until capacity appears (possibly after Cluster Autoscaler adds a node — [11.35](#1135-cluster-autoscaler)).
+**Leaves pods Pending** — if no node fits, the pod stays Pending until capacity appears (possibly after Cluster Autoscaler adds a node — [11.7 — Cluster autoscaler](#cluster-autoscaler)).
 
 ---
 
@@ -4015,7 +4245,7 @@ A machine-learning platform taints GPU nodes with `nvidia.com/gpu=true:NoSchedul
 
 ---
 
-## 11.32 etcd
+## 11.20 etcd
 
 ### Overview
 
@@ -4139,7 +4369,7 @@ A production EKS cluster runs etcd as managed control plane (AWS operates the Ra
 
 ---
 
-## 11.33 Operators
+## 11.21 Operators
 
 ### Overview
 
@@ -4250,243 +4480,3 @@ flowchart LR
 An event-streaming team installs the Strimzi Operator and declares a `Kafka` CR with three brokers and ZooKeeper (or KRaft) settings. The Operator generates StatefulSets, listeners, TLS certificates, and `KafkaTopic` CRs for topic management. When broker pod `kafka-1` is deleted, the Operator recreates it with the same persistent volume. Topic partition rebalancing and rolling broker updates are handled by the Operator rather than a runbook.
 
 ---
-
-## 11.34 HPA
-
-### Overview
-
-Imagine a call center that opens extra phone stations when hold times climb and closes them when queues drain — automatically, without a manager refreshing dashboards every minute. The **Horizontal Pod Autoscaler (HPA)** does that for pods: it raises or lowers replica count based on metrics like CPU, memory, or custom request rate.
-
-Technically, HPA is a controller that periodically compares current metrics (from **Metrics Server** or custom metrics APIs) against targets you define. It patches the `replicas` field on a Deployment, StatefulSet, or other scale target. It respects `minReplicas` and `maxReplicas` bounds and applies stabilization windows to avoid flapping.
-
----
-
-### What problem it fixes
-
-Fixed replica counts waste money or fail under load:
-
-- Black Friday traffic overwhelms three static pods → errors and lost revenue
-- Overnight idle capacity runs ten pods at 5% CPU → unnecessary cloud spend
-- Manual `kubectl scale` reacts too slowly and does not scale down when traffic drops
-
-HPA closes the loop between observed load and replica count without human intervention.
-
----
-
-### What it does
-
-HPA:
-
-**Monitors metrics** — default CPU utilization; also memory, custom app metrics (queue depth), or external metrics (Pub/Sub lag).
-
-**Calculates desired replicas** — e.g. target 60% CPU; if current average is 90% across two pods, scale toward three.
-
-**Updates scale targets** — writes new replica count to Deployment → ReplicaSet creates or terminates pods.
-
-**Enforces bounds** — never below `minReplicas` or above `maxReplicas`.
-
-**Waits before acting** — scale-up and scale-down stabilization windows prevent thrashing on brief spikes.
-
-**How to calculate:** HPA desired replicas (CPU):
-
-```text
-Given: currentReplicas = 2, average CPU utilization = 90%, target = 60%
-
-desiredReplicas = ceil(2 x (90 / 60)) = ceil(2 x 1.5) = ceil(3.0) = 3
-
-HPA patches Deployment to 3 replicas; expect average CPU ~ 90% x 2/3 ~ 60% if load is flat
-Respect minReplicas and maxReplicas — result is clamped to that range
-Sanity check: if metrics show 90% but pods are throttled by low limits, fix limits before trusting HPA.
-```
-
-**Does not add nodes** — if the cluster lacks capacity, new pods stay Pending until Cluster Autoscaler ([11.35](#1135-cluster-autoscaler)) provisions nodes.
-
----
-
-### How it works — the architecture inside
-
-```mermaid
-flowchart LR
-    MS[Metrics Server] --> HPA[HPA controller]
-    HPA -->|adjust replicas| Dep[Deployment]
-    Dep --> RS[ReplicaSet]
-    RS --> Pods[Pods]
-```
-
-#### HPA with Cluster Autoscaler
-
-```mermaid
-flowchart LR
-    Traffic[Traffic spike] --> HPA[HPA scale up pods]
-    HPA --> Pending[Pods Pending]
-    Pending --> CA[Cluster Autoscaler]
-    CA --> Nodes[New worker nodes]
-    Nodes --> Sched[Scheduler places pods]
-```
-
-#### HPA vs VPA vs manual scale
-
-| | HPA | VPA | Manual `kubectl scale` |
-|---|-----|-----|------------------------|
-| **Changes** | Pod count | CPU/memory per pod | Pod count |
-| **Trigger** | Metrics | Resource usage analysis | Human |
-| **Best for** | Variable traffic | Right-sizing requests | Fixed workloads |
-
----
-
-### Walkthrough: API tier during a traffic spike
-
-```mermaid
-flowchart LR
-    Users[Users] --> Ing[Ingress]
-    Ing --> Svc[Service]
-    Svc --> P1[Pod]
-    Svc --> P2[Pod]
-    MS[Metrics Server] --> HPA[HPA target CPU 60%]
-    HPA --> Dep[Deployment replicas]
-```
-
-1. Deployment runs `minReplicas: 2`, `maxReplicas: 20`; HPA targets 60% average CPU.
-2. Morning traffic holds CPU at 25% — HPA leaves two pods running.
-3. A marketing push drives CPU to 85%; HPA calculates need for ~5 pods and patches the Deployment.
-4. ReplicaSet creates three additional pods; if nodes are full, pods Pending trigger Cluster Autoscaler.
-5. Traffic subsides; after the scale-down stabilization window, HPA reduces replicas toward the minimum.
-
----
-
-### Pitfalls and design tips
-
-- **Metrics Server required** — CPU/memory HPA needs metrics-server or equivalent; custom metrics need Prometheus Adapter or KEDA.
-- **Unset limits break CPU %** — HPA CPU utilization is `% of request`; missing requests make metrics meaningless.
-- **Does not add nodes** — Pending pods after HPA scale-up need Cluster Autoscaler ([11.35](#1135-cluster-autoscaler)).
-- **When KEDA** — scale on queue length, Kafka lag, or cloud metrics; supports scale-to-zero patterns.
-- **Production:** configure `behavior` scale-up/down stabilization; avoid scaling on memory unless app is memory-bound.
-- **Flapping** — too-aggressive scale-down kills pods still draining; use `minReplicas` floor for HA.
-
----
-
-### Real-world example: HPA with Prometheus Adapter
-
-The **Kubernetes Prometheus Adapter** exposes custom metrics (e.g. `http_requests_per_second`) to the HPA API. Retailers often run `minReplicas: 4` across zones for HA and `maxReplicas: 80` for sale events, with `behavior.scaleUp.stabilizationWindowSeconds: 0` for fast scale-out and `scaleDown: 300` to avoid flapping. The HPA formula still applies to custom metrics the same way as CPU — current replicas times (current metric / target metric), clamped to min/max.
-
----
-
-## 11.35 Cluster Autoscaler
-
-### Overview
-
-HPA adds more pods, but pods need somewhere to run — like hiring extra staff (pods) when busy, but also opening another branch (worker node) when the building is full. **Cluster Autoscaler** adjusts the number of worker nodes in the cluster: it asks the cloud provider (or equivalent) to add VMs when pods cannot be scheduled, and removes underused nodes when safe.
-
-Technically, Cluster Autoscaler watches for pods stuck in `Pending` because of insufficient CPU, memory, or other schedulable resources — not because of affinity or taints they can never satisfy. It increases the node group's desired size via the cloud API. For scale-down, it evicts pods from mostly idle nodes and deletes the VM after drains complete.
-
----
-
-### What problem it fixes
-
-Static node pools create two painful extremes:
-
-- **Under-provisioned** — HPA creates pods but Scheduler cannot place them; users see errors until someone manually adds nodes
-- **Over-provisioned** — teams pay 24/7 for peak-capacity nodes that sit empty most nights
-
-Cluster Autoscaler ties infrastructure size to actual schedulable demand, complementing HPA's application-level scaling.
-
----
-
-### What it does
-
-Cluster Autoscaler:
-
-**Scales up node groups** — when unschedulable pods exist and the autoscaler determines adding a node would help, it increases the managed group's target size.
-
-**Scales down idle nodes** — identifies nodes whose pods can move elsewhere, cordons, drains, and deletes the instance.
-
-**Respects constraints** — honors `min`/`max` node group sizes, budgets, and labels; skips scale-down for pods with local storage or certain annotations.
-
-**Integrates with cloud providers** — AWS Auto Scaling Groups, GKE node pools, Azure VMSS — not applicable on bare metal without similar machinery.
-
-**Works with Scheduler** — does not assign pods; adds capacity so Scheduler can bind Pending pods.
-
-**Takes minutes** — new nodes must boot, join the cluster, and pass readiness before scheduling completes.
-
----
-
-### How it works — the architecture inside
-
-```mermaid
-flowchart LR
-    Pod[Unschedulable pod] --> Sched[Scheduler]
-    Sched --> Pending[Pending]
-    Pending --> CA[Cluster Autoscaler]
-    CA --> Cloud[Cloud API]
-    Cloud --> Node[New worker node]
-    Node --> Sched
-    Sched --> Running[Pod running]
-```
-
-#### Scale-down path
-
-```mermaid
-flowchart LR
-    CA[Cluster Autoscaler] --> Idle[Detect underused node]
-    Idle --> Cordon[Cordon and drain]
-    Cordon --> Delete[Delete VM]
-    Delete --> Pool[Smaller node pool]
-```
-
-#### HPA vs Cluster Autoscaler
-
-| | HPA | Cluster Autoscaler |
-|---|-----|-------------------|
-| **Scales** | Pod replicas | Worker nodes |
-| **Signal** | CPU, memory, custom metrics | Pending pods / node utilization |
-| **Layer** | Application | Infrastructure |
-| **Speed** | Seconds to tens of seconds | Often 2–5+ minutes |
-
-#### Cluster Autoscaler vs Scheduler
-
-| | Cluster Autoscaler | Scheduler |
-|---|-------------------|-----------|
-| **Action** | Add or remove nodes | Assign pod to existing node |
-| **Trigger** | Unschedulable pods, idle nodes | New unbound pod |
-
----
-
-### Walkthrough: end-to-end scaling event
-
-```mermaid
-flowchart LR
-    Traffic[Traffic surge] --> HPA[HPA adds pods]
-    HPA --> Pending[Pods Pending no CPU]
-    Pending --> CA[Cluster Autoscaler]
-    CA --> ASG[Auto Scaling Group plus 2 nodes]
-    ASG --> Join[Nodes join cluster]
-    Join --> Sched[Scheduler binds pods]
-    Sched --> OK[All pods Running]
-```
-
-1. HPA increases Deployment from 10 to 25 replicas during a flash sale.
-2. Fifteen new pods stay Pending — each requests 500m CPU; existing nodes have no room.
-3. Cluster Autoscaler detects unschedulable pods and increases the node group from 5 to 8.
-4. Cloud launches three VMs; kubelets register; Scheduler places Pending pods over ~3 minutes.
-5. After the sale, HPA scales pods down; Cluster Autoscaler eventually removes empty nodes, respecting scale-down delay settings.
-
----
-
-### Pitfalls and design tips
-
-- **Ignores affinity-only Pending** — CA scales on resource deficit, not when pod demands GPU node that does not exist.
-- **Scale-down is slow** — cordon, drain, pod rescheduling take minutes; do not expect instant node removal.
-- **`min` node group size** — sets cost floor; rightsizing instance types matters as much as node count.
-- **Local storage blocks eviction** — pods with `emptyDir` or local PV may pin nodes; annotate safe-to-evict where appropriate.
-- **Production:** align node pool instance types with pod resource histogram; separate pools for system vs workload.
-- **Over-provisioned pools fight CA** — manual `desiredSize` changes conflict with autoscaler; let CA own desired count.
-
----
-
-### Real-world example: GKE Cluster Autoscaler node pools
-
-Google documents **GKE Cluster Autoscaler** resizing node pools when pods are unschedulable due to insufficient CPU/memory. A typical SaaS setup uses separate pools (`general` vs `compute-optimized`); HPA scales API Deployments; pending pods trigger CA to grow the matching pool. Scale-down respects PodDisruptionBudgets and skips nodes with local storage. The `cluster-autoscaler.kubernetes.io/safe-to-evict: "true"` annotation on short-lived pods helps CA consolidate workloads before removing nodes.
-
----
-
-[<- Back to master index](../README.md)

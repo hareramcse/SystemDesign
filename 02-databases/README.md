@@ -8,29 +8,22 @@
 
 | # | Sub-topic |
 |---|-----------|
-| 2.1 | [Normalization & Denormalization](#21-normalization--denormalization) |
-| 2.2 | [Indexing](#22-indexing) |
-| 2.3 | [B Tree/B+ Tree](#23-b-treeb-tree) |
-| 2.4 | [Query Planner / Optimizer](#24-query-planner--optimizer) |
-| 2.5 | [Views/ Materialized View](#25-views-materialized-view) |
-| 2.6 | [Isolation Levels](#26-isolation-levels) |
-| 2.7 | [MVCC](#27-mvcc) |
-| 2.8 | [Redo/undo/bin Logs](#28-redoundobin-logs) |
-| 2.9 | [LSM Tree/SSTables/WAL](#29-lsm-treesstableswal) |
-| 2.10 | [Page Cache](#210-page-cache) |
-| 2.11 | [Vacuum Process](#211-vacuum-process) |
-| 2.12 | [Key Value Stores](#212-key-value-stores) |
-| 2.13 | [Document Databases](#213-document-databases) |
-| 2.14 | [Wide Column Databases](#214-wide-column-databases) |
-| 2.15 | [Graph Databases](#215-graph-databases) |
-| 2.16 | [Time Series Databases](#216-time-series-databases) |
-| 2.17 | [Search Databases](#217-search-databases) |
-| 2.18 | [Vector Databases](#218-vector-databases) |
-| 2.19 | [Multi Model Databases](#219-multi-model-databases) |
-| 2.20 | [ACID/BASE Properties](#220-acidbase-properties) |
-| 2.21 | [SQL Tuning](#221-sql-tuning) |
+| 2.1 | [Normalization & Denormalization](#21-normalization-denormalization) |
+| 2.2 | [Indexing & B-Trees](#22-indexing-b-trees) |
+| 2.3 | [Query Planner / Optimizer](#23-query-planner-optimizer) |
+| 2.4 | [Views/ Materialized View](#24-views-materialized-view) |
+| 2.5 | [Isolation Levels & MVCC](#25-isolation-levels-mvcc) |
+| 2.6 | [Redo/undo/bin Logs](#26-redo-undo-bin-logs) |
+| 2.7 | [LSM Tree/SSTables/WAL](#27-lsm-tree-sstables-wal) |
+| 2.8 | [Page Cache](#28-page-cache) |
+| 2.9 | [Vacuum Process](#29-vacuum-process) |
+| 2.10 | [Database Families](#210-database-families) |
+| 2.11 | [Multi Model Databases](#211-multi-model-databases) |
+| 2.12 | [ACID/BASE Properties](#212-acid-base-properties) |
+| 2.13 | [SQL Tuning](#213-sql-tuning) |
 
 ---
+
 
 ## 2.1 Normalization & Denormalization
 
@@ -169,7 +162,8 @@ flowchart LR
 
 ---
 
-## 2.2 Indexing
+
+## 2.2 Indexing & B-Trees
 
 ### Overview
 
@@ -315,26 +309,27 @@ The composite index narrows to category 10 in the B+ tree, then walks the price 
 
 ---
 
-## 2.3 B Tree/B+ Tree
 
-### Overview
+### B-tree / B+ tree
+
+#### Overview
 
 A balanced phone tree in a call center routes you through menus — "press 1 for billing, 2 for support" — instead of listening to every option in one long list. A B-tree does the same for disk pages: each node holds many keys and branches, so the tree stays shallow even with millions of records.
 
 B-trees and B+ trees are self-balancing multi-way search trees designed for block-oriented storage. Each node fits one disk page; high fan-out keeps tree height to 3–4 levels for billions of keys. B+ trees store all row data in linked leaf nodes, making range scans and sorting the default fast path — which is why InnoDB, PostgreSQL, Oracle, and SQL Server use them for indexes.
 
-### What problem it fixes
+#### What problem it fixes
 
 A binary search tree degrades to a linked list when keys arrive sorted (`10, 20, 30, …`), turning **O(log N)** into **O(N)**. Even a balanced BST stores one key per node — millions of nodes mean millions of potential disk hops. Databases need a structure where each I/O reads hundreds of keys and tree height stays minimal.
 
-### What it does
+#### What it does
 
 - **B-tree:** keys and optional row data in internal and leaf nodes; search, insert, delete with node splits and merges to maintain balance.
 - **B+ tree:** internal nodes hold routing keys only; all data lives in leaf nodes linked as a doubly linked list for sequential traversal.
 
 Both guarantee all leaves at the same depth. Inserts that overflow a node split it and promote a middle key to the parent.
 
-### How it works — the algorithm inside
+#### How it works — the algorithm inside
 
 #### B-tree node layout (order m = 4)
 
@@ -445,20 +440,21 @@ flowchart LR
 | Range / ORDER BY | Good | Excellent |
 | Typical use | Some filesystems | Relational DB indexes |
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **Do not say "databases use B-trees" without qualifying B+ tree** — interviewers often want the leaf-linked-list distinction.
 - **Clustered B+ tree index defines physical row order** — choose the cluster key carefully; monotonic inserts on UUID v4 PKs cause page splits and fragmentation (consider sequential IDs or `uuidv7`).
 - **Index-only scans require INCLUDE/covering columns** — PK lookups in InnoDB read the clustered index directly; secondary indexes do a double lookup unless covering.
 - **Hash indexes are not a drop-in replacement** — no range support; used for in-memory or equality-only workloads.
 
-### Real-world example
+#### Real-world example
 
 **MySQL InnoDB primary key:** table data is the clustered B+ tree on the primary key. `SELECT * FROM orders WHERE order_id = 8821` descends the PK tree and reads the leaf page containing the full row. A secondary index on `customer_id` stores `(customer_id → order_id)` and performs a second PK lookup — motivating covering indexes for hot queries like `SELECT order_id, created_at WHERE customer_id = ?`.
 
 ---
 
-## 2.4 Query Planner / Optimizer
+
+## 2.3 Query Planner / Optimizer
 
 ### Overview
 
@@ -605,7 +601,8 @@ Without the optimizer, a full scan touches millions of pages — seconds of I/O.
 
 ---
 
-## 2.5 Views/ Materialized View
+
+## 2.4 Views/ Materialized View
 
 ### Overview
 
@@ -712,7 +709,8 @@ PostgreSQL concurrent refresh requires a unique index on the MV. Oracle and SQL 
 
 ---
 
-## 2.6 Isolation Levels
+
+## 2.5 Isolation Levels & MVCC
 
 ### Overview
 
@@ -792,23 +790,24 @@ PostgreSQL and InnoDB default to **MVCC snapshots** rather than blocking every r
 
 ---
 
-## 2.7 MVCC
 
-### Overview
+### MVCC
+
+#### Overview
 
 Instead of erasing and rewriting a whiteboard while others are still copying it, MVCC gives each person their own snapshot photo of the board at a known time. Writers draw on a new layer; readers keep looking at their photo until their transaction ends.
 
 **Multi-Version Concurrency Control** stores multiple row versions rather than overwriting in place. Each transaction reads versions visible to its snapshot, so readers rarely block writers and writers rarely block readers. PostgreSQL, InnoDB, Oracle, and CockroachDB rely on MVCC for default isolation.
 
-### What problem it fixes
+#### What problem it fixes
 
 Lock-based systems force `SELECT` to wait behind an uncommitted `UPDATE` on the same row. Under concurrent OLTP load, lock queues grow — throughput collapses and deadlocks appear. MVCC lets reads proceed against an older committed (or snapshot) version while a new version is being written.
 
-### What it does
+#### What it does
 
 On `UPDATE`, the engine marks the old row version dead for new snapshots and inserts a new version with the updated values. Metadata (`xmin`/`xmax` in PostgreSQL, `DB_TRX_ID` in InnoDB) records which transactions created or invalidated each version. `DELETE` tombstones the row without immediate physical removal. Cleanup (VACUUM in PostgreSQL, purge in InnoDB) reclaims dead versions when no snapshot needs them.
 
-### How it works — the architecture inside
+#### How it works — the architecture inside
 
 #### Version chain
 
@@ -879,7 +878,7 @@ Second writer blocks or fails on conflict — MVCC does not eliminate write-writ
 
 Long-running open transactions hold back cleanup → table bloat and undo growth.
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **"MVCC means lock-free" is false** — only read/write overlap is optimized; hot write rows still serialize.
 - **Long transactions are toxic** — open snapshot prevents vacuum/purge; monitor `pg_stat_activity` / `information_schema.innodb_trx`.
@@ -887,13 +886,14 @@ Long-running open transactions hold back cleanup → table bloat and undo growth
 - **Index-only scans must check visibility** — PostgreSQL may need heap visit to confirm tuple visibility map.
 - **Interview:** explain version chain + snapshot; tie to isolation levels and VACUUM.
 
-### Real-world example
+#### Real-world example
 
 **PostgreSQL read-heavy API:** thousands of `SELECT product WHERE id = ?` per second while inventory workers `UPDATE stock`. Readers hit visible snapshots without waiting on each stock adjustment. Inventory updates create new row versions; autovacuum reclaims dead tuples overnight. A forgotten `BEGIN` left open for hours during a deploy can block vacuum on hot `products` — ops playbooks kill idle in transaction sessions.
 
 ---
 
-## 2.8 Redo/undo/bin Logs
+
+## 2.6 Redo/undo/bin Logs
 
 ### Overview
 
@@ -1012,7 +1012,8 @@ PostgreSQL uses a unified WAL for both durability and logical decoding — diffe
 
 ---
 
-## 2.9 LSM Tree/SSTables/WAL
+
+## 2.7 LSM Tree/SSTables/WAL
 
 ### Overview
 
@@ -1138,7 +1139,8 @@ flowchart LR
 
 ---
 
-## 2.10 Page Cache
+
+## 2.8 Page Cache
 
 ### Overview
 
@@ -1243,7 +1245,8 @@ B+ tree root and upper internal pages stay hot — index depth becomes pure RAM 
 
 ---
 
-## 2.11 Vacuum Process
+
+## 2.9 Vacuum Process
 
 ### Overview
 
@@ -1340,7 +1343,9 @@ Same problem — garbage versions — different mechanics.
 
 **High-update `sessions` table in PostgreSQL:** auth service updates `last_seen` every request. Millions of dead tuples accumulate daily. Autovacuum on `sessions` runs with lowered `autovacuum_vacuum_scale_factor = 0.02` so cleanup starts at 2% dead vs default 20%. Without tuning, `SELECT session WHERE token = ?` degrades as heap pages fill with dead rows; `pg_stat_user_tables.n_dead_tup` and `EXPLAIN` buffer reads guide ops before `VACUUM FULL` on a maintenance window.
 
-## 2.12 Key Value Stores
+---
+
+## 2.10 Database Families
 
 ### Overview
 
@@ -1463,9 +1468,10 @@ Return value: Shyam
 
 ---
 
-## 2.13 Document Databases
 
-### Overview
+### Document databases
+
+#### Overview
 
 Think of a document database as a filing cabinet where each folder holds **everything** about one thing — name, address, phone numbers, preferences — on a single sheet instead of spread across four binders you must cross-reference. You pull one folder and you are done.
 
@@ -1473,7 +1479,7 @@ Technically, a **document database** stores self-contained records (JSON, BSON, 
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 Relational modeling for rich, nested objects often explodes into many tables — `CUSTOMER`, `ADDRESS`, `PHONE`, `PREFERENCES` — with joins on every read. Mobile and web APIs naturally serialize to JSON; mapping that to rows adds ORM complexity and migration friction when product fields evolve weekly.
 
@@ -1481,7 +1487,7 @@ Document databases fix **read locality** and **schema agility**: one document pe
 
 ---
 
-### What it does
+#### What it does
 
 | Relational | Document |
 |------------|----------|
@@ -1505,7 +1511,7 @@ Example document:
 
 ---
 
-### How it works — the architecture inside
+#### How it works — the architecture inside
 
 #### Embedding vs referencing
 
@@ -1544,7 +1550,7 @@ flowchart LR
 
 ---
 
-### Walkthrough: product catalog query
+#### Walkthrough: product catalog query
 
 Collection `products`, millions of documents with varying attributes (electronics have `warrantyMonths`; clothing has `sizes`).
 
@@ -1562,7 +1568,7 @@ db.products.find({
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **Document size limits** — MongoDB caps documents at 16 MB; huge arrays belong in separate collections or blob storage.
 - **Unbounded array growth** — embedding unbounded `comments` or `events` bloats documents and slows reads; reference or cap.
@@ -1573,15 +1579,16 @@ db.products.find({
 
 ---
 
-### Real-world example
+#### Real-world example
 
 **eBay product listings** historically relied on document-oriented storage patterns for catalog items where each listing has a different attribute set (auction vs fixed-price, category-specific fields). One document per listing powers search indexing and detail-page reads without normalizing hundreds of optional attributes into sparse SQL columns.
 
 ---
 
-## 2.14 Wide Column Databases
 
-### Overview
+### Wide-column databases
+
+#### Overview
 
 Imagine a spreadsheet where **each row can have completely different columns** — one person has `Age` and `City`, another has `Email` only — and some rows stretch sideways with millions of timestamp columns for sensor readings. That is the mental model for a **wide-column database**: rows keyed by a partition key, columns sparse and optional, optimized for scale-out writes.
 
@@ -1589,7 +1596,7 @@ Technically, wide-column stores (Cassandra, HBase, ScyllaDB, Google Bigtable) si
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 Relational databases hit ceilings when data reaches petabytes, billions of writes per day, and thousands of nodes. Internet-scale use cases — clickstreams, IoT telemetry, messaging logs, time-ordered events — need horizontal write throughput and fault tolerance without a single master bottleneck.
 
@@ -1597,7 +1604,7 @@ Wide-column databases fix **massive partitioned writes** and **sparse wide rows*
 
 ---
 
-### What it does
+#### What it does
 
 Hierarchy (terminology varies by product):
 
@@ -1624,7 +1631,7 @@ No NULL storage for missing columns — **sparse storage** saves space.
 
 ---
 
-### How it works — the architecture inside
+#### How it works — the architecture inside
 
 #### Write and read paths (LSM-based)
 
@@ -1656,7 +1663,7 @@ Partition key `deviceId`, clustering key `timestamp` — one row per device with
 
 ---
 
-### Walkthrough: IoT temperature events
+#### Walkthrough: IoT temperature events
 
 ```sql
 -- CQL-style mental model
@@ -1669,7 +1676,7 @@ INSERT INTO readings (device_id, day, ts, temp_c) VALUES ('sensor-42', '2026-06-
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **Do not confuse with columnar OLAP** — Snowflake/ClickHouse are for analytics; Cassandra is for operational scale-out writes.
 - **Hot partitions** — if partition key is `country` and all traffic is `US`, one node saturates; use high-cardinality partition keys plus clustering keys.
@@ -1680,15 +1687,16 @@ INSERT INTO readings (device_id, day, ts, temp_c) VALUES ('sensor-42', '2026-06-
 
 ---
 
-### Real-world example
+#### Real-world example
 
 **Netflix viewing history and telemetry** (public talks describe Cassandra-style wide-column storage for high-volume, geographically distributed writes). Each user's or device's events partition by a key so writes spread across the ring; replicas in multiple regions survive AZ failure without a single SQL primary.
 
 ---
 
-## 2.15 Graph Databases
 
-### Overview
+### Graph databases
+
+#### Overview
 
 A graph database is like a subway map: stations are **entities**, lines between them are **relationships**, and the fastest route is found by following connections — not by joining two spreadsheets of stations and edges in SQL.
 
@@ -1696,7 +1704,7 @@ Technically, a **graph database** stores **nodes** (entities), **edges** (typed 
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 Relational databases represent relationships with foreign keys and joins. Shallow joins are fine; **multi-hop** queries (`friends of friends of friends`, fraud ring detection, supply-chain dependencies) explode in SQL complexity and cost — each hop adds a join and index lookup.
 
@@ -1704,7 +1712,7 @@ Graph databases fix **relationship-heavy read patterns**: the query engine walks
 
 ---
 
-### What it does
+#### What it does
 
 | Component | Example |
 |-----------|---------|
@@ -1723,7 +1731,7 @@ Query languages include **Cypher** (Neo4j), **Gremlin**, and **SPARQL** (RDF).
 
 ---
 
-### How it works — the architecture inside
+#### How it works — the architecture inside
 
 #### Index-free adjacency
 
@@ -1762,7 +1770,7 @@ flowchart LR
 
 ---
 
-### Walkthrough: shortest path
+#### Walkthrough: shortest path
 
 Graph: Ram → Sita → John → Raj. Query shortest path Ram to Raj.
 
@@ -1774,7 +1782,7 @@ Centrality algorithms (PageRank, betweenness) identify influential nodes — use
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **Poor fit for bulk aggregations** — `SUM(revenue) GROUP BY region` belongs in SQL/warehouse, not Neo4j.
 - **Sharding graphs is hard** — cross-partition traversals are expensive; many graph DBs scale vertically or partition by domain.
@@ -1785,15 +1793,16 @@ Centrality algorithms (PageRank, betweenness) identify influential nodes — use
 
 ---
 
-### Real-world example
+#### Real-world example
 
 **PayPal fraud detection** (documented graph-analytics pattern): accounts, devices, addresses, and transactions are nodes; shared attributes create edges. A ring of accounts linked to one device surfaces in one traversal — the same pattern in SQL requires many self-joins and is slower to iterate as analysts add new edge types.
 
 ---
 
-## 2.16 Time Series Databases
 
-### Overview
+### Time-series databases
+
+#### Overview
 
 A time series database is a lab notebook where **every measurement is stamped with when it happened** — temperature every minute, CPU every second — and you mostly **add new lines** rather than rewrite old ones. Queries ask "what happened in the last hour?" not "update row 47."
 
@@ -1801,7 +1810,7 @@ Technically, a **TSDB** (InfluxDB, Prometheus, TimescaleDB, QuestDB, VictoriaMet
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 You can store metrics in PostgreSQL, but at billions of points per day the workload exposes mismatches: mostly inserts, rare updates, range scans by time, aggregation-heavy dashboards, and automatic expiry of raw data. General OLTP indexes and row storage waste space and I/O.
 
@@ -1809,7 +1818,7 @@ TSDBs fix **monitoring-scale ingest and retention**: sort by timestamp, compress
 
 ---
 
-### What it does
+#### What it does
 
 Data model (Influx/Prometheus style):
 
@@ -1828,7 +1837,7 @@ cpu_usage,host=server1,region=india value=70.5 1719304800
 
 ---
 
-### How it works — the architecture inside
+#### How it works — the architecture inside
 
 #### Write path
 
@@ -1870,7 +1879,7 @@ Tags must stay low-cardinality: `host=server1` (good). `userId=<millions>` (bad)
 
 ---
 
-### Walkthrough: Prometheus alert on error rate
+#### Walkthrough: Prometheus alert on error rate
 
 1. App exposes `http_requests_total{service="payment",status="500"}` counter.
 2. Prometheus scrapes every 15s; appends to TSDB head block.
@@ -1880,7 +1889,7 @@ Tags must stay low-cardinality: `host=server1` (good). `userId=<millions>` (bad)
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **Counters vs gauges** — Prometheus counters monotonically increase; use `rate()` for derivatives. Reset behavior breaks naive dashboards.
 - **Cardinality explosion** — never tag high-cardinality IDs (`request_id`, `user_id`) on every metric.
@@ -1891,15 +1900,16 @@ Tags must stay low-cardinality: `host=server1` (good). `userId=<millions>` (bad)
 
 ---
 
-### Real-world example
+#### Real-world example
 
 **Uber's M3 metrics stack** (open-sourced, built for Prometheus-compatible ingestion at fleet scale) shards time series by label set, replicates for durability, and downsamples for long-term storage — the standard pattern behind SLO dashboards and on-call paging for thousands of microservices.
 
 ---
 
-## 2.17 Search Databases
 
-### Overview
+### Search databases
+
+#### Overview
 
 A search database is the index at the back of a textbook turned inside out: instead of "which page mentions Java?", you start at the word **Java** and instantly see every page that contains it — ranked by relevance, not just exact ID lookup.
 
@@ -1907,7 +1917,7 @@ Technically, **search engines** (Elasticsearch, OpenSearch, Solr, Algolia, Meili
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 OLTP databases optimize point lookups and transactions:
 
@@ -1925,7 +1935,7 @@ Search databases fix **text retrieval at scale** with structures built for token
 
 ---
 
-### What it does
+#### What it does
 
 A **document** in search context is any JSON record you index:
 
@@ -1950,7 +1960,7 @@ Capabilities:
 
 ---
 
-### How it works — the architecture inside
+#### How it works — the architecture inside
 
 #### Inverted index build
 
@@ -2008,7 +2018,7 @@ PostgreSQL remains source of truth; Elasticsearch serves search and analytics vi
 
 ---
 
-### Walkthrough: e-commerce product search
+#### Walkthrough: e-commerce product search
 
 1. Product saved in PostgreSQL on checkout admin write.
 2. Change stream indexes document into OpenSearch: title, description, facets (`brand`, `price`).
@@ -2018,7 +2028,7 @@ PostgreSQL remains source of truth; Elasticsearch serves search and analytics vi
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **Not your system of record** — weak transactions; rebuild index from OLTP if corrupted.
 - **Mapping explosions** — dynamic mapping on high-cardinality fields (`user_id` as keyword × millions) blows heap.
@@ -2029,15 +2039,16 @@ PostgreSQL remains source of truth; Elasticsearch serves search and analytics vi
 
 ---
 
-### Real-world example
+#### Real-world example
 
 **Shopify product search** runs on Elasticsearch-class infrastructure: catalog documents denormalized from transactional stores, sharded by shop or region, with analyzers tuned for SKUs and synonyms. Merchant admin uses SQL; storefront search hits the inverted index — separate engines, synchronized by pipeline.
 
 ---
 
-## 2.18 Vector Databases
 
-### Overview
+### Vector databases
+
+#### Overview
 
 Keyword search finds documents that contain the word "password." Vector search finds documents that **mean the same thing** — "I forgot my login credentials" matches "How do I reset my password?" even with zero shared words. Think of matching songs by melody similarity, not title spelling.
 
@@ -2045,7 +2056,7 @@ Technically, a **vector database** stores **embeddings** — fixed-length float 
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 | Store type | Query |
 |------------|-------|
@@ -2057,7 +2068,7 @@ Brute-force comparing a query vector to 100M vectors is O(n) per query — unusa
 
 ---
 
-### What it does
+#### What it does
 
 Pipeline:
 
@@ -2077,7 +2088,7 @@ Distance intuition (cosine similarity):
 
 ---
 
-### How it works — the architecture inside
+#### How it works — the architecture inside
 
 #### ANN algorithms
 
@@ -2119,7 +2130,7 @@ Products: Pinecone, Weaviate, Milvus, Qdrant, Chroma; extensions in PostgreSQL (
 
 ---
 
-### Walkthrough: support-bot semantic FAQ
+#### Walkthrough: support-bot semantic FAQ
 
 1. Ingest 5,000 help articles; embed each chunk with `text-embedding-3-small` (1536 dims).
 2. Upsert into Qdrant with payload `{article_id, section}`.
@@ -2129,7 +2140,7 @@ Products: Pinecone, Weaviate, Milvus, Qdrant, Chroma; extensions in PostgreSQL (
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **Approximate ≠ exact** — tune `ef_search` / recall benchmarks; legal/medical search may need higher recall or exact re-rank.
 - **Embedding model lock-in** — query and corpus must use the same model and dimension; re-embed everything on model change.
@@ -2140,13 +2151,14 @@ Products: Pinecone, Weaviate, Milvus, Qdrant, Chroma; extensions in PostgreSQL (
 
 ---
 
-### Real-world example
+#### Real-world example
 
 **Notion AI / enterprise RAG pattern:** workspace pages chunked and embedded into a vector index (internal or Pinecone-class service). User question embeds to the same space; top-K blocks retrieved and passed to the LLM with citation metadata — keyword search alone misses paraphrased questions across millions of notes.
 
 ---
 
-## 2.19 Multi Model Databases
+
+## 2.11 Multi Model Databases
 
 ### Overview
 
@@ -2245,7 +2257,8 @@ One backup, one replication topology, one security ACL layer.
 
 ---
 
-## 2.20 ACID/BASE Properties
+
+## 2.12 ACID/BASE Properties
 
 ### Overview
 
@@ -2350,7 +2363,8 @@ Banking transfer → ACID. YouTube view count → BASE.
 
 ---
 
-## 2.21 SQL Tuning
+
+## 2.13 SQL Tuning
 
 ### Overview
 

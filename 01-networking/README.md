@@ -8,31 +8,25 @@
 
 | # | Sub-topic |
 |---|-----------|
-| 1.1 | [OSI Model](#11-osi-model) |
-| 1.2 | [TCP/IP](#12-tcpip) |
-| 1.3 | [TCP Handshake](#13-tcp-handshake) |
-| 1.4 | [UDP](#14-udp) |
-| 1.5 | [MTU](#15-mtu) |
-| 1.6 | [IP Addressing/Subnetting](#16-ip-addressingsubnetting) |
-| 1.7 | [CIDR](#17-cidr) |
-| 1.8 | [DNS](#18-dns) |
-| 1.9 | [DNS Resolution](#19-dns-resolution) |
-| 1.10 | [HTTP/HTTPS](#110-httphttps) |
-| 1.11 | [SSL/TLS](#111-ssltls) |
-| 1.12 | [HTTP/2 & HTTP/3](#112-http2--http3) |
-| 1.13 | [QUIC](#113-quic) |
-| 1.14 | [Keep-Alive Connections](#114-keep-alive-connections) |
-| 1.15 | [Forward & Reverse Proxy](#115-forward--reverse-proxy) |
-| 1.16 | [NAT](#116-nat) |
-| 1.17 | [VPN](#117-vpn) |
-| 1.18 | [Unicast, Broadcast, Multicast & Anycast](#118-unicast-broadcast-multicast--anycast) |
-| 1.19 | [CDN](#119-cdn) |
-| 1.20 | [Load Balancer](#120-load-balancer) |
-| 1.21 | [SSE, Polling & WebSockets](#121-sse-polling--websockets) |
+| 1.1 | [OSI Model & TCP/IP](#11-osi-model-tcp-ip) |
+| 1.2 | [TCP Handshake](#12-tcp-handshake) |
+| 1.3 | [UDP](#13-udp) |
+| 1.4 | [MTU](#14-mtu) |
+| 1.5 | [IP Addressing & CIDR](#15-ip-addressing-cidr) |
+| 1.6 | [DNS & DNS Resolution](#16-dns-dns-resolution) |
+| 1.7 | [HTTP, TLS & Modern HTTP](#17-http-tls-modern-http) |
+| 1.8 | [Forward & Reverse Proxy](#18-forward-reverse-proxy) |
+| 1.9 | [NAT](#19-nat) |
+| 1.10 | [VPN](#110-vpn) |
+| 1.11 | [Unicast, Broadcast, Multicast & Anycast](#111-unicast-broadcast-multicast-anycast) |
+| 1.12 | [CDN](#112-cdn) |
+| 1.13 | [Load Balancer](#113-load-balancer) |
+| 1.14 | [SSE, Polling & WebSockets](#114-sse-polling-websockets) |
 
 ---
 
-## 1.1 OSI Model
+
+## 1.1 OSI Model & TCP/IP
 
 ### Overview
 
@@ -120,19 +114,20 @@ If TLS fails, you see a certificate error (L6). If TCP fails, “connection time
 
 ---
 
-## 1.2 TCP/IP
 
-### Overview
+### TCP/IP
+
+#### Overview
 
 If OSI is the textbook floor plan of a building, **TCP/IP** is the building people actually live in — the **four-layer model** used on the Internet today. Every website, mobile app, API call, and cloud service ultimately packages data as application bytes, transport segments, IP packets, and link-layer frames.
 
 TCP/IP merges OSI’s top three layers into one **Application** layer and the bottom two into **Network Access**. It focuses on what is implemented in Linux, Windows, routers, and cloud VPCs: HTTP over TCP over IP over Ethernet/Wi‑Fi.
 
-### What problem it fixes
+#### What problem it fixes
 
 Early networks used many incompatible stacks. TCP/IP provides a **minimal, interoperable** set of layers that scale from a laptop on Wi‑Fi to global backbone routers. It separates “reach this host” (IP), “reach this process” (TCP/UDP ports), and “what the app means” (HTTP, DNS, etc.) so each concern can evolve independently.
 
-### What it does
+#### What it does
 
 | TCP/IP layer | Maps from OSI | Role |
 |--------------|---------------|------|
@@ -152,7 +147,7 @@ Early networks used many incompatible stacks. TCP/IP provides a **minimal, inter
 
 The receiver **de-encapsulates** in reverse: strip MAC → strip IP → strip TCP → deliver to the application.
 
-### How it works — the architecture inside
+#### How it works — the architecture inside
 
 ```mermaid
 flowchart LR
@@ -204,14 +199,14 @@ flowchart LR
 | Network | Internet |
 | Data Link + Physical | Network Access |
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **“TCP/IP” means the whole stack**, not only TCP — DNS often uses UDP; IP is always involved for routed traffic.
 - **NAT lives at the Internet/Transport boundary** (typical home router): rewrites IP/port so many private hosts share one public IP — breaks end-to-end assumptions for inbound connections unless port forwarding or IPv6 is used.
 - **Don’t confuse ARP (LAN) with DNS (global names).** ARP: “who owns 192.168.1.1?” DNS: “what IP is google.com?”
 - **Default choice for new app APIs:** TCP (HTTP/HTTPS or gRPC). UDP when latency beats loss (media, gaming) or for DNS-sized messages.
 
-### Real-world example
+#### Real-world example
 
 **A REST call from a Kubernetes pod to a service:**
 
@@ -225,7 +220,8 @@ If the Service IP works but a pod IP fails, you suspect routing or network polic
 
 ---
 
-## 1.3 TCP Handshake
+
+## 1.2 TCP Handshake
 
 ### Overview
 
@@ -319,7 +315,8 @@ A Java service using **HikariCP** to PostgreSQL opens a fixed pool (e.g. 20 TCP 
 
 ---
 
-## 1.4 UDP
+
+## 1.3 UDP
 
 ### Overview
 
@@ -394,7 +391,8 @@ flowchart LR
 
 ---
 
-## 1.5 MTU
+
+## 1.4 MTU
 
 ### Overview
 
@@ -495,7 +493,8 @@ Fix: set interface MTU to 1400 on the VPN client or MSS clamp at the gateway. `p
 
 ---
 
-## 1.6 IP Addressing/Subnetting
+
+## 1.5 IP Addressing & CIDR
 
 ### Overview
 
@@ -590,19 +589,20 @@ Web tasks in `10.0.10.0/24` reach RDS on `10.0.100.0/24` via route tables and se
 
 ---
 
-## 1.7 CIDR
 
-### Overview
+### CIDR
+
+#### Overview
 
 **CIDR (Classless Inter-Domain Routing)** writes network size as a **prefix length** after a slash — `10.0.0.0/16` means the first 16 bits are the network, the rest are hosts. It replaced rigid **Class A/B/C** sizing so you can allocate **just enough** addresses instead of wasting an entire Class B for 500 machines.
 
 CIDR also enables **route aggregation** (supernetting): many contiguous `/24` blocks advertised as one `/22`, shrinking Internet routing tables.
 
-### What problem it fixes
+#### What problem it fixes
 
 Classful networking wasted space — a company needing 1,000 IPs got 65,534 (Class B) or struggled with 254 (Class C). Internet routers faced exploding table sizes when every small network announced separately. CIDR flexibly sizes networks and summarizes routes for scalability.
 
-### What it does
+#### What it does
 
 - **Notation:** `network_address/prefix` — prefix = count of leading 1-bits in the mask.
 - **Equivalence:** `/24` = mask `255.255.255.0`; `/16` = `255.255.0.0`.
@@ -615,7 +615,7 @@ Classful networking wasted space — a company needing 1,000 IPs got 65,534 (Cla
 | /24 | 255.255.255.0 | 254 |
 | /26 | 255.255.255.192 | 62 |
 
-### How it works — the architecture inside
+#### How it works — the architecture inside
 
 ```mermaid
 flowchart LR
@@ -648,14 +648,14 @@ flowchart LR
 → aggregate to 192.168.0.0/22 (one routing table entry)
 ```
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **CIDR math errors cause overlaps** — overlapping VPC peering CIDRs break routing; plan address space globally for multi-VPC accounts.
 - **Smaller prefix number = bigger network** — `/16` is larger than `/24` (common interview trap).
 - **IPv6 uses CIDR everywhere** — `/64` per LAN is standard; don’t subnet IPv6 like IPv4 without understanding SLAAC and ND.
 - **Cloud quotas:** AWS default VPC `/16`; carving many `/28` leaves room but watch ENI/IP limits per subnet.
 
-### Real-world example
+#### Real-world example
 
 **GCP custom VPC for a startup expecting ~400 microservices:**
 
@@ -669,7 +669,8 @@ When connecting to on-prem via Cloud VPN, they advertise **`10.20.0.0/22` as one
 
 ---
 
-## 1.8 DNS
+
+## 1.6 DNS & DNS Resolution
 
 ### Overview
 
@@ -736,19 +737,20 @@ Stripe’s public API hostname resolves via their CDN/DNS setup — clients neve
 
 ---
 
-## 1.9 DNS Resolution
 
-### Overview
+### DNS resolution
+
+#### Overview
 
 Typing `https://google.com` triggers a **lookup chain**: your browser asks “what IP is this?” — first locally, then a **recursive resolver**, which may walk the global DNS tree (root → TLD → authoritative) until it gets an answer. The result is cached at each layer so the next visit is nearly instant.
 
 Resolution is iterative behind the scenes: the resolver does the legwork; your laptop usually sends one **recursive** query and receives one answer.
 
-### What problem it fixes
+#### What problem it fixes
 
 Applications should not embed IP addresses that change hourly. Resolution bridges human names to current infrastructure addresses while minimizing repeated full-tree walks via **multi-tier caching** and **TTL**.
 
-### What it does
+#### What it does
 
 1. Check **browser cache** (Chrome DNS cache).
 2. Check **OS cache** (`systemd-resolved`, Windows DNS client).
@@ -765,7 +767,7 @@ Applications should not embed IP addresses that change hourly. Resolution bridge
 | TLD | Points to domain’s authoritative NS |
 | Authoritative | Returns actual records |
 
-### How it works — the architecture inside
+#### How it works — the architecture inside
 
 ```mermaid
 flowchart LR
@@ -799,7 +801,7 @@ dig +trace api.example.com
 dig @8.8.8.8 api.example.com
 ```
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **Long CNAME chains** hurt cold-start latency — flatten to A/ALIAS at apex where possible.
 - **Stale OS cache after cutover** — `ipconfig /flushdns` or wait TTL; verify authoritative with `dig @ns1.yourprovider.com`.
@@ -807,7 +809,7 @@ dig @8.8.8.8 api.example.com
 - **Async DNS in apps** — block startup on resolver timeouts; use connection pooling with pre-resolved endpoints in k8s (ClusterIP avoids external DNS for internal names).
 - **Runbook — “DNS updated but clients see old IP”:** (1) `dig @authoritative` — correct? (2) `dig @8.8.8.8` — propagated? (3) local `dig` — flush OS cache.
 
-### Real-world example
+#### Real-world example
 
 **First visit to `https://www.google.com` on a home PC using Cloudflare `1.1.1.1`:**
 
@@ -822,7 +824,8 @@ Second tab within TTL: step 3 never leaves the machine — **~0 ms DNS**. `dig +
 
 ---
 
-## 1.10 HTTP/HTTPS
+
+## 1.7 HTTP, TLS & Modern HTTP
 
 ### Overview
 
@@ -927,19 +930,20 @@ A network sniffer on café Wi‑Fi sees only encrypted blobs and SNI to `api.str
 
 ---
 
-## 1.11 SSL/TLS
 
-### Overview
+### SSL/TLS
+
+#### Overview
 
 **TLS (Transport Layer Security)**, still often called SSL, is the padlock in the browser: it proves you reached the real server (via **certificates** signed by a trusted **CA**), then encrypts everything after the handshake with symmetric **session keys**. HTTPS is HTTP running inside that encrypted tunnel.
 
 Think of the CA as a passport office, the certificate as the passport, and the TLS handshake as showing the passport and agreeing on a one-time session code only you and the server know.
 
-### What problem it fixes
+#### What problem it fixes
 
 On untrusted networks (Wi‑Fi, ISP paths), cleartext HTTP allows eavesdropping and tampering (**MITM**). TLS provides **confidentiality** (encryption), **integrity** (detect changes), and **authentication** (server identity via PKIX chain). Without it, cookies and credentials are trivially stolen.
 
-### What it does
+#### What it does
 
 **Certificate provisioning (offline, periodic):**
 
@@ -966,7 +970,7 @@ On untrusted networks (Wi‑Fi, ISP paths), cleartext HTTP allows eavesdropping 
 | Server private key | Server only | Prove possession |
 | Session keys | Both sides (derived) | Bulk encrypt HTTP |
 
-### How it works — the architecture inside
+#### How it works — the architecture inside
 
 ```mermaid
 flowchart LR
@@ -1028,7 +1032,7 @@ Sanity check: cross-region RTT 200 ms → 2 RTT ≈ 400 ms handshake alone — w
               and connection pools dominate API latency design.
 ```
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **Expired or wrong-host certificates** — browsers hard-fail; automate renewal (ACME / cert-manager on Kubernetes).
 - **TLS termination + HTTP backend** — encrypt VPC links or accept risk on private networks only.
@@ -1036,7 +1040,7 @@ Sanity check: cross-region RTT 200 ms → 2 RTT ≈ 400 ms handshake alone — w
 - **Certificate pinning** in mobile apps — breaks when CDN rotates certs unless pins update with releases.
 - **Interview:** Distinguish **asymmetric** crypto (handshake) from **symmetric** (bulk data); know TLS sits above TCP, below HTTP.
 
-### Real-world example
+#### Real-world example
 
 **Let’s Encrypt + cert-manager on Kubernetes for `api.myapp.com`:**
 
@@ -1049,9 +1053,11 @@ Sanity check: cross-region RTT 200 ms → 2 RTT ≈ 400 ms handshake alone — w
 
 If an attacker presents a self-signed cert for `api.myapp.com`, verification fails at step 4 — browser blocks before any password or token is sent, which is TLS authentication doing its job.
 
-## 1.12 HTTP/2 & HTTP/3
+---
 
-### Overview
+### HTTP/2 & HTTP/3
+
+#### Overview
 
 Imagine upgrading a highway: first you add carpool lanes so many vehicles share one road instead of opening a new road per trip (HTTP/2), then you replace the single-lane bottleneck with separate lanes per vehicle so one stalled car does not block everyone behind it (HTTP/3). **HTTP/2** keeps TCP but multiplexes many requests on one connection and compresses headers. **HTTP/3** moves HTTP onto **QUIC over UDP**, eliminating TCP-level head-of-line blocking while keeping encryption and reliability.
 
@@ -1059,7 +1065,7 @@ Technically, HTTP/2 frames multiple streams inside one TLS-protected TCP connect
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 **HTTP/1.1** forced browsers to open many TCP connections (typically six per host) because pipelining was broken by head-of-line blocking at the application layer. Each connection paid a **TCP + TLS handshake** tax, and duplicate headers bloated every request.
 
@@ -1069,7 +1075,7 @@ Technically, HTTP/2 frames multiple streams inside one TLS-protected TCP connect
 
 ---
 
-### What it does
+#### What it does
 
 | Version | Transport | Key capability |
 |---------|-----------|----------------|
@@ -1081,7 +1087,7 @@ Both HTTP/2 and HTTP/3 let a browser fetch `index.html`, CSS, JS, and images con
 
 ---
 
-### How it works — the architecture inside
+#### How it works — the architecture inside
 
 **Protocol stacks:**
 
@@ -1128,7 +1134,7 @@ flowchart LR
 
 ---
 
-### Walkthrough: page load with a lost packet
+#### Walkthrough: page load with a lost packet
 
 Browser requests four assets over one connection. A packet carrying a chunk of `app.js` is dropped on a mobile network.
 
@@ -1138,7 +1144,7 @@ Browser requests four assets over one connection. A packet carrying a chunk of `
 
 ---
 
-### Comparison table
+#### Comparison table
 
 | Feature | HTTP/2 | HTTP/3 |
 |---------|--------|--------|
@@ -1153,7 +1159,7 @@ Browser requests four assets over one connection. A packet carrying a chunk of `
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **HTTP/3 is not always faster** — on clean datacenter links with low loss, HTTP/2 over TCP can match HTTP/3; gains show up on mobile, Wi-Fi, and cross-continent paths.
 - **UDP blocking** — some corporate firewalls rate-limit or block UDP; clients fall back to HTTP/2. Design observability to track alt-svc adoption.
@@ -1164,15 +1170,16 @@ Browser requests four assets over one connection. A packet carrying a chunk of `
 
 ---
 
-### Real-world example: Cloudflare and browser HTTP/3
+#### Real-world example: Cloudflare and browser HTTP/3
 
 Cloudflare terminates HTTP/3 at the edge using QUIC. A user in Southeast Asia fetching a JS bundle from a US origin over HTTP/2 may stall all assets when one TCP segment is lost on a congested mobile hop. With HTTP/3, Cloudflare's edge serves multiplexed streams; loss on one asset does not block others. Chrome and Firefox negotiate HTTP/3 via **Alt-Svc** after an initial HTTP/2 connection, then reuse QUIC for subsequent requests — visible in DevTools as `h3`.
 
 ---
 
-## 1.13 QUIC
 
-### Overview
+### QUIC
+
+#### Overview
 
 Think of QUIC as rebuilding the reliability of TCP and the security of TLS into one engine that rides on UDP — like putting a smart conveyor belt (ordered delivery, retransmits, congestion control) inside a lightweight envelope the internet already delivers everywhere. **QUIC (Quick UDP Internet Connections)** was pioneered by Google and standardized as the transport for **HTTP/3**.
 
@@ -1180,7 +1187,7 @@ Technically, QUIC is a **user-space, encrypted, connection-oriented** protocol o
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 TCP enforces **strict byte ordering across the entire connection**. Multiplexed HTTP/2 streams share that fate: one loss event blocks delivery of all subsequent bytes, even for unrelated resources.
 
@@ -1190,7 +1197,7 @@ QUIC fixes both: **per-stream reliability** (no TCP HOL blocking) and **combined
 
 ---
 
-### What it does
+#### What it does
 
 - Provides **reliable, ordered delivery per stream** over UDP
 - Encrypts **all** payloads with TLS 1.3 integrated into the handshake
@@ -1204,7 +1211,7 @@ HTTP/3 → QUIC → UDP → IP
 
 ---
 
-### How it works — the architecture inside
+#### How it works — the architecture inside
 
 **Reliability on top of UDP:** UDP alone is connectionless and unreliable. QUIC adds packet numbers, acknowledgements, retransmission timers, and stream state machines in user space — similar responsibilities to TCP, but scoped per stream.
 
@@ -1249,7 +1256,7 @@ flowchart LR
 
 ---
 
-### QUIC vs TCP
+#### QUIC vs TCP
 
 | Feature | TCP | QUIC |
 |---------|-----|------|
@@ -1263,7 +1270,7 @@ flowchart LR
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **Not "UDP = unreliable therefore faster"** — QUIC reintroduces reliability; the win is stream isolation and handshake integration, not skipping ACKs.
 - **Firewall and middlebox path** — UDP:443 may be throttled; always implement graceful fallback to TCP/HTTP/2.
@@ -1274,15 +1281,16 @@ flowchart LR
 
 ---
 
-### Real-world example: YouTube and Google services
+#### Real-world example: YouTube and Google services
 
 Google developed QUIC for YouTube and search, measuring faster video start and improved loss recovery on mobile networks. Modern Chrome uses HTTP/3 to Google properties when available. A phone switching from home Wi-Fi to LTE mid-playback benefits from connection migration — the QUIC session can survive where a TCP connection would reset, reducing rebuffering compared to tearing down and re-establishing TCP + TLS.
 
 ---
 
-## 1.14 Keep-Alive Connections
 
-### Overview
+### Keep-alive connections
+
+#### Overview
 
 Opening a TCP connection for every HTTP request is like hanging up and redialing a phone call for each sentence in a conversation. **HTTP Keep-Alive** (persistent connections) keeps the TCP socket open after a response so the next request reuses the same channel — avoiding repeated handshakes and teardowns.
 
@@ -1290,7 +1298,7 @@ In HTTP/1.1, Keep-Alive is the default unless either side sends `Connection: clo
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 Each new TCP connection costs:
 
@@ -1303,7 +1311,7 @@ Without Keep-Alive, loading a page with ten assets can trigger ten handshakes �
 
 ---
 
-### What it does
+#### What it does
 
 Keep-Alive leaves the transport connection open across multiple HTTP request/response cycles on the same socket. The server may close idle connections after a configured **timeout** (commonly 30–120 seconds).
 
@@ -1326,7 +1334,7 @@ Connection: close
 
 ---
 
-### How it works — the architecture inside
+#### How it works — the architecture inside
 
 ```mermaid
 flowchart LR
@@ -1356,7 +1364,7 @@ Without pooling, each hop opens a new TCP (+ TLS) connection per request. With K
 
 ---
 
-### How to calculate: latency savings
+#### How to calculate: latency savings
 
 **Given:** RTT = 100 ms, TLS not included (plain HTTP), 10 sequential requests.
 
@@ -1379,7 +1387,7 @@ Total          ≈ 1100 ms
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **Idle timeout mismatches** — client pool TTL longer than server/LB idle timeout causes mysterious `ECONNRESET` on reused sockets; align timeouts (client slightly below server).
 - **Load balancer stickiness** — persistent connections pin a client to one backend for the connection lifetime; combined with long Keep-Alive, load can skew until connections recycle.
@@ -1390,13 +1398,14 @@ Total          ≈ 1100 ms
 
 ---
 
-### Real-world example: Spring Boot calling downstream REST APIs
+#### Real-world example: Spring Boot calling downstream REST APIs
 
 A Spring Boot service using **RestTemplate** or **WebClient** with a shared connection pool reuses TCP (+ TLS) sessions to a payment gateway. At 500 RPS, creating 500 new TLS connections per second would exhaust CPU on handshakes and inflate p99 latency. A pool of ~20 warm connections per downstream host cuts setup to near zero for most requests — the gateway sees stable long-lived sessions, and p99 drops from hundreds of milliseconds to tens.
 
 ---
 
-## 1.15 Forward & Reverse Proxy
+
+## 1.8 Forward & Reverse Proxy
 
 ### Overview
 
@@ -1507,7 +1516,8 @@ A SaaS app points DNS for `app.example.com` to Cloudflare. User TLS terminates a
 
 ---
 
-## 1.16 NAT
+
+## 1.9 NAT
 
 ### Overview
 
@@ -1635,7 +1645,8 @@ Three devices (`192.168.1.10–30`) browse simultaneously. The home router PATs 
 
 ---
 
-## 1.17 VPN
+
+## 1.10 VPN
 
 ### Overview
 
@@ -1721,7 +1732,8 @@ A bank runs an internal HR portal at `https://hr.internal.corp` resolvable only 
 
 ---
 
-## 1.18 Unicast, Broadcast, Multicast & Anycast
+
+## 1.11 Unicast, Broadcast, Multicast & Anycast
 
 ### Overview
 
@@ -1826,7 +1838,8 @@ Google advertises the same anycast prefix from hundreds of POPs worldwide. A que
 
 ---
 
-## 1.19 CDN
+
+## 1.12 CDN
 
 ### Overview
 
@@ -1937,7 +1950,8 @@ Netflix ships the Open Connect appliance program — CDN caches inside ISP netwo
 
 ---
 
-## 1.20 Load Balancer
+
+## 1.13 Load Balancer
 
 ### Overview
 
@@ -2081,7 +2095,8 @@ An e-commerce API runs three Fargate tasks behind an **Application Load Balancer
 
 ---
 
-## 1.21 SSE, Polling & WebSockets
+
+## 1.14 SSE, Polling & WebSockets
 
 ### Overview
 

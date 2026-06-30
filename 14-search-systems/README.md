@@ -8,19 +8,17 @@
 
 | # | Sub-topic |
 |---|-----------|
-| 14.1 | [Full Text Search](#141-full-text-search) |
-| 14.2 | [Inverted Index](#142-inverted-index) |
-| 14.3 | [Lucene](#143-lucene) |
-| 14.4 | [Elasticsearch](#144-elasticsearch) |
-| 14.5 | [Ranking](#145-ranking) |
-| 14.6 | [Relevance Scoring](#146-relevance-scoring) |
-| 14.7 | [Faceted Search](#147-faceted-search) |
-| 14.8 | [Autocomplete](#148-autocomplete) |
-| 14.9 | [Fuzzy Search](#149-fuzzy-search) |
+| 14.1 | [Full-Text Search & Inverted Index](#141-full-text-search-inverted-index) |
+| 14.2 | [Lucene & Elasticsearch](#142-lucene-elasticsearch) |
+| 14.3 | [Ranking & Relevance Scoring](#143-ranking-relevance-scoring) |
+| 14.4 | [Faceted Search](#144-faceted-search) |
+| 14.5 | [Autocomplete](#145-autocomplete) |
+| 14.6 | [Fuzzy Search](#146-fuzzy-search) |
 
 ---
 
-## 14.1 Full Text Search
+
+## 14.1 Full-Text Search & Inverted Index
 
 ### Overview
 
@@ -179,9 +177,10 @@ Shopper types "winter jacket waterproof"
 
 ---
 
-## 14.2 Inverted Index
 
-### Overview
+### Inverted index
+
+#### Overview
 
 Picture the index at the back of a textbook: every important word points to the pages where it appears. You do not read the whole book to find "photosynthesis" — you look up the word and flip to listed pages. An **inverted index** is that back-of-book index for millions of documents, stored in a data structure optimized for "given this word, which documents contain it?"
 
@@ -189,7 +188,7 @@ Technically, an inverted index maps each **term** to a **posting list** — the 
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 The naive approach — scan every document for every query — is O(documents × query terms). At a billion documents, that is unusable.
 
@@ -204,7 +203,7 @@ This makes term lookup proportional to how many documents actually contain the t
 
 ---
 
-### What it does
+#### What it does
 
 For each indexed term, the inverted index stores a **posting list**. Each **posting** is one document's entry in that list, optionally carrying metadata for ranking and phrase matching.
 
@@ -223,7 +222,7 @@ For each indexed term, the inverted index stores a **posting list**. Each **post
 
 ---
 
-### How it works — the algorithm inside
+#### How it works — the algorithm inside
 
 ```mermaid
 flowchart LR
@@ -320,7 +319,7 @@ The inverted index finds *which* documents match; **stored fields** (Elasticsear
 
 ---
 
-### Walkthrough: boolean AND with skip pointers
+#### Walkthrough: boolean AND with skip pointers
 
 ```text
 Term A postings: [10, 20, 30, 40, 50]
@@ -338,7 +337,7 @@ Merge-intersect (AND):
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **Stemming reduces precision** — `university` and `universe` may collide after aggressive stemming; tune or use lemmatization for sensitive domains.
 - **High-frequency terms** (`the`, `a`) have enormous posting lists — query parsers often drop stop words; do not index noise fields as analyzed text.
@@ -349,7 +348,7 @@ Merge-intersect (AND):
 
 ---
 
-### Real-world example: Elasticsearch index on GitHub code search (historical pattern)
+#### Real-world example: Elasticsearch index on GitHub code search (historical pattern)
 
 GitHub's code search (Elasticsearch-backed in its early public architecture) indexed repository files as documents with path, language, and content fields. A query for `function authenticate` intersects posting lists for `function` and `authenticate` across millions of files.
 
@@ -369,7 +368,8 @@ Query: "function authenticate" language:Go
 
 ---
 
-## 14.3 Lucene
+
+## 14.2 Lucene & Elasticsearch
 
 ### Overview
 
@@ -481,9 +481,10 @@ Atlassian Confluence and Jira historically embedded Lucene (directly or via adap
 
 ---
 
-## 14.4 Elasticsearch
 
-### Overview
+### Elasticsearch
+
+#### Overview
 
 If Lucene is one library in one JVM, Elasticsearch is a **fleet of librarians** — many nodes, each holding part of the catalogue, coordinating so any query reaches the right shards and merges answers into one ranked list. You talk to it over HTTP; it handles replication, failover, and cluster state.
 
@@ -491,7 +492,7 @@ Technically, **Elasticsearch** is a distributed, RESTful search and analytics en
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 Single-node Lucene cannot:
 
@@ -503,7 +504,7 @@ Elasticsearch adds **distributed sharding**, **replica copies**, **cluster coord
 
 ---
 
-### What it does
+#### What it does
 
 | Concept | Behavior |
 |---------|----------|
@@ -520,7 +521,7 @@ Elasticsearch adds **distributed sharding**, **replica copies**, **cluster coord
 
 ---
 
-### How it works — the architecture inside
+#### How it works — the architecture inside
 
 ```mermaid
 flowchart LR
@@ -664,7 +665,7 @@ Bucket aggs (`terms`, `date_histogram`) + metric aggs (`sum`, `avg`) run on doc 
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **Shard count is hard to change** — wrong initial count forces reindex or shrink API; size for 12–24 months growth.
 - **Mapping changes often need reindex** — changing analyzer on existing field requires new index + `_reindex`.
@@ -676,7 +677,7 @@ Bucket aggs (`terms`, `date_histogram`) + metric aggs (`sum`, `avg`) run on doc 
 
 ---
 
-### Real-world example: Elastic Stack for log search at Uber (documented pattern)
+#### Real-world example: Elastic Stack for log search at Uber (documented pattern)
 
 Uber publicly described using the **Elastic Stack (Elasticsearch + Kibana + Beats/Logstash)** for centralized log search across services. Application logs ship to Elasticsearch indices (often daily or hourly rollovers via Index Lifecycle Management).
 
@@ -696,7 +697,8 @@ Engineer searches: service_name:payment AND level:ERROR AND "timeout"
 
 ---
 
-## 14.5 Ranking
+
+## 14.3 Ranking & Relevance Scoring
 
 ### Overview
 
@@ -808,9 +810,10 @@ Query "wireless noise cancelling headphones"
 
 ---
 
-## 14.6 Relevance Scoring
 
-### Overview
+### Relevance scoring
+
+#### Overview
 
 Not every book in the pile is equally relevant — one mentions your topic on every page, another in a footnote. **Relevance scoring** assigns a number to each match so the system can sort by "how well does this document fit the query?" instead of treating all matches as equal.
 
@@ -818,7 +821,7 @@ Technically, **relevance scoring** computes a numeric score per query-document p
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 Raw term frequency favors:
 
@@ -829,7 +832,7 @@ TF-IDF partially helped by penalizing common terms, but still over-rewarded freq
 
 ---
 
-### What it does
+#### What it does
 
 For each query term `qi` in document `D`, BM25 contributes a score based on:
 
@@ -843,7 +846,7 @@ Field-level boosts (`title^3`) multiply contributions. `function_score` queries 
 
 ---
 
-### How it works — the algorithm inside
+#### How it works — the algorithm inside
 
 **BM25 formula (per query term):**
 
@@ -877,7 +880,7 @@ Elasticsearch 8+ supports `kNN` with HNSW vector index. Hybrid queries merge BM2
 
 ---
 
-### Walkthrough: BM25 intuition on two titles
+#### Walkthrough: BM25 intuition on two titles
 
 ```text
 Corpus: 10,000 docs, avg title length = 8 terms
@@ -922,7 +925,7 @@ Sanity check: repeating "mouse" 5× in doc B would raise TF but also |D| —
 
 ---
 
-### How to calculate: BM25 term contribution (simplified)
+#### How to calculate: BM25 term contribution (simplified)
 
 ```text
 Given:
@@ -952,7 +955,7 @@ Sanity check: doubling f from 3→6 does NOT double score (saturation) —
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **Scores are not probabilities** — do not compare scores across queries; use rank position.
 - **Field boosts are manual** — `title^3` is a starting guess; validate with nDCG or A/B tests.
@@ -963,7 +966,7 @@ Sanity check: doubling f from 3→6 does NOT double score (saturation) —
 
 ---
 
-### Real-world example: Elasticsearch BM25 on Wikipedia (Elastic demo datasets)
+#### Real-world example: Elasticsearch BM25 on Wikipedia (Elastic demo datasets)
 
 Elastic publishes sample Wikipedia datasets for training. A query `{"match": {"title": "Apollo moon landing"}}` scores articles where rare terms (`Apollo`, `moon`) contribute high IDF.
 
@@ -983,7 +986,8 @@ Article B: title "History of spaceflight" — long article mentions Apollo once
 
 ---
 
-## 14.7 Faceted Search
+
+## 14.4 Faceted Search
 
 ### Overview
 
@@ -1115,7 +1119,8 @@ User searches "ceramic mug"
 
 ---
 
-## 14.8 Autocomplete
+
+## 14.5 Autocomplete
 
 ### Overview
 
@@ -1228,7 +1233,8 @@ User types "elasticsearch shar"
 
 ---
 
-## 14.9 Fuzzy Search
+
+## 14.6 Fuzzy Search
 
 ### Overview
 
@@ -1355,6 +1361,5 @@ User types "sony wh1000xm5 headphons" (transposition + typo)
 
 ---
 
----
 
 [<- Back to master index](../README.md)

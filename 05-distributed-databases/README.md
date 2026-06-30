@@ -8,36 +8,27 @@
 
 | # | Sub-topic |
 |---|-----------|
-| 5.1 | [Partitioning](#51-partitioning) |
-| 5.2 | [Sharding](#52-sharding) |
-| 5.3 | [Hash Partitioning](#53-hash-partitioning) |
-| 5.4 | [Range Partitioning](#54-range-partitioning) |
-| 5.5 | [Geo Partitioning](#55-geo-partitioning) |
-| 5.6 | [Hot Partitions](#56-hot-partitions) |
-| 5.7 | [Rebalancing](#57-rebalancing) |
-| 5.8 | [Consistent Hashing](#58-consistent-hashing) |
-| 5.9 | [Virtual Nodes](#59-virtual-nodes) |
-| 5.10 | [Rendezvous Hashing](#510-rendezvous-hashing) |
-| 5.11 | [Replication](#511-replication) |
-| 5.12 | [Leader Follower Replication](#512-leader-follower-replication) |
-| 5.13 | [Multi Leader Replication](#513-multi-leader-replication) |
-| 5.14 | [Quorum Reads](#514-quorum-reads) |
-| 5.15 | [Quorum Writes](#515-quorum-writes) |
-| 5.16 | [Distributed Locking](#516-distributed-locking) |
-| 5.17 | [Split Brain](#517-split-brain) |
-| 5.18 | [Consensus](#518-consensus) |
-| 5.19 | [Paxos](#519-paxos) |
-| 5.20 | [Raft](#520-raft) |
-| 5.21 | [Leader Election](#521-leader-election) |
-| 5.22 | [Lamport Clocks](#522-lamport-clocks) |
-| 5.23 | [Vector Clocks](#523-vector-clocks) |
-| 5.24 | [Gossip Protocol](#524-gossip-protocol) |
-| 5.25 | [Membership Protocols](#525-membership-protocols) |
-| 5.26 | [Sharding, Bucketing & Partitioning](#526-sharding-bucketing--partitioning) |
+| 5.1 | [Partitioning & Sharding](#51-partitioning-sharding) |
+| 5.2 | [Geo Partitioning](#52-geo-partitioning) |
+| 5.3 | [Hot Partitions](#53-hot-partitions) |
+| 5.4 | [Rebalancing](#54-rebalancing) |
+| 5.5 | [Consistent Hashing & Placement](#55-consistent-hashing-placement) |
+| 5.6 | [Replication](#56-replication) |
+| 5.7 | [Leader Follower Replication](#57-leader-follower-replication) |
+| 5.8 | [Multi Leader Replication](#58-multi-leader-replication) |
+| 5.9 | [Quorum Reads & Writes](#59-quorum-reads-writes) |
+| 5.10 | [Distributed Locking](#510-distributed-locking) |
+| 5.11 | [Split Brain](#511-split-brain) |
+| 5.12 | [Consensus: Paxos & Raft](#512-consensus-paxos-raft) |
+| 5.13 | [Leader Election](#513-leader-election) |
+| 5.14 | [Logical Clocks](#514-logical-clocks) |
+| 5.15 | [Gossip & Membership Protocols](#515-gossip-membership-protocols) |
+| 5.16 | [Sharding, Bucketing & Partitioning](#516-sharding-bucketing-partitioning) |
 
 ---
 
-## 5.1 Partitioning
+
+## 5.1 Partitioning & Sharding
 
 ### Overview
 
@@ -200,9 +191,9 @@ Sanity check: 25M rows × ~1 KB/row ≈ 25 GB data per shard before indexes —
 ---
 
 
-## 5.2 Sharding
+### Sharding
 
-### Overview
+#### Overview
 
 Partitioning is splitting a warehouse into aisles; **sharding** is giving each aisle its own building with its own staff and power supply. Each shard is an independent database that holds only a fraction of total data, so no single machine must store or serve everything.
 
@@ -210,7 +201,7 @@ Technically, sharding is horizontal partitioning across **multiple independent d
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 A single database eventually hits hard limits:
 
@@ -226,7 +217,7 @@ Storage grows, read and write QPS climb, and the database becomes the system bot
 
 ---
 
-### What it does
+#### What it does
 
 | Term | Meaning |
 |------|---------|
@@ -238,7 +229,7 @@ Each shard stores only its slice. A point lookup touches one shard; scatter-gath
 
 ---
 
-### How it works — the architecture inside
+#### How it works — the architecture inside
 
 **100 million users across three shards:**
 
@@ -319,7 +310,7 @@ Sanity check: one hot shard key can 10× one shard's QPS — monitor per-shard
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **Bad shard keys** — low-cardinality keys (country, status) concentrate data; prefer high-cardinality, evenly distributed keys.
 - **Cross-shard transactions** — avoid designing workflows that need ACID across shards; use sagas or per-shard consistency.
@@ -329,16 +320,16 @@ Sanity check: one hot shard key can 10× one shard's QPS — monitor per-shard
 
 ---
 
-### Real-world example
+#### Real-world example
 
 **Vitess** (used by YouTube and others) sits in front of many MySQL shards. Applications talk to Vitess; it parses SQL, routes by sharding key, and can reshuffle with minimal app changes. The shard key and VSchema define which rows live on which MySQL instance — the application does not hard-code shard URLs.
 
 ---
 
 
-## 5.3 Hash Partitioning
+### Hash partitioning
 
-### Overview
+#### Overview
 
 If you randomly assign each customer to a checkout lane instead of letting everyone queue behind the newest account numbers, lines stay roughly even. **Hash partitioning** does the same for data: a hash function turns each key into a number, and modulo arithmetic picks a partition so load spreads without manual range tuning.
 
@@ -346,7 +337,7 @@ Technically, partition placement is `Partition = Hash(Key) % NumberOfPartitions`
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 Without hashing, natural key clustering can skew partitions:
 
@@ -366,7 +357,7 @@ Hashing improves balance when keys are not naturally uniform. (Skewed **access**
 
 ---
 
-### What it does
+#### What it does
 
 Given a partition key and `N` partitions:
 
@@ -378,7 +369,7 @@ Point reads never scan unrelated partitions. Range queries often must hit **all*
 
 ---
 
-### How it works — the algorithm inside
+#### How it works — the algorithm inside
 
 ```text
 NumberOfPartitions = 4
@@ -447,7 +438,7 @@ Sanity check: hash(UserID) % N spreads storage; it does not spread traffic
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **Changing N is painful** — `hash(key) % 4` vs `% 5` reassigns most keys; use consistent hashing (5.8) or directory routing when elasticity matters.
 - **No range locality** — `WHERE user_id BETWEEN 1000 AND 2000` fans out to every partition; use range partitioning (5.4) if range scans dominate.
@@ -458,9 +449,9 @@ Sanity check: hash(UserID) % N spreads storage; it does not spread traffic
 ---
 
 
-## 5.4 Range Partitioning
+### Range partitioning
 
-### Overview
+#### Overview
 
 Think of filing cabinets labeled by month: January's papers go in drawer one, February's in drawer two. **Range partitioning** divides data by contiguous value ranges on a partition key — you know exactly which drawer holds a record by checking which range its key falls into.
 
@@ -468,7 +459,7 @@ Technically, each partition owns a half-open or closed interval of key values (e
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 Monolithic tables with time-ordered or ID-ordered access patterns benefit from splitting along natural boundaries:
 
@@ -482,7 +473,7 @@ Retention ("drop partitions older than 90 days"), archival, and range scans beco
 
 ---
 
-### What it does
+#### What it does
 
 Partition rules define intervals; each record routes to the partition whose range contains its key.
 
@@ -498,7 +489,7 @@ UserID = 2800  →  P3
 
 ---
 
-### How it works — the architecture inside
+#### How it works — the architecture inside
 
 ```text
 UserID space: 1 ---------------------------------- 3000
@@ -576,7 +567,7 @@ Sanity check: query 50–2,500,000 would hit all 3 partitions — wide ranges
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **Hot trailing edge** — the newest range (latest month, highest IDs) often absorbs most writes; split ranges or combine with hashing for the hot band.
 - **Boundary management** — poorly chosen cut points leave one partition 10× larger than others; monitor size and split proactively.
@@ -586,14 +577,14 @@ Sanity check: query 50–2,500,000 would hit all 3 partitions — wide ranges
 
 ---
 
-### Real-world example
+#### Real-world example
 
 **PostgreSQL declarative partitioning** lets you define a parent table and child tables per range (e.g. `orders_2024_01`, `orders_2024_02`). Inserts route to the child whose `CHECK` constraint matches the order date; a query `WHERE order_date BETWEEN '2024-01-01' AND '2024-01-31'` scans only January's child via partition pruning.
 
 ---
 
 
-## 5.5 Geo Partitioning
+## 5.2 Geo Partitioning
 
 ### Overview
 
@@ -683,7 +674,7 @@ flowchart LR
 ---
 
 
-## 5.6 Hot Partitions
+## 5.3 Hot Partitions
 
 ### Overview
 
@@ -806,7 +797,7 @@ Sanity check: adding a 4th partition without fixing skew does not help if
 ---
 
 
-## 5.7 Rebalancing
+## 5.4 Rebalancing
 
 ### Overview
 
@@ -937,7 +928,7 @@ Sanity check: rebalance during peak doubles I/O on source and target —
 ---
 
 
-## 5.8 Consistent Hashing
+## 5.5 Consistent Hashing & Placement
 
 ### Overview
 
@@ -1067,9 +1058,9 @@ Sanity check: without vnodes, arc lengths are uneven — actual migration may
 ---
 
 
-## 5.9 Virtual Nodes
+### Virtual nodes
 
-### Overview
+#### Overview
 
 One person guarding half the museum floor is unfair if two others split the other half. **Virtual nodes (vnodes)** give each physical server several ticket booths spaced around the hash ring so no machine owns one giant slice while others guard slivers.
 
@@ -1077,7 +1068,7 @@ Technically, a vnode is a logical placement of a physical server on the consiste
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 Single-point ring placement skews ownership:
 
@@ -1091,7 +1082,7 @@ P3 becomes a hot partition. Virtual nodes split each physical server's responsib
 
 ---
 
-### What it does
+#### What it does
 
 - Map each physical server to `V` virtual positions on the ring (often `hash(server_id + i)`)
 - Assign keys to the first vnode clockwise; vnode maps back to physical host
@@ -1099,7 +1090,7 @@ P3 becomes a hot partition. Virtual nodes split each physical server's responsib
 
 ---
 
-### How it works — the architecture inside
+#### How it works — the architecture inside
 
 **Without vnodes:**
 
@@ -1170,7 +1161,7 @@ Sanity check: V = 8 vnodes is too few — skew remains visible; V = 256 is
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **Vnode count** — too few vnodes leave skew; too many increase metadata and lookup cost. Cassandra often uses 256 vnodes per node; memcached clients use 40–160 per host as a starting range.
 - **Unequal hardware** — assign more vnodes to larger machines to weight capacity.
@@ -1180,16 +1171,16 @@ Sanity check: V = 8 vnodes is too few — skew remains visible; V = 256 is
 
 ---
 
-### Real-world example
+#### Real-world example
 
 **Apache Cassandra** switched from one token per node to vnodes (default 256 per node). Each vnode owns a slice of the ring; `nodetool status` shows token ranges per vnode. Adding a node distributes many small ranges instead of one contiguous chunk, speeding bootstrap and balancing disk use across the cluster.
 
 ---
 
 
-## 5.10 Rendezvous Hashing
+### Rendezvous hashing
 
-### Overview
+#### Overview
 
 Instead of walking a circular hallway to find the right office, imagine every candidate office scores a bid for your package and the highest bid wins. **Rendezvous hashing** (highest random weight hashing — **HRW**) picks the owning server per key by hashing the key together with each server name and choosing the maximum score.
 
@@ -1197,7 +1188,7 @@ Technically, for key `K` and servers `S1…Sn`, compute `score = Hash(K + Si)` f
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 Distributed caches and storage layers need:
 
@@ -1209,7 +1200,7 @@ HRW delivers consistent-hashing-like migration properties without ring state, at
 
 ---
 
-### What it does
+#### What it does
 
 For every key:
 
@@ -1221,7 +1212,7 @@ Adding S4: recompute scores; only keys where S4 wins move to S4. Removing S2: on
 
 ---
 
-### How it works — the algorithm inside
+#### How it works — the algorithm inside
 
 ```text
 Servers: S1, S2, S3
@@ -1304,7 +1295,7 @@ Sanity check: same ~1/(N+1) migration order as consistent hashing, but
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **O(N) per lookup** — acceptable for tens of servers; for thousands, use ring hashing or hierarchical HRW.
 - **Stable hash required** — use a fixed hash (Murmur3, SHA-256 truncated) so scores do not jump on process restart.
@@ -1315,7 +1306,7 @@ Sanity check: same ~1/(N+1) migration order as consistent hashing, but
 ---
 
 
-## 5.11 Replication
+## 5.6 Replication
 
 ### Overview
 
@@ -1450,7 +1441,7 @@ Sanity check: sync replication adds RTT to every commit — RF=3 with sync
 ---
 
 
-## 5.12 Leader Follower Replication
+## 5.7 Leader Follower Replication
 
 ### Overview
 
@@ -1567,7 +1558,7 @@ Sanity check: sync replica cuts RPO to ~0 but adds one RTT per commit;
 ---
 
 
-## 5.13 Multi Leader Replication
+## 5.8 Multi Leader Replication
 
 ### Overview
 
@@ -1688,7 +1679,7 @@ Sanity check: 400 ms write RTT is why global apps use regional leaders;
 ---
 
 
-## 5.14 Quorum Reads
+## 5.9 Quorum Reads & Writes
 
 ### Overview
 
@@ -1796,9 +1787,9 @@ With `R = 3, W = 3`: tolerate 2 failed replicas on read and on write independent
 ---
 
 
-## 5.15 Quorum Writes
+### Quorum writes
 
-### Overview
+#### Overview
 
 You do not need every branch office to stamp a form before it counts — just enough signatures that any future audit will find a copy. A **quorum write** succeeds after **W** replicas acknowledge, not all **N**, so the system stays available when some replicas are slow or down while still leaving enough copies for safe reads.
 
@@ -1806,7 +1797,7 @@ Technically, the client or coordinator writes to all replicas but returns succes
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 Waiting for all **N** replicas blocks on the slowest node:
 
@@ -1819,7 +1810,7 @@ Quorum writes improve **availability** and **latency** while tolerating replica 
 
 ---
 
-### What it does
+#### What it does
 
 1. Client sends write to coordinator
 2. Coordinator forwards to all N replicas
@@ -1829,7 +1820,7 @@ Quorum writes improve **availability** and **latency** while tolerating replica 
 
 ---
 
-### How it works — the architecture inside
+#### How it works — the architecture inside
 
 ```mermaid
 flowchart LR
@@ -1903,7 +1894,7 @@ R + 3 > 5  →  R ≥ 3
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **Hinted handoff / repair** — replicas that missed the write need anti-entropy; monitor pending write backlog.
 - **W + R > N is necessary, not sufficient** — concurrent writes to the same key still need versioning (vector clocks, LWW timestamps).
@@ -1913,13 +1904,14 @@ R + 3 > 5  →  R ≥ 3
 
 ---
 
-### Real-world example
+#### Real-world example
 
 **Amazon DynamoDB** uses `W`/`R` style consistency via read/write capacity on replicated storage nodes. A strongly consistent read in DynamoDB fetches from a quorum of replicas that includes the leader for that partition, ensuring you do not read a pre-write stale value — quorum mechanics behind the "consistent read" API flag.
 
 ---
 
-## 5.16 Distributed Locking
+
+## 5.10 Distributed Locking
 
 ### Overview
 
@@ -2039,7 +2031,8 @@ Sanity check: TTL = 5 min after crash means 5 min before failover —
 
 ---
 
-## 5.17 Split Brain
+
+## 5.11 Split Brain
 
 ### Overview
 
@@ -2151,7 +2144,8 @@ Leader-A returns → storage rejects A's writes (epoch 1 < 2)
 
 ---
 
-## 5.18 Consensus
+
+## 5.12 Consensus: Paxos & Raft
 
 ### Overview
 
@@ -2256,9 +2250,10 @@ For N = 5, Q = 3:
 
 ---
 
-## 5.19 Paxos
 
-### Overview
+### Paxos
+
+#### Overview
 
 Paxos is the original parliamentary procedure for computers — propose a motion, collect promises from a majority of voters, then bind them to one outcome. Even competing proposers with different ideas eventually converge on a single chosen value.
 
@@ -2266,7 +2261,7 @@ Technically, **Paxos** is a family of consensus protocols where **proposers** su
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 Multiple nodes may propose different values simultaneously:
 
@@ -2280,7 +2275,7 @@ With Paxos: exactly one value chosen per slot
 
 ---
 
-### What it does
+#### What it does
 
 **Roles:**
 
@@ -2299,7 +2294,7 @@ With Paxos: exactly one value chosen per slot
 
 ---
 
-### How it works — the algorithm inside
+#### How it works — the algorithm inside
 
 ```mermaid
 flowchart LR
@@ -2343,7 +2338,7 @@ Prepare and Accept each need M responses:
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **Hard to implement correctly** — production uses tested libraries (Chubby, log device internals), not hand-rolled Single-Paxos.
 - **Interview:** mention Paxos for Google Chubby/Spanner lineage; explain Raft as the teachable alternative.
@@ -2353,15 +2348,16 @@ Prepare and Accept each need M responses:
 
 ---
 
-### Real-world example
+#### Real-world example
 
 **Google Chubby (lock service):** Chubby uses Paxos (via Multi-Paxos) to replicate its small, critical dataset across a few replicas per cell. Clients use Chubby for coarse-grained locks, leader election, and reliable metadata. The replicated log ensures all replicas agree on lock holders and sequence numbers — a production Paxos deployment predating Raft's popularity.
 
 ---
 
-## 5.20 Raft
 
-### Overview
+### Raft
+
+#### Overview
 
 Raft is Paxos with a designated speaker — one leader handles all proposals, followers copy the leader's notebook, and elections pick a new speaker when the leader goes quiet. The rules are explicit enough to implement from the paper.
 
@@ -2369,7 +2365,7 @@ Technically, **Raft** achieves consensus through **leader election**, **log repl
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 Distributed nodes need one ordered history of operations:
 
@@ -2380,7 +2376,7 @@ With Raft: one leader per term, committed entries identical on majority
 
 ---
 
-### What it does
+#### What it does
 
 | Component | Purpose |
 |-----------|---------|
@@ -2401,7 +2397,7 @@ flowchart LR
 
 ---
 
-### How it works — the algorithm inside
+#### How it works — the algorithm inside
 
 **Leader election:**
 
@@ -2457,7 +2453,7 @@ Maximum simultaneous failures tolerated: floor((N-1)/2)
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **Leader bottleneck** — all writes go through leader; consider sharding (multiple Raft groups) for throughput.
 - **Follower reads** are stale unless you implement lease-reads or read-index protocol.
@@ -2467,13 +2463,14 @@ Maximum simultaneous failures tolerated: floor((N-1)/2)
 
 ---
 
-### Real-world example
+#### Real-world example
 
 **CockroachDB range replication:** Each data range runs its own Raft group (typically 3 or 5 replicas). A write to a key routes to the range leader; the leader proposes a Raft entry; on majority commit, the write is durable and visible at a chosen consistency level. Range splits add new Raft groups — consensus at scale via many small Raft clusters, not one global log.
 
 ---
 
-## 5.21 Leader Election
+
+## 5.13 Leader Election
 
 ### Overview
 
@@ -2578,7 +2575,8 @@ Election timeout guidance (implementation):
 
 ---
 
-## 5.22 Lamport Clocks
+
+## 5.14 Logical Clocks
 
 ### Overview
 
@@ -2674,9 +2672,10 @@ Example 2: L = 5,  R = 12 → max(5,12)+1  = 13
 
 ---
 
-## 5.23 Vector Clocks
 
-### Overview
+### Vector clocks
+
+#### Overview
 
 A vector clock is a scoreboard with one column per player — you see not just your score but everyone's latest known score. Comparing full vectors tells you whether one event definitely came first, or whether two events happened in parallel worlds.
 
@@ -2684,7 +2683,7 @@ Technically, a **vector clock** is an array of counters (one per node). Updates 
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 Lamport timestamps can order concurrent events arbitrarily:
 
@@ -2697,7 +2696,7 @@ Vector clocks detect concurrency for conflict resolution in multi-leader and off
 
 ---
 
-### What it does
+#### What it does
 
 For nodes A, B, C, vector format `[A, B, C]`:
 
@@ -2717,7 +2716,7 @@ For nodes A, B, C, vector format `[A, B, C]`:
 
 ---
 
-### How it works — the algorithm inside
+#### How it works — the algorithm inside
 
 ```text
 Initial: A=[0,0,0], B=[0,0,0]
@@ -2765,7 +2764,7 @@ Vector size = N nodes
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **Does not scale to thousands of nodes** — use version vectors with pruning, or CRDTs for specific data types.
 - **Sibling conflicts** in CouchDB/Riak require application merge (merge function, LWW only if business allows).
@@ -2775,13 +2774,14 @@ Vector size = N nodes
 
 ---
 
-### Real-world example
+#### Real-world example
 
 **Riak sibling objects:** Two clients update the same key concurrently on different replicas. Each write carries a vector clock. On read, if neither clock dominates the other, Riak returns **siblings** — multiple values — and the application merges them (e.g. union of shopping cart items). Vector clocks made the concurrency visible instead of silently picking a loser.
 
 ---
 
-## 5.24 Gossip Protocol
+
+## 5.15 Gossip & Membership Protocols
 
 ### Overview
 
@@ -2883,9 +2883,10 @@ Real systems add redundancy (multiple gossip targets per interval) for faster co
 
 ---
 
-## 5.25 Membership Protocols
 
-### Overview
+### Membership protocols
+
+#### Overview
 
 A membership protocol is the cluster's attendance sheet — who is in the room, who left early, and who stopped answering texts. Every node needs a reasonably current list to route requests, form quorums, and stop sending work to the dead.
 
@@ -2893,7 +2894,7 @@ Technically, **membership protocols** track **join**, **leave**, **failure**, an
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 ```text
 Node-C crashes — if others still think C is alive:
@@ -2906,7 +2907,7 @@ Dynamic clusters (autoscaling, rolling deploys) constantly change membership; st
 
 ---
 
-### What it does
+#### What it does
 
 | Event | Membership update |
 |-------|-------------------|
@@ -2926,7 +2927,7 @@ Dynamic clusters (autoscaling, rolling deploys) constantly change membership; st
 
 ---
 
-### How it works — the architecture inside
+#### How it works — the architecture inside
 
 ```mermaid
 flowchart LR
@@ -2994,7 +2995,7 @@ Sanity check: phi accrual adapts to network jitter; fixed "3 misses"
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **False positives** during GC pauses or network blips — use suspect state and phi accrual before marking failed.
 - **Network partition** can create competing membership views — pair with quorum for decisions (5.17).
@@ -3004,13 +3005,14 @@ Sanity check: phi accrual adapts to network jitter; fixed "3 misses"
 
 ---
 
-### Real-world example
+#### Real-world example
 
 **HashiCorp Serf (SWIM + gossip):** Serf runs an agent on each node, gossiping membership and health. When a node fails health checks, Serf marks it failed and emits events; Consul uses Serf for LAN membership so catalog nodes match reality. Operators drain a node with `leave` before shutdown — membership removes it cleanly without a false failure alert.
 
 ---
 
-## 5.26 Sharding, Bucketing & Partitioning
+
+## 5.16 Sharding, Bucketing & Partitioning
 
 ### Overview
 

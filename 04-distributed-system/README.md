@@ -8,33 +8,19 @@
 
 | # | Sub-topic |
 |---|-----------|
-| 4.1 | [Scalability](#41-scalability) |
-| 4.2 | [Throughput](#42-throughput) |
-| 4.3 | [Latency](#43-latency) |
-| 4.4 | [Tail Latency](#44-tail-latency) |
-| 4.5 | [Availability](#45-availability) |
-| 4.6 | [Reliability](#46-reliability) |
-| 4.7 | [Durability](#47-durability) |
-| 4.8 | [Fault Tolerance](#48-fault-tolerance) |
-| 4.9 | [Resilience](#49-resilience) |
-| 4.10 | [Redundancy](#410-redundancy) |
-| 4.11 | [Failover](#411-failover) |
-| 4.12 | [Consistency](#412-consistency) |
-| 4.13 | [Concurrency](#413-concurrency) |
-| 4.14 | [CAP Theorem](#414-cap-theorem) |
-| 4.15 | [PACELC Theorem](#415-pacelc-theorem) |
-| 4.16 | [Strong Consistency](#416-strong-consistency) |
-| 4.17 | [Eventual Consistency](#417-eventual-consistency) |
-| 4.18 | [Causal Consistency](#418-causal-consistency) |
-| 4.19 | [Linearizability](#419-linearizability) |
-| 4.20 | [Backpressure](#420-backpressure) |
-| 4.21 | [Graceful Degradation](#421-graceful-degradation) |
-| 4.22 | [Capacity Planning](#422-capacity-planning) |
-| 4.23 | [Bottleneck Analysis](#423-bottleneck-analysis) |
+| 4.1 | [Scalability, Throughput & Latency](#41-scalability-throughput-latency) |
+| 4.2 | [Availability, Reliability & Fault Tolerance](#42-availability-reliability-fault-tolerance) |
+| 4.3 | [Consistency Models & CAP](#43-consistency-models-cap) |
+| 4.4 | [Concurrency](#44-concurrency) |
+| 4.5 | [Backpressure](#45-backpressure) |
+| 4.6 | [Graceful Degradation](#46-graceful-degradation) |
+| 4.7 | [Capacity Planning](#47-capacity-planning) |
+| 4.8 | [Bottleneck Analysis](#48-bottleneck-analysis) |
 
 ---
 
-## 4.1 Scalability
+
+## 4.1 Scalability, Throughput & Latency
 
 ### Overview
 
@@ -115,19 +101,20 @@ If 10,000 RPS were hitting one DB, cache + replicas might reduce primary load to
 
 ---
 
-## 4.2 Throughput
 
-### Overview
+### Throughput
+
+#### Overview
 
 Throughput is how much work finishes per unit of time — like counting how many cars pass a toll booth per minute. More booths (parallelism) or faster processing raises throughput; it does not necessarily shorten how long one car waits (latency).
 
 In distributed systems, throughput usually means **requests per second (RPS)** or **queries per second (QPS)** — the rate at which the system completes useful operations. It is the primary capacity metric for sizing clusters, load tests, and SLAs.
 
-### What problem it fixes
+#### What problem it fixes
 
 Teams need a single number to answer: *can this system handle peak traffic?* Without throughput targets, you discover limits during outages — checkout failing on Black Friday, APIs throttling partners, message queues backing up for hours. Throughput gives engineering and finance a shared language for capacity planning and hardware spend.
 
-### What it does
+#### What it does
 
 Throughput measures **completed work over time**, not in-flight work. It varies by domain:
 
@@ -155,7 +142,7 @@ Throughput = Total requests / Time
 
 **Bandwidth vs throughput:** A 1 Gbps link is *capacity*; if protocol overhead and congestion limit you to 600 Mbps of useful payload, *throughput* is 600 Mbps. Bandwidth is the pipe; throughput is what actually gets through.
 
-### How it works — the architecture inside
+#### How it works — the architecture inside
 
 Throughput rises when you remove serial bottlenecks and add parallel paths:
 
@@ -191,32 +178,33 @@ Concurrency L = 1,000 × 0.2 = 200 in-flight requests
 
 If latency doubles without dropping RPS, concurrency doubles — thread pools and memory pressure rise accordingly.
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **Peak vs average** — size for peak throughput (P99 load × safety factor), not daily average.
 - **Saturation hides in queues** — throughput can look flat while latency explodes; watch queue depth and thread pool utilization.
 - **Do not optimize RPS alone** — 10,000 RPS of 500 ms errors is worse than 500 RPS of successful 50 ms responses.
 - **Interview default:** state RPS, mention concurrency via Little's Law, and note the bottleneck (usually DB or external API).
 
-### Real-world example
+#### Real-world example
 
 A REST API on three instances each handles ~350 RPS at 60% CPU → ~1,050 RPS fleet capacity. Load test shows DB at 80% max connections at 900 RPS. Adding two read replicas and a Redis cache for hot keys raises effective read throughput to ~2,500 RPS while keeping the primary below 60% connections — the measured improvement is throughput, not latency alone.
 
 ---
 
-## 4.3 Latency
 
-### Overview
+### Latency
+
+#### Overview
 
 Latency is the wait — the time from asking a question until you get an answer. In a restaurant, it is order-to-table, not how many tables the kitchen serves per hour (throughput).
 
 For systems, latency is the delay for a single operation: client sends a request, the stack processes it, the client receives a response. Users feel latency directly; it drives perceived speed more than server-side throughput charts.
 
-### What problem it fixes
+#### What problem it fixes
 
 Slow systems lose users, revenue, and trust. Payment flows that exceed a few seconds increase abandonment; search above ~300 ms feels sluggish; gaming and trading demand sub-100 ms. Latency budgeting forces teams to identify which hop — DNS, TLS, network, DB, serialization — consumes the budget so optimizations have a target.
 
-### What it does
+#### What it does
 
 Latency measures **one operation end-to-end**. Common variants:
 
@@ -239,7 +227,7 @@ Response time      = 180 ms
 Transfer time      = 180 − 95 = 85 ms
 ```
 
-### How it works — the architecture inside
+#### How it works — the architecture inside
 
 Total latency is the sum of hops — in microservices, hops multiply:
 
@@ -280,7 +268,7 @@ flowchart LR
 - **Async** — return 202 immediately; poll or push when long work completes.
 - **Avoid chatty microservices** — five sequential 20 ms RPCs add 100 ms plus serialization overhead.
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **Average latency lies** — report P50, P95, P99; one slow dependency dominates user experience.
 - **Cold start matters** — serverless and JVM warm-up can add seconds to first requests.
@@ -288,25 +276,26 @@ flowchart LR
 - **Do not chain sync calls** — parallelize independent fetches (fan-out/fan-in with deadlines).
 - **Targets by domain:** search ~100–300 ms, payments < 2 s, interactive gaming < 50 ms — state the SLO, then budget hops.
 
-### Real-world example
+#### Real-world example
 
 A profile page initially took ~420 ms P95: 25 ms network, 180 ms from three sequential gRPC calls to user, prefs, and avatar services, 150 ms DB on the prefs path, 65 ms JSON rendering. Collapsing user+prefs into one query, parallelizing avatar fetch with a 80 ms deadline, and caching prefs in Redis cut P95 to ~95 ms — mostly network + one DB round trip.
 
 ---
 
-## 4.4 Tail Latency
 
-### Overview
+### Tail latency
+
+#### Overview
 
 Most customers get their coffee in two minutes; one unlucky customer waits fifteen because the machine jammed. **Tail latency** describes those slow outliers — the top 1% or 0.1% of requests — not the average wait.
 
 In production, a few slow requests often define user frustration, SLA breaches, and cascading timeouts. Tail latency is the metric that tells you whether "fast on average" is actually fast for everyone.
 
-### What problem it fixes
+#### What problem it fixes
 
 Averages hide misery. Ninety-nine fast requests and one 30-second hang produce a misleading ~350 ms average while 1% of users see an unusable product. Monitoring only mean latency misses GC pauses, disk stalls, lock contention, and one bad shard in a fan-out. Tail metrics align observability with real user pain and revenue-sensitive paths (checkout, login, search).
 
-### What it does
+#### What it does
 
 Tail latency uses **percentiles** over a window of requests:
 
@@ -341,7 +330,7 @@ n = 100 → ≈ 63.4%
 
 More dependencies mean tail risk compounds even when each service looks fine in isolation.
 
-### How it works — the architecture inside
+#### How it works — the architecture inside
 
 ```mermaid
 flowchart LR
@@ -374,20 +363,21 @@ flowchart LR
     B --> Win
 ```
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **Alert on P99/P999**, not mean — SLOs should use percentiles aligned with product (e.g. "P99 < 500 ms").
 - **Retries can worsen tails** — retry storms amplify load; use exponential backoff and jitter.
 - **Hedging costs 2× load** on the delayed path — use only for idempotent, critical reads.
 - **Interview talking point:** explain fan-out amplification with `(1 − p)^n`.
 
-### Real-world example
+#### Real-world example
 
 A search cluster reported 80 ms average latency. P99 was 900 ms, P99.9 was 5 s — traced to one shard with a hot key causing long merges. Rebalancing shards and adding a local cache on the hot partition dropped P99 to 120 ms without changing average much. Dashboards switched from mean to P95/P99 for release gates.
 
 ---
 
-## 4.5 Availability
+
+## 4.2 Availability, Reliability & Fault Tolerance
 
 ### Overview
 
@@ -470,15 +460,16 @@ A payment API targets 99.99% availability (~52 min/year budget). Architecture: t
 
 ---
 
-## 4.6 Reliability
 
-### Overview
+### Reliability
+
+#### Overview
 
 Reliability is trust — when you submit an order, the right amount is charged once, inventory decrements correctly, and the confirmation email matches reality. A system that is always online but frequently wrong is unreliable.
 
 Reliability is the probability that a system performs its intended function correctly over time — often measured as successful operations divided by total operations, or as mean time between failures (MTBF) relative to mean time to repair (MTTR).
 
-### What it means
+#### What it means
 
 ```text
 Reliability = Successful operations / Total operations
@@ -509,7 +500,7 @@ Improving reliability means fewer failures (higher MTBF) or faster recovery (low
 
 Failure modes that erode reliability: hardware faults, software bugs, network partitions, human misconfiguration, and **dependency failures** — any downstream timeout or corrupt response poisons the user-facing outcome.
 
-### How to achieve it — techniques by target
+#### How to achieve it — techniques by target
 
 | Target | Techniques |
 |--------|------------|
@@ -531,38 +522,39 @@ flowchart LR
 
 **Error budget culture** — if SLO is 99.99% reliability, product and engineering share a fixed failure allowance; spending it on risky launches requires explicit trade-off.
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **At-least-once delivery + non-idempotent handlers = duplicates** — always design writes to be safe under retry.
 - **Partial failures** — money debited but not credited is a reliability bug, not just an availability blip.
 - **Monitoring success HTTP codes alone** — 200 with empty or stale body still fails the user.
 - **Interview classic:** "Can a system be highly available but unreliable?" Yes — always-on wrong answers.
 
-### Real-world example
+#### Real-world example
 
 Stripe-style payment APIs require idempotency keys, ledger double-entry reconciliation nightly, and alerting when authorization success rate drops 0.1% below baseline. A deploy that broke tax calculation was caught within minutes by reconciliation detecting mismatched totals — availability was 100% while reliability would have been compromised without the batch check.
 
 ---
 
-## 4.7 Durability
 
-### Overview
+### Durability
+
+#### Overview
 
 Durability is the promise that once the system says "saved," the data survives — power loss, disk crash, or node failure. Like a signed receipt in a safe deposit box: the transaction record outlives the clerk's shift.
 
 In databases, durability is the **D** in ACID: after commit, data persists on non-volatile storage and survives process restart. In distributed stores, it often means replication to a quorum of nodes before acknowledging a write.
 
-### What problem it fixes
+#### What problem it fixes
 
 Users and regulators expect committed financial records, orders, and messages not to vanish. Without durability guarantees, "success" responses are lies — data loss destroys trust, causes legal exposure, and makes recovery from backups the only path (slow, lossy for recent writes).
 
-### What it does
+#### What it does
 
 Durability guarantees **survival of committed data** across failures. It is related but distinct from **persistence** (data on disk) and **availability** (service reachable). A persistent disk that fails without replication can still lose data.
 
 Loss causes: power loss before flush, disk failure, software bug overwriting pages, operator error, single-node commit without replica ack.
 
-### How it works — the architecture inside
+#### How it works — the architecture inside
 
 **Write-Ahead Log (WAL)** — append the intended change to a sequential log and **fsync** to disk before updating main data structures. On crash, replay the log to reconstruct committed state.
 
@@ -604,36 +596,37 @@ P(all three survive) = 0.999³ ≈ 0.997  (~99.7% durability against independent
 
 Correlated failures (same rack, region) break independence — geographic replication addresses that class.
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **`fsync` matters** — buffered writes lie about durability until flushed.
 - **Ack before replicate** — some NoSQL configs return success after primary write only; know your RPO.
 - **Backups without tested restore** — durability on paper only; run restore drills.
 - **Do not confuse ACID Consistency with replica consistency** — different concepts.
 
-### Real-world example
+#### Real-world example
 
 A user transfer commits in PostgreSQL: WAL record fsynced, synchronous standby acks, then `COMMIT` returns to the app. Primary datacenter power loss triggers failover to standby; WAL replay on standby completes any in-flight committed transactions. RPO ≈ 0 for sync config; RTO minutes with managed failover (RDS Multi-AZ, Patroni).
 
 ---
 
-## 4.8 Fault Tolerance
 
-### Overview
+### Fault tolerance
+
+#### Overview
 
 Fault tolerance is continuing to serve despite broken parts — like a plane with redundant hydraulics that lands safely when one circuit fails. The goal is not zero failures; failures are expected.
 
 A fault-tolerant system detects component failure and routes around it — via redundancy, failover, degraded modes — so users still get an acceptable outcome.
 
-### What problem it fixes
+#### What problem it fixes
 
 Hardware fails, networks partition, deployments introduce bugs, and dependencies go offline. Without fault tolerance, any single failure becomes a total outage. Fault tolerance converts **fail-stop events** into **partial impairment** with bounded blast radius.
 
-### What it does
+#### What it does
 
 Fault tolerance spans **prevention** (eliminate SPOFs), **detection** (health checks, heartbeats), **containment** (bulkheads, circuit breakers), and **recovery** (failover, retry, rollback). It underpins high availability and contributes to reliability but does not guarantee correctness by itself.
 
-### How it works — the architecture inside
+#### How it works — the architecture inside
 
 ```mermaid
 flowchart LR
@@ -678,32 +671,33 @@ flowchart LR
 
 **Chaos engineering** — inject failures (Netflix Chaos Monkey, AWS FIS) to prove tolerance before production surprises.
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **Retries on non-idempotent POSTs** — duplicate side effects; use idempotency tokens.
 - **Circuit breaker tuning** — too aggressive opens on blips; too lax allows cascade.
 - **Shared fate** — all replicas in one AZ are one failure domain.
 - **Fault tolerance ≠ resilience** — tolerance emphasizes continued operation; resilience emphasizes recovery speed and learning.
 
-### Real-world example
+#### Real-world example
 
 An order service calls inventory via HTTP with 500 ms timeout, 3 retries (exponential backoff), and a circuit breaker (open after 50% errors in 10 s). When inventory is down, checkout uses a cached "in stock" flag with a banner "availability confirmed at payment" — orders queue for inventory reconciliation. Users complete purchase; ops fixes inventory without a full storefront outage.
 
 ---
 
-## 4.9 Resilience
 
-### Overview
+### Resilience
+
+#### Overview
 
 Resilience is how quickly and cleanly a system bounces back after a hit — rubber ball, not glass. Brief degradation is acceptable if recovery is automatic and impact is bounded.
 
 Where fault tolerance asks *can we keep running during failure?*, resilience asks *can we absorb shock, learn, and restore normal service without a manual war room?*
 
-### What problem it fixes
+#### What problem it fixes
 
 Outages, traffic spikes, and bad deploys are inevitable. Resilience reduces **mean time to recovery (MTTR)**, limits blast radius, and prevents temporary faults from becoming cascading blackouts. It connects engineering design to business continuity — how long until revenue flows again.
 
-### What it does
+#### What it does
 
 Resilient systems combine:
 
@@ -715,7 +709,7 @@ Resilient systems combine:
 
 Resilience overlaps fault tolerance and availability but emphasizes **dynamic response** — scaling out under load, degrading features, draining bad nodes — not only static redundancy.
 
-### How it works — the architecture inside
+#### How it works — the architecture inside
 
 ```mermaid
 flowchart LR
@@ -738,32 +732,33 @@ flowchart LR
 
 **Autoscaling** — horizontal pod autoscaler on CPU/RPS/custom metric; scale-to-zero cautiously for latency-sensitive paths.
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **Resilience theater** — retries without timeouts increase load on a dying dependency.
 - **Manual failover runbooks** — fine for DR, too slow for AZ blip; automate the common cases.
 - **Missing bulkheads** — one noisy tenant can starve others on shared pools.
 - **Chaos without hypothesis** — random failure injection without success criteria wastes effort.
 
-### Real-world example
+#### Real-world example
 
 During a viral stream launch, a video platform sees 20× API traffic. CDN absorbs most video bytes; origin autoscales API pods from 50 to 400; recommendation service circuit opens and homepage shows "Trending" static list; write-heavy social feed queues with 30 s delay while playback stays real-time. P99 playback start < 1.5 s throughout; full feature set restores within 20 minutes as caches warm and circuits close.
 
 ---
 
-## 4.10 Redundancy
 
-### Overview
+### Redundancy
+
+#### Overview
 
 Redundancy is keeping spares — a second tire in the trunk, not because you expect a flat every trip, but because one flat without a spare ends the journey. Extra components stand ready when primary ones fail.
 
 In systems, redundancy duplicates compute, storage, network paths, or geographic presence so failure of one unit does not eliminate capability.
 
-### What problem it fixes
+#### What problem it fixes
 
 Every component has a non-zero failure rate. A non-redundant design converts independent hardware MTBF into system-wide downtime. Redundancy is the prerequisite for failover, fault tolerance, and high availability — without spare capacity, there is nothing to fail *over* to.
 
-### What it does
+#### What it does
 
 Redundancy adds **standby or parallel capacity**:
 
@@ -799,7 +794,7 @@ flowchart LR
 
 **Redundancy vs replication:** replication is a mechanism (copying data); redundancy is the outcome (extra copy exists).
 
-### How it works — the architecture inside
+#### How it works — the architecture inside
 
 **Eliminating SPOFs:**
 
@@ -854,32 +849,33 @@ Sanity check: active-active spreads load and uses both boxes; active-passive
   is cheaper to reason about but wastes half the fleet under normal operation
 ```
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **Redundant but not independent** — same power strip, same switch, same bug in all replicas = one failure domain.
 - **Split brain** — two primaries without quorum; use fencing/STONITH or consensus.
 - **Replication lag** — standby may be minutes stale; RPO/RTO must match business rules before promoting.
 - **Default for new systems:** N+1 at minimum for stateless tiers; database with auto-failover + tested backups.
 
-### Real-world example
+#### Real-world example
 
 A payment stack runs three app AZs, RDS Multi-AZ primary + standby, ElastiCache cluster mode with 3 shards × 2 replicas, and Route 53 health-checked failover to a warm secondary region. Primary AZ loss: LB drains unhealthy targets (~30 s), RDS fails over (~90 s), cache promotes replica — card authorization continues with < 2 min blip, no manual step for AZ failure.
 
 ---
 
-## 4.11 Failover
 
-### Overview
+### Failover
+
+#### Overview
 
 Failover is the baton pass — when the lead runner drops, the next runner takes the track without restarting the race. Backup components become primary after failure detection.
 
 Failover is the **procedure** that redundancy enables: detect unhealthy primary, promote or route to standby, resume service.
 
-### What problem it fixes
+#### What problem it fixes
 
 Without automated failover, every outage waits for a human to page, diagnose, and manually switch DNS or promote a database — minutes to hours of downtime. Failover compresses recovery to seconds or minutes, preserving availability SLOs and reducing operator error under pressure.
 
-### What it does
+#### What it does
 
 Typical sequence:
 
@@ -904,7 +900,7 @@ Worst-case user impact ≈ 10 + 5 + 30 = 45 s (if clients cache old endpoint)
 
 Using low-TTL DNS or anycast VIP reduces client rediscovery.
 
-### How it works — the architecture inside
+#### How it works — the architecture inside
 
 ```mermaid
 flowchart LR
@@ -936,20 +932,21 @@ flowchart LR
 | In-flight transactions | Idempotency; client retry |
 | Split brain | Quorum, leader epoch, manual break-glass |
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **Untested failover** — rehearse quarterly; "works in theory" fails at 3 AM.
 - **Clients cache stale endpoints** — use service discovery (Consul, K8s Service) not hard-coded IP.
 - **Promote without fencing** — old primary accepting writes causes divergence.
 - **Interview:** distinguish failover (recovery action) from fault tolerance (user-transparent continuity).
 
-### Real-world example
+#### Real-world example
 
 Patroni-managed PostgreSQL cluster: etcd quorum holds leader lock. Primary stops responding; Patonni detects via REST API after 3 failed checks (~15 s), promotes synchronous replica, updates HAProxy backend. Apps using JDBC with `targetServerType=primary` reconnect automatically. Total write unavailability ~20 s; no committed sync-replicated transaction lost (RPO 0).
 
 ---
 
-## 4.12 Consistency
+
+## 4.3 Consistency Models & CAP
 
 ### Overview
 
@@ -1049,7 +1046,470 @@ Mixing models intentionally: strong where oversell costs money, eventual where s
 
 ---
 
-## 4.13 Concurrency
+
+### CAP theorem
+
+#### Overview
+
+When two offices lose phone contact but both stay open, each must decide: refuse customers until numbers match (correct but unavailable), or keep serving with possibly outdated records (available but inconsistent). CAP formalizes that same forced choice for distributed software during network splits.
+
+The CAP theorem (Brewer, 2000; proved by Gilbert and Lynch) states that when a network partition occurs, a distributed data store can guarantee at most two of three properties: **Consistency** (every read sees the latest write), **Availability** (every request gets a non-error response), and **Partition tolerance** (the system continues despite broken links between nodes). In practice, partitions happen, so the real trade-off is **CP vs AP** during a split.
+
+#### What problem it fixes
+
+Teams often assume a replicated database can be fully consistent and always online. CAP makes the partition case explicit: you cannot simultaneously refuse stale reads and always answer every request when replicas cannot talk. Naming the trade-off early prevents designing a payment ledger like a social feed, or vice versa.
+
+#### What it does
+
+CAP classifies distributed stores by what they sacrifice when the network fails between nodes. **CP** systems (etcd, ZooKeeper) may reject reads or writes until quorum is restored. **AP** systems (Cassandra, DynamoDB in many configurations) keep serving but may return stale values until replication catches up. **CA** (single-node or same-AZ cluster with no partition assumption) is not a meaningful label for geographically distributed systems.
+
+#### How it works — the architecture inside
+
+**The three properties**
+
+| Property | Guarantee during normal operation |
+|----------|-----------------------------------|
+| C — Consistency | Every read returns the most recent successful write |
+| A — Availability | Every request receives a response (not a hang or indeterminate failure) |
+| P — Partition tolerance | System continues operating when nodes cannot communicate |
+
+**Network partition — the forcing event**
+
+```mermaid
+flowchart LR
+    subgraph Before["Before partition"]
+        direction LR
+        NA1[Node A = 100] <-->|sync| NB1[Node B = 100]
+    end
+    subgraph After["After partition — write on A"]
+        direction LR
+        NA2[Node A = 200] -.X.- NB2[Node B = 100]
+        Read[Read from B] --> Choice{System choice}
+        Choice -->|CP| Reject[Reject or block read]
+        Choice -->|AP| Stale[Return 100]
+    end
+    Before ~~~ After
+```
+
+User writes 200 on Node A; partition isolates Node B still at 100. A read on B forces a choice: return stale data (AP) or fail the read until sync (CP). You cannot guarantee both C and A while P holds.
+
+**CP vs AP at a glance**
+
+| | CP | AP |
+|---|----|----|
+| Partition behavior | Reject or block if latest unknown | Serve from local replica |
+| Stale reads | Avoided | Possible |
+| Typical domains | Coordination, payments, inventory locks | Feeds, DNS, shopping carts, analytics |
+| Examples | etcd, ZooKeeper | Cassandra, DynamoDB (eventual reads) |
+
+**CA and why it rarely applies**
+
+A single PostgreSQL instance behind one app server is consistent and available until the disk dies — partition tolerance between replicas is not the question. Once data spans AZs or regions, partitions are possible and CA is not a design option.
+
+**Interview correction**
+
+Wrong: "Pick any two letters forever." Correct: **During a partition**, choose consistency or availability; partition tolerance is assumed in distributed deployments. Outside partitions, many systems offer both C and A — PACELC (4.15) covers that nuance.
+
+#### Pitfalls and design tips
+
+- CAP is about **one partition event**, not a permanent binary label — the same product may be CP for writes and AP for reads.
+- "Consistency" in CAP is linearizable-style read freshness, not ACID transactional consistency across unrelated keys.
+- Do not cite CAP to justify avoiding replication — replication improves availability; CAP describes behavior *when links break*.
+- Banking ledgers and inventory often need CP or strong quorum writes; social likes and view counts tolerate AP.
+- etcd/ZooKeeper for leader election and config; Cassandra/Dynamo-style stores for high write availability at global scale.
+
+#### Real-world example
+
+During an AWS AZ failure, a Cassandra cluster configured for `LOCAL_QUORUM` writes continues accepting writes in surviving AZs (AP-leaning): clients get responses, but a reader in an isolated partition might briefly see an old row until gossip and repair converge. By contrast, a Kubernetes control plane using etcd will fail write operations if a majority of etcd members are unreachable (CP): schedulers wait rather than act on potentially divergent state — correctness over liveness for cluster brain.
+
+---
+
+
+### PACELC theorem
+
+#### Overview
+
+CAP only speaks up when the network breaks. Most of the time links are fine — yet you still choose whether every write waits for distant replicas or returns fast with lagging copies. PACELC adds that everyday trade-off.
+
+PACELC (Daniel Abadi, 2010) extends CAP: **If Partition (P)**, choose **Availability (A)** or **Consistency (C)**; **Else (E)** — when there is no partition — choose **Latency (L)** or **Consistency (C)**. It explains why many "AP" systems feel fast even when the network is healthy: they skip synchronous wide-area replication to keep response times low.
+
+#### What problem it fixes
+
+CAP leaves engineers asking, "We are not partitioned right now — why can't we have strong consistency and 10 ms writes?" PACELC answers: because strong consistency across regions requires waiting for distant replicas, which raises latency. The theorem names the normal-path trade-off that dominates user experience 99.9% of the time.
+
+#### What it does
+
+PACELC classifies systems along two axes:
+
+```text
+P happens →  A  or  C
+else      →  L  or  C
+```
+
+Common labels: **PA/EL** (available under partition, low latency otherwise — DynamoDB, Cassandra), **PC/EC** (consistent under partition and otherwise — etcd, ZooKeeper), plus less common **PA/EC** and **PC/EL** combinations.
+
+#### How it works — the architecture inside
+
+**PAC — same as CAP during failure**
+
+```mermaid
+flowchart LR
+    Partition[Network partition: A X B] --> Choice{Choice}
+    Choice -->|PA| Avail[Serve requests — may be stale]
+    Choice -->|PC| Cons[Block or reject until quorum]
+```
+
+**ELC — the everyday trade-off**
+
+```mermaid
+flowchart LR
+    Client[Write request] --> Primary[(Primary)]
+    Primary --> R1[(Replica — same region)]
+    Primary --> R2[(Replica — other region)]
+    Primary -->|Option A: wait for R2| Slow[Write ack ~200 ms — strong C]
+    Primary -->|Option B: ack after local| Fast[Write ack ~20 ms — eventual C]
+```
+
+| Write policy | Consistency | Latency (typical) |
+|--------------|-------------|-------------------|
+| Sync all replicas before ack | Strong | High (especially cross-region) |
+| Ack after local / quorum, replicate async | Weaker | Low |
+
+**PACELC classification table**
+
+| Label | On partition | Normal operation | Examples |
+|-------|--------------|------------------|----------|
+| PA/EL | Availability | Low latency | DynamoDB, Cassandra |
+| PA/EC | Availability | Consistency | Rare; some multi-DC SQL with sync |
+| PC/EC | Consistency | Consistency | etcd, ZooKeeper |
+| PC/EL | Consistency | Low latency | Less common hybrid designs |
+
+**CAP vs PACELC**
+
+| Question | CAP | PACELC |
+|----------|-----|--------|
+| When? | During partition only | Partition + steady state |
+| Trade-off | C vs A | C vs A, then C vs L |
+
+#### Pitfalls and design tips
+
+- Most user-facing latency complaints come from the **EL** choice, not from partition behavior — measure cross-region replication delay before promising linearizable writes globally.
+- PA/EL is the default for global NoSQL at scale; do not bolt strong consistency onto the same path without accepting multi-hundred-ms writes.
+- Read-your-writes and session consistency are middle grounds between EL and EC — PACELC is a spectrum, not four rigid boxes.
+- Interview framing: "We are PA/EL for product catalog, PC/EC for inventory locks" shows nuanced design, not CAP slogans.
+- Spanner achieves externally strong consistency with TrueTime — it pays the latency and infrastructure cost PACELC says you cannot avoid cheaply.
+
+#### Real-world example
+
+A global e-commerce order service in Mumbai writes an order record. **Option A (EC):** wait until replicas in Frankfurt and Virginia acknowledge — user sees spinner for 150–300 ms, but any region read is current. **Option B (EL):** ack when the Mumbai primary commits, replicate asynchronously — user sees confirmation in ~30 ms, but a support agent in Virginia might see the order a second later. Most checkout UIs choose EL; fraud holds or inventory deduction may use a stronger, slower path on the same platform.
+
+---
+
+
+### Strong consistency
+
+#### Overview
+
+Strong consistency is like a single shared notebook: once someone writes a new balance, every reader who opens the book next sees that number — never an old one. No one gets a photocopy that has not caught up yet.
+
+Formally, after a write is acknowledged, every subsequent read returns the latest value (or blocks until it can). Replicas do not serve stale data. Achieving this requires coordination — synchronous replication, quorum reads/writes, or a single leader — which increases latency and reduces availability during partitions compared to eventual models.
+
+#### What problem it fixes
+
+Financial balances, seat inventory, and lock ownership break if clients read stale values after a successful write. Strong consistency prevents "I deposited money but the ATM still shows zero" and overselling the last airline seat across two data centers.
+
+#### What it does
+
+Strong consistency ensures all nodes (or all clients through quorum) agree on the current value before a read succeeds. Writes typically propagate to a majority of replicas or complete a two-phase commit before the client receives success. Reads may contact the leader or a quorum to guarantee freshness.
+
+#### How it works — the architecture inside
+
+**Write path with synchronous replication**
+
+```mermaid
+flowchart LR
+    Write[Client write] --> Primary[(Primary)]
+    Primary --> R1[(Replica 1)]
+    Primary --> R2[(Replica 2)]
+    R1 --> Ack[All required replicas ack]
+    R2 --> Ack
+    Ack --> Success[Write success to client]
+    R1 --> Read[Subsequent read]
+    R2 --> Read
+    Read --> Latest[Always latest value]
+```
+
+**Consistency spectrum (this section in context)**
+
+```text
+Stronger ←————————————————————→ Weaker
+Linearizability → Strong → Causal → Eventual
+```
+
+Strong consistency (as commonly used) sits below linearizability (4.19) but above causal and eventual: all users see the latest write, though not every formal linearizability edge case is enforced.
+
+| Aspect | Strong | Eventual (4.17) |
+|--------|--------|-----------------|
+| Stale reads | Not allowed after ack | Allowed temporarily |
+| Write latency | Higher (sync replication) | Lower (async replication) |
+| Availability in partition | May block | Usually stays up |
+| Typical use | Banking, inventory, booking | Likes, counters, CDN |
+
+#### Pitfalls and design tips
+
+- "Strong" means different things to different vendors — ask whether reads are linearizable, quorum-based, or merely "no stale after write on same session."
+- Cross-region strong consistency multiplies latency by RTT; keep strongly consistent data in one region or shard by locality.
+- Do not apply strong consistency to entire social graphs or analytics — cost and contention explode.
+- PostgreSQL synchronous replication and MySQL semi-sync are strong-consistency tools at single-primary scale; etcd/Raft for distributed metadata.
+- During partition, CP behavior (rejecting requests) is the price — plan client retries and clear error messages.
+
+#### Real-world example
+
+An airline reservation system holds 1 seat left on a flight. Two agents in different cities attempt to book simultaneously. With strong consistency (single authoritative partition or quorum write), the first committed booking wins; the second receives "sold out" immediately — not a confirmation that later gets revoked when replicas sync. The write does not ack until the inventory partition reflects zero remaining seats on all required replicas.
+
+---
+
+
+### Eventual consistency
+
+#### Overview
+
+Eventual consistency is like gossip in a large office: when news breaks, not everyone hears it at once, but if nobody adds conflicting rumors, everyone converges on the same story after a while.
+
+If writes stop, all replicas will eventually hold the same value. Until then, different clients may read different versions. Systems accept temporary divergence in exchange for high availability, low write latency, and partition resilience — then use replication, anti-entropy repair, or CRDT merge rules to converge.
+
+#### What problem it fixes
+
+Forcing global synchronous updates on every like, view count, or DNS change would make global services slow and fragile. Many data types tolerate brief skew; eventual consistency removes the coordination bottleneck for high write throughput and geographic spread.
+
+#### What it does
+
+A write acks when the local node (or a small local quorum) persists the change; background replication propagates updates to other replicas. Reads may hit any replica and return a stale value until gossip, read repair, or Merkle-tree sync aligns copies. Conflict resolution (last-write-wins, vector clocks, CRDTs) handles concurrent writes to the same key.
+
+#### How it works — the architecture inside
+
+**Replication timeline**
+
+```mermaid
+flowchart LR
+    W[Write: likes 100 → 101] --> P[Primary = 101]
+    P --> R1[Replica1 = 101]
+    P --> R2[Replica2 = 100]
+    P --> R3[Replica3 = 100]
+    R2 --> Sync[Background replication]
+    R3 --> Sync
+    Sync --> Done[All nodes = 101]
+```
+
+```text
+Immediately:  Primary = 101, Replica2 = 100  →  users see 101 or 100
+After sync:   All = 101                         →  converged
+```
+
+**Trade-off table**
+
+| | Eventual | Strong (4.16) |
+|---|----------|---------------|
+| Write latency | Low | High |
+| Stale reads | Yes, bounded by replication lag | No (after ack) |
+| Partition behavior | Stay available | May reject |
+| Conflict handling | Required | Rare |
+| Examples | DynamoDB (default reads), Cassandra, DNS | etcd, Spanner (strong mode) |
+
+**Convergence mechanisms**
+
+- **Anti-entropy:** periodic background compare-and-repair between replicas (Cassandra repair).
+- **Read repair:** stale read triggers write-back to lagging replica on read path.
+- **CRDTs:** data structures merge without central coordination (collaborative counters, sets).
+
+#### Pitfalls and design tips
+
+- Eventual does not mean "never consistent" — measure replication lag (p99) and alert when it exceeds product tolerance.
+- Last-write-wins loses concurrent updates silently — use vector clocks or application merge for carts and collaborative docs.
+- Reading from any replica without `LOCAL_QUORUM` or similar guarantees maximizes staleness — tune consistency level per use case.
+- Counters and likes tolerate eventual; account balances and inventory usually do not — split models within one product.
+- DNS TTL is eventual consistency in practice: changes propagate over seconds to hours depending on cache.
+
+#### Real-world example
+
+Amazon DynamoDB accepts a `PutItem` when the storage node in the user's region persists it. A global secondary index or a read in another region may lag by milliseconds to seconds. For a shopping cart, briefly showing an old item count is acceptable; the cart converges after replication. Product pages use the same model for non-critical attributes (review counts) while checkout calls stronger conditional writes on inventory keys.
+
+---
+
+
+### Causal consistency
+
+#### Overview
+
+Causal consistency is weaker than a single global timeline but stronger than "everyone eventually agrees": if you saw someone reply to a post, you must have been able to see the post first — cause before effect, never the reverse.
+
+Operations that are causally related (one influenced the other) are seen by all nodes in the same order. Concurrent, unrelated operations may appear in different orders to different viewers. This preserves intuitive ordering for threads, comments, and messages without paying for full linearizability on every read.
+
+#### What problem it fixes
+
+Pure eventual consistency allows anomalies like seeing a reply without its parent post. Strong consistency over every social interaction is expensive globally. Causal consistency targets the middle: preserve human-meaningful order where dependencies exist, stay available and faster than strong models.
+
+#### What it does
+
+The system tracks causal dependencies (version vectors, Lamport clocks, or "happens-before" metadata). When replicating, it ensures dependent operations are not observed out of order. Unrelated writes can replicate in any order. Reads may still lag the latest value, but never violate cause → effect ordering.
+
+#### How it works — the architecture inside
+
+**Causal chain**
+
+```mermaid
+flowchart LR
+    A["Write A — create post"] --> B["Write B — add comment"]
+    B --> C["Write C — reply to comment"]
+```
+
+Every observer must see A before B, and B before C. Two users editing unrelated posts have no ordering requirement between those posts.
+
+**Model comparison**
+
+| Scenario | Strong (4.16) | Eventual (4.17) | Causal |
+|----------|---------------|-----------------|--------|
+| Post then comment | Both visible immediately everywhere | Comment may appear before post | Comment never before post |
+| Latest value always | Yes | No | No |
+| Latency | Highest | Lowest | Medium |
+| Implementation cost | High | Low | Medium (metadata on writes) |
+
+**Write path sketch**
+
+| Model | Ack behavior |
+|-------|--------------|
+| Strong | Wait for sync/quorum |
+| Eventual | Local write, async fan-out |
+| Causal | Local write + attach dependency vector; replicate preserving order |
+
+**Strength ordering**
+
+```text
+Linearizability → Strong → Causal → Eventual
+```
+
+#### Pitfalls and design tips
+
+- Causal consistency requires clients or servers to pass context (version vectors) on reads/writes — stateless REST without tokens loses causal guarantees.
+- "Causal+" and session guarantees are practical subsets — many products implement causal order within a user's session first.
+- Do not assume causal order across unrelated microservices unless you propagate trace or vector metadata on every call.
+- MongoDB sessions, COPS, and some geo-replicated research systems expose causal models; most mainstream DBs default to stronger or weaker extremes.
+- Interview tip: chat and comment threads are the canonical causal use case; bank transfers are not.
+
+#### Real-world example
+
+In a group chat, Alice sends "Meet at 5?" (message M1). Bob replies "Works for me" (M2), which causally depends on M1. A causal store tags M2 with M1's ID. When Charlie's client syncs, it may not yet show M2, but it will never display M2 without M1 — the UI never shows a floating reply. Unrelated messages from other rooms can arrive in any order without violating the model.
+
+---
+
+
+### Linearizability
+
+#### Overview
+
+Linearizability is the strictest practical guarantee: once an operation completes, every later operation anywhere in the system must behave as if that write happened at one instant between its start and finish — and everyone reads from that single shared timeline.
+
+From the client's view, all operations execute atomically one after another in real-time order. After a successful write, no read may return the old value. This is stronger than sequential consistency (which ignores real-time ordering) and stronger than causal or eventual models — and it costs latency, coordination, and partition resilience.
+
+#### What problem it fixes
+
+Distributed systems without a clear global order produce visible bugs: money deposits that disappear on the next read, leader election double-masters, or stale lock holders. Linearizability gives programmers the illusion of a single copy of data — the same mental model as a non-distributed variable.
+
+#### What it does
+
+Each operation has a **linearization point** — the instant it appears to take effect. If operation A completes before B starts in real time, every observer sees A before B. Writes typically require quorum persistence (majority of replicas) before ack; reads contact a quorum or the leader to ensure they see the latest completed write.
+
+#### How it works — the architecture inside
+
+**Linearization point**
+
+```text
+Real execution:     Start —————————— End
+Linearizable view:  Start —— X —— End
+                            ↑
+                  effect happens here
+```
+
+**Write then read**
+
+```text
+Initial: X = 10
+Write X = 20 completes at t=100
+Read at t=150 → must return 20 (never 10)
+```
+
+**Quorum write (3 nodes, write quorum = 2)**
+
+```mermaid
+flowchart LR
+    W[Write request] --> N1[Node 1]
+    W --> N2[Node 2]
+    W --> N3[Node 3]
+    N1 --> Majority["2 of 3 ack → success"]
+    N2 --> Majority
+    Majority --> Future[Future reads via quorum see new value]
+```
+
+**How to calculate:**
+
+```text
+Given: N = 3 replicas, write quorum W = 2, read quorum R = 2
+
+Step 1 — overlap rule (read sees a write):
+  R + W > N  →  2 + 2 = 4 > 3 ✓
+  Every read quorum shares ≥1 node with every write quorum
+
+Step 2 — fault tolerance (majority must survive):
+  Max simultaneous failures f = ⌊(N − 1) / 2⌋ = ⌊2/2⌋ = 1
+  Cluster stays writable if W = 2 nodes remain reachable
+
+Step 3 — write latency (single-region):
+  Client waits for slowest of W acks ≈ max(RTT₁, RTT₂) + fsync
+  Example: 2 × 5 ms RTT + 3 ms disk ≈ 8 ms quorum write overhead
+
+Result: 3-node Raft/etcd tolerates 1 failure; linearizable writes need
+        majority (2 of 3) before ack
+
+Sanity check: N = 4 with W = 2 allows split-brain (two partitions of 2
+  each both think they have quorum) — odd N is standard for consensus
+```
+
+**Comparison with related models**
+
+| Model | Global order | Real-time order | Stale read after write |
+|-------|--------------|-----------------|------------------------|
+| Linearizability | Yes | Yes | Forbidden |
+| Sequential consistency | Yes | No | Possible |
+| Causal (4.18) | Partial (causal deps) | Partial | Possible |
+| Eventual (4.17) | No | No | Allowed temporarily |
+
+**Sequential but not linearizable example**
+
+Write X=1 completes at t=10. Read at t=20 returns X=0. A global order might still exist if the read is ordered before the write in that artificial sequence — but real-time order is violated, so this is not linearizable.
+
+**Implementation techniques**
+
+- Raft / Paxos consensus on a replicated log
+- Majority quorums for read and write (etcd, ZooKeeper)
+- Leader-based replication with sync follower ack
+- Google Spanner: TrueTime + two-phase commit for external linearizability across shards
+
+#### Pitfalls and design tips
+
+- Linearizability is per object (register) unless you use transactional protocols across keys — "linearizable system" often means linearizable individual operations.
+- Cross-region linearizability pays RTT on every write — reserve for locks, leader election, metadata, not bulk analytics.
+- etcd guarantees linearizable reads when reading through the Raft leader; reading followers without lease may break linearizability.
+- Do not confuse with serializable SQL isolation — serializable is about transaction interleaving; linearizability is about real-time visibility of individual ops.
+- Default choice: strong coordination service (etcd/Consul) for cluster brain; linearizable user data only where regulation or correctness demands it.
+
+#### Real-world example
+
+etcd backs Kubernetes leader election and config storage. When a controller writes a new `Lease` or updates a `Pod` status, Raft commits the entry on a majority before the API returns success. Another controller reading through the leader immediately sees that write — no stale leader, no double scheduler acting on old state. The cost is write latency tied to disk fsync and network RTT within the cluster, which is acceptable for control-plane metadata but not for million-RPS user feeds.
+
+---
+
+
+## 4.4 Concurrency
 
 ### Overview
 
@@ -1150,463 +1610,8 @@ Netflix's API tier handles millions of concurrent playback and browse sessions. 
 
 ---
 
-## 4.14 CAP Theorem
 
-### Overview
-
-When two offices lose phone contact but both stay open, each must decide: refuse customers until numbers match (correct but unavailable), or keep serving with possibly outdated records (available but inconsistent). CAP formalizes that same forced choice for distributed software during network splits.
-
-The CAP theorem (Brewer, 2000; proved by Gilbert and Lynch) states that when a network partition occurs, a distributed data store can guarantee at most two of three properties: **Consistency** (every read sees the latest write), **Availability** (every request gets a non-error response), and **Partition tolerance** (the system continues despite broken links between nodes). In practice, partitions happen, so the real trade-off is **CP vs AP** during a split.
-
-### What problem it fixes
-
-Teams often assume a replicated database can be fully consistent and always online. CAP makes the partition case explicit: you cannot simultaneously refuse stale reads and always answer every request when replicas cannot talk. Naming the trade-off early prevents designing a payment ledger like a social feed, or vice versa.
-
-### What it does
-
-CAP classifies distributed stores by what they sacrifice when the network fails between nodes. **CP** systems (etcd, ZooKeeper) may reject reads or writes until quorum is restored. **AP** systems (Cassandra, DynamoDB in many configurations) keep serving but may return stale values until replication catches up. **CA** (single-node or same-AZ cluster with no partition assumption) is not a meaningful label for geographically distributed systems.
-
-### How it works — the architecture inside
-
-**The three properties**
-
-| Property | Guarantee during normal operation |
-|----------|-----------------------------------|
-| C — Consistency | Every read returns the most recent successful write |
-| A — Availability | Every request receives a response (not a hang or indeterminate failure) |
-| P — Partition tolerance | System continues operating when nodes cannot communicate |
-
-**Network partition — the forcing event**
-
-```mermaid
-flowchart LR
-    subgraph Before["Before partition"]
-        direction LR
-        NA1[Node A = 100] <-->|sync| NB1[Node B = 100]
-    end
-    subgraph After["After partition — write on A"]
-        direction LR
-        NA2[Node A = 200] -.X.- NB2[Node B = 100]
-        Read[Read from B] --> Choice{System choice}
-        Choice -->|CP| Reject[Reject or block read]
-        Choice -->|AP| Stale[Return 100]
-    end
-    Before ~~~ After
-```
-
-User writes 200 on Node A; partition isolates Node B still at 100. A read on B forces a choice: return stale data (AP) or fail the read until sync (CP). You cannot guarantee both C and A while P holds.
-
-**CP vs AP at a glance**
-
-| | CP | AP |
-|---|----|----|
-| Partition behavior | Reject or block if latest unknown | Serve from local replica |
-| Stale reads | Avoided | Possible |
-| Typical domains | Coordination, payments, inventory locks | Feeds, DNS, shopping carts, analytics |
-| Examples | etcd, ZooKeeper | Cassandra, DynamoDB (eventual reads) |
-
-**CA and why it rarely applies**
-
-A single PostgreSQL instance behind one app server is consistent and available until the disk dies — partition tolerance between replicas is not the question. Once data spans AZs or regions, partitions are possible and CA is not a design option.
-
-**Interview correction**
-
-Wrong: "Pick any two letters forever." Correct: **During a partition**, choose consistency or availability; partition tolerance is assumed in distributed deployments. Outside partitions, many systems offer both C and A — PACELC (4.15) covers that nuance.
-
-### Pitfalls and design tips
-
-- CAP is about **one partition event**, not a permanent binary label — the same product may be CP for writes and AP for reads.
-- "Consistency" in CAP is linearizable-style read freshness, not ACID transactional consistency across unrelated keys.
-- Do not cite CAP to justify avoiding replication — replication improves availability; CAP describes behavior *when links break*.
-- Banking ledgers and inventory often need CP or strong quorum writes; social likes and view counts tolerate AP.
-- etcd/ZooKeeper for leader election and config; Cassandra/Dynamo-style stores for high write availability at global scale.
-
-### Real-world example
-
-During an AWS AZ failure, a Cassandra cluster configured for `LOCAL_QUORUM` writes continues accepting writes in surviving AZs (AP-leaning): clients get responses, but a reader in an isolated partition might briefly see an old row until gossip and repair converge. By contrast, a Kubernetes control plane using etcd will fail write operations if a majority of etcd members are unreachable (CP): schedulers wait rather than act on potentially divergent state — correctness over liveness for cluster brain.
-
----
-
-## 4.15 PACELC Theorem
-
-### Overview
-
-CAP only speaks up when the network breaks. Most of the time links are fine — yet you still choose whether every write waits for distant replicas or returns fast with lagging copies. PACELC adds that everyday trade-off.
-
-PACELC (Daniel Abadi, 2010) extends CAP: **If Partition (P)**, choose **Availability (A)** or **Consistency (C)**; **Else (E)** — when there is no partition — choose **Latency (L)** or **Consistency (C)**. It explains why many "AP" systems feel fast even when the network is healthy: they skip synchronous wide-area replication to keep response times low.
-
-### What problem it fixes
-
-CAP leaves engineers asking, "We are not partitioned right now — why can't we have strong consistency and 10 ms writes?" PACELC answers: because strong consistency across regions requires waiting for distant replicas, which raises latency. The theorem names the normal-path trade-off that dominates user experience 99.9% of the time.
-
-### What it does
-
-PACELC classifies systems along two axes:
-
-```text
-P happens →  A  or  C
-else      →  L  or  C
-```
-
-Common labels: **PA/EL** (available under partition, low latency otherwise — DynamoDB, Cassandra), **PC/EC** (consistent under partition and otherwise — etcd, ZooKeeper), plus less common **PA/EC** and **PC/EL** combinations.
-
-### How it works — the architecture inside
-
-**PAC — same as CAP during failure**
-
-```mermaid
-flowchart LR
-    Partition[Network partition: A X B] --> Choice{Choice}
-    Choice -->|PA| Avail[Serve requests — may be stale]
-    Choice -->|PC| Cons[Block or reject until quorum]
-```
-
-**ELC — the everyday trade-off**
-
-```mermaid
-flowchart LR
-    Client[Write request] --> Primary[(Primary)]
-    Primary --> R1[(Replica — same region)]
-    Primary --> R2[(Replica — other region)]
-    Primary -->|Option A: wait for R2| Slow[Write ack ~200 ms — strong C]
-    Primary -->|Option B: ack after local| Fast[Write ack ~20 ms — eventual C]
-```
-
-| Write policy | Consistency | Latency (typical) |
-|--------------|-------------|-------------------|
-| Sync all replicas before ack | Strong | High (especially cross-region) |
-| Ack after local / quorum, replicate async | Weaker | Low |
-
-**PACELC classification table**
-
-| Label | On partition | Normal operation | Examples |
-|-------|--------------|------------------|----------|
-| PA/EL | Availability | Low latency | DynamoDB, Cassandra |
-| PA/EC | Availability | Consistency | Rare; some multi-DC SQL with sync |
-| PC/EC | Consistency | Consistency | etcd, ZooKeeper |
-| PC/EL | Consistency | Low latency | Less common hybrid designs |
-
-**CAP vs PACELC**
-
-| Question | CAP | PACELC |
-|----------|-----|--------|
-| When? | During partition only | Partition + steady state |
-| Trade-off | C vs A | C vs A, then C vs L |
-
-### Pitfalls and design tips
-
-- Most user-facing latency complaints come from the **EL** choice, not from partition behavior — measure cross-region replication delay before promising linearizable writes globally.
-- PA/EL is the default for global NoSQL at scale; do not bolt strong consistency onto the same path without accepting multi-hundred-ms writes.
-- Read-your-writes and session consistency are middle grounds between EL and EC — PACELC is a spectrum, not four rigid boxes.
-- Interview framing: "We are PA/EL for product catalog, PC/EC for inventory locks" shows nuanced design, not CAP slogans.
-- Spanner achieves externally strong consistency with TrueTime — it pays the latency and infrastructure cost PACELC says you cannot avoid cheaply.
-
-### Real-world example
-
-A global e-commerce order service in Mumbai writes an order record. **Option A (EC):** wait until replicas in Frankfurt and Virginia acknowledge — user sees spinner for 150–300 ms, but any region read is current. **Option B (EL):** ack when the Mumbai primary commits, replicate asynchronously — user sees confirmation in ~30 ms, but a support agent in Virginia might see the order a second later. Most checkout UIs choose EL; fraud holds or inventory deduction may use a stronger, slower path on the same platform.
-
----
-
-## 4.16 Strong Consistency
-
-### Overview
-
-Strong consistency is like a single shared notebook: once someone writes a new balance, every reader who opens the book next sees that number — never an old one. No one gets a photocopy that has not caught up yet.
-
-Formally, after a write is acknowledged, every subsequent read returns the latest value (or blocks until it can). Replicas do not serve stale data. Achieving this requires coordination — synchronous replication, quorum reads/writes, or a single leader — which increases latency and reduces availability during partitions compared to eventual models.
-
-### What problem it fixes
-
-Financial balances, seat inventory, and lock ownership break if clients read stale values after a successful write. Strong consistency prevents "I deposited money but the ATM still shows zero" and overselling the last airline seat across two data centers.
-
-### What it does
-
-Strong consistency ensures all nodes (or all clients through quorum) agree on the current value before a read succeeds. Writes typically propagate to a majority of replicas or complete a two-phase commit before the client receives success. Reads may contact the leader or a quorum to guarantee freshness.
-
-### How it works — the architecture inside
-
-**Write path with synchronous replication**
-
-```mermaid
-flowchart LR
-    Write[Client write] --> Primary[(Primary)]
-    Primary --> R1[(Replica 1)]
-    Primary --> R2[(Replica 2)]
-    R1 --> Ack[All required replicas ack]
-    R2 --> Ack
-    Ack --> Success[Write success to client]
-    R1 --> Read[Subsequent read]
-    R2 --> Read
-    Read --> Latest[Always latest value]
-```
-
-**Consistency spectrum (this section in context)**
-
-```text
-Stronger ←————————————————————→ Weaker
-Linearizability → Strong → Causal → Eventual
-```
-
-Strong consistency (as commonly used) sits below linearizability (4.19) but above causal and eventual: all users see the latest write, though not every formal linearizability edge case is enforced.
-
-| Aspect | Strong | Eventual (4.17) |
-|--------|--------|-----------------|
-| Stale reads | Not allowed after ack | Allowed temporarily |
-| Write latency | Higher (sync replication) | Lower (async replication) |
-| Availability in partition | May block | Usually stays up |
-| Typical use | Banking, inventory, booking | Likes, counters, CDN |
-
-### Pitfalls and design tips
-
-- "Strong" means different things to different vendors — ask whether reads are linearizable, quorum-based, or merely "no stale after write on same session."
-- Cross-region strong consistency multiplies latency by RTT; keep strongly consistent data in one region or shard by locality.
-- Do not apply strong consistency to entire social graphs or analytics — cost and contention explode.
-- PostgreSQL synchronous replication and MySQL semi-sync are strong-consistency tools at single-primary scale; etcd/Raft for distributed metadata.
-- During partition, CP behavior (rejecting requests) is the price — plan client retries and clear error messages.
-
-### Real-world example
-
-An airline reservation system holds 1 seat left on a flight. Two agents in different cities attempt to book simultaneously. With strong consistency (single authoritative partition or quorum write), the first committed booking wins; the second receives "sold out" immediately — not a confirmation that later gets revoked when replicas sync. The write does not ack until the inventory partition reflects zero remaining seats on all required replicas.
-
----
-
-## 4.17 Eventual Consistency
-
-### Overview
-
-Eventual consistency is like gossip in a large office: when news breaks, not everyone hears it at once, but if nobody adds conflicting rumors, everyone converges on the same story after a while.
-
-If writes stop, all replicas will eventually hold the same value. Until then, different clients may read different versions. Systems accept temporary divergence in exchange for high availability, low write latency, and partition resilience — then use replication, anti-entropy repair, or CRDT merge rules to converge.
-
-### What problem it fixes
-
-Forcing global synchronous updates on every like, view count, or DNS change would make global services slow and fragile. Many data types tolerate brief skew; eventual consistency removes the coordination bottleneck for high write throughput and geographic spread.
-
-### What it does
-
-A write acks when the local node (or a small local quorum) persists the change; background replication propagates updates to other replicas. Reads may hit any replica and return a stale value until gossip, read repair, or Merkle-tree sync aligns copies. Conflict resolution (last-write-wins, vector clocks, CRDTs) handles concurrent writes to the same key.
-
-### How it works — the architecture inside
-
-**Replication timeline**
-
-```mermaid
-flowchart LR
-    W[Write: likes 100 → 101] --> P[Primary = 101]
-    P --> R1[Replica1 = 101]
-    P --> R2[Replica2 = 100]
-    P --> R3[Replica3 = 100]
-    R2 --> Sync[Background replication]
-    R3 --> Sync
-    Sync --> Done[All nodes = 101]
-```
-
-```text
-Immediately:  Primary = 101, Replica2 = 100  →  users see 101 or 100
-After sync:   All = 101                         →  converged
-```
-
-**Trade-off table**
-
-| | Eventual | Strong (4.16) |
-|---|----------|---------------|
-| Write latency | Low | High |
-| Stale reads | Yes, bounded by replication lag | No (after ack) |
-| Partition behavior | Stay available | May reject |
-| Conflict handling | Required | Rare |
-| Examples | DynamoDB (default reads), Cassandra, DNS | etcd, Spanner (strong mode) |
-
-**Convergence mechanisms**
-
-- **Anti-entropy:** periodic background compare-and-repair between replicas (Cassandra repair).
-- **Read repair:** stale read triggers write-back to lagging replica on read path.
-- **CRDTs:** data structures merge without central coordination (collaborative counters, sets).
-
-### Pitfalls and design tips
-
-- Eventual does not mean "never consistent" — measure replication lag (p99) and alert when it exceeds product tolerance.
-- Last-write-wins loses concurrent updates silently — use vector clocks or application merge for carts and collaborative docs.
-- Reading from any replica without `LOCAL_QUORUM` or similar guarantees maximizes staleness — tune consistency level per use case.
-- Counters and likes tolerate eventual; account balances and inventory usually do not — split models within one product.
-- DNS TTL is eventual consistency in practice: changes propagate over seconds to hours depending on cache.
-
-### Real-world example
-
-Amazon DynamoDB accepts a `PutItem` when the storage node in the user's region persists it. A global secondary index or a read in another region may lag by milliseconds to seconds. For a shopping cart, briefly showing an old item count is acceptable; the cart converges after replication. Product pages use the same model for non-critical attributes (review counts) while checkout calls stronger conditional writes on inventory keys.
-
----
-
-## 4.18 Causal Consistency
-
-### Overview
-
-Causal consistency is weaker than a single global timeline but stronger than "everyone eventually agrees": if you saw someone reply to a post, you must have been able to see the post first — cause before effect, never the reverse.
-
-Operations that are causally related (one influenced the other) are seen by all nodes in the same order. Concurrent, unrelated operations may appear in different orders to different viewers. This preserves intuitive ordering for threads, comments, and messages without paying for full linearizability on every read.
-
-### What problem it fixes
-
-Pure eventual consistency allows anomalies like seeing a reply without its parent post. Strong consistency over every social interaction is expensive globally. Causal consistency targets the middle: preserve human-meaningful order where dependencies exist, stay available and faster than strong models.
-
-### What it does
-
-The system tracks causal dependencies (version vectors, Lamport clocks, or "happens-before" metadata). When replicating, it ensures dependent operations are not observed out of order. Unrelated writes can replicate in any order. Reads may still lag the latest value, but never violate cause → effect ordering.
-
-### How it works — the architecture inside
-
-**Causal chain**
-
-```mermaid
-flowchart LR
-    A["Write A — create post"] --> B["Write B — add comment"]
-    B --> C["Write C — reply to comment"]
-```
-
-Every observer must see A before B, and B before C. Two users editing unrelated posts have no ordering requirement between those posts.
-
-**Model comparison**
-
-| Scenario | Strong (4.16) | Eventual (4.17) | Causal |
-|----------|---------------|-----------------|--------|
-| Post then comment | Both visible immediately everywhere | Comment may appear before post | Comment never before post |
-| Latest value always | Yes | No | No |
-| Latency | Highest | Lowest | Medium |
-| Implementation cost | High | Low | Medium (metadata on writes) |
-
-**Write path sketch**
-
-| Model | Ack behavior |
-|-------|--------------|
-| Strong | Wait for sync/quorum |
-| Eventual | Local write, async fan-out |
-| Causal | Local write + attach dependency vector; replicate preserving order |
-
-**Strength ordering**
-
-```text
-Linearizability → Strong → Causal → Eventual
-```
-
-### Pitfalls and design tips
-
-- Causal consistency requires clients or servers to pass context (version vectors) on reads/writes — stateless REST without tokens loses causal guarantees.
-- "Causal+" and session guarantees are practical subsets — many products implement causal order within a user's session first.
-- Do not assume causal order across unrelated microservices unless you propagate trace or vector metadata on every call.
-- MongoDB sessions, COPS, and some geo-replicated research systems expose causal models; most mainstream DBs default to stronger or weaker extremes.
-- Interview tip: chat and comment threads are the canonical causal use case; bank transfers are not.
-
-### Real-world example
-
-In a group chat, Alice sends "Meet at 5?" (message M1). Bob replies "Works for me" (M2), which causally depends on M1. A causal store tags M2 with M1's ID. When Charlie's client syncs, it may not yet show M2, but it will never display M2 without M1 — the UI never shows a floating reply. Unrelated messages from other rooms can arrive in any order without violating the model.
-
----
-
-## 4.19 Linearizability
-
-### Overview
-
-Linearizability is the strictest practical guarantee: once an operation completes, every later operation anywhere in the system must behave as if that write happened at one instant between its start and finish — and everyone reads from that single shared timeline.
-
-From the client's view, all operations execute atomically one after another in real-time order. After a successful write, no read may return the old value. This is stronger than sequential consistency (which ignores real-time ordering) and stronger than causal or eventual models — and it costs latency, coordination, and partition resilience.
-
-### What problem it fixes
-
-Distributed systems without a clear global order produce visible bugs: money deposits that disappear on the next read, leader election double-masters, or stale lock holders. Linearizability gives programmers the illusion of a single copy of data — the same mental model as a non-distributed variable.
-
-### What it does
-
-Each operation has a **linearization point** — the instant it appears to take effect. If operation A completes before B starts in real time, every observer sees A before B. Writes typically require quorum persistence (majority of replicas) before ack; reads contact a quorum or the leader to ensure they see the latest completed write.
-
-### How it works — the architecture inside
-
-**Linearization point**
-
-```text
-Real execution:     Start —————————— End
-Linearizable view:  Start —— X —— End
-                            ↑
-                  effect happens here
-```
-
-**Write then read**
-
-```text
-Initial: X = 10
-Write X = 20 completes at t=100
-Read at t=150 → must return 20 (never 10)
-```
-
-**Quorum write (3 nodes, write quorum = 2)**
-
-```mermaid
-flowchart LR
-    W[Write request] --> N1[Node 1]
-    W --> N2[Node 2]
-    W --> N3[Node 3]
-    N1 --> Majority["2 of 3 ack → success"]
-    N2 --> Majority
-    Majority --> Future[Future reads via quorum see new value]
-```
-
-**How to calculate:**
-
-```text
-Given: N = 3 replicas, write quorum W = 2, read quorum R = 2
-
-Step 1 — overlap rule (read sees a write):
-  R + W > N  →  2 + 2 = 4 > 3 ✓
-  Every read quorum shares ≥1 node with every write quorum
-
-Step 2 — fault tolerance (majority must survive):
-  Max simultaneous failures f = ⌊(N − 1) / 2⌋ = ⌊2/2⌋ = 1
-  Cluster stays writable if W = 2 nodes remain reachable
-
-Step 3 — write latency (single-region):
-  Client waits for slowest of W acks ≈ max(RTT₁, RTT₂) + fsync
-  Example: 2 × 5 ms RTT + 3 ms disk ≈ 8 ms quorum write overhead
-
-Result: 3-node Raft/etcd tolerates 1 failure; linearizable writes need
-        majority (2 of 3) before ack
-
-Sanity check: N = 4 with W = 2 allows split-brain (two partitions of 2
-  each both think they have quorum) — odd N is standard for consensus
-```
-
-**Comparison with related models**
-
-| Model | Global order | Real-time order | Stale read after write |
-|-------|--------------|-----------------|------------------------|
-| Linearizability | Yes | Yes | Forbidden |
-| Sequential consistency | Yes | No | Possible |
-| Causal (4.18) | Partial (causal deps) | Partial | Possible |
-| Eventual (4.17) | No | No | Allowed temporarily |
-
-**Sequential but not linearizable example**
-
-Write X=1 completes at t=10. Read at t=20 returns X=0. A global order might still exist if the read is ordered before the write in that artificial sequence — but real-time order is violated, so this is not linearizable.
-
-**Implementation techniques**
-
-- Raft / Paxos consensus on a replicated log
-- Majority quorums for read and write (etcd, ZooKeeper)
-- Leader-based replication with sync follower ack
-- Google Spanner: TrueTime + two-phase commit for external linearizability across shards
-
-### Pitfalls and design tips
-
-- Linearizability is per object (register) unless you use transactional protocols across keys — "linearizable system" often means linearizable individual operations.
-- Cross-region linearizability pays RTT on every write — reserve for locks, leader election, metadata, not bulk analytics.
-- etcd guarantees linearizable reads when reading through the Raft leader; reading followers without lease may break linearizability.
-- Do not confuse with serializable SQL isolation — serializable is about transaction interleaving; linearizability is about real-time visibility of individual ops.
-- Default choice: strong coordination service (etcd/Consul) for cluster brain; linearizable user data only where regulation or correctness demands it.
-
-### Real-world example
-
-etcd backs Kubernetes leader election and config storage. When a controller writes a new `Lease` or updates a `Pod` status, Raft commits the entry on a majority before the API returns success. Another controller reading through the leader immediately sees that write — no stale leader, no double scheduler acting on old state. The cost is write latency tied to disk fsync and network RTT within the cluster, which is acceptable for control-plane metadata but not for million-RPS user feeds.
-
----
-
-## 4.20 Backpressure
+## 4.5 Backpressure
 
 ### Overview
 
@@ -1734,7 +1739,8 @@ Apache Flink applies credit-based flow control between operators: a downstream t
 
 ---
 
-## 4.21 Graceful Degradation
+
+## 4.6 Graceful Degradation
 
 ### Overview
 
@@ -1849,7 +1855,8 @@ When Amazon's product recommendation service latency spikes, product detail and 
 
 ---
 
-## 4.22 Capacity Planning
+
+## 4.7 Capacity Planning
 
 ### Overview
 
@@ -1935,7 +1942,8 @@ Meta capacity teams forecast major events (New Year's, election night) by combin
 
 ---
 
-## 4.23 Bottleneck Analysis
+
+## 4.8 Bottleneck Analysis
 
 ### Overview
 

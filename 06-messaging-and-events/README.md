@@ -8,32 +8,21 @@
 
 | # | Sub-topic |
 |---|-----------|
-| 6.1 | [Message Queues](#61-message-queues) |
-| 6.2 | [Publish Subscribe](#62-publish-subscribe) |
-| 6.3 | [Event Streaming](#63-event-streaming) |
-| 6.4 | [Event Driven Architecture](#64-event-driven-architecture) |
-| 6.5 | [Kafka](#65-kafka) |
-| 6.6 | [Kafka Partitions](#66-kafka-partitions) |
-| 6.7 | [Kafka Consumer Groups](#67-kafka-consumer-groups) |
-| 6.8 | [RabbitMQ](#68-rabbitmq) |
-| 6.9 | [ActiveMQ](#69-activemq) |
-| 6.10 | [Pulsar](#610-pulsar) |
-| 6.11 | [Ordering Guarantees](#611-ordering-guarantees) |
-| 6.12 | [At Most Once Delivery](#612-at-most-once-delivery) |
-| 6.13 | [At Least Once Delivery](#613-at-least-once-delivery) |
-| 6.14 | [Exactly Once Delivery](#614-exactly-once-delivery) |
-| 6.15 | [Dead Letter Queue](#615-dead-letter-queue) |
-| 6.16 | [Retry Queue](#616-retry-queue) |
-| 6.17 | [Event Sourcing](#617-event-sourcing) |
-| 6.18 | [CQRS](#618-cqrs) |
-| 6.19 | [Change Data Capture (CDC)](#619-change-data-capture-cdc) |
-| 6.20 | [Event Replay](#620-event-replay) |
-| 6.21 | [Event Versioning](#621-event-versioning) |
-| 6.22 | [Schema Registry](#622-schema-registry) |
+| 6.1 | [Messaging Paradigms](#61-messaging-paradigms) |
+| 6.2 | [Kafka](#62-kafka) |
+| 6.3 | [Message Brokers: RabbitMQ, ActiveMQ & Pulsar](#63-message-brokers-rabbitmq-activemq-pulsar) |
+| 6.4 | [Ordering Guarantees](#64-ordering-guarantees) |
+| 6.5 | [Delivery Semantics](#65-delivery-semantics) |
+| 6.6 | [Dead Letter Queue & Retry Queue](#66-dead-letter-queue-retry-queue) |
+| 6.7 | [Event Sourcing & CQRS](#67-event-sourcing-cqrs) |
+| 6.8 | [Change Data Capture (CDC)](#68-change-data-capture-cdc) |
+| 6.9 | [Event Replay](#69-event-replay) |
+| 6.10 | [Event Versioning & Schema Registry](#610-event-versioning-schema-registry) |
 
 ---
 
-## 6.1 Message Queues
+
+## 6.1 Messaging Paradigms
 
 ### Overview
 
@@ -154,9 +143,10 @@ The queue absorbed the spike during a flash sale and kept checkout fast even whe
 
 ---
 
-## 6.2 Publish Subscribe
 
-### Overview
+### Publish subscribe
+
+#### Overview
 
 Think of a radio station. The DJ broadcasts on one frequency; anyone tuned in hears the same show — the DJ does not know who is listening, and listeners do not need to know who is on air. **Publish-subscribe (pub/sub)** applies that pattern to software: publishers emit events to a **topic**, and every subscribed consumer receives a copy.
 
@@ -164,7 +154,7 @@ Technically, pub/sub decouples producers from consumers through a **broker** and
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 Point-to-point wiring does not scale when many services care about the same event:
 
@@ -192,7 +182,7 @@ Adding a Fraud Service means subscribing to the topic — the Order Service stay
 
 ---
 
-### What it does
+#### What it does
 
 | Component | Role |
 |-----------|------|
@@ -228,7 +218,7 @@ Adding a Fraud Service means subscribing to the topic — the Order Service stay
 
 ---
 
-### How it works — the architecture inside
+#### How it works — the architecture inside
 
 ```text
 Step 1: Publisher creates event
@@ -268,7 +258,7 @@ Publisher sends once → broker delivers independent copies to Subscriber A, B, 
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **Pub/sub is not a task queue.** If only one worker should process each payment, use a queue — not a topic with competing subscribers on the same subscription.
 - **Expect eventual consistency.** Subscribers update at different speeds; do not assume all downstream views are synchronized immediately after publish.
@@ -278,7 +268,7 @@ Publisher sends once → broker delivers independent copies to Subscriber A, B, 
 
 ---
 
-### Real-world example
+#### Real-world example
 
 **Shopify-style order event fan-out.**
 
@@ -293,9 +283,10 @@ Each service processes at its own pace; a slow analytics pipeline does not block
 
 ---
 
-## 6.3 Event Streaming
 
-### Overview
+### Event streaming
+
+#### Overview
 
 A security camera records everything to a DVR — you can watch live or rewind to any moment later. **Event streaming** treats business activity the same way: events are appended to a durable log as they happen, and many consumers can read live or replay history.
 
@@ -303,7 +294,7 @@ Technically, event streaming is a continuous, **append-only log** of immutable f
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 The traditional pattern — write to a database, let consumers poll — creates load, delay, and tight coupling:
 
@@ -321,7 +312,7 @@ Benefits: millisecond-to-second latency, decoupled systems, horizontal scale via
 
 ---
 
-### What it does
+#### What it does
 
 An **event** is an immutable record of something that already happened:
 
@@ -358,7 +349,7 @@ An **event** is an immutable record of something that already happened:
 
 ---
 
-### How it works — the architecture inside
+#### How it works — the architecture inside
 
 ```mermaid
 flowchart LR
@@ -391,7 +382,7 @@ Consumer: "I processed through offset 1" → next read starts at offset 2
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **Retention is storage cost.** Size topics for expected volume × retention window; use tiered storage (Pulsar) or compaction (Kafka) for key-value changelog topics.
 - **Schema drift breaks consumers.** Use a schema registry and version events before dozens of teams depend on implicit JSON shapes.
@@ -401,7 +392,7 @@ Consumer: "I processed through offset 1" → next read starts at offset 2
 
 ---
 
-### Real-world example
+#### Real-world example
 
 **LinkedIn activity pipeline (Kafka's origin use case).**
 
@@ -415,9 +406,10 @@ The log is the system of record for "what happened"; consumers are disposable vi
 
 ---
 
-## 6.4 Event Driven Architecture
 
-### Overview
+### Event-driven architecture
+
+#### Overview
 
 Instead of one service calling the next in a rigid chain — like dominoes that all fall when one tips — **event-driven architecture (EDA)** lets each service react when it hears news it cares about. The Order Service announces "order created"; Payment, Email, and Inventory each decide what to do, without the Order Service knowing their addresses.
 
@@ -425,7 +417,7 @@ Technically, EDA is an architectural style where services communicate through **
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 Synchronous orchestration chains fail together:
 
@@ -445,7 +437,7 @@ The order API responds after persisting and publishing; downstream services catc
 
 ---
 
-### What it does
+#### What it does
 
 | Component | Role |
 |-----------|------|
@@ -478,7 +470,7 @@ Events are **immutable**, **past-tense**, and **time-ordered**:
 
 ---
 
-### How it works — the architecture inside
+#### How it works — the architecture inside
 
 ```text
 Step 1: User creates order
@@ -513,7 +505,7 @@ flowchart LR
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **Choreography without tracing is opaque.** Propagate `correlationId` and `causationId` on every event; use OpenTelemetry across consumers.
 - **Do not publish before commit.** Use the transaction outbox pattern so a DB rollback does not leave orphan events in the bus.
@@ -523,7 +515,7 @@ flowchart LR
 
 ---
 
-### Real-world example
+#### Real-world example
 
 **Uber trip lifecycle (choreographed EDA).**
 
@@ -537,7 +529,8 @@ No central trip orchestrator owns the entire workflow — each team owns its rea
 
 ---
 
-## 6.5 Kafka
+
+## 6.2 Kafka
 
 ### Overview
 
@@ -663,9 +656,10 @@ Kafka is the durable spine; consumers are replaceable projections over the log.
 
 ---
 
-## 6.6 Kafka Partitions
 
-### Overview
+### Kafka partitions
+
+#### Overview
 
 A supermarket checkout has multiple lanes — each lane serves customers in the order they arrived, but lane 3 does not know whether lane 1's customer came first. **Kafka partitions** are those lanes: parallel pipelines inside one topic, each preserving strict order internally while the topic as a whole scales out.
 
@@ -673,7 +667,7 @@ Technically, a partition is an ordered, append-only log segment on a broker. Pro
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 A single log serializes all writes and reads — one partition caps throughput. Splitting a topic into N partitions lets N consumers in a group process in parallel while still giving per-entity ordering when events share a key.
 
@@ -681,7 +675,7 @@ Without partition keys, related events may scatter across partitions and arrive 
 
 ---
 
-### What it does
+#### What it does
 
 ```text
 Orders Topic → Partition 0 | Partition 1 | Partition 2
@@ -701,7 +695,7 @@ Order 103 (key=103) → P2
 
 ---
 
-### How it works — the architecture inside
+#### How it works — the architecture inside
 
 ```mermaid
 flowchart LR
@@ -733,7 +727,7 @@ Too few partitions → throughput ceiling. Too many → metadata overhead, longe
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **Choose business IDs as keys** — `orderId`, `accountId`, `userId` — not random UUIDs if order matters.
 - **Null keys** for throughput-sensitive, order-agnostic telemetry only.
@@ -743,7 +737,7 @@ Too few partitions → throughput ceiling. Too many → metadata overhead, longe
 
 ---
 
-### Real-world example
+#### Real-world example
 
 **Stripe-style payment events.**
 
@@ -751,9 +745,10 @@ Payment events for `account_abc` use `account_abc` as the Kafka key. `ChargeCrea
 
 ---
 
-## 6.7 Kafka Consumer Groups
 
-### Overview
+### Kafka consumer groups
+
+#### Overview
 
 A relay race team hands off batons so each runner covers one leg — no two runners hold the same baton at once, but multiple teams can run the same course independently. A **consumer group** is that team for Kafka: cooperating consumers split partitions so each message is processed once per group, while other groups read the full stream separately.
 
@@ -761,7 +756,7 @@ Technically, consumers sharing a `group.id` coordinate partition assignment via 
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 A single consumer on a high-volume topic becomes a bottleneck. Multiple uncoordinated consumers on the same topic would duplicate work. Consumer groups provide **load-balanced, exactly-once-per-group** consumption with horizontal scale bounded by partition count.
 
@@ -769,7 +764,7 @@ Separately, different applications (analytics vs billing vs search) need the **s
 
 ---
 
-### What it does
+#### What it does
 
 **Within one group:**
 
@@ -800,7 +795,7 @@ Each group maintains its own offset commits — fan-out with independent progres
 
 ---
 
-### How it works — the architecture inside
+#### How it works — the architecture inside
 
 ```mermaid
 flowchart LR
@@ -843,7 +838,7 @@ Committing before process → at-most-once risk. Auto-commit with long processin
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **`max.poll.interval.ms` too low** — slow handlers trigger rebalance loops; consumer never makes progress.
 - **`enable.auto.commit=true` with side effects** — offset may commit before processing finishes → message loss on crash.
@@ -853,7 +848,7 @@ Committing before process → at-most-once risk. Auto-commit with long processin
 
 ---
 
-### Real-world example
+#### Real-world example
 
 **DoorDash order pipeline — two groups on `order-events`.**
 
@@ -865,7 +860,8 @@ Same topic, two purposes, zero offset collision.
 
 ---
 
-## 6.8 RabbitMQ
+
+## 6.3 Message Brokers: RabbitMQ, ActiveMQ & Pulsar
 
 ### Overview
 
@@ -985,9 +981,10 @@ Exchanges decouple "what happened" from "which workers care" without the invoice
 
 ---
 
-## 6.9 ActiveMQ
 
-### Overview
+### ActiveMQ
+
+#### Overview
 
 ActiveMQ is the enterprise Java team's long-distance operator — it speaks many protocols (JMS, AMQP, MQTT, STOMP) and connects legacy mainframes, Spring apps, and mobile clients through one broker. If your organization standardizes on **JMS** for messaging, ActiveMQ is often already in the data center.
 
@@ -995,7 +992,7 @@ Technically, **Apache ActiveMQ** is a multi-protocol message broker. The classic
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 Enterprise Java systems historically integrated through JMS, not raw HTTP or Kafka. ActiveMQ provides:
 
@@ -1008,7 +1005,7 @@ It bridges brownfield integration — insurance claims, banking workflows, ERP c
 
 ---
 
-### What it does
+#### What it does
 
 | Component | Role |
 |-----------|------|
@@ -1038,7 +1035,7 @@ It bridges brownfield integration — insurance claims, banking workflows, ERP c
 
 ---
 
-### How it works — the architecture inside
+#### How it works — the architecture inside
 
 ```mermaid
 flowchart LR
@@ -1076,7 +1073,7 @@ Correlation ID in message headers ties reply to request.
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **New Java projects → Artemis**, not Classic — better performance and supported clustering path.
 - **ObjectMessage** ties you to Java serialization — prefer JSON/TextMessage for cross-language services.
@@ -1086,7 +1083,7 @@ Correlation ID in message headers ties reply to request.
 
 ---
 
-### Real-world example
+#### Real-world example
 
 **Bank payment settlement (JMS queue).**
 
@@ -1100,9 +1097,10 @@ JMS gives the bank a standardized API across vendors; ActiveMQ is the on-prem br
 
 ---
 
-## 6.10 Pulsar
 
-### Overview
+### Apache Pulsar
+
+#### Overview
 
 Most messaging systems weld the waiter and the pantry into one role — take orders and store food in the same kitchen. **Apache Pulsar** splits them: stateless **brokers** serve clients while **Apache BookKeeper** stores message ledgers separately. You can add more waiters or more pantry space independently.
 
@@ -1110,7 +1108,7 @@ Technically, Pulsar is a distributed pub/sub and streaming platform (originated 
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 Kafka couples storage to broker disks — scaling read throughput often means copying partition data to more brokers. Pulsar decouples serving from storage:
 
@@ -1124,7 +1122,7 @@ Teams needing multi-region replication without MirrorMaker-style plumbing, or Sa
 
 ---
 
-### What it does
+#### What it does
 
 | Component | Role |
 |-----------|------|
@@ -1152,7 +1150,7 @@ Teams needing multi-region replication without MirrorMaker-style plumbing, or Sa
 
 ---
 
-### How it works — the architecture inside
+#### How it works — the architecture inside
 
 ```mermaid
 flowchart LR
@@ -1175,7 +1173,7 @@ Producer → topic → broker → BookKeeper ledger → consumer ACK → cursor 
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **More moving parts than Kafka** — brokers, BookKeeper bookies, ZooKeeper or etcd metadata, optional tiered storage — staff accordingly.
 - **Smaller connector ecosystem** than Kafka — verify Kafka Connect equivalents exist for your sources.
@@ -1185,7 +1183,7 @@ Producer → topic → broker → BookKeeper ledger → consumer ACK → cursor 
 
 ---
 
-### Real-world example
+#### Real-world example
 
 **Yahoo's original Pulsar deployment (documented design goal).**
 
@@ -1195,7 +1193,8 @@ The split architecture let Yahoo scale broker pools for read-heavy fan-out witho
 
 ---
 
-## 6.11 Ordering Guarantees
+
+## 6.4 Ordering Guarantees
 
 ### Overview
 
@@ -1322,7 +1321,8 @@ The key is not optional decoration — it is the ordering contract.
 
 ---
 
-## 6.12 At Most Once Delivery
+
+## 6.5 Delivery Semantics
 
 ### Overview
 
@@ -1427,9 +1427,11 @@ Restart from offset 11 → offset 10 never processed
 
 Speed and volume win; a missing click rarely changes a merchandising decision.
 
-## 6.13 At Least Once Delivery
+---
 
-### Overview
+### At-least-once delivery
+
+#### Overview
 
 Picture a postal worker who will not throw away your letter until you sign the delivery receipt. If you sign, the letter leaves their bag. If you crash on the couch before signing, they come back tomorrow — maybe with the same letter again. That is at-least-once delivery: the broker keeps the message until the consumer confirms success, so nothing is lost, but the same work might arrive twice.
 
@@ -1437,7 +1439,7 @@ Technically, **at-least-once delivery** means a message is delivered **one or mo
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 Distributed messaging fails at every step: producers disconnect, brokers restart, consumers crash mid-processing. Without a durability + ACK contract, messages vanish silently — orders never ship, payments never settle.
 
@@ -1456,7 +1458,7 @@ The trade-off is explicit: reliability over duplicate-freedom.
 
 ---
 
-### What it does
+#### What it does
 
 At-least-once delivery provides:
 
@@ -1468,7 +1470,7 @@ It does **not** make your business logic duplicate-safe. That is the application
 
 ---
 
-### How it works — the architecture inside
+#### How it works — the architecture inside
 
 ```text
 Step 1: Producer sends message
@@ -1523,7 +1525,7 @@ Offset 10: read → process → crash (no commit) → restart → read offset 10
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **Default for production** — at-least-once is the standard choice for orders, payments, and inventory; at-most-once is only for metrics and logs where loss is acceptable.
 - **Commit offset after processing** (Kafka) — never auto-commit before business logic completes.
@@ -1534,15 +1536,16 @@ Offset 10: read → process → crash (no commit) → restart → read offset 10
 
 ---
 
-### Real-world example
+#### Real-world example
 
 An e-commerce **Inventory Service** consumes `OrderCreated` from a queue. It decrements stock and ACKs. The JVM runs out of memory after the DB update but before ACK. RabbitMQ redelivers the message on restart. Without an idempotency check on `orderId`, stock drops twice. With `processed_orders(order_id UNIQUE)`, the second delivery is a no-op — the order is fulfilled exactly once in business terms while the broker delivered at-least-once.
 
 ---
 
-## 6.14 Exactly Once Delivery
 
-### Overview
+### Exactly-once delivery
+
+#### Overview
 
 Imagine a bank teller who must move money exactly once — not lose the transfer, and not run it twice if the power flickers. That is the user-facing promise of exactly-once: each message is processed once and only once. In practice, the teller's ledger uses duplicate-transaction IDs, because true atomicity across separate buildings (database and message broker) is extraordinarily hard.
 
@@ -1550,7 +1553,7 @@ Technically, **exactly-once delivery** means a message is **never lost** and **n
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 The classic failure: consumer receives message → updates database → crashes before ACK → broker redelivers → database updated twice.
 
@@ -1563,7 +1566,7 @@ Exactly-once (or equivalent behavior) fixes **duplicate side effects** in domain
 
 ---
 
-### What it does
+#### What it does
 
 Exactly-once semantics aim to unify two operations into one atomic unit:
 
@@ -1581,7 +1584,7 @@ Mechanisms include:
 
 ---
 
-### How it works — the architecture inside
+#### How it works — the architecture inside
 
 #### The core challenge
 
@@ -1652,7 +1655,7 @@ flowchart LR
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **Pragmatic default:** at-least-once + `UNIQUE` idempotency key on the consumer — many teams over-engineer Kafka transactions when a dedup table suffices.
 - **EOS scope is bounded** — it covers Kafka producer → consumer within a transactional topology, not your payment gateway or email provider.
@@ -1662,13 +1665,14 @@ flowchart LR
 
 ---
 
-### Real-world example
+#### Real-world example
 
 A **payment service** uses Kafka EOS in a stream topology: read `PaymentRequested`, write `PaymentCaptured` and commit the consumer offset in one transaction. Separately, the REST callback to a card processor uses an idempotency key `payment_id` — because Kafka EOS does not span that HTTP boundary. The combination achieves exactly-once **effect** for the business: one charge, one ledger entry, one downstream event.
 
 ---
 
-## 6.15 Dead Letter Queue
+
+## 6.6 Dead Letter Queue & Retry Queue
 
 ### Overview
 
@@ -1803,9 +1807,10 @@ An **Inventory Service** consumes order events. The inventory database is down f
 
 ---
 
-## 6.16 Retry Queue
 
-### Overview
+### Retry queue
+
+#### Overview
 
 When a restaurant kitchen burns a dish, the waiter does not immediately shove the same order back through the line — they wait a minute, let the grill cool, then retry. A **retry queue** does the same for messages: failed deliveries wait with **backoff** before re-entering the main queue, giving downstream systems time to recover.
 
@@ -1813,7 +1818,7 @@ Technically, a **retry queue** is an intermediate holding area (or delayed visib
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 **Without delay:**
 
@@ -1831,7 +1836,7 @@ Message → consumer → failure → retry queue → (wait) → main queue → c
 
 ---
 
-### What it does
+#### What it does
 
 A retry queue:
 
@@ -1848,7 +1853,7 @@ A retry queue:
 
 ---
 
-### How it works — the architecture inside
+#### How it works — the architecture inside
 
 ```text
 Main queue → consumer → success → ACK
@@ -1932,7 +1937,7 @@ Main → fail → retry-10s → fail → retry-1m → fail → retry-5m → fail
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **Exponential backoff + jitter + max retries + DLQ** — production default trio.
 - **Never infinite retries** — corrupted JSON will never succeed on attempt 100.
@@ -1943,13 +1948,14 @@ Main → fail → retry-10s → fail → retry-1m → fail → retry-5m → fail
 
 ---
 
-### Real-world example
+#### Real-world example
 
 An order processor hits a **rate-limited inventory API** (HTTP 429). The handler classifies 429 as retryable, publishes to `orders-retry` with `retryCount = 1` and `retry_at = now + 10s`. A scheduler republishes to the main topic when due. On attempt 3 the API recovers; processing succeeds. A separate message with invalid JSON goes straight to DLQ — no retry queue — because retry will never fix malformed data.
 
 ---
 
-## 6.17 Event Sourcing
+
+## 6.7 Event Sourcing & CQRS
 
 ### Overview
 
@@ -2087,9 +2093,10 @@ An **e-commerce order** stream: `OrderCreated` → `PaymentCompleted` → `Order
 
 ---
 
-## 6.18 CQRS
 
-### Overview
+### CQRS
+
+#### Overview
 
 A restaurant separates the kitchen (where orders are cooked and recipes enforced) from the menu board and waiter scripts (optimized for fast reading). **CQRS** does the same for software: **commands** change state through a write model; **queries** read from a separate read model tuned for the questions users ask.
 
@@ -2097,7 +2104,7 @@ Technically, **CQRS (Command Query Responsibility Segregation)** splits write an
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 Most applications are **read-heavy**: Amazon might see ~10M product views/day vs ~10K updates/day. One schema serving both forces complex joins on the read path and transactional contention on the write path. Heavy `SELECT` analytics queries slow `INSERT`/`UPDATE` on the same tables.
 
@@ -2105,7 +2112,7 @@ CQRS fixes **read/write interference** and enables **independent scaling** of ea
 
 ---
 
-### What it does
+#### What it does
 
 CQRS provides:
 
@@ -2118,7 +2125,7 @@ CQRS does **not** require event sourcing — but the two pair naturally when the
 
 ---
 
-### How it works — the architecture inside
+#### How it works — the architecture inside
 
 **Traditional:**
 
@@ -2195,7 +2202,7 @@ Projectors must be **idempotent** — same event twice must not double-count.
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **Try read replicas before full CQRS** — many apps do not need separate projection pipelines.
 - **Debugging is harder** — read anomaly → trace projector → find source event.
@@ -2205,13 +2212,14 @@ Projectors must be **idempotent** — same event twice must not double-count.
 
 ---
 
-### Real-world example
+#### Real-world example
 
 An **e-commerce platform** uses a normalized write DB for `PlaceOrder` commands (inventory reservation, payment authorization). A projector listens to `OrderCreated` and `OrderShipped` events and maintains a denormalized `order_summary_view` plus an Elasticsearch product catalog. Product search serves 50k QPS from Elasticsearch; writes stay at 200 TPS on PostgreSQL — each side scaled independently.
 
 ---
 
-## 6.19 Change Data Capture (CDC)
+
+## 6.8 Change Data Capture (CDC)
 
 ### Overview
 
@@ -2331,7 +2339,8 @@ A product catalog lives in **PostgreSQL**. On each `INSERT`/`UPDATE` to `product
 
 ---
 
-## 6.20 Event Replay
+
+## 6.9 Event Replay
 
 ### Overview
 
@@ -2462,7 +2471,8 @@ A **recommendation service** launches six months after the order platform. Engin
 
 ---
 
-## 6.21 Event Versioning
+
+## 6.10 Event Versioning & Schema Registry
 
 ### Overview
 
@@ -2596,9 +2606,10 @@ A shared Kafka topic `users` carries `UserCreated` events. Team adds optional `m
 
 ---
 
-## 6.22 Schema Registry
 
-### Overview
+### Schema registry
+
+#### Overview
 
 A construction site shares one official blueprint binder — electricians and plumbers pull the same revision, and the inspector rejects plans that would not fit existing walls. A **schema registry** is that binder for messages: producers register schemas, consumers fetch by ID, and incompatible changes are rejected before they hit production.
 
@@ -2606,7 +2617,7 @@ Technically, a **schema registry** is a centralized service that stores, version
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 **Without registry:**
 
@@ -2620,7 +2631,7 @@ Multiple teams, evolving schemas, and no central contract → production crashes
 
 ---
 
-### What it does
+#### What it does
 
 A schema registry:
 
@@ -2634,7 +2645,7 @@ Popular implementations: **Confluent Schema Registry**, **AWS Glue Schema Regist
 
 ---
 
-### How it works — the architecture inside
+#### How it works — the architecture inside
 
 ```mermaid
 flowchart LR
@@ -2710,7 +2721,7 @@ Naming strategies: `{topic}-value`, `{topic}-key`, or custom record name.
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **Registry availability** — consumers cache schemas, but new deploys need registry up; run HA cluster.
 - **BACKWARD by default** — deploy consumers before producers when adding fields.
@@ -2721,7 +2732,7 @@ Naming strategies: `{topic}-value`, `{topic}-key`, or custom record name.
 
 ---
 
-### Real-world example
+#### Real-world example
 
 An **Order Service** publishes `OrderCreated` as Avro to Kafka. V1 schema has `orderId` and `amount`. Product adds `customerId` — engineer registers V2 with `customerId` default `0`. Confluent Schema Registry validates BACKWARD compatibility and assigns ID 16. Producers immediately send ID 16; old consumers still read messages (ignore or default `customerId`). New consumers deployed first use `customerId` for partitioning downstream fulfillment — no coordinated big-bang deploy, no topic wipe.
 

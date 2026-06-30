@@ -10,15 +10,9 @@
 |---|-----------|
 | 12.1 | [High Availability](#121-high-availability) |
 | 12.2 | [Failure Detection](#122-failure-detection) |
-| 12.3 | [Active Active](#123-active-active) |
-| 12.4 | [Active Passive](#124-active-passive) |
-| 12.5 | [Backup Strategy](#125-backup-strategy) |
-| 12.6 | [Restore Strategy](#126-restore-strategy) |
-| 12.7 | [RPO](#127-rpo) |
-| 12.8 | [RTO](#128-rto) |
-| 12.9 | [Disaster Recovery](#129-disaster-recovery) |
-| 12.10 | [Chaos Engineering](#1210-chaos-engineering) |
-| 12.11 | [Fault Injection](#1211-fault-injection) |
+| 12.3 | [Active-Active & Active-Passive](#123-active-active-active-passive) |
+| 12.4 | [Backup, Restore, RPO, RTO & Disaster Recovery](#124-backup-restore-rpo-rto-disaster-recovery) |
+| 12.5 | [Chaos Engineering & Fault Injection](#125-chaos-engineering-fault-injection) |
 
 ---
 
@@ -28,7 +22,7 @@
 
 Picture a hospital that cannot afford to lose power during surgery — so it runs on two independent electrical feeds and switches automatically if one fails. **High availability (HA)** is the same idea for software: when a server, disk, or network link fails, users should barely notice because spare capacity takes over.
 
-Technically, HA means eliminating **single points of failure (SPOFs)** through **redundancy**, detecting failures quickly ([12.2](#122-failure-detection)), and **failing over** to healthy components — often in seconds. It targets **component-level** outages inside a site; catastrophic regional loss needs disaster recovery ([12.9](#129-disaster-recovery)). Common patterns are **active-active** ([12.3](#123-active-active)) and **active-passive** ([12.4](#124-active-passive)).
+Technically, HA means eliminating **single points of failure (SPOFs)** through **redundancy**, detecting failures quickly ([12.2](#122-failure-detection)), and **failing over** to healthy components — often in seconds. It targets **component-level** outages inside a site; catastrophic regional loss needs disaster recovery ([12.4 â€” Disaster recovery](#disaster-recovery)). Common patterns are **active-active** ([12.3](#123-active-active-active-passive)) and **active-passive** ([12.3 â€” Active-passive](#active-passive)).
 
 ---
 
@@ -138,7 +132,7 @@ flowchart LR
 
 - **Default for production services** — any tier with revenue or SLA exposure needs redundancy at compute, data, and network layers.
 - **HA ≠ fault tolerance** — HA accepts brief blips (seconds); fault tolerance masks hardware faults with duplicate execution (Tandem, Stratus). Interviewers often conflate them.
-- **HA does not replace DR** — multi-AZ survives AZ failure, not regional outage or ransomware; pair HA with backups and DR ([12.9](#129-disaster-recovery)).
+- **HA does not replace DR** — multi-AZ survives AZ failure, not regional outage or ransomware; pair HA with backups and DR ([12.4 â€” Disaster recovery](#disaster-recovery)).
 - **N+1 for stateless tiers** — run at least one extra instance so losing one node does not drop below required capacity; size for peak load on N−1 nodes.
 
 #### Common mistakes
@@ -164,7 +158,6 @@ flowchart LR
 **Outcome:** Component failures become brief capacity dips or sub-minute failovers instead of full outages — **every layer** (compute, LB, DB, cache) has an automated recovery path.
 
 ---
-
 
 ## 12.2 Failure Detection
 
@@ -306,8 +299,7 @@ Users see errors only during the gap between failure and ready replacement.
 
 ---
 
-
-## 12.3 Active Active
+## 12.3 Active-Active & Active-Passive
 
 ### Overview
 
@@ -354,7 +346,7 @@ Requires **shared or partitioned data** so requests are not tied to one machine'
 | **Complexity** | Higher | Lower |
 | **Best for** | Scale + resilience | Simpler HA, strong consistency |
 
-Active-passive is covered in [12.4](#124-active-passive). Active-active does **not** replace backups ([12.5](#125-backup-strategy)).
+Active-passive is covered in [12.3 â€” Active-passive](#active-passive). Active-active does **not** replace backups ([12.4](#124-backup-restore-rpo-rto-disaster-recovery)).
 
 ---
 
@@ -429,7 +421,7 @@ An API runs three identical pods behind nginx. Traffic splits ~33% each. Pod B O
 
 - **Default for new stateless APIs:** active-active behind LB + shared DB; avoid sticky sessions unless legacy constraint forces it.
 - Use when you need **horizontal scale and resilience** together — one node loss should not stop the service.
-- Prefer **active-passive** ([12.4](#124-active-passive)) when single-writer consistency is simpler than coordinating multiple live writers.
+- Prefer **active-passive** ([12.3 â€” Active-passive](#active-passive)) when single-writer consistency is simpler than coordinating multiple live writers.
 
 #### Common mistakes
 
@@ -450,16 +442,15 @@ An API runs three identical pods behind nginx. Traffic splits ~33% each. Pod B O
 
 **Naive failure:** A single gateway with local session state. Terminating that instance logs out users and drops in-flight requests until manual recovery.
 
-**How active-active fixed it:** Netflix's Zuul API gateway runs as a fleet of stateless instances behind Eureka service discovery. Every instance handles traffic; no node is "standby." Session state lives in external stores, not local memory. When an instance is terminated (including by Chaos Monkey — see [12.10](#1210-chaos-engineering)), Eureka deregisters it within one heartbeat interval and remaining instances absorb the load.
+**How active-active fixed it:** Netflix's Zuul API gateway runs as a fleet of stateless instances behind Eureka service discovery. Every instance handles traffic; no node is "standby." Session state lives in external stores, not local memory. When an instance is terminated (including by Chaos Monkey — see [12.5](#125-chaos-engineering-fault-injection)), Eureka deregisters it within one heartbeat interval and remaining instances absorb the load.
 
 **Outcome:** Instance loss becomes a capacity blip, not an outage — the canonical active-active pattern: **stateless compute + externalized state**.
 
 ---
 
+### Active-passive
 
-## 12.4 Active Passive
-
-### Overview
+#### Overview
 
 Picture a pilot and co-pilot: one flies, the other monitors instruments and takes the controls instantly if the pilot becomes incapacitated. **Active-passive** HA assigns **one node to serve all traffic** while a **standby** stays synchronized and ready to promote on failure.
 
@@ -467,7 +458,7 @@ Technically, the active node handles reads and writes; the passive replica recei
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 You need HA without coordinating writes across multiple live nodes:
 
@@ -479,7 +470,7 @@ Acceptable when failover takes seconds (not milliseconds) and standby capacity s
 
 ---
 
-### What it does
+#### What it does
 
 **Normal operation** — all traffic → active node; passive stays in sync.
 
@@ -491,7 +482,7 @@ Acceptable when failover takes seconds (not milliseconds) and standby capacity s
 
 ---
 
-### Compared to the alternative
+#### Compared to the alternative
 
 | | Active-passive | Active-active |
 |---|----------------|---------------|
@@ -503,7 +494,7 @@ Acceptable when failover takes seconds (not milliseconds) and standby capacity s
 
 ---
 
-### How it works — replication and promotion
+#### How it works — replication and promotion
 
 ```mermaid
 flowchart LR
@@ -538,7 +529,7 @@ flowchart LR
 5. Clients retry; service resumes (RTO window)
 ```
 
-Replication lag at failover moment defines actual **RPO** ([12.7](#127-rpo)).
+Replication lag at failover moment defines actual **RPO** ([12.4 â€” RPO](#rpo)).
 
 #### Worked example — Postgres primary with standby
 
@@ -551,7 +542,7 @@ Replication lag at failover moment defines actual **RPO** ([12.7](#127-rpo)).
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 #### When to use (and when not to)
 
@@ -571,7 +562,7 @@ Replication lag at failover moment defines actual **RPO** ([12.7](#127-rpo)).
 
 ---
 
-### Real-world example: Postgres Patroni failover
+#### Real-world example: Postgres Patroni failover
 
 **Problem:** A Postgres primary can fail from disk corruption, AZ outage, or OOM — the database must promote a standby without manual DBA intervention.
 
@@ -583,14 +574,13 @@ Replication lag at failover moment defines actual **RPO** ([12.7](#127-rpo)).
 
 ---
 
-
-## 12.5 Backup Strategy
+## 12.4 Backup, Restore, RPO, RTO & Disaster Recovery
 
 ### Overview
 
-Everyone knows to photocopy important documents before a meeting — if the original coffee-spills, the copy saves the day. A **backup strategy** is the IT version: planned copies of data, stored safely, kept long enough, and **tested** so you can actually get them back ([12.6](#126-restore-strategy)).
+Everyone knows to photocopy important documents before a meeting — if the original coffee-spills, the copy saves the day. A **backup strategy** is the IT version: planned copies of data, stored safely, kept long enough, and **tested** so you can actually get them back ([12.4 â€” Restore](#restore-strategy)).
 
-Technically, it defines **what** to copy (databases, files, configs), **how** (full, incremental, differential), **where** (local, remote, cloud), **how often**, and **retention**. Backup frequency caps your **RPO** ([12.7](#127-rpo)) — hourly backups mean up to an hour of data loss unless replication also runs.
+Technically, it defines **what** to copy (databases, files, configs), **how** (full, incremental, differential), **where** (local, remote, cloud), **how often**, and **retention**. Backup frequency caps your **RPO** ([12.4 â€” RPO](#rpo)) — hourly backups mean up to an hour of data loss unless replication also runs.
 
 ---
 
@@ -615,7 +605,7 @@ Creates **point-in-time copies** of data independent of the primary system.
 
 **Protects** copies (encryption, immutability, off-site separation).
 
-Does **not** by itself restore service — that is [12.6 Restore Strategy](#126-restore-strategy).
+Does **not** by itself restore service — that is [12.4 â€” Restore strategy](#restore-strategy).
 
 ---
 
@@ -681,7 +671,7 @@ Monday 11:00 corruption discovered:
 
 - Latest full: Sunday 02:00
 - Latest incremental: Monday 10:00
-- **Worst-case data loss if restored to 10:00 incr:** 1 hour (drives RPO discussion in [12.7](#127-rpo))
+- **Worst-case data loss if restored to 10:00 incr:** 1 hour (drives RPO discussion in [12.4 â€” RPO](#rpo))
 
 #### Backup type comparison
 
@@ -728,7 +718,7 @@ Sanity check: If designed RPO is 5 minutes, hourly backups alone cannot meet it 
 
 #### Common mistakes
 
-- **Backup job success ≠ restorable backup** — corrupted dumps, wrong permissions, and missing WAL segments surface only at restore time; test monthly ([12.6](#126-restore-strategy)).
+- **Backup job success ≠ restorable backup** — corrupted dumps, wrong permissions, and missing WAL segments surface only at restore time; test monthly ([12.4 â€” Restore](#restore-strategy)).
 - **Incremental chains are fragile** — one missing incremental breaks the entire chain; monitor chain integrity and alert on gaps.
 - **Local-only backups die with the site** — 3-2-1 rule: at least one copy off-site and on different media.
 - **Ransomware encrypts local backups** — use S3 Object Lock (WORM), Azure Immutable Blob Storage, or tape with offline rotation.
@@ -751,18 +741,17 @@ Sanity check: If designed RPO is 5 minutes, hourly backups alone cannot meet it 
 
 ---
 
+### Restore strategy
 
-## 12.6 Restore Strategy
+#### Overview
 
-### Overview
+Having a fire extinguisher is not the same as knowing how to use it under smoke and stress. A **restore strategy** is the practiced playbook for turning backups ([12.4](#124-backup-restore-rpo-rto-disaster-recovery)) back into a running system — who does what, in what order, with what verification — so recovery time is predictable.
 
-Having a fire extinguisher is not the same as knowing how to use it under smoke and stress. A **restore strategy** is the practiced playbook for turning backups ([12.5](#125-backup-strategy)) back into a running system — who does what, in what order, with what verification — so recovery time is predictable.
-
-Technically, it covers **restore type** (full system, file-level, database PITR, bare metal), **restore chain** (which backups to apply in sequence), and **validation** before resuming traffic. Restore duration directly bounds **RTO** ([12.8](#128-rto)); the age of the restored data bounds **RPO** ([12.7](#127-rpo)).
+Technically, it covers **restore type** (full system, file-level, database PITR, bare metal), **restore chain** (which backups to apply in sequence), and **validation** before resuming traffic. Restore duration directly bounds **RTO** ([12.4 â€” RTO](#rto)); the age of the restored data bounds **RPO** ([12.4 â€” RPO](#rpo)).
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 Untested backups fail when needed:
 
@@ -774,7 +763,7 @@ A restore strategy turns "we have backups" into "we can recover within RTO to a 
 
 ---
 
-### What it does
+#### What it does
 
 **Identifies** the correct backup set for the failure.
 
@@ -786,7 +775,7 @@ A restore strategy turns "we have backups" into "we can recover within RTO to a 
 
 ---
 
-### How it works — restore types and chains
+#### How it works — restore types and chains
 
 ```mermaid
 flowchart LR
@@ -877,7 +866,7 @@ Backup size · storage I/O · network bandwidth · number of incremental layers 
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 #### When to use (and when not to)
 
@@ -897,7 +886,7 @@ Backup size · storage I/O · network bandwidth · number of incremental layers 
 
 ---
 
-### Real-world example: Postgres PITR after accidental `DROP TABLE`
+#### Real-world example: Postgres PITR after accidental `DROP TABLE`
 
 **Problem:** An engineer runs `DROP TABLE orders` on production — writes must stop immediately and orders must be recovered with minimal data loss.
 
@@ -909,18 +898,17 @@ Backup size · storage I/O · network bandwidth · number of incremental layers 
 
 ---
 
+### RPO
 
-## 12.7 RPO
-
-### Overview
+#### Overview
 
 If your laptop crashes, the question is: "How much work since my last save can I afford to lose?" **Recovery Point Objective (RPO)** is that question at company scale — the **maximum acceptable data loss**, measured as time: "We can lose at most 5 minutes of writes."
 
-Technically, RPO is a **business target**, not a backup feature. It drives architecture: RPO of 24 hours → daily backups may suffice. RPO of 5 minutes → hourly backups are insufficient; you need continuous replication or WAL archiving. RPO answers *how far back* you recover; **RTO** ([12.8](#128-rto)) answers *how long users wait*.
+Technically, RPO is a **business target**, not a backup feature. It drives architecture: RPO of 24 hours → daily backups may suffice. RPO of 5 minutes → hourly backups are insufficient; you need continuous replication or WAL archiving. RPO answers *how far back* you recover; **RTO** ([12.4 â€” RTO](#rto)) answers *how long users wait*.
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 Teams argue about backup frequency without a shared goal. Executives say "we cannot lose data"; engineering hears "run backups nightly" — a mismatch.
 
@@ -933,7 +921,7 @@ It aligns product, legal, and infrastructure on one number per service tier.
 
 ---
 
-### What it means
+#### What it means
 
 ```text
 RPO = maximum acceptable age of data at recovery time
@@ -947,11 +935,11 @@ If RPO = 1 hour and the last recoverable point is 45 minutes before failure, you
 
 ---
 
-### How to achieve it — techniques by target
+#### How to achieve it — techniques by target
 
 | Target RPO | Typical techniques |
 |------------|-------------------|
-| **24 hours** | Daily full backups ([12.5](#125-backup-strategy)) |
+| **24 hours** | Daily full backups ([12.4](#124-backup-restore-rpo-rto-disaster-recovery)) |
 | **1 hour** | Hourly incrementals or snapshots |
 | **5 minutes** | Frequent snapshots + WAL/log shipping |
 | **Near zero** | Synchronous replication to standby |
@@ -1025,7 +1013,7 @@ Define RPO **per tier**, not one number for the whole company.
 |---|-----|-----|
 | **Measures** | Data loss (time) | Downtime (time) |
 | **Question** | How far back? | How long until up? |
-| **Driven by** | Backup/replication design | HA, restore speed, DR ([12.9](#129-disaster-recovery)) |
+| **Driven by** | Backup/replication design | HA, restore speed, DR ([12.4 â€” Disaster recovery](#disaster-recovery)) |
 | **Independent?** | Yes — low RPO + high RTO is common | Yes |
 
 ```mermaid
@@ -1038,7 +1026,7 @@ flowchart LR
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 #### When to use (and when not to)
 
@@ -1057,7 +1045,7 @@ flowchart LR
 
 ---
 
-### Real-world example: tiered RPO in a fintech stack
+#### Real-world example: tiered RPO in a fintech stack
 
 **Problem:** A fintech handles ledger, audit, and reporting data with different loss tolerance — one RPO for the whole stack misaligns cost and risk.
 
@@ -1069,18 +1057,17 @@ flowchart LR
 
 ---
 
+### RTO
 
-## 12.8 RTO
-
-### Overview
+#### Overview
 
 RPO asks how much data you can lose; **Recovery Time Objective (RTO)** asks how long customers can wait before the service is back. If your store is offline, every minute costs money and reputation — RTO is the agreed ceiling: "We must be live again within 30 minutes."
 
-Technically, RTO is the **maximum acceptable downtime** after a failure. It drives investment in HA ([12.1](#121-high-availability)), automated failover ([12.4](#124-active-passive)), restore automation ([12.6](#126-restore-strategy)), and DR site warmth ([12.9](#129-disaster-recovery)). Meeting RTO requires measuring **end-to-end** recovery in drills, not summing optimistic step estimates.
+Technically, RTO is the **maximum acceptable downtime** after a failure. It drives investment in HA ([12.1](#121-high-availability)), automated failover ([12.3 â€” Active-passive](#active-passive)), restore automation ([12.4 â€” Restore](#restore-strategy)), and DR site warmth ([12.4 â€” Disaster recovery](#disaster-recovery)). Meeting RTO requires measuring **end-to-end** recovery in drills, not summing optimistic step estimates.
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 Without RTO, teams discover recovery takes hours only during a real outage. Sales promises "always on"; ops has never tested promotion under load.
 
@@ -1092,7 +1079,7 @@ RTO forces:
 
 ---
 
-### What it means
+#### What it means
 
 ```text
 RTO = maximum acceptable time from failure to restored service
@@ -1104,7 +1091,7 @@ Clock stops when the service meets SLO again (not merely when the first process 
 
 ---
 
-### How to achieve it — techniques by target
+#### How to achieve it — techniques by target
 
 | Target RTO | Typical techniques |
 |------------|-------------------|
@@ -1177,7 +1164,7 @@ Sanity check: Lower DNS TTL (60s) before failover-critical cutovers; pre-warm co
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 #### When to use (and when not to)
 
@@ -1198,7 +1185,7 @@ Sanity check: Lower DNS TTL (60s) before failover-critical cutovers; pre-warm co
 
 ---
 
-### Real-world example: Route 53 health-check failover
+#### Real-world example: Route 53 health-check failover
 
 **Problem:** A multi-region SaaS must shift traffic to a secondary region when the primary region fails — customers cannot wait for manual DNS edits.
 
@@ -1210,18 +1197,17 @@ Sanity check: Lower DNS TTL (60s) before failover-critical cutovers; pre-warm co
 
 ---
 
+### Disaster recovery
 
-## 12.9 Disaster Recovery
-
-### Overview
+#### Overview
 
 High availability is like spare tires — you fix a flat and keep driving. **Disaster recovery (DR)** is the plan for when the whole car is totaled: fire, flood, ransomware encryption, or an entire cloud region offline for hours. You need a second place to run and data copies that survived the disaster.
 
-Technically, DR restores **applications, data, and infrastructure** after catastrophic failure, within **RPO** ([12.7](#127-rpo)) and **RTO** ([12.8](#128-rto)) targets. It complements HA ([12.1](#121-high-availability)): HA handles a dead server; DR handles a dead data center. Strategies range from **backup-and-restore** (cheap, slow) to **hot multi-region** (expensive, fast).
+Technically, DR restores **applications, data, and infrastructure** after catastrophic failure, within **RPO** ([12.4 â€” RPO](#rpo)) and **RTO** ([12.4 â€” RTO](#rto)) targets. It complements HA ([12.1](#121-high-availability)): HA handles a dead server; DR handles a dead data center. Strategies range from **backup-and-restore** (cheap, slow) to **hot multi-region** (expensive, fast).
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 HA in one building does not help when:
 
@@ -1234,7 +1220,7 @@ DR provides **geographic separation** and **tested recovery** at another site.
 
 ---
 
-### What it does
+#### What it does
 
 **Detects** site-level failure (not just one host).
 
@@ -1248,7 +1234,7 @@ DR provides **geographic separation** and **tested recovery** at another site.
 
 ---
 
-### Compared to the alternative
+#### Compared to the alternative
 
 | | HA | DR |
 |---|-----|-----|
@@ -1261,7 +1247,7 @@ You need **both** for production-grade reliability.
 
 ---
 
-### How it works — sites, strategies, and recovery paths
+#### How it works — sites, strategies, and recovery paths
 
 #### DR site warmth
 
@@ -1306,7 +1292,7 @@ RPO = replication lag; RTO = DNS + app startup at DR.
 Off-site backup store → restore to DR hardware → validate → cutover
 ```
 
-RPO = backup age; RTO = restore duration ([12.6](#126-restore-strategy)).
+RPO = backup age; RTO = restore duration ([12.4 â€” Restore](#restore-strategy)).
 
 **How to calculate — DR RPO and RTO from strategy:**
 
@@ -1355,7 +1341,7 @@ RPO: 2 minutes replication lag at failure (target 5)
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 #### When to use (and when not to)
 
@@ -1375,7 +1361,7 @@ RPO: 2 minutes replication lag at failure (target 5)
 
 ---
 
-### Real-world example: AWS pilot-light DR
+#### Real-world example: AWS pilot-light DR
 
 **Problem:** A checkout API in `us-east-1` must survive a full regional outage without rebuilding infrastructure from scratch during the incident.
 
@@ -1387,14 +1373,13 @@ RPO: 2 minutes replication lag at failure (target 5)
 
 ---
 
-
-## 12.10 Chaos Engineering
+## 12.5 Chaos Engineering & Fault Injection
 
 ### Overview
 
 Pilots train in simulators before real emergencies. **Chaos engineering** is the production reliability simulator: you **deliberately break things on purpose** — kill a server, add latency, isolate a zone — to learn whether the system actually survives before customers find out the hard way.
 
-Technically, it is a disciplined experiment loop: define **steady state** (latency, error rate, throughput), form a **hypothesis** ("if one pod dies, SLO holds"), **inject** a controlled fault, **observe**, and **fix** gaps. Pioneered at Netflix (Chaos Monkey); tools include AWS FIS, Gremlin, Litmus. Distinct from ad-hoc fault injection ([12.11](#1211-fault-injection)) in scope — chaos tests **system-level** resilience; fault injection targets **specific components**.
+Technically, it is a disciplined experiment loop: define **steady state** (latency, error rate, throughput), form a **hypothesis** ("if one pod dies, SLO holds"), **inject** a controlled fault, **observe**, and **fix** gaps. Pioneered at Netflix (Chaos Monkey); tools include AWS FIS, Gremlin, Litmus. Distinct from ad-hoc fault injection ([12.5 â€” Fault injection](#fault-injection)) in scope — chaos tests **system-level** resilience; fault injection targets **specific components**.
 
 ---
 
@@ -1518,18 +1503,17 @@ flowchart LR
 
 ---
 
+### Fault injection
 
-## 12.11 Fault Injection
-
-### Overview
+#### Overview
 
 Chaos engineering kicks the whole system to see if it wobbles. **Fault injection** is the precision tool — you break **one specific thing**: delay database responses by 500ms, return HTTP 503 from one dependency, fill a disk to 99%. It answers "does *this* retry policy work?" not "does the whole datacenter survive?"
 
-Technically, fault injection introduces **defined, scoped faults** (network, CPU, disk, process kill, API error) via tools (iptables, toxiproxy, eBPF, service meshes) or frameworks (Chaos Mesh fault types). It validates **error handling, timeouts, circuit breakers, and failover triggers** at component level. Pairs with chaos engineering ([12.10](#1210-chaos-engineering)): injection tests building blocks; chaos tests the assembled system.
+Technically, fault injection introduces **defined, scoped faults** (network, CPU, disk, process kill, API error) via tools (iptables, toxiproxy, eBPF, service meshes) or frameworks (Chaos Mesh fault types). It validates **error handling, timeouts, circuit breakers, and failover triggers** at component level. Pairs with chaos engineering ([12.5](#125-chaos-engineering-fault-injection)): injection tests building blocks; chaos tests the assembled system.
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 Code paths for failure are rarely exercised:
 
@@ -1541,7 +1525,7 @@ Injection forces those paths to run in controlled conditions.
 
 ---
 
-### What it does
+#### What it does
 
 **Defines** a fault (what, where, how long).
 
@@ -1555,7 +1539,7 @@ Injection forces those paths to run in controlled conditions.
 
 ---
 
-### Compared to the alternative
+#### Compared to the alternative
 
 | | Fault injection | Chaos engineering |
 |---|-----------------|-------------------|
@@ -1568,7 +1552,7 @@ Use both: injection during development and CI; chaos in staging/prod for holisti
 
 ---
 
-### How it works — injection workflow
+#### How it works — injection workflow
 
 ```mermaid
 flowchart LR
@@ -1604,13 +1588,13 @@ Result:   PASS — tune alert threshold from 500ms to 350ms
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 #### When to use (and when not to)
 
 - **Inject in staging first, scoped prod later** — same blast-radius discipline as chaos; one fault type, one dependency, timed window.
 - Use for **libraries, timeouts, circuit breakers** — precise, repeatable validation of error-handling paths.
-- Pair with chaos engineering ([12.10](#1210-chaos-engineering)): injection tests building blocks; chaos tests the assembled system.
+- Pair with chaos engineering ([12.5](#125-chaos-engineering-fault-injection)): injection tests building blocks; chaos tests the assembled system.
 
 #### Common mistakes
 
@@ -1624,7 +1608,7 @@ Result:   PASS — tune alert threshold from 500ms to 350ms
 
 ---
 
-### Real-world example: checkout dependency timeout (Toxiproxy)
+#### Real-world example: checkout dependency timeout (Toxiproxy)
 
 **Problem:** A checkout flow depends on a fraud-scoring API — if that dependency hangs, checkout must fail fast with a clear user message, not hold connection pool slots.
 

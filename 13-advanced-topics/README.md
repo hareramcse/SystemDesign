@@ -15,10 +15,7 @@
 | 13.5 | [Skip Lists](#135-skip-lists) |
 | 13.6 | [Merkle Trees](#136-merkle-trees) |
 | 13.7 | [Distributed Hash Tables](#137-distributed-hash-tables) |
-| 13.8 | [UUID](#138-uuid) |
-| 13.9 | [Snowflake IDs](#139-snowflake-ids) |
-| 13.10 | [ULID](#1310-ulid) |
-| 13.11 | [KSUID](#1311-ksuid) |
+| 13.8 | [Distributed ID Schemes](#138-distributed-id-schemes) |
 
 ---
 
@@ -372,6 +369,7 @@ flowchart LR
 **Outcome:** Invalid-ID traffic drops from **100% DB hits** to **~0%** (definite rejects) plus ~**1%** false-positive DB reads on the remainder. DB connection pool pressure and p99 latency stabilize under scan attacks; memory stays ~1.2 MB vs tens of GB for a full key set.
 
 ---
+
 
 ## 13.2 HyperLogLog
 
@@ -2168,7 +2166,7 @@ Only ~K/N keys move — not a full reshuffle (unlike hash % N)
 ---
 
 
-## 13.8 UUID
+## 13.8 Distributed ID Schemes
 
 ### Overview
 
@@ -2446,9 +2444,9 @@ Sanity check: if you generate 1 billion IDs/sec for 100 years you still won't
 ---
 
 
-## 13.9 Snowflake IDs
+### Snowflake IDs
 
-### Overview
+#### Overview
 
 Picture a factory line where every machine stamps its own serial number: a timestamp for when the item was made, a plant code, a machine number, and a small counter for items made in the same millisecond. No central clerk hands out the next integer — that is how Twitter scaled tweet IDs across thousands of servers without a single ID database bottleneck.
 
@@ -2456,7 +2454,7 @@ Picture a factory line where every machine stamps its own serial number: a times
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 - **Central ID bottleneck** — auto-increment needs one database to issue the next integer
 - **Independent generation** — each app server must mint IDs without a round-trip
@@ -2465,7 +2463,7 @@ Picture a factory line where every machine stamps its own serial number: a times
 
 ---
 
-### What it does
+#### What it does
 
 Generates a unique, roughly time-sorted **int64** on each machine:
 
@@ -2477,7 +2475,7 @@ IDs increase with creation time (within millisecond precision). The high bits re
 
 ---
 
-### Compared to the alternative
+#### Compared to the alternative
 
 **Auto-increment ID (single database):**
 
@@ -2517,7 +2515,7 @@ Snowflake wins for **high-throughput**, **sortable 64-bit** primary keys in dist
 
 ---
 
-### How it works — the algorithm inside
+#### How it works — the algorithm inside
 
 #### Step 1 — 64-bit layout
 
@@ -2709,7 +2707,7 @@ Sanity check: 4,096/ms is enormous for most APIs — if you need more,
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 #### When to use (and when not to)
 
@@ -2735,7 +2733,7 @@ Sanity check: 4,096/ms is enormous for most APIs — if you need more,
 
 ---
 
-### Real-world example: Twitter tweets and Discord messages
+#### Real-world example: Twitter tweets and Discord messages
 
 **Problem:** Twitter needed every tweet to get a unique ID from any app server worldwide, with feeds sortable by post time — without a central database issuing the next integer on every write. Discord faced the same pattern for billions of chat messages.
 
@@ -2748,9 +2746,9 @@ Sanity check: 4,096/ms is enormous for most APIs — if you need more,
 ---
 
 
-## 13.10 ULID
+### ULID
 
-### Overview
+#### Overview
 
 You want IDs that sort like timestamps when written as strings — useful in URLs, logs, and databases — but UUID v4 is random gibberish that scatters index pages. You also do not want to register worker IDs like Snowflake requires.
 
@@ -2758,7 +2756,7 @@ Technically, **ULID (Universally Unique Lexicographically Sortable Identifier)**
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 - **Random UUID v4 order** — opaque hex strings do not sort by creation time; B-tree indexes fragment on insert
 - **Snowflake worker registry** — ULID needs no datacenter/worker ID coordination
@@ -2767,7 +2765,7 @@ Technically, **ULID (Universally Unique Lexicographically Sortable Identifier)**
 
 ---
 
-### What it does
+#### What it does
 
 Mints a **128-bit globally unique identifier** and renders it as a **sortable 26-character string**:
 
@@ -2779,7 +2777,7 @@ Plain ULIDs are ordered by millisecond; **monotonic ULID** factories increment t
 
 ---
 
-### Compared to the alternative
+#### Compared to the alternative
 
 **UUID v4 (random hex):**
 
@@ -2815,7 +2813,7 @@ ULID wins for **sortable string IDs** without worker coordination. Snowflake win
 
 ---
 
-### How it works — the algorithm inside
+#### How it works — the algorithm inside
 
 #### Step 1 — 128-bit layout
 
@@ -2977,7 +2975,7 @@ Sanity check: 2^80 per ms >> any realistic per-ms count; prefer KSUID (§13.11) 
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 #### When to use (and when not to)
 
@@ -3002,7 +3000,7 @@ Sanity check: 2^80 per ms >> any realistic per-ms count; prefer KSUID (§13.11) 
 
 ---
 
-### Real-world example: sortable event IDs in Postgres
+#### Real-world example: sortable event IDs in Postgres
 
 **Problem:** An event-ingestion service writes millions of rows per day to Postgres. Operators want to scan recent events by ID range in logs and SQL without maintaining a separate time index on every partition. Snowflake's worker registry is overhead the team does not want.
 
@@ -3015,9 +3013,9 @@ Sanity check: 2^80 per ms >> any realistic per-ms count; prefer KSUID (§13.11) 
 ---
 
 
-## 13.11 KSUID
+### KSUID
 
-### Overview
+#### Overview
 
 Analytics pipelines can fire **thousands of events per second** into the same one-second time bucket. You want IDs that still sort roughly by time in URLs and log files, with enough randomness that collisions are unthinkable — but you do not need millisecond precision, and you do not want to assign worker IDs to every writer. ULID's 80 random bits per millisecond is usually enough; at extreme volume per second, more entropy per time bucket helps.
 
@@ -3025,7 +3023,7 @@ Analytics pipelines can fire **thousands of events per second** into the same on
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 - **Random UUID v4 order** — hex IDs do not sort by creation time; poor B-tree locality
 - **ULID random tail size** — 80 bits per millisecond may be tight at extreme QPS in the same ms bucket
@@ -3034,7 +3032,7 @@ Analytics pipelines can fire **thousands of events per second** into the same on
 
 ---
 
-### What it does
+#### What it does
 
 Mints a **160-bit globally unique identifier** and renders it as a **sortable 27-character Base62 string**:
 
@@ -3046,7 +3044,7 @@ Sortable at **second** granularity; order within the same second follows the ran
 
 ---
 
-### Compared to the alternative
+#### Compared to the alternative
 
 **UUID v4 (random hex):**
 
@@ -3082,7 +3080,7 @@ KSUID wins for **high-volume event streams** needing **128-bit randomness per se
 
 ---
 
-### How it works — the algorithm inside
+#### How it works — the algorithm inside
 
 #### Step 1 — 160-bit layout
 
@@ -3234,7 +3232,7 @@ Sanity check: 2^128 per second is vastly larger than global event rates;
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 #### When to use (and when not to)
 
@@ -3259,7 +3257,7 @@ Sanity check: 2^128 per second is vastly larger than global event rates;
 
 ---
 
-### Real-world example: Segment analytics event IDs
+#### Real-world example: Segment analytics event IDs
 
 **Problem:** **Segment** ingests analytics events from thousands of customer websites simultaneously. Each event needs a unique, URL-safe ID before it hits the pipeline — with no central ID server and no worker-ID registry per browser SDK.
 

@@ -10,27 +10,19 @@
 |---|-----------|
 | 10.1 | [Authentication](#101-authentication) |
 | 10.2 | [Authorization](#102-authorization) |
-| 10.3 | [OAuth2](#103-oauth2) |
-| 10.4 | [OpenID Connect](#104-openid-connect) |
-| 10.5 | [JWT](#105-jwt) |
-| 10.6 | [Session Management](#106-session-management) |
-| 10.7 | [RBAC](#107-rbac) |
-| 10.8 | [ABAC](#108-abac) |
-| 10.9 | [Encryption at Rest](#109-encryption-at-rest) |
-| 10.10 | [Encryption in Transit](#1010-encryption-in-transit) |
-| 10.11 | [KMS](#1011-kms) |
-| 10.12 | [Secret Management](#1012-secret-management) |
-| 10.13 | [CSRF](#1013-csrf) |
-| 10.14 | [XSS](#1014-xss) |
-| 10.15 | [SQL Injection](#1015-sql-injection) |
-| 10.16 | [SSRF](#1016-ssrf) |
-| 10.17 | [Clickjacking](#1017-clickjacking) |
-| 10.18 | [DDoS Protection](#1018-ddos-protection) |
-| 10.19 | [WAF](#1019-waf) |
-| 10.20 | [Zero Trust Security](#1020-zero-trust-security) |
-| 10.21 | [Audit Logging](#1021-audit-logging) |
+| 10.3 | [OAuth 2.0, OpenID Connect & JWT](#103-oauth-2-0-openid-connect-jwt) |
+| 10.4 | [Session Management](#104-session-management) |
+| 10.5 | [RBAC & ABAC](#105-rbac-abac) |
+| 10.6 | [Encryption at Rest & in Transit](#106-encryption-at-rest-in-transit) |
+| 10.7 | [KMS](#107-kms) |
+| 10.8 | [Secret Management](#108-secret-management) |
+| 10.9 | [Web Application Threats](#109-web-application-threats) |
+| 10.10 | [DDoS Protection & WAF](#1010-ddos-protection-waf) |
+| 10.11 | [Zero Trust Security](#1011-zero-trust-security) |
+| 10.12 | [Audit Logging](#1012-audit-logging) |
 
 ---
+
 
 ## 10.1 Authentication
 
@@ -202,6 +194,7 @@ This shows password hashing, optional MFA, and session-based proof of identity i
 
 ---
 
+
 ## 10.2 Authorization
 
 ### Overview
@@ -359,7 +352,8 @@ This combines authentication, resource-level ACLs, and role-like share levels in
 
 ---
 
-## 10.3 OAuth2
+
+## 10.3 OAuth 2.0, OpenID Connect & JWT
 
 ### Overview
 
@@ -502,9 +496,10 @@ Google's documented Calendar API uses exactly this OAuth 2.0 authorization code 
 
 ---
 
-## 10.4 OpenID Connect
 
-### Overview
+### OpenID Connect
+
+#### Overview
 
 OAuth tells an app *what it may access*; it does not standardize *who logged in*. **OpenID Connect (OIDC)** adds that missing piece — like upgrading a valet key to a driver's license that proves your name and photo, built on the same OAuth infrastructure.
 
@@ -512,7 +507,7 @@ Technically, OIDC is an **identity layer on top of OAuth 2.0**. It introduces th
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 Pure OAuth 2.0 returns an access token for APIs but does not tell the client **which user** authenticated in a portable, verifiable way. Apps invented ad hoc profile fetches and insecure shortcuts.
 
@@ -525,7 +520,7 @@ OIDC fixes:
 
 ---
 
-### What it does
+#### What it does
 
 OIDC provides:
 
@@ -541,7 +536,7 @@ Adding scope `openid` switches an OAuth flow into an OIDC flow.
 
 ---
 
-### How it works — the architecture inside
+#### How it works — the architecture inside
 
 #### OAuth vs OIDC
 
@@ -625,7 +620,7 @@ flowchart LR
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **Validate ID tokens server-side** — never trust decoded JWT payload in the browser alone; check signature, `iss`, `aud`, `exp`, and `nonce` (for implicit/hybrid; code flow uses server exchange).
 - **Use `sub` as the stable user key** — email can change; `sub` is the canonical IdP identifier.
@@ -636,7 +631,7 @@ flowchart LR
 
 ---
 
-### Real-world example
+#### Real-world example
 
 **"Sign in with Google" on a SaaS dashboard**
 
@@ -652,9 +647,10 @@ Google's OpenID Connect documentation describes this exact discovery, JWKS, and 
 
 ---
 
-## 10.5 JWT
 
-### Overview
+### JWT
+
+#### Overview
 
 Think of a JWT as a tamper-evident badge: the front shows your name and role, and a holographic seal proves the issuer printed it — if anyone scratches out "Visitor" and writes "Admin," the seal breaks. **JSON Web Tokens** carry signed claims between services without a central session lookup on every request.
 
@@ -662,7 +658,7 @@ Technically, a JWT is `Header.Payload.Signature` — Base64URL-encoded JSON plus
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 **Session-based auth** requires a shared session store or sticky sessions so every server can resolve `SESSION_ID` → user. At scale across regions and microservices, that store becomes a bottleneck and failure point.
 
@@ -677,7 +673,7 @@ This suits APIs, microservices, and CDNs that cannot all reach one Redis cluster
 
 ---
 
-### What it does
+#### What it does
 
 A JWT **asserts** signed claims — identity (`sub`), roles, permissions, scopes, issuer, expiry — in a compact string suitable for HTTP headers. Common uses:
 
@@ -690,7 +686,7 @@ It does **not** encrypt sensitive data by default (use JWE for encrypted tokens,
 
 ---
 
-### How it works — the architecture inside
+#### How it works — the architecture inside
 
 #### Structure
 
@@ -808,7 +804,7 @@ flowchart LR
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **Never put secrets in the payload** — credit cards, passwords, PII; tokens leak via logs and browser extensions.
 - **Always validate `iss`, `aud`, `exp`, and signature** — skipping `aud` allows cross-service token replay.
@@ -820,7 +816,7 @@ flowchart LR
 
 ---
 
-### Real-world example
+#### Real-world example
 
 **Auth0-issued access token for a SPA + API**
 
@@ -835,7 +831,8 @@ Auth0 documents this JWT validation flow with JWKS — a standard production pat
 
 ---
 
-## 10.6 Session Management
+
+## 10.4 Session Management
 
 ### Overview
 
@@ -1000,7 +997,8 @@ This is the documented Rails + Redis session pattern used by many production web
 
 ---
 
-## 10.7 RBAC
+
+## 10.5 RBAC & ABAC
 
 ### Overview
 
@@ -1143,9 +1141,10 @@ Kubernetes documents this Role / RoleBinding model as its native RBAC — verifi
 
 ---
 
-## 10.8 ABAC
 
-### Overview
+### ABAC
+
+#### Overview
 
 A job title says you are a Manager, but policy also cares whether you are in the right department, accessing data during business hours, from a company laptop. **Attribute-based access control (ABAC)** evaluates those **attributes** — about the user, the resource, and the environment — instead of relying on a static role alone.
 
@@ -1153,7 +1152,7 @@ Technically, ABAC uses a **policy engine** that evaluates rules over attributes:
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 RBAC breaks down when access depends on **context**:
 
@@ -1166,7 +1165,7 @@ Hard-coding such rules as hundreds of special roles becomes unmaintainable. ABAC
 
 ---
 
-### What it does
+#### What it does
 
 ABAC considers three attribute families:
 
@@ -1190,7 +1189,7 @@ Supports **object-level** (this order ID), **field-level** (mask salary), and **
 
 ---
 
-### How it works — the architecture inside
+#### How it works — the architecture inside
 
 #### Policy engine flow
 
@@ -1255,7 +1254,7 @@ flowchart LR
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **Start with RBAC; add ABAC where context matters** — full ABAC day one is hard to test and audit.
 - **Keep policies in version control** — treat Rego/Cedar like code; review and CI-test policy changes.
@@ -1266,7 +1265,7 @@ flowchart LR
 
 ---
 
-### Real-world example
+#### Real-world example
 
 **AWS IAM policy with attribute conditions (ABAC-style)**
 
@@ -1280,7 +1279,8 @@ AWS documents this **attribute-based access control** pattern with principal and
 
 ---
 
-## 10.9 Encryption at Rest
+
+## 10.6 Encryption at Rest & in Transit
 
 ### Overview
 
@@ -1413,9 +1413,10 @@ AWS documents SSE-KMS as server-side encryption at rest for S3 objects — a sta
 
 ---
 
-## 10.10 Encryption in Transit
 
-### Overview
+### Encryption in transit
+
+#### Overview
 
 Sending a postcard exposes your message to everyone along the route; a sealed courier envelope does not. **Encryption in transit** wraps data moving across networks — browser to server, API to API, app to database — so interceptors see useless ciphertext instead of passwords, tokens, and personal data.
 
@@ -1423,7 +1424,7 @@ Technically, **TLS (Transport Layer Security)** is the standard: asymmetric cryp
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 Unencrypted network traffic is readable by anyone on the path — compromised Wi‑Fi, ISP equipment, malicious hops, or tapped datacenter links.
 
@@ -1436,7 +1437,7 @@ TLS also provides **integrity** (tampering detection) and **server authenticatio
 
 ---
 
-### What it does
+#### What it does
 
 Encryption in transit:
 
@@ -1447,7 +1448,7 @@ Encryption in transit:
 
 ---
 
-### How it works — the architecture inside
+#### How it works — the architecture inside
 
 #### TLS handshake (simplified)
 
@@ -1521,7 +1522,7 @@ flowchart LR
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **Terminate TLS only on trusted network segments** — HTTP between LB and app in shared tenancy may need TLS or private network isolation.
 - **Disable old TLS versions** — TLS 1.2+ only; SSLv3 and TLS 1.0 are broken.
@@ -1533,7 +1534,7 @@ flowchart LR
 
 ---
 
-### Real-world example
+#### Real-world example
 
 **Let's Encrypt certificate on nginx**
 
@@ -1547,7 +1548,8 @@ Let's Encrypt and nginx document this free automated HTTPS path used by millions
 
 ---
 
-## 10.11 KMS
+
+## 10.7 KMS
 
 ### Overview
 
@@ -1722,7 +1724,9 @@ flowchart LR
 
 AWS KMS `GenerateDataKey` API documentation describes this exact envelope pattern used with RDS, S3, and custom application encryption.
 
-## 10.12 Secret Management
+---
+
+## 10.8 Secret Management
 
 ### Overview
 
@@ -1830,7 +1834,8 @@ flowchart LR
 
 ---
 
-## 10.13 CSRF
+
+## 10.9 Web Application Threats
 
 ### Overview
 
@@ -1934,9 +1939,10 @@ A classic **bank transfer CSRF** (responsible disclosure patterns in OWASP train
 
 ---
 
-## 10.14 XSS
 
-### Overview
+### XSS
+
+#### Overview
 
 A comment box on a trusted news site is like a guest writing on the lobby whiteboard — except an attacker writes instructions the building's staff robot will obey literally. **XSS (Cross-Site Scripting)** is when user-supplied text is treated as code: the victim's browser runs the attacker's JavaScript in the context of your site, with access to that site's cookies, DOM, and APIs.
 
@@ -1944,13 +1950,13 @@ Technically, XSS occurs when untrusted input is stored, reflected, or processed 
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 Web pages mix **data** and **code** (HTML, JavaScript, CSS). When user input lands in the wrong context — inside HTML, inside a script block, inside a URL — special characters change meaning from "text to display" to "instructions to run." XSS fixes the boundary: untrusted strings must be encoded for their sink context or kept out of executable paths entirely.
 
 ---
 
-### What it does
+#### What it does
 
 Defenses layer from input to browser enforcement:
 
@@ -1973,7 +1979,7 @@ Three XSS variants differ by where payload lives:
 
 ---
 
-### How it works — the architecture inside
+#### How it works — the architecture inside
 
 **Stored XSS attack flow:**
 
@@ -2023,7 +2029,7 @@ Modern frameworks (React, Vue, Angular) escape text interpolations by default; r
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - Encode for **context** — HTML encoding is wrong for JavaScript or URL sinks; use framework escapers per context.
 - **CSP** with `'unsafe-inline'` or broad `script-src *` weakens the main XSS backstop.
@@ -2035,15 +2041,16 @@ Modern frameworks (React, Vue, Angular) escape text interpolations by default; r
 
 ---
 
-### Real-world example
+#### Real-world example
 
 **Stored XSS in a comment system:** Disqus-style widgets and many self-hosted forums historically stored comments as HTML. An attacker posts `<script src="https://evil.com/hook.js">`. Without server-side sanitization (e.g. OWASP Java Encoder on output, or DOMPurify on ingest), every reader executes the script in the forum's origin. With **Content-Security-Policy: default-src 'self'; script-src 'self'**, inline and external evil scripts are blocked even if HTML sanitization fails once — defense in depth. GitHub issue comments render Markdown through a strict pipeline (sanitize → encode) specifically to prevent this class of bug at scale.
 
 ---
 
-## 10.15 SQL Injection
 
-### Overview
+### SQL injection
+
+#### Overview
 
 A login form asks for your name; instead you answer with a full set of instructions the receptionist reads aloud to the database clerk verbatim. If the clerk follows every word as SQL, you can list every room or walk in without a real key. **SQL injection (SQLi)** is untrusted input breaking out of its quoted string or numeric slot and becoming part of the query language itself.
 
@@ -2051,13 +2058,13 @@ Technically, SQLi happens when application code builds SQL by concatenating user
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 Relational databases execute whatever SQL string the application sends. Without parameter binding, any field — search box, login form, sort column, JSON filter — can alter query structure. SQLi fixes enforce a strict separation: **query shape is fixed at compile/prepare time; user values are bound as data only.**
 
 ---
 
-### What it does
+#### What it does
 
 Primary and supporting controls:
 
@@ -2081,7 +2088,7 @@ Injection classes:
 
 ---
 
-### How it works — the architecture inside
+#### How it works — the architecture inside
 
 **Vulnerable login:**
 
@@ -2125,7 +2132,7 @@ HTTP request → WAF signature check → app validates types → ORM/prepare wit
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **String formatting is never safe** — `f"SELECT ... {id}"` and stored procedures with dynamic SQL inside are still vulnerable if built by concat.
 - ORMs are not magic: `.raw()`, `execute(f"...")`, and sortable column names from user input re-open SQLi.
@@ -2137,15 +2144,16 @@ HTTP request → WAF signature check → app validates types → ORM/prepare wit
 
 ---
 
-### Real-world example
+#### Real-world example
 
 **Authentication bypass in legacy PHP apps** (documented in countless CVEs): `mysql_query("SELECT * FROM users WHERE user='$user' AND pass='$pass'")` with password `' OR '1'='1' --` logs in as the first user. Migration to **PDO prepared statements** (`$stmt->execute([$user, $pass])`) fixes the injection path. Shopify, WordPress plugins, and enterprise CRMs have shipped similar patches — the pattern is universal: parameterized queries plus removing DB admin rights from the web tier. Tools like **sqlmap** automate blind extraction against remaining concat-based endpoints during pentests.
 
 ---
 
-## 10.16 SSRF
 
-### Overview
+### SSRF
+
+#### Overview
 
 You ask a hotel concierge to fetch a package from an address you provide. You give them the staff-only floor plan room instead of a public shop — the concierge has master access, so they bring back internal documents you could never reach yourself. **SSRF (Server-Side Request Forgery)** is the same: the attacker supplies a URL; your **server** fetches it, often from networks and metadata endpoints the public internet cannot touch.
 
@@ -2153,13 +2161,13 @@ Technically, SSRF is a vulnerability where user-controlled URLs (or hostnames) d
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 Features like "import image from URL," webhook callbacks, PDF renderers, and SSO validators inherently perform outbound requests. If the target is fully attacker-controlled without validation, the server becomes a proxy into internal infrastructure. SSRF controls constrain **where** the server may connect and **what** responses are returned to the caller.
 
 ---
 
-### What it does
+#### What it does
 
 Mitigations combine application rules and network posture:
 
@@ -2177,7 +2185,7 @@ SSRF variants: **basic** (response visible to attacker), **blind** (no direct re
 
 ---
 
-### How it works — the architecture inside
+#### How it works — the architecture inside
 
 **Image proxy feature — vulnerable:**
 
@@ -2221,7 +2229,7 @@ flowchart LR
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **Denylists alone fail** — attackers use decimal IPs (`2130706433` = 127.0.0.1), IPv6 (`::1`), DNS rebinding, and URL parsers that disagree (`http://127.1`, `@` tricks).
 - Validate **after DNS resolution** on the IP you actually connect to, not just the hostname string.
@@ -2233,15 +2241,16 @@ flowchart LR
 
 ---
 
-### Real-world example
+#### Real-world example
 
 **Capital One breach (2019)** involved SSRF against an misconfigured WAF and metadata access pattern — an attacker exploited a server-side request path to reach cloud instance metadata and obtain IAM role credentials, then exfiltrated S3 data. Remediation across the industry accelerated **IMDSv2** adoption (session-oriented metadata) and blocking `169.254.169.254` at egress. For application design, GitHub's **SSRF guidance** for webhooks requires fixed callback allowlists and treats user-supplied URLs in CI log viewers and import features as high-risk code paths.
 
 ---
 
-## 10.17 Clickjacking
 
-### Overview
+### Clickjacking
+
+#### Overview
 
 You tap "Claim free prize" on a flashy ad, but invisible glass under your finger actually presses "Confirm wire transfer" on a bank page loaded beneath it. **Clickjacking** (UI redressing) does not inject code — it stacks a deceptive interface over a real one inside the browser so your click lands on a hidden button or link.
 
@@ -2249,13 +2258,13 @@ Technically, clickjacking embeds a target site in a transparent `<iframe>` (or s
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 Browsers happily render nested browsing contexts. Without framing policy, any site can iframe your checkout or settings page and capture clicks. Clickjacking defenses tell the browser **who may embed your pages** and add UX friction for irreversible actions.
 
 ---
 
-### What it does
+#### What it does
 
 | Defense | Effect |
 |---------|--------|
@@ -2270,7 +2279,7 @@ Clickjacking vs XSS: clickjacking manipulates **clicks** without script injectio
 
 ---
 
-### How it works — the architecture inside
+#### How it works — the architecture inside
 
 **Attack layout:**
 
@@ -2310,7 +2319,7 @@ flowchart LR
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - Prefer **CSP `frame-ancestors`** over frame-busting scripts — JS can be suppressed in sandboxed iframes.
 - `SAMEORIGIN` still allows your own pages to iframe sensitive endpoints — watch for **self-XSS + clickjacking** combos on subdomains.
@@ -2321,13 +2330,14 @@ flowchart LR
 
 ---
 
-### Real-world example
+#### Real-world example
 
 **Facebook Likejacking (circa 2010):** Attack pages embedded invisible Facebook iframes with Like buttons positioned under "Play video" graphics. Users spread spam by clicking play. Facebook rolled out **`X-Frame-Options: DENY`** on sensitive endpoints and UI changes requiring explicit confirmation for permissions. Today, **Stripe Checkout** and banking portals set `Content-Security-Policy: frame-ancestors 'none'` on payment flows so third-party sites cannot embed the confirmation step — a direct application of the same defense pattern.
 
 ---
 
-## 10.18 DDoS Protection
+
+## 10.10 DDoS Protection & WAF
 
 ### Overview
 
@@ -2473,9 +2483,10 @@ flowchart LR
 
 ---
 
-## 10.19 WAF
 
-### Overview
+### WAF
+
+#### Overview
 
 A nightclub bouncer checks bags at the door against a list of banned items and suspicious behavior — patrons never reach the dance floor with weapons or if they are clearly bots storming the entrance. A **Web Application Firewall (WAF)** sits in front of your HTTP stack and inspects each request's URL, headers, and body before it hits application code.
 
@@ -2483,13 +2494,13 @@ Technically, a WAF is an inline or reverse-proxy filter for HTTP/HTTPS that appl
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 Application code evolves faster than security reviews; one legacy endpoint with string-built SQL can compromise the whole database. WAF provides a **uniform inspection point** for malicious payloads and bots, logs attack attempts, and can challenge or throttle abusive IPs while teams patch root causes.
 
 ---
 
-### What it does
+#### What it does
 
 WAF deployment models:
 
@@ -2511,7 +2522,7 @@ Common blocks: SQLi, XSS, RFI/LFI, path traversal (`../`), command injection, sc
 
 ---
 
-### How it works — the architecture inside
+#### How it works — the architecture inside
 
 **Request decision flow:**
 
@@ -2555,7 +2566,7 @@ flowchart LR
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - WAF **does not replace** parameterized queries, output encoding, or authz — it is compensating control for gaps and zero-days.
 - **False positives** break checkout and search — maintain per-route rule exceptions with narrow scope.
@@ -2567,13 +2578,14 @@ flowchart LR
 
 ---
 
-### Real-world example
+#### Real-world example
 
 **AWS WAF on ALB:** A team attaches AWS Managed Rules `AWSManagedRulesSQLiRuleSet` and `AWSManagedRulesKnownBadInputsRuleSet` to an Application Load Balancer. A scanner hits `/admin?id=1' OR '1'='1` — WAF returns 403, CloudWatch metric `BlockedRequests` spikes, SNS alerts SecOps. During rollout, search endpoint queries containing the word "union" (wine **union** listings) triggered false positives; they add a **scope-down statement** excluding `/api/search` from the SQLi rule group while keeping parameterized queries in application code. Cloudflare's OWASP Core Ruleset offers similar managed protection with one-click "Under Attack" mode during active campaigns.
 
 ---
 
-## 10.20 Zero Trust Security
+
+## 10.11 Zero Trust Security
 
 ### Overview
 
@@ -2671,7 +2683,8 @@ flowchart LR
 
 ---
 
-## 10.21 Audit Logging
+
+## 10.12 Audit Logging
 
 ### Overview
 

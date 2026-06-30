@@ -8,20 +8,15 @@
 
 | # | Sub-topic |
 |---|-----------|
-| 15.1 | [Batch Processing](#151-batch-processing) |
-| 15.2 | [Stream Processing](#152-stream-processing) |
-| 15.3 | [Hadoop](#153-hadoop) |
-| 15.4 | [Spark](#154-spark) |
-| 15.5 | [Flink](#155-flink) |
-| 15.6 | [ETL](#156-etl) |
-| 15.7 | [ELT](#157-elt) |
-| 15.8 | [Data Lake](#158-data-lake) |
-| 15.9 | [Data Warehouse](#159-data-warehouse) |
-| 15.10 | [Lakehouse Architecture](#1510-lakehouse-architecture) |
+| 15.1 | [Batch & Stream Processing](#151-batch-stream-processing) |
+| 15.2 | [Processing Engines: Hadoop, Spark & Flink](#152-processing-engines-hadoop-spark-flink) |
+| 15.3 | [ETL & ELT](#153-etl-elt) |
+| 15.4 | [Data Lake, Warehouse & Lakehouse](#154-data-lake-warehouse-lakehouse) |
 
 ---
 
-## 15.1 Batch Processing
+
+## 15.1 Batch & Stream Processing
 
 ### Overview
 
@@ -143,9 +138,10 @@ Batch fits because finance needs a **complete, auditable snapshot** of the close
 
 ---
 
-## 15.2 Stream Processing
 
-### Overview
+### Stream processing
+
+#### Overview
 
 Imagine a security guard watching a live camera feed instead of reviewing yesterday's recording. Each person who walks in is assessed immediately — no waiting until end of day to notice someone suspicious. **Stream processing** treats data as an unending flow: every event is handled as it arrives (or in tiny micro-batches), with answers updated continuously.
 
@@ -153,7 +149,7 @@ Technically, stream processing consumes an **unbounded log** (Kafka, Kinesis, Pu
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 Batch pipelines cannot answer "is this card fraudulent **right now**?" or "how many users are online **this second**?" Replicating OLTP databases to analytics stores via nightly dumps leaves hours of blind spots.
 
@@ -167,7 +163,7 @@ Without a stream backbone, teams bolt on polling, cron hacks, or oversized cache
 
 ---
 
-### What it does
+#### What it does
 
 A typical streaming pipeline has four layers:
 
@@ -180,7 +176,7 @@ The system runs continuously. Failure recovery relies on offset checkpoints and 
 
 ---
 
-### How it works — the architecture inside
+#### How it works — the architecture inside
 
 ```mermaid
 flowchart LR
@@ -253,7 +249,7 @@ Sanity check: lag in "messages" ≠ lag in "time" — if burst was 5 minutes at 
 
 ---
 
-### Walkthrough: fraud scoring on card authorizations
+#### Walkthrough: fraud scoring on card authorizations
 
 ```text
 Event: { card_id, merchant, amount, event_time, geo }
@@ -271,7 +267,7 @@ Late events after the allowed lateness are dropped or sent to a side output for 
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **Exactly-once is a pipeline property** — Kafka → Flink → JDBC only works if the sink supports idempotent writes or two-phase commit.
 - **Processing time vs event time** — wall-clock windows break when consumers lag; always model event time for analytics.
@@ -282,7 +278,7 @@ Late events after the allowed lateness are dropped or sent to a side output for 
 
 ---
 
-### Real-world example: LinkedIn activity feed (Kafka + Samza heritage)
+#### Real-world example: LinkedIn activity feed (Kafka + Samza heritage)
 
 Activity events (posts, likes, comments) append to Kafka. Stream processors maintain per-member fan-out graphs and ranking signals in near real time. Batch jobs still rebuild training data nightly, but the **live feed** is stream-driven: consumers read partitioned topics, update materialized views, and serve read paths within seconds.
 
@@ -290,7 +286,8 @@ The pattern — durable log, keyed state, replay on failure — is the standard 
 
 ---
 
-## 15.3 Hadoop
+
+## 15.2 Processing Engines: Hadoop, Spark & Flink
 
 ### Overview
 
@@ -408,9 +405,10 @@ Facebook's early analytics stack stored multi-petabyte logs on HDFS and ran Hive
 
 ---
 
-## 15.4 Spark
 
-### Overview
+### Apache Spark
+
+#### Overview
 
 If Hadoop MapReduce is a convoy of trucks making one delivery each trip, Spark is a fleet that loads many stops into memory, plans the whole route once, and only goes back to the warehouse when the truck is full. Repeated passes over the same data — joins, iterations, ML epochs — reuse cached partitions instead of re-reading from disk every time.
 
@@ -418,7 +416,7 @@ Technically, **Apache Spark** is a unified analytics engine: batch, SQL (Spark S
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 MapReduce materializes intermediate results to disk after every stage — painful for iterative algorithms and multi-stage ETL. Spark fixes **repeated distributed computation**:
 
@@ -430,7 +428,7 @@ Teams get one engine for ETL, ad hoc SQL, and feature engineering instead of mai
 
 ---
 
-### What it does
+#### What it does
 
 1. **Driver** — builds a DAG of stages from transformations; negotiates with the cluster manager (YARN, Kubernetes, Mesos, standalone).
 2. **Executors** — JVM workers on cluster nodes run **tasks** on **partitions** of the dataset.
@@ -442,7 +440,7 @@ Spark SQL registers tables against a Hive metastore or Delta/Iceberg; analysts w
 
 ---
 
-### How it works — the architecture inside
+#### How it works — the architecture inside
 
 ```mermaid
 flowchart LR
@@ -487,7 +485,7 @@ Sanity check: 640 GB in 50 partitions = 12.8 GB each — long GC, stragglers, sh
 
 ---
 
-### Walkthrough: daily join of 500 GB clicks × 2 GB users
+#### Walkthrough: daily join of 500 GB clicks × 2 GB users
 
 ```text
 Read clicks (partitioned by dt) and broadcast users (small dimension).
@@ -525,7 +523,7 @@ Sanity check: if 90% of rows share one user_id, one reducer gets ~32 GB while ot
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **Shuffle is the enemy** — `groupByKey` on high-cardinality keys without aggregation first; prefer `reduceByKey` / pre-combine.
 - **OOM on collect** — `collect()` or `toPandas()` on large results kills the driver; write to storage instead.
@@ -536,15 +534,16 @@ Sanity check: if 90% of rows share one user_id, one reducer gets ~32 GB while ot
 
 ---
 
-### Real-world example: Databricks nightly ETL on Delta Lake
+#### Real-world example: Databricks nightly ETL on Delta Lake
 
 A SaaS company runs PySpark jobs on Databricks: bronze JSON logs → silver deduped Parquet → gold dimensional models on Delta tables. `MERGE` handles CDC from operational replicas; Z-order optimizes file layout for common filters. One Spark codebase serves batch backfills and Structured Streaming ingestion from Kafka into the same Delta paths — the lakehouse pattern Spark popularized.
 
 ---
 
-## 15.5 Flink
 
-### Overview
+### Apache Flink
+
+#### Overview
 
 Spark Structured Streaming often checks the mailbox every few seconds and processes whatever piled up — fast enough for many dashboards, but not true continuous reaction. **Apache Flink** is the guard who never looks away: each event flows through operators immediately, with internal clocks based on when the event actually happened, not when the server finally read it.
 
@@ -552,7 +551,7 @@ Technically, Flink is a **stream-first** distributed engine. The DataStream API 
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 Micro-batch systems approximate streaming but struggle with:
 
@@ -564,7 +563,7 @@ Flink fixes **continuous correctness** for fraud, CDC pipelines, and real-time p
 
 ---
 
-### What it does
+#### What it does
 
 1. **Ingest** — parallel sources (Kafka, Kinesis, files) with split assignment and offset tracking.
 2. **Process** — operators form a logical graph; keyed streams route by hash(key) for consistent state locality.
@@ -576,7 +575,7 @@ Flink SQL provides relational APIs over streams and tables with changelog semant
 
 ---
 
-### How it works — the architecture inside
+#### How it works — the architecture inside
 
 ```mermaid
 flowchart LR
@@ -598,7 +597,7 @@ flowchart LR
 
 ---
 
-### Walkthrough: CDC with Debezium → Flink → warehouse
+#### Walkthrough: CDC with Debezium → Flink → warehouse
 
 ```text
 Debezium reads MySQL binlog → Kafka topic orders_changelog.
@@ -613,7 +612,7 @@ Checkpoint every 60s → on failure, restart from last checkpoint, no duplicate 
 
 ---
 
-### Flink vs Spark Structured Streaming
+#### Flink vs Spark Structured Streaming
 
 | Dimension | Flink | Spark Structured Streaming |
 |-----------|-------|----------------------------|
@@ -625,7 +624,7 @@ Checkpoint every 60s → on failure, restart from last checkpoint, no duplicate 
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **State TTL** — unbounded `MapState` for user sessions needs expiration or state grows without limit.
 - **RocksDB tuning** — block cache, incremental checkpoints, and local SSD matter at scale.
@@ -636,13 +635,14 @@ Checkpoint every 60s → on failure, restart from last checkpoint, no duplicate 
 
 ---
 
-### Real-world example: Alibaba Double 11 real-time metrics
+#### Real-world example: Alibaba Double 11 real-time metrics
 
 Alibaba uses Flink at extreme scale for live transaction metrics during shopping festivals — aggregating orders and payments with low latency across regions. Event-time processing and checkpoint recovery keep dashboards accurate despite burst traffic and out-of-order mobile payments. The architecture (Kafka ingest, Flink aggregation, sink to OLAP) is the reference design for high-stakes real-time analytics.
 
 ---
 
-## 15.6 ETL
+
+## 15.3 ETL & ELT
 
 ### Overview
 
@@ -739,9 +739,10 @@ Large banks historically ran Informatica PowerCenter on staging servers: extract
 
 ---
 
-## 15.7 ELT
 
-### Overview
+### ELT
+
+#### Overview
 
 ELT flips the factory metaphor: ship all raw materials straight into the warehouse loading dock, then use the warehouse's own industrial robots to assemble products on site. You do not maintain a separate factory floor — the target platform's compute is the transform engine.
 
@@ -749,7 +750,7 @@ Technically, **Extract, Load, Transform** lands **raw** data first into a wareho
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 Classic ETL sized transform servers for peak load and duplicated data movement (source → ETL → warehouse). Cloud warehouses offer **separable storage and compute** — spin up larger warehouses for heavy transforms, scale to zero when idle.
 
@@ -761,7 +762,7 @@ ELT fixes **time-to-insight and iteration speed**:
 
 ---
 
-### What it does
+#### What it does
 
 1. **Extract & load** — replicate tables or files to `raw` with minimal typing (Fivetran, Airbyte, Stitch).
 2. **Transform in warehouse** — layered models: `staging` → `intermediate` → `mart` via dbt, Spark SQL, or native SQL.
@@ -772,7 +773,7 @@ Separation of concerns: ingestion vendor vs transform repo vs orchestration vs w
 
 ---
 
-### How it works — the architecture inside
+#### How it works — the architecture inside
 
 ```mermaid
 flowchart LR
@@ -791,7 +792,7 @@ flowchart LR
 
 ---
 
-### Walkthrough: Fivetran + dbt on Snowflake
+#### Walkthrough: Fivetran + dbt on Snowflake
 
 ```text
 Fivetran syncs Salesforce accounts → raw.salesforce_accounts (every 15 min).
@@ -805,7 +806,7 @@ Business rule change (new field mapping)? Edit dbt model, rerun from staging —
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **Raw data exposure** — ACL on `raw` schemas is critical; PII lands before masking in transform layer.
 - **Warehouse cost spikes** — bad SQL (cartesian join) on large tables burns credits; use query monitors and dbt limits.
@@ -816,13 +817,14 @@ Business rule change (new field mapping)? Edit dbt model, rerun from staging —
 
 ---
 
-### Real-world example: JetBlue analytics on Snowflake + dbt
+#### Real-world example: JetBlue analytics on Snowflake + dbt
 
 Airlines and travel companies widely adopted the modern data stack: SaaS and operational sources replicate into Snowflake; analytics engineers maintain dbt projects in Git with CI testing. Marketing, operations, and finance consume shared marts with documented lineage. ELT shortened the cycle from "new Salesforce field" to "field in dashboard" from weeks (ticket to ETL team) to hours (dbt PR merge).
 
 ---
 
-## 15.8 Data Lake
+
+## 15.4 Data Lake, Warehouse & Lakehouse
 
 ### Overview
 
@@ -914,9 +916,10 @@ Netflix stores exabytes of operational and viewing data on S3. Apache Iceberg (b
 
 ---
 
-## 15.9 Data Warehouse
 
-### Overview
+### Data warehouse
+
+#### Overview
 
 A data warehouse is the curated library reading room: only catalogued, bound books on approved shelves, with a librarian who knows how to find aggregates fast. You do not dump random PDFs here — you store **modeled, structured** data optimized for questions like "revenue by region last quarter."
 
@@ -924,7 +927,7 @@ Technically, a **data warehouse** is an **OLAP** system: columnar storage, compr
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 Running analytics on production OLTP databases starves transactional workloads and lacks historical modeling. Spreadsheets and one-off SQL on replicas produce inconsistent KPIs.
 
@@ -936,7 +939,7 @@ A warehouse fixes **certified, fast SQL analytics**:
 
 ---
 
-### What it does
+#### What it does
 
 1. **Model** — facts (measurable events) and dimensions (context: time, product, geography) in star schema.
 2. **Load** — via ETL or ELT from operational systems and lakes.
@@ -947,7 +950,7 @@ A warehouse fixes **certified, fast SQL analytics**:
 
 ---
 
-### How it works — the architecture inside
+#### How it works — the architecture inside
 
 ```mermaid
 flowchart LR
@@ -975,7 +978,7 @@ flowchart LR
 
 ---
 
-### Walkthrough: executive revenue dashboard query
+#### Walkthrough: executive revenue dashboard query
 
 ```text
 fct_orders JOIN dim_date JOIN dim_region
@@ -990,7 +993,7 @@ Certified metric: `net_revenue = gross - refunds` defined once in dbt mart, not 
 
 ---
 
-### Warehouse vs data lake
+#### Warehouse vs data lake
 
 | Dimension | Warehouse | Data lake |
 |-----------|-----------|-----------|
@@ -1004,7 +1007,7 @@ Modern platforms blur the line via external tables and lakehouse formats — but
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **Petabyte warehouse bill** — long-term raw history belongs in the lake; warehouse holds hot, curated subsets.
 - **Schema rigidity** — quick schema changes need migration discipline; use staging views during transitions.
@@ -1015,15 +1018,16 @@ Modern platforms blur the line via external tables and lakehouse formats — but
 
 ---
 
-### Real-world example: Snowflake multi-tenant analytics at DoorDash
+#### Real-world example: Snowflake multi-tenant analytics at DoorDash
 
 Marketplace companies consolidate orders, dasher activity, and merchant metrics into Snowflake marts. Separate virtual warehouses isolate ELT (large) from BI (interactive). Row access policies enforce market-level security. Reverse ETL syncs aggregated segments back to marketing tools. The warehouse is the **certified metrics layer** — not the system of record for live order state (that stays OLTP).
 
 ---
 
-## 15.10 Lakehouse Architecture
 
-### Overview
+### Lakehouse architecture
+
+#### Overview
 
 For years, organizations ran two parallel systems: a cheap messy lake for everything raw, and an expensive tidy warehouse for BI — plus brittle sync jobs between them. A **lakehouse** is the attempt to have one building serve both purposes: warehouse-grade reliability and SQL performance on lake-priced object storage.
 
@@ -1031,7 +1035,7 @@ Technically, a lakehouse stores **Parquet** (or similar) on S3/ADLS/GCS with an 
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 Dual-platform architecture caused:
 
@@ -1043,7 +1047,7 @@ The lakehouse fixes **single source of truth on open storage** — ACID and cata
 
 ---
 
-### What it does
+#### What it does
 
 1. **Store** — Parquet files on object storage with table-format metadata (transaction log, manifests).
 2. **Transact** — concurrent writers commit atomically; readers see consistent snapshots.
@@ -1055,7 +1059,7 @@ Medallion bronze → silver → gold layers often live entirely inside the lakeh
 
 ---
 
-### How it works — the architecture inside
+#### How it works — the architecture inside
 
 ```mermaid
 flowchart LR
@@ -1095,7 +1099,7 @@ flowchart LR
 
 ---
 
-### Walkthrough: unified batch + stream on Delta
+#### Walkthrough: unified batch + stream on Delta
 
 ```text
 Bronze: Kafka → Spark Structured Streaming → Delta bronze.events (append).
@@ -1110,7 +1114,7 @@ One logical table, multiple engines — no nightly "sync lake to Snowflake" job 
 
 ---
 
-### Lakehouse vs warehouse — choosing a lane
+#### Lakehouse vs warehouse — choosing a lane
 
 | Dimension | Lakehouse | Managed warehouse |
 |-----------|-----------|-------------------|
@@ -1124,7 +1128,7 @@ Many orgs run **both** — lakehouse for data platform and ML; warehouse for dep
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **Table format choice** — Iceberg for multi-engine neutrality; Delta if all-in on Databricks; Hudi for heavy upsert CDC.
 - **Lock-in risk** — proprietary features on one format may complicate migration; prefer open catalog APIs.
@@ -1135,12 +1139,11 @@ Many orgs run **both** — lakehouse for data platform and ML; warehouse for dep
 
 ---
 
-### Real-world example: Databricks lakehouse on Delta Lake
+#### Real-world example: Databricks lakehouse on Delta Lake
 
 Databricks coined "lakehouse" and ships Delta Lake as the default table format: ACID on S3/ADLS, Unity Catalog for governance, Photon-accelerated SQL, and shared tables for MLflow feature stores. Customers migrate off dual lake+warehouse pipelines by promoting silver/gold Delta tables to SQL-accessible endpoints while Spark jobs and Flink (via partner integrations) write the same storage layer. Time travel supported regulatory replay when a pipeline bug affected published metrics — recompute from an earlier snapshot without re-ingesting years of raw data.
 
 ---
 
----
 
 [<- Back to master index](../README.md)

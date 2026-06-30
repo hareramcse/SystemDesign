@@ -8,26 +8,19 @@
 
 | # | Sub-topic |
 |---|-----------|
-| 9.1 | [Logging](#91-logging) |
-| 9.2 | [Structured Logging](#92-structured-logging) |
-| 9.3 | [Metrics](#93-metrics) |
-| 9.4 | [Monitoring](#94-monitoring) |
-| 9.5 | [Distributed Tracing](#95-distributed-tracing) |
-| 9.6 | [OpenTelemetry](#96-opentelemetry) |
-| 9.7 | [Correlation IDs](#97-correlation-ids) |
-| 9.8 | [Observability stack — trace ID to Grafana](#98-observability-stack--trace-id-to-grafana) |
-| 9.9 | [SLI](#99-sli) |
-| 9.10 | [SLO](#910-slo) |
-| 9.11 | [SLA](#911-sla) |
-| 9.12 | [Error Budgets](#912-error-budgets) |
-| 9.13 | [Alerting](#913-alerting) |
-| 9.14 | [Dashboards](#914-dashboards) |
-| 9.15 | [Health Checks](#915-health-checks) |
-| 9.16 | [Synthetic Monitoring](#916-synthetic-monitoring) |
+| 9.1 | [Logging & Structured Logging](#91-logging-structured-logging) |
+| 9.2 | [Metrics & Monitoring](#92-metrics-monitoring) |
+| 9.3 | [Distributed Tracing](#93-distributed-tracing) |
+| 9.4 | [OpenTelemetry](#94-opentelemetry) |
+| 9.5 | [Correlation IDs](#95-correlation-ids) |
+| 9.6 | [Observability stack — trace ID to Grafana](#96-observability-stack-trace-id-to-grafana) |
+| 9.7 | [SLI, SLO, SLA & Error Budgets](#97-sli-slo-sla-error-budgets) |
+| 9.8 | [Alerting & Dashboards](#98-alerting-dashboards) |
+| 9.9 | [Health Checks & Synthetic Monitoring](#99-health-checks-synthetic-monitoring) |
 
 ---
 
-## 9.1 Logging
+## 9.1 Logging & Structured Logging
 
 ### Overview
 
@@ -152,9 +145,9 @@ Fluent Bit tails container stdout → Elasticsearch. An on-call engineer searche
 
 ---
 
-## 9.2 Structured Logging
+### Structured logging
 
-### Overview
+#### Overview
 
 Imagine receipts where every field is printed in a random sentence versus receipts with labeled columns: date, item, price. **Structured logging** is the labeled-column approach — each log line is a record with named fields machines can filter and aggregate without guessing where the order ID hid in a sentence.
 
@@ -162,7 +155,7 @@ Technically, structured logging serializes each event as **JSON** (or key=value)
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 Traditional lines like `User 101 placed order 5001` do not scale:
 
@@ -174,7 +167,7 @@ At millions of events per hour, unstructured logs make dashboards and automated 
 
 ---
 
-### What it does
+#### What it does
 
 Each event becomes a self-describing record:
 
@@ -206,7 +199,7 @@ Pick **one** naming convention (camelCase or snake_case) and enforce it in code 
 
 ---
 
-### How it works — the architecture inside
+#### How it works — the architecture inside
 
 #### Traditional vs structured
 
@@ -247,7 +240,7 @@ All three services log the same `correlationId`; one search returns the full sto
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **Do not log entire HTTP bodies** — size, PII, and cost; log IDs and outcome codes.
 - **Stable `event` names** — `PaymentFailed` not varying prose; enables reliable dashboards.
@@ -258,13 +251,13 @@ All three services log the same `correlationId`; one search returns the full sto
 
 ---
 
-### Real-world example
+#### Real-world example
 
 Shopify-scale teams often standardize on JSON logs shipped to Elasticsearch or Datadog. A payment service defines `event` enums (`PaymentStarted`, `PaymentCompleted`, `PaymentFailed`). When error rate spikes in metrics, an engineer filters `event:PaymentFailed AND reason:card_declined` vs `reason:gateway_timeout` in under a minute — two different remediation paths. Unstructured logs would require manual grep across dozens of pods.
 
 ---
 
-## 9.3 Metrics
+## 9.2 Metrics & Monitoring
 
 ### Overview
 
@@ -444,9 +437,9 @@ Netflix and many cloud-native shops expose Micrometer/Prometheus metrics from ea
 
 ---
 
-## 9.4 Monitoring
+### Monitoring
 
-### Overview
+#### Overview
 
 Monitoring is the security camera that runs 24/7 — not investigating every frame, but watching for smoke, broken locks, or crowds forming so someone responds before the building burns down. **Monitoring** continuously collects health data from infrastructure and applications and compares it to expectations.
 
@@ -454,7 +447,7 @@ Technically, monitoring is the **ongoing process** of ingesting telemetry (metri
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 Production systems fail silently until users complain — slow checkout, partial outages, database connection exhaustion. Monitoring aims to **detect degradation before customer impact**:
 
@@ -467,7 +460,7 @@ Without continuous monitoring, mean time to detect (MTTD) equals mean time to us
 
 ---
 
-### What it does
+#### What it does
 
 A typical monitoring loop:
 
@@ -501,7 +494,7 @@ Both matter: internal metrics explain cause; black-box checks confirm user-visib
 
 ---
 
-### How it works — the architecture inside
+#### How it works — the architecture inside
 
 #### Monitoring vs observability
 
@@ -536,7 +529,7 @@ Real user monitoring (RUM) measures actual browser experience; synthetic monitor
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **Alert fatigue** — hundreds of low-severity pages → ignored critical ones; alert on symptoms users feel.
 - **Monitor the user journey** — not only servers; checkout success rate beats single-host CPU.
@@ -547,19 +540,19 @@ Real user monitoring (RUM) measures actual browser experience; synthetic monitor
 
 ---
 
-### Real-world example
+#### Real-world example
 
 Kubernetes clusters run **kube-state-metrics** and node exporters into Prometheus. Grafana shows pod restarts, API server latency, and etcd health. When the payment namespace's readiness failures rise, alerts fire before the load balancer drains all pods — engineers correlate with PostgreSQL connection count metrics and fix pool sizing. The same stack does not replace distributed traces for per-request debugging, but it catches the outage first.
 
 ---
 
-## 9.5 Distributed Tracing
+## 9.3 Distributed Tracing
 
 ### Overview
 
 If logs are diary entries and metrics are daily step counts, a **trace** is a GPS route for one trip — every stop, how long you waited, and where you got stuck. **Distributed tracing** follows a single request as it hops through API gateways, microservices, queues, and databases.
 
-Technically, a **trace** is a tree of **spans**: each span is one unit of work (HTTP call, DB query) with start time, duration, status, and attributes. A shared **trace ID** links spans across processes via propagated headers (W3C `traceparent`). Tools like Jaeger, Zipkin, and Grafana Tempo store and visualize traces as waterfall timelines. **See [9.8](#98-observability-stack--trace-id-to-grafana)** for how tracing fits with metrics, logs, and Grafana.
+Technically, a **trace** is a tree of **spans**: each span is one unit of work (HTTP call, DB query) with start time, duration, status, and attributes. A shared **trace ID** links spans across processes via propagated headers (W3C `traceparent`). Tools like Jaeger, Zipkin, and Grafana Tempo store and visualize traces as waterfall timelines. **See [9.8](#96-observability-stack--trace-id-to-grafana)** for how tracing fits with metrics, logs, and Grafana.
 
 ---
 
@@ -665,13 +658,13 @@ Uber pioneered heavy tracing at scale (Jaeger originated there). A rider request
 
 ---
 
-## 9.6 OpenTelemetry
+## 9.4 OpenTelemetry
 
 ### Overview
 
 Before USB-C, every phone needed a different charger. Observability had the same problem — one vendor SDK for metrics, another for traces, another for logs, and switching backends meant rewriting instrumentation. **OpenTelemetry (OTel)** is the USB-C of telemetry: instrument once, export anywhere.
 
-Technically, OpenTelemetry is a CNCF project providing APIs, SDKs, auto-instrumentation agents, the **OTLP** protocol, and the **OpenTelemetry Collector** — a vendor-neutral pipeline that receives, processes, samples, and routes logs, metrics, and traces to Prometheus, Jaeger, Datadog, or cloud backends without recompiling applications. **See [9.8](#98-observability-stack--trace-id-to-grafana)** for how OTel relates to Micrometer, Prometheus, and Grafana.
+Technically, OpenTelemetry is a CNCF project providing APIs, SDKs, auto-instrumentation agents, the **OTLP** protocol, and the **OpenTelemetry Collector** — a vendor-neutral pipeline that receives, processes, samples, and routes logs, metrics, and traces to Prometheus, Jaeger, Datadog, or cloud backends without recompiling applications. **See [9.8](#96-observability-stack--trace-id-to-grafana)** for how OTel relates to Micrometer, Prometheus, and Grafana.
 
 ---
 
@@ -777,13 +770,13 @@ Grafana Labs dogfoods **Grafana Alloy** (OTel Collector distribution) receiving 
 
 ---
 
-## 9.7 Correlation IDs
+## 9.5 Correlation IDs
 
 ### Overview
 
 A package shipped through five warehouses needs the same tracking number on every manifest. A **correlation ID** (request ID) is that tracking number for software — one unique value assigned when a request enters your system and copied into every downstream call and log line.
 
-Technically, it is usually a UUID generated at the **edge** (API gateway, load balancer, or first service), passed via HTTP headers (`X-Correlation-ID`, `X-Request-ID`) or message metadata (Kafka headers), and included as a structured log field on every event for that request. It complements distributed tracing: trace IDs power spans; correlation IDs (often identical to trace ID in OTel stacks) power log search. **See [9.8](#98-observability-stack--trace-id-to-grafana)** for how IDs tie logs, traces, and metrics together.
+Technically, it is usually a UUID generated at the **edge** (API gateway, load balancer, or first service), passed via HTTP headers (`X-Correlation-ID`, `X-Request-ID`) or message metadata (Kafka headers), and included as a structured log field on every event for that request. It complements distributed tracing: trace IDs power spans; correlation IDs (often identical to trace ID in OTel stacks) power log search. **See [9.8](#96-observability-stack--trace-id-to-grafana)** for how IDs tie logs, traces, and metrics together.
 
 ---
 
@@ -878,13 +871,13 @@ AWS API Gateway and many enterprises add `X-Amzn-RequestId` or `X-Request-ID` at
 
 ---
 
-## 9.8 Observability stack — trace ID to Grafana
+## 9.6 Observability stack — trace ID to Grafana
 
 ### Overview
 
 Consider a hospital visit: the wristband ID ties your blood test, X-ray, and pharmacy records together; the wall monitor graphs your heart rate over time; the specialist's timeline shows each procedure and how long it took. **Trace ID**, **correlation ID**, **Micrometer**, **OpenTelemetry**, **Prometheus**, **Jaeger**, and **Grafana** play those same roles in software — but teams often wire all of them and still cannot say which piece answers which question.
 
-Technically, these terms span three **telemetry pillars** (metrics, logs, traces) and three **layers** (instrumentation in the app, transport/collection, storage and UI). This section is the **integration map** — it assumes you already know traces ([9.5](#95-distributed-tracing)), OpenTelemetry ([9.6](#96-opentelemetry)), and correlation IDs ([9.7](#97-correlation-ids)); it shows how they land in Prometheus, Jaeger, and Grafana.
+Technically, these terms span three **telemetry pillars** (metrics, logs, traces) and three **layers** (instrumentation in the app, transport/collection, storage and UI). This section is the **integration map** — it assumes you already know traces ([9.3](#93-distributed-tracing)), OpenTelemetry ([9.4](#94-opentelemetry)), and correlation IDs ([9.5](#95-correlation-ids)); it shows how they land in Prometheus, Jaeger, and Grafana.
 
 ---
 
@@ -984,12 +977,12 @@ flowchart LR
 
 | Stage | Tool | Deep dive | What this hub adds |
 |-------|------|-----------|-------------------|
-| IDs at the edge | `X-Request-ID`, trace/correlation ID | [9.7](#97-correlation-ids) | One canonical ID in metrics, traces, and logs |
-| Per-request tree | Trace ID, spans | [9.5](#95-distributed-tracing) | Jaeger answers "where did this request spend time?" |
-| Instrumentation | OTel SDK/agent, Micrometer | [9.6](#96-opentelemetry) | Micrometer = JVM metrics; OTel = spans + OTLP export |
-| Metrics store | Prometheus | [9.3](#93-metrics) | Scrapes `/actuator/prometheus`; aggregates only |
-| Trace store | Jaeger / Tempo | [9.5](#95-distributed-tracing) | Indexed by trace ID; waterfall UI |
-| Human UI | Grafana | [9.4](#94-monitoring) | Queries Prometheus + Jaeger/Tempo + Loki — does not store telemetry |
+| IDs at the edge | `X-Request-ID`, trace/correlation ID | [9.5](#95-correlation-ids) | One canonical ID in metrics, traces, and logs |
+| Per-request tree | Trace ID, spans | [9.3](#93-distributed-tracing) | Jaeger answers "where did this request spend time?" |
+| Instrumentation | OTel SDK/agent, Micrometer | [9.4](#94-opentelemetry) | Micrometer = JVM metrics; OTel = spans + OTLP export |
+| Metrics store | Prometheus | [9.2](#92-metrics-monitoring) | Scrapes `/actuator/prometheus`; aggregates only |
+| Trace store | Jaeger / Tempo | [9.3](#93-distributed-tracing) | Indexed by trace ID; waterfall UI |
+| Human UI | Grafana | [9.2](#92-metrics-monitoring) | Queries Prometheus + Jaeger/Tempo + Loki — does not store telemetry |
 
 **Production wiring (Spring Boot):** Actuator + `micrometer-registry-prometheus` → Prometheus scrape; `micrometer-tracing-bridge-otel` + OTLP → Collector → Jaeger; log pattern includes `%X{traceId}`; Grafana datasources for Prometheus, Tempo/Jaeger, and Loki.
 
@@ -1020,10 +1013,10 @@ Grafana          WHERE do humans look?                          → dashboards +
 
 ### Pitfalls and design tips
 
-- **Three different IDs** for one request — pick one canonical ID; see [9.7](#97-correlation-ids).
-- **Micrometer without tracing bridge** — metrics work, no automatic spans; see [9.6](#96-opentelemetry).
+- **Three different IDs** for one request — pick one canonical ID; see [9.5](#95-correlation-ids).
+- **Micrometer without tracing bridge** — metrics work, no automatic spans; see [9.4](#94-opentelemetry).
 - **Wrong tool for the question** — fleet health → Prometheus/Grafana; one slow request → Jaeger by trace ID; per-service logs → correlation/trace ID filter.
-- **Broken header propagation** — downstream service gets a new trace ID; Jaeger shows disconnected traces ([9.5](#95-distributed-tracing)).
+- **Broken header propagation** — downstream service gets a new trace ID; Jaeger shows disconnected traces ([9.3](#93-distributed-tracing)).
 - **Production:** return `X-Request-ID` in error JSON; enable exemplars and tail sampling in the Collector for slow/error traces.
 
 ---
@@ -1045,7 +1038,7 @@ Grafana          WHERE do humans look?                          → dashboards +
 
 ---
 
-## 9.9 SLI
+## 9.7 SLI, SLO, SLA & Error Budgets
 
 ### Overview
 
@@ -1147,9 +1140,9 @@ Google SRE books define availability SLI for a user-facing service as: *the prop
 
 ---
 
-## 9.10 SLO
+### SLO
 
-### Overview
+#### Overview
 
 A speed limit is not the same as your current speed — it's the target your driving should stay under. A **Service Level Objective (SLO)** is your team's internal reliability target for an SLI: "we aim for 99.9% availability" or "95% of requests under 500 ms."
 
@@ -1157,7 +1150,7 @@ Technically, an SLO is a **threshold on an SLI** over a defined window (rolling 
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 "Highly available" means nothing without a number. SLOs:
 
@@ -1170,7 +1163,7 @@ Without SLOs, teams either over-build (five nines nobody needs) or under-invest 
 
 ---
 
-### What it means
+#### What it means
 
 | SLI (measured) | SLO (target) |
 |----------------|--------------|
@@ -1200,7 +1193,7 @@ Each nine is an order of magnitude harder and more expensive.
 
 ---
 
-### How to achieve it — techniques by target
+#### How to achieve it — techniques by target
 
 #### Choosing realistic SLOs
 
@@ -1227,7 +1220,7 @@ Multi-window burn-rate alerts (Google SRE workbook) reduce false positives.
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **Too many SLOs** — dilutes focus; 2–3 per critical service.
 - **SLO = SLA** — no safety margin; any blip becomes legal exposure.
@@ -1237,15 +1230,15 @@ Multi-window burn-rate alerts (Google SRE workbook) reduce false positives.
 
 ---
 
-### Real-world example
+#### Real-world example
 
 GitHub publishes status against internal objectives; many SaaS teams set 99.9% monthly availability SLO for the API edge. During an incident, the SLO dashboard shows 99.85% with 12 days left in the month — error budget nearly exhausted. Leadership pauses risky migrations until budget recovers, even though the 99.5% SLA to enterprise customers is not yet violated.
 
 ---
 
-## 9.11 SLA
+### SLA
 
-### Overview
+#### Overview
 
 A lease spells out what the landlord guarantees — heat, repairs, penalties if they fail. A **Service Level Agreement (SLA)** is the customer-facing contract: promised availability or latency, how you measure it, and what happens if you miss (credits, refunds, termination rights).
 
@@ -1253,7 +1246,7 @@ Technically, an SLA is a **legal/business document** backed by SLIs measured in 
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 Customers and vendors need explicit expectations:
 
@@ -1265,7 +1258,7 @@ SLAs turn reliability from marketing language into **enforceable obligations** �
 
 ---
 
-### What it means
+#### What it means
 
 Example clause:
 
@@ -1294,7 +1287,7 @@ SLA  = ≥ 99.5% customer promise    → PASS
 
 ---
 
-### How to achieve it — techniques by target
+#### How to achieve it — techniques by target
 
 #### Set SLA below SLO
 
@@ -1324,7 +1317,7 @@ Your product SLAs should be similarly explicit.
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **Ambiguous "downtime"** — partial degradation (slow but not down) must be defined.
 - **SLA without instrumentation** — unmeasurable promises are litigation, not engineering.
@@ -1334,15 +1327,15 @@ Your product SLAs should be similarly explicit.
 
 ---
 
-### Real-world example
+#### Real-world example
 
 Atlassian's cloud SLAs specify monthly uptime percentages per product with service credits. Engineering monitors Jira Cloud availability SLI at the edge; internal SLO targets 99.9%+ while the published SLA might be 99.5% for certain tiers. A regional DNS incident might breach SLO and trigger internal freeze on deploys days before SLA credits would apply to customers — the buffer does its job.
 
 ---
 
-## 9.12 Error Budgets
+### Error budgets
 
-### Overview
+#### Overview
 
 A monthly data cap on your phone plan: you can binge until you hit the limit, then speeds throttle. An **error budget** is the allowable unreliability before you violate your SLO — the "data cap" for downtime and errors.
 
@@ -1350,7 +1343,7 @@ Technically, **error budget = 100% − SLO**. For a 99.9% availability SLO, the 
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 Pure "zero downtime" culture fights all change; pure "move fast" breaks customers. Error budgets **objectify the trade-off**:
 
@@ -1361,7 +1354,7 @@ They align dev and ops with data instead of opinion ("Ops says no deploys" vs "D
 
 ---
 
-### What it means
+#### What it means
 
 | SLO | Error budget |
 |-----|--------------|
@@ -1419,7 +1412,7 @@ Burn-rate alerts warn when you're on track to miss the month even if today's SLI
 
 ---
 
-### How to achieve it — techniques by target
+#### How to achieve it — techniques by target
 
 #### Request-based budget
 
@@ -1462,7 +1455,7 @@ Grafana SLO app, Datadog SLO tracking, and Google Cloud Monitoring SLO objects c
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **Error budget ≠ error rate** — rate is current; budget is remaining allowance.
 - **Ignoring burn rate** — SLI still green mid-month but 10× burn → miss at day 25.
@@ -1472,13 +1465,13 @@ Grafana SLO app, Datadog SLO tracking, and Google Cloud Monitoring SLO objects c
 
 ---
 
-### Real-world example
+#### Real-world example
 
 Google's SRE teams literally block launches when multi-window burn-rate alerts fire for critical services. A YouTube-scale team with 99.99% SLO has ~4 minutes/month budget — a bad 15-minute partial outage consumes the quarter. Post-incident, error budget review decides whether to defer the next major feature launch until reliability investments (caching, failover) restore headroom — documented in the error budget policy, not hallway debates.
 
 ---
 
-## 9.13 Alerting
+## 9.8 Alerting & Dashboards
 
 ### Overview
 
@@ -1592,9 +1585,9 @@ PagerDuty ingests Prometheus Alertmanager webhooks for a fintech payment API. Ru
 
 ---
 
-## 9.14 Dashboards
+### Dashboards
 
-### Overview
+#### Overview
 
 A car dashboard shows speed, fuel, and warning lights at a glance — you don't open the hood while driving. **Dashboards** visualize metrics, logs, traces, SLO status, and alerts in one place so teams see system health without ad-hoc queries during incidents.
 
@@ -1602,7 +1595,7 @@ Technically, dashboards are **Grafana boards**, CloudWatch dashboards, or Datado
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 During an outage, typing PromQL under stress wastes minutes. Pre-built dashboards:
 
@@ -1615,7 +1608,7 @@ They reduce cognitive load and standardize incident triage.
 
 ---
 
-### What it does
+#### What it does
 
 ```mermaid
 flowchart LR
@@ -1643,7 +1636,7 @@ Line charts (trends), gauges (current value), heatmaps (latency by hour), status
 
 ---
 
-### How it works — the architecture inside
+#### How it works — the architecture inside
 
 #### Golden signals board
 
@@ -1677,7 +1670,7 @@ Loki and Tempo data sources add log and trace panels in the same UI (Grafana Exp
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **Wall of graphs** — 40 panels nobody reads; prioritize top 6 signals.
 - **No annotations** — mark deploys and incidents on timelines for causality.
@@ -1688,13 +1681,13 @@ Loki and Tempo data sources add log and trace panels in the same UI (Grafana Exp
 
 ---
 
-### Real-world example
+#### Real-world example
 
 Stripe's internal ops culture (and many fintechs) centers Grafana dashboards per critical API with RED metrics and SLO overlays. During elevated card decline rates, the on-call opens the payments dashboard: error rate panel up, latency flat, dependency panel shows issuer timeout spike — narrows to external network, not bad deploy. Without the pre-built board, engineers would rebuild queries while merchants still can't pay.
 
 ---
 
-## 9.15 Health Checks
+## 9.9 Health Checks & Synthetic Monitoring
 
 ### Overview
 
@@ -1810,9 +1803,9 @@ A Kubernetes order service uses readiness that checks PostgreSQL (`SELECT 1`) an
 
 ---
 
-## 9.16 Synthetic Monitoring
+### Synthetic monitoring
 
-### Overview
+#### Overview
 
 Mystery shoppers visit a store on a schedule to test checkout — not because no real customers came that hour, but to catch broken registers before opening rush. **Synthetic monitoring** runs automated scripts (HTTP pings, browser flows, API sequences) on a timer from one or more regions to verify critical paths work **before** real users hit failures.
 
@@ -1820,7 +1813,7 @@ Technically, synthetic tests are **scheduled probes** (every 1–5 minutes) exec
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 ```text
 Without synthetics:  deploy breaks checkout → first real customer fails → support ticket
@@ -1831,7 +1824,7 @@ Health checks prove `/health` returns 200; synthetics prove **the business journ
 
 ---
 
-### What it does
+#### What it does
 
 ```mermaid
 flowchart LR
@@ -1873,7 +1866,7 @@ Use **both** — synthetics catch regressions early; RUM catches device/geo issu
 
 ---
 
-### How it works — the architecture inside
+#### How it works — the architecture inside
 
 #### Multi-region agents
 
@@ -1903,7 +1896,7 @@ Commercial: **Datadog Synthetics**, **New Relic Synthetics**, **Pingdom**, **Cat
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **Brittle selectors** — UI tests break on cosmetic CSS changes; prefer API synthetics for stability.
 - **Test account hygiene** — dedicated synthetic users, not production admin creds in scripts.
@@ -1914,11 +1907,9 @@ Commercial: **Datadog Synthetics**, **New Relic Synthetics**, **Pingdom**, **Cat
 
 ---
 
-### Real-world example
+#### Real-world example
 
 Datadog Synthetics runs a **browser test** every 5 minutes against a major bank's login → balance → transfer flow from three continents. When a CDN misconfiguration breaks static assets in APAC only, EU and US synthetics pass but Sydney fails — regional alert fires before APAC morning peak. Engineers correlate with RUM showing elevated load errors in Australia — fix CDN path rule. Health endpoints stayed green throughout because API pods were fine; only the full browser journey exposed the issue.
-
----
 
 ---
 

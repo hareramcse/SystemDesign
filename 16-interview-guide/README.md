@@ -787,6 +787,5 @@ That arc — clarify, quantify, diagram, deepen, operationalize — is what inte
 
 ---
 
----
 
 [<- Back to master index](../README.md)

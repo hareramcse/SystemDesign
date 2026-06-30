@@ -9,21 +9,14 @@
 | # | Sub-topic |
 |---|-----------|
 | 3.1 | [Cache Fundamentals](#31-cache-fundamentals) |
-| 3.2 | [Cache Aside Pattern](#32-cache-aside-pattern) |
-| 3.3 | [Read Through Cache](#33-read-through-cache) |
-| 3.4 | [Write Through Cache](#34-write-through-cache) |
-| 3.5 | [Write Back Cache](#35-write-back-cache) |
-| 3.6 | [Write Around Cache](#36-write-around-cache) |
-| 3.7 | [Local Cache](#37-local-cache) |
-| 3.8 | [Distributed Cache](#38-distributed-cache) |
-| 3.9 | [Near Cache](#39-near-cache) |
-| 3.10 | [Cache Invalidation](#310-cache-invalidation) |
-| 3.11 | [Cache Warming](#311-cache-warming) |
-| 3.12 | [Cache Penetration](#312-cache-penetration) |
-| 3.13 | [Cache Avalanche](#313-cache-avalanche) |
-| 3.14 | [Cache Stampede](#314-cache-stampede) |
+| 3.2 | [Cache Read/Write Patterns](#32-cache-read-write-patterns) |
+| 3.3 | [Cache Topologies](#33-cache-topologies) |
+| 3.4 | [Cache Invalidation](#34-cache-invalidation) |
+| 3.5 | [Cache Warming](#35-cache-warming) |
+| 3.6 | [Cache Failure Modes](#36-cache-failure-modes) |
 
 ---
+
 
 ## 3.1 Cache Fundamentals
 
@@ -167,7 +160,8 @@ flowchart LR
 
 ---
 
-## 3.2 Cache Aside Pattern
+
+## 3.2 Cache Read/Write Patterns
 
 ### Overview
 
@@ -256,9 +250,10 @@ Alternative on write: **update cache** instead of delete (`SET product:42` with 
 
 ---
 
-## 3.3 Read Through Cache
 
-### Overview
+### Read-through cache
+
+#### Overview
 
 Instead of you fetching groceries from the warehouse every time the pantry is empty, a **smart pantry** does it for you: you only ever ask the pantry, and it restocks itself from the warehouse when needed. **Read-through** caching hides the database behind the cache — the application talks only to the cache on reads, and the cache library loads from the database on a miss.
 
@@ -266,7 +261,7 @@ Technically, the **cache provider** implements a loader callback (or built-in in
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 - **Duplicated miss logic** — every service reimplementing “check cache → query DB → set cache” leads to bugs and inconsistency.
 - **Scattered cache keys** — centralizing load logic in the cache layer keeps key naming and serialization in one place.
@@ -274,7 +269,7 @@ Technically, the **cache provider** implements a loader callback (or built-in in
 
 ---
 
-### What it does
+#### What it does
 
 On read, the application requests data from the cache layer only. The cache layer:
 
@@ -291,7 +286,7 @@ flowchart LR
 
 ---
 
-### How it works — the architecture inside
+#### How it works — the architecture inside
 
 The cache acts as a **facade** with a pluggable data source.
 
@@ -319,7 +314,7 @@ function cache.get(key):
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **Loader failures block the request** — on miss, the caller waits for DB + cache write; slow queries stall every miss. Time out and circuit-break the loader.
 - **Read-through ≠ write-through** — writes still need a separate strategy; do not assume the cache handles persistence.
@@ -329,15 +324,16 @@ function cache.get(key):
 
 ---
 
-### Real-world example
+#### Real-world example
 
 **Guava `LoadingCache` in a Java monolith.** A service defines `LoadingCache<Long, UserProfile> cache = CacheBuilder.newBuilder().expireAfterWrite(10, MINUTES).build(userId -> userDao.findById(userId))`. Controllers call `cache.get(userId)` only. First access for user 7 hits MySQL inside the loader; subsequent calls for 10 minutes return from heap with no SQL. The loader is defined once; twenty controllers share it without copy-paste miss logic.
 
 ---
 
-## 3.4 Write Through Cache
 
-### Overview
+### Write-through cache
+
+#### Overview
 
 When you update your phone contacts, both the phone and the cloud backup save the change at the same time — neither is left behind. **Write-through** caching updates the cache and the database **together on every write**, so the cache always holds the latest committed value.
 
@@ -345,7 +341,7 @@ Technically, on a write request the application (or cache layer) writes to the c
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 - **Stale cache after writes** — cache aside requires explicit invalidation; missing a `DEL` causes wrong reads. Write-through eliminates that class of bug for cached keys.
 - **Read-heavy workloads with frequent updates** — if writes are moderate but reads are huge, keeping cache synchronized on write maximizes hit ratio with fresh data.
@@ -353,7 +349,7 @@ Technically, on a write request the application (or cache layer) writes to the c
 
 ---
 
-### What it does
+#### What it does
 
 On **write:**
 
@@ -373,7 +369,7 @@ flowchart LR
 
 ---
 
-### How it works — the architecture inside
+#### How it works — the architecture inside
 
 ```text
 function write(key, value):
@@ -400,7 +396,7 @@ Production systems often use **DB first, then cache update** with retry, or a tr
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **Slow writes** — every write hits two systems; not suitable for firehose ingestion (use write-back or write-around instead).
 - **Write amplification** — updating one field may require rewriting a large cached object; consider field-level caching or smaller keys.
@@ -410,15 +406,16 @@ Production systems often use **DB first, then cache update** with retry, or a tr
 
 ---
 
-### Real-world example
+#### Real-world example
 
 **Inventory count on a product page.** An e-commerce service uses write-through for `stock:{sku}`: every purchase decrements stock in PostgreSQL and immediately updates the same key in Redis. Product pages read only from Redis. Shoppers never see “in stock” from cache while the database already sold the last unit — the write path kept both in sync. Writes are ~2× slower than DB-only, but product pages serve 50,000 reads/s from Redis at sub-millisecond latency.
 
 ---
 
-## 3.5 Write Back Cache
 
-### Overview
+### Write-back cache
+
+#### Overview
 
 You jot a note on a sticky pad and stick it on your monitor; later, when you have a quiet moment, you copy it into the official logbook. **Write-back** (also **write-behind**) acknowledges writes to the cache immediately and **flushes to the database asynchronously** in the background.
 
@@ -426,7 +423,7 @@ Technically, the cache is the **write buffer**. The application writes only to c
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 - **Write latency bottlenecks** — synchronous DB writes at 10k+ events/s overwhelm the database.
 - **Write burst smoothing** — many updates to the same key collapse into one DB write on flush (natural coalescing).
@@ -434,7 +431,7 @@ Technically, the cache is the **write buffer**. The application writes only to c
 
 ---
 
-### What it does
+#### What it does
 
 On **write:**
 
@@ -454,7 +451,7 @@ flowchart LR
 
 ---
 
-### How it works — the architecture inside
+#### How it works — the architecture inside
 
 ```text
 function write(key, value):
@@ -482,7 +479,7 @@ function flush_worker():
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **Data loss window** — default seconds to minutes of writes can vanish on crash; unacceptable for payments, orders, or account balances unless you add durable WAL.
 - **Read-your-writes across instances** — other app nodes may read stale DB until flush completes; route reads to same cache partition or wait for flush on critical paths.
@@ -492,15 +489,16 @@ function flush_worker():
 
 ---
 
-### Real-world example
+#### Real-world example
 
 **Analytics event buffering.** A tracking service accepts 100,000 events/s. Each event is appended to a Redis list `events:buffer` with sub-millisecond `LPUSH`. A worker every 5 seconds `LRANGE`s the list, bulk-inserts into ClickHouse, then `DEL`s the buffer. Spikes that would choke synchronous inserts are absorbed in Redis. If Redis fails before flush, at most 5 seconds of analytics events are lost — acceptable for this workload, documented in the SLA.
 
 ---
 
-## 3.6 Write Around Cache
 
-### Overview
+### Write-around cache
+
+#### Overview
 
 You file important documents directly in the archive room and only photocopy them to your desk when someone actually asks to read them. **Write-around** writes **straight to the database** and does not update the cache on write. The cache is populated only on a subsequent read (cache aside on the read path).
 
@@ -508,7 +506,7 @@ Technically, writes bypass the cache entirely. This avoids **cache pollution** �
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 - **Cache pollution from write-heavy, read-rare data** — logging, audit trails, or append-only events written constantly but queried rarely should not evict hot keys.
 - **Wasted cache memory** — write-through or write-back would store every write even when no reader exists.
@@ -516,7 +514,7 @@ Technically, writes bypass the cache entirely. This avoids **cache pollution** �
 
 ---
 
-### What it does
+#### What it does
 
 On **write:**
 
@@ -536,7 +534,7 @@ flowchart LR
 
 ---
 
-### How it works — the architecture inside
+#### How it works — the architecture inside
 
 ```text
 function write(key, value):
@@ -562,7 +560,7 @@ function read(key):
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **Must invalidate on write** if the key might already be cached — otherwise write-around serves stale data longer than cache aside with proper invalidation.
 - **First read after write is slow** — acceptable when reads are infrequent; unacceptable for “edit then immediately view” UX without invalidation.
@@ -571,13 +569,14 @@ function read(key):
 
 ---
 
-### Real-world example
+#### Real-world example
 
 **Social post creation.** When a user publishes a post, the service inserts into PostgreSQL and does not write to Redis. Feed readers rarely open that post in the first second; when someone does, the read path misses `post:{id}`, loads from DB, caches for 1 hour. Millions of writes per day do not flood Redis with posts nobody reads. If the author opens their post immediately, the app deletes `post:{id}` on create so the first view reloads fresh content.
 
 ---
 
-## 3.7 Local Cache
+
+## 3.3 Cache Topologies
 
 ### Overview
 
@@ -663,9 +662,10 @@ Cache<String, Config> cache = Caffeine.newBuilder()
 
 ---
 
-## 3.8 Distributed Cache
 
-### Overview
+### Distributed cache
+
+#### Overview
 
 Instead of every employee duplicating the company phone book on their desk, everyone shares one **central bulletin board** in the break room. A **distributed cache** is a separate cluster (often Redis or Memcached) that all application instances talk to over the network, giving a **consistent shared view** of cached data.
 
@@ -673,7 +673,7 @@ Technically, clients hash keys to shards across cache nodes (or use a Redis Clus
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 - **Cross-instance inconsistency** — local caches diverge; distributed cache is one source for shared hot data.
 - **Database overload at scale** — thousands of app servers share one cache tier instead of each hammering the DB.
@@ -681,7 +681,7 @@ Technically, clients hash keys to shards across cache nodes (or use a Redis Clus
 
 ---
 
-### What it does
+#### What it does
 
 Application servers act as clients. Standard operations: `GET`, `SET`, `DEL`, `INCR`, `EXPIRE`. The cluster routes keys to the correct node, replicates for HA (Redis primary/replica), and evicts by policy when memory is full.
 
@@ -694,7 +694,7 @@ flowchart LR
 
 ---
 
-### How it works — the architecture inside
+#### How it works — the architecture inside
 
 **Sharding:** `slot = hash(key) mod num_shards` (Redis Cluster uses 16,384 slots). Each node owns a slot range.
 
@@ -732,7 +732,7 @@ Total RAM needed ≈ (avg_value_size + key_overhead) × key_count × replication
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **Large values** — Redis single values > 512 KB hurt latency; split or compress.
 - **Hot keys** — one shard overloads while others idle; use local near-cache (3.9) or key replication with random suffix reads.
@@ -742,15 +742,16 @@ Total RAM needed ≈ (avg_value_size + key_overhead) × key_count × replication
 
 ---
 
-### Real-world example
+#### Real-world example
 
 **Twitter/X timeline caching (historical pattern).** Timeline fragments were cached in Redis clusters keyed by user and cursor. Fan-out services `GET timeline:{userId}:{page}` from Redis; on miss, reconstruct from Manhattan/MySQL, `SET` with TTL, return. Shared Redis cut per-timeline DB reads from hundreds to one per cache window across thousands of stateless API hosts.
 
 ---
 
-## 3.9 Near Cache
 
-### Overview
+### Near cache
+
+#### Overview
 
 You keep today's calendar on your desk (**near**) but walk to the shared filing cabinet (**far**) only when the desk copy is missing. **Near cache** combines a **local L1** cache in each application instance with a **distributed L2** (Redis, Hazelcast) — reads try L1 first, then L2, then the database.
 
@@ -758,7 +759,7 @@ Technically, the near cache is a client-side overlay: Hazelcast **Near Cache**, 
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 - **Redis network RTT on every read** — at 50k RPS per pod, even 1 ms × 50k = 50 s of cumulative wait per second of wall time; L1 absorbs the hottest fraction.
 - **Redis CPU/network saturation** — mega-hot keys (global config, viral product) are read from heap 99% of the time.
@@ -766,7 +767,7 @@ Technically, the near cache is a client-side overlay: Hazelcast **Near Cache**, 
 
 ---
 
-### What it does
+#### What it does
 
 Read path: **L1 → L2 → DB**. Write/invalidation: update authoritative store, invalidate L2, broadcast L1 invalidation to all clients.
 
@@ -790,7 +791,7 @@ flowchart LR
 
 ---
 
-### How it works — the architecture inside
+#### How it works — the architecture inside
 
 ```text
 function read(key):
@@ -825,7 +826,7 @@ function read(key):
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **Stale L1 after L2 invalidation** — if pub/sub is missed, L1 serves old data until TTL; keep L1 TTL short (seconds to minutes).
 - **Memory multiplication** — same key in L1 on every pod; only cache truly hot keys locally.
@@ -835,13 +836,14 @@ function read(key):
 
 ---
 
-### Real-world example
+#### Real-world example
 
 **Hazelcast Near Cache for reference data.** A bank’s pricing service uses a Hazelcast map `fx-rates` backed by Oracle. Each API pod enables Near Cache with 1,000-entry LRU and 60 s local TTL. Rate lookups at 30,000 RPS per data center hit local heap ~95% of the time; Hazelcast cluster sees ~1,500 RPS instead of 30,000. When treasury updates a rate, the map entry is updated on the server and near-cache invalidation events clear stale copies on all members within milliseconds.
 
 ---
 
-## 3.10 Cache Invalidation
+
+## 3.4 Cache Invalidation
 
 ### Overview
 
@@ -937,7 +939,8 @@ on_write:
 
 ---
 
-## 3.11 Cache Warming
+
+## 3.5 Cache Warming
 
 ### Overview
 
@@ -1051,7 +1054,8 @@ Sanity check: network cross-AZ DB adds latency per batch; pipeline without batch
 
 ---
 
-## 3.12 Cache Penetration
+
+## 3.6 Cache Failure Modes
 
 ### Overview
 
@@ -1175,9 +1179,10 @@ Sanity check: attacker sending unique UUID every request defeats null cache — 
 
 ---
 
-## 3.13 Cache Avalanche
 
-### Overview
+### Cache avalanche
+
+#### Overview
 
 Fifty alarms in a building all use the same cheap battery that dies on the same day — suddenly every alarm fails at once. **Cache avalanche** (cache mass expiry) happens when **many keys expire at the same time** (or the cache cluster fails), causing a synchronized wave of misses that overwhelms the database.
 
@@ -1185,7 +1190,7 @@ Technically, if 100,000 keys are set with `TTL=3600` at deploy, they all expire 
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 - **Correlated TTL expiry** — batch imports, cache warm jobs, or code that sets identical TTL without jitter.
 - **Full cache flush** — Redis restart, `FLUSHALL`, or bad deploy clears everything at once.
@@ -1193,7 +1198,7 @@ Technically, if 100,000 keys are set with `TTL=3600` at deploy, they all expire 
 
 ---
 
-### What it does
+#### What it does
 
 Avalanche mitigation **decorrelates** expiry times and **absorbs** miss spikes so the database never sees a step-function load increase.
 
@@ -1204,7 +1209,7 @@ flowchart LR
 
 ---
 
-### How it works — the architecture inside
+#### How it works — the architecture inside
 
 #### Random TTL jitter
 
@@ -1251,7 +1256,7 @@ Redis Sentinel/Cluster with replicas — avoid single-point flush; persistence (
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **Jitter on top of batch warm** — warmup sets 10k keys with same TTL → still avalanches; jitter at `SET` time is mandatory.
 - **Retry storms** — clients with aggressive retries turn a DB blip into outage; use exponential backoff and jitter on clients too.
@@ -1260,15 +1265,16 @@ Redis Sentinel/Cluster with replicas — avoid single-point flush; persistence (
 
 ---
 
-### Real-world example
+#### Real-world example
 
 **Daily config reload.** A service cached 80,000 tenant config blobs with `EX 86400` at midnight cron — all expired at next midnight. DB CPU hit 100% for four minutes. Fix: `TTL = 86400 + random(0, 7200)` per key and stagger cron over 2 hours. Peak miss rate fell from 80k/s to ~11/s average spread, DB CPU stayed under 40%.
 
 ---
 
-## 3.14 Cache Stampede
 
-### Overview
+### Cache stampede
+
+#### Overview
 
 A celebrity posts a half-off coupon link; everyone rushes the same store door at once when it opens. **Cache stampede** (thundering herd, cache breakdown) is when **many concurrent requests** miss the same hot cache key (often right after expiry) and **all** query the database to rebuild it — the DB sees N identical expensive queries instead of one.
 
@@ -1276,7 +1282,7 @@ Technically, at T+0 a viral product key `product:iphone` expires. 10,000 in-flig
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 - **Duplicate work on miss** — N threads/regions rebuild identical value.
 - **Hot key expiry** — one popular key carries disproportionate traffic; its expiry is a system-wide event.
@@ -1284,7 +1290,7 @@ Technically, at T+0 a viral product key `product:iphone` expires. 10,000 in-flig
 
 ---
 
-### What it does
+#### What it does
 
 Stampede controls ensure **at most one** recomputation per key (or per key per window) while other waiters receive the fresh value or a stale fallback — converting N database queries into 1.
 
@@ -1307,7 +1313,7 @@ flowchart LR
 
 ---
 
-### How it works — the architecture inside
+#### How it works — the architecture inside
 
 #### Mutex / distributed lock
 
@@ -1394,7 +1400,7 @@ Sanity check: EX 10 s with 800 ms p99 rebuild is safe; EX 1 s is not — tune fr
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **Lock timeout too short** — slow DB query outlives lock; second builder starts — size lock TTL > p99 query time.
 - **Waiters timeout** — clients that give up and retry **add** to herd; use singleflight or short wait on cache poll.
@@ -1404,7 +1410,7 @@ Sanity check: EX 10 s with 800 ms p99 rebuild is safe; EX 1 s is not — tune fr
 
 ---
 
-### Real-world example
+#### Real-world example
 
 **Viral product page on Shopify-scale storefront.** `GET product:drop-2024` serves 40k RPS from Redis. TTL 300 s expires during peak. Without protection, 40k PostgreSQL queries fire in one second. Team adds `singleflight` in the Go API layer plus Redis `SET lock:product:drop-2024 NX EX 15` as cross-pod backstop. One query runs (~80 ms); waiters block on `singleflight` or read cache after `SET`. DB sees 1 query per expiry window, not 40k. p99 latency stays under 50 ms instead of spiking to 30 s.
 

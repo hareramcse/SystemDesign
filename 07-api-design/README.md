@@ -13,24 +13,19 @@
 | 7.3 | [gRPC](#73-grpc) |
 | 7.4 | [SOAP](#74-soap) |
 | 7.5 | [API Gateway](#75-api-gateway) |
-| 7.6 | [API Aggregation](#76-api-aggregation) |
-| 7.7 | [API Composition](#77-api-composition) |
-| 7.8 | [API Versioning](#78-api-versioning) |
-| 7.9 | [Pagination](#79-pagination) |
-| 7.10 | [Filtering](#710-filtering) |
-| 7.11 | [Sorting](#711-sorting) |
-| 7.12 | [OpenAPI](#712-openapi) |
-| 7.13 | [Swagger](#713-swagger) |
-| 7.14 | [Request Validation](#714-request-validation) |
-| 7.15 | [Contract Testing](#715-contract-testing) |
-| 7.16 | [API Security](#716-api-security) |
-| 7.17 | [Webhooks](#717-webhooks) |
-| 7.18 | [Rate Limiting](#718-rate-limiting) |
-| 7.19 | [Throttling](#719-throttling) |
-| 7.20 | [Idempotency](#720-idempotency) |
-| 7.21 | [Idempotency Keys](#721-idempotency-keys) |
+| 7.6 | [API Aggregation & Composition](#76-api-aggregation-composition) |
+| 7.7 | [API Versioning](#77-api-versioning) |
+| 7.8 | [Pagination, Filtering & Sorting](#78-pagination-filtering-sorting) |
+| 7.9 | [OpenAPI & Swagger](#79-openapi-swagger) |
+| 7.10 | [Request Validation](#710-request-validation) |
+| 7.11 | [Contract Testing](#711-contract-testing) |
+| 7.12 | [API Security](#712-api-security) |
+| 7.13 | [Webhooks](#713-webhooks) |
+| 7.14 | [Rate Limiting & Throttling](#714-rate-limiting-throttling) |
+| 7.15 | [Idempotency & Idempotency Keys](#715-idempotency-idempotency-keys) |
 
 ---
+
 
 ## 7.1 REST
 
@@ -191,6 +186,7 @@ Accept: application/vnd.github+json
 GitHub returns `200` with a JSON representation (name, stars, default branch, `html_url`). List endpoints use query parameters for pagination (`?page=2&per_page=30`), filtering is minimal on REST paths, and **rate limits** return `403` with `X-RateLimit-Remaining` headers — clients read HTTP semantics directly without custom envelope parsing. The same resource model works for PATs, GitHub Apps, and OAuth tokens because every call is stateless and self-contained.
 
 ---
+
 
 ## 7.2 GraphQL
 
@@ -361,6 +357,7 @@ flowchart LR
 
 ---
 
+
 ## 7.3 gRPC
 
 ### Overview
@@ -493,6 +490,7 @@ flowchart LR
 **Google Cloud** publishes many APIs (Spanner, Pub/Sub, Bigtable) with gRPC as a first-class transport alongside REST. A Go service using the Spanner client calls generated stubs; Protobuf messages cross Google's backbone over HTTP/2 with authentication metadata in headers. The same `.proto` definitions power clients in Java and Python — teams share one contract file in version control, and incompatible field changes fail at codegen time rather than in production JSON parsing.
 
 ---
+
 
 ## 7.4 SOAP
 
@@ -631,6 +629,7 @@ HTTPS alone encrypts the tunnel; WS-Security can encrypt **parts** of the messag
 
 ---
 
+
 ## 7.5 API Gateway
 
 ### Overview
@@ -745,7 +744,8 @@ flowchart LR
 
 ---
 
-## 7.6 API Aggregation
+
+## 7.6 API Aggregation & Composition
 
 ### Overview
 
@@ -898,9 +898,10 @@ flowchart LR
 
 ---
 
-## 7.7 API Composition
 
-### Overview
+### API composition
+
+#### Overview
 
 Some errands must happen in order: you cannot pay for a package before you know the shipping quote, and you cannot get the quote before you enter the address. **API composition** is the backend pattern for that — call service B with the result from service A, then service C, and only then hand the client one finished answer.
 
@@ -908,7 +909,7 @@ Technically, **API composition** fetches data from multiple microservices and me
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 Microservices split data across bounded contexts (User DB, Order DB, Payment DB). SQL `JOIN` is no longer available. Clients should not orchestrate five internal calls with branching logic. Composition centralizes **workflow** server-side: checkout, booking, fraud-check-then-capture.
 
@@ -919,7 +920,7 @@ Composer/BFF orchestrates      →  one client endpoint, one error model
 
 ---
 
-### What it does
+#### What it does
 
 The composer:
 
@@ -940,7 +941,7 @@ The composer:
 
 ---
 
-### How it works — the architecture inside
+#### How it works — the architecture inside
 
 #### Sequential chain
 
@@ -1017,7 +1018,7 @@ Sequential chains **fail fast** on the blocking step — no order id means payme
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **Deep chains hurt latency** — if `order-summary` needs 6 sequential hops, consider a **read model** (CQRS projection) materialized by events.
 - **Same as aggregation?** — terms overlap in conversation; use **parallel vs sequential** to be precise in design docs and interviews.
@@ -1027,13 +1028,14 @@ Sequential chains **fail fast** on the blocking step — no order id means payme
 
 ---
 
-### Real-world example
+#### Real-world example
 
 **Airline booking APIs** (GDS and modern OTAs) compose sequentially: search availability (needs route + date) → price quote (needs fare class from availability) → create PNR (needs passenger details + selected flights) → payment capture (needs PNR locator). A mobile BFF exposes `POST /bookings` while internally calling reservation, pricing, and payment services in order. The client sees one progress spinner; the BFF enforces timeouts and returns a single error if the hold expires before payment.
 
 ---
 
-## 7.8 API Versioning
+
+## 7.7 API Versioning
 
 ### Overview
 
@@ -1145,7 +1147,8 @@ Ship v2 → mark v1 deprecated (headers + docs)
 
 ---
 
-## 7.9 Pagination
+
+## 7.8 Pagination, Filtering & Sorting
 
 ### Overview
 
@@ -1322,9 +1325,10 @@ Sorting before pagination ensures page 2 means the same ordered slice everywhere
 
 ---
 
-## 7.10 Filtering
 
-### Overview
+### Filtering
+
+#### Overview
 
 A library catalog computer that lets you narrow by genre, year, and language beats dumping every book on the floor. **Filtering** lets API clients request **only rows that match conditions** — status, date range, category — instead of downloading the full table and searching locally.
 
@@ -1332,7 +1336,7 @@ Technically, filtering maps **query parameters** to safe, **parameterized** `WHE
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 ```http
 GET /users
@@ -1348,7 +1352,7 @@ returns only matching rows from the database — smaller payload, faster query w
 
 ---
 
-### What it does
+#### What it does
 
 Each query parameter is a predicate:
 
@@ -1371,7 +1375,7 @@ Flow: filter → sort → paginate → respond.
 
 ---
 
-### How it works — the architecture inside
+#### How it works — the architecture inside
 
 #### Single and multi-field filters
 
@@ -1434,7 +1438,7 @@ Read query params → reject unknown keys (400)
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **SQL injection** — only parameterized queries; never `"... WHERE name = '" + param + "'"`
 - **Unindexed filters** — `WHERE LOWER(email)` full table scan; add functional indexes or dedicated search (Elasticsearch).
@@ -1445,15 +1449,16 @@ Read query params → reject unknown keys (400)
 
 ---
 
-### Real-world example
+#### Real-world example
 
 **Stripe List API** documents filter parameters on list endpoints — e.g. `GET /v1/charges?customer=cus_123&limit=10` returns only charges for that customer. Parameters are whitelisted; invalid combinations return Stripe's standard error object. Under the hood, indexed columns back each filter; clients paginate with `starting_after` cursors (see 7.9) through the filtered subset, not the entire charges table.
 
 ---
 
-## 7.11 Sorting
 
-### Overview
+### Sorting
+
+#### Overview
 
 Spreadsheet columns you can click to sort A→Z or newest-first turn chaos into something readable. **Sorting** on list APIs does the same server-side: clients say which field and direction, and the database returns rows in that order before pagination slices a page.
 
@@ -1461,7 +1466,7 @@ Technically, sorting maps `sort` query parameters to an **`ORDER BY`** clause wi
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 Unordered lists return rows in insertion or primary-key order — fine for machines, poor for humans who want "newest orders first" or "cheapest products." Client-side sorting breaks down when data is paginated (you only sort the current page, not the global list).
 
@@ -1473,7 +1478,7 @@ ensures **every page** sees globally consistent ordering from the database index
 
 ---
 
-### What it does
+#### What it does
 
 | Request | SQL equivalent |
 |---------|----------------|
@@ -1505,7 +1510,7 @@ Common sortable fields by domain:
 
 ---
 
-### How it works — the architecture inside
+#### How it works — the architecture inside
 
 #### Parameter → ORDER BY
 
@@ -1560,7 +1565,7 @@ For `WHERE status = 'ACTIVE' ORDER BY createdDate DESC`, a composite index `(sta
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **Sort injection** — whitelist column names; map `sort=price` → internal enum, not raw concatenation.
 - **Non-deterministic pages** — without `id` tiebreaker, offset pagination shows duplicates across pages when values tie.
@@ -1571,11 +1576,13 @@ For `WHERE status = 'ACTIVE' ORDER BY createdDate DESC`, a composite index `(sta
 
 ---
 
-### Real-world example
+#### Real-world example
 
 **Amazon product search APIs** (and most e-commerce list endpoints) expose `sort=price-asc` / `sort=review-rank` style parameters backed by search indexes (Elasticsearch / proprietary ranking), not raw SQL on checkout databases. A `sort=price` request maps to an indexed numeric field; tiebreakers use product ASIN so page 2 of results does not reshuffle when two items share the same price — the same stability principle as `ORDER BY price, id` in SQL-backed catalogs.
 
-## 7.12 OpenAPI
+---
+
+## 7.9 OpenAPI & Swagger
 
 ### Overview
 
@@ -1690,9 +1697,10 @@ GitHub publishes OpenAPI descriptions for its REST API. A partner team downloads
 
 ---
 
-## 7.13 Swagger
 
-### Overview
+### Swagger
+
+#### Overview
 
 An OpenAPI file is like sheet music — precise, but not everyone reads notation fluently. **Swagger** is the concert hall: tools that turn the spec into a browsable, try-it-out interface so developers can explore endpoints without writing a client first.
 
@@ -1700,13 +1708,13 @@ Swagger is the **tooling ecosystem** around OpenAPI — Swagger UI for interacti
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 Raw YAML does not help a product manager test `POST /orders` or a new hire understand auth headers. Teams otherwise maintain separate Postman collections that drift from production. Swagger UI closes the gap by rendering every operation, parameter, and response schema from the live spec — one source of truth, zero duplicate doc maintenance.
 
 ---
 
-### What it does
+#### What it does
 
 | Tool | Role |
 |------|------|
@@ -1719,7 +1727,7 @@ Typical Spring Boot setup (springdoc-openapi): add dependency, start the app, op
 
 ---
 
-### How it works
+#### How it works
 
 ```mermaid
 flowchart LR
@@ -1742,7 +1750,7 @@ flowchart LR
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **Never expose unauthenticated Swagger UI on production** — it reveals the full API surface. Use dev/staging, protect with auth, or disable **Try it out** against prod backends.
 - **Prefer OpenAPI Generator** over Swagger Codegen for new projects — active maintenance and broader language targets.
@@ -1751,13 +1759,14 @@ flowchart LR
 
 ---
 
-### Real-world example
+#### Real-world example
 
 A fintech startup publishes `https://api.staging.example.com/swagger-ui/index.html` for partner onboarding. Integrators browse payment endpoints, test sandbox calls from the browser, then run OpenAPI Generator to produce a Python client. When the team renames a field, the staging UI updates on deploy and partners see the change before production cutover — no separate PDF API guide to maintain.
 
 ---
 
-## 7.14 Request Validation
+
+## 7.10 Request Validation
 
 ### Overview
 
@@ -1864,7 +1873,8 @@ Stripe's API validates `amount` as a positive integer in smallest currency unit 
 
 ---
 
-## 7.15 Contract Testing
+
+## 7.11 Contract Testing
 
 ### Overview
 
@@ -1964,7 +1974,8 @@ Pactflow hosts pact files from a React frontend (consumer) and a Node User Servi
 
 ---
 
-## 7.16 API Security
+
+## 7.12 API Security
 
 ### Overview
 
@@ -2049,7 +2060,8 @@ AWS API Gateway terminates TLS, validates SigV4-signed requests, and applies usa
 
 ---
 
-## 7.17 Webhooks
+
+## 7.13 Webhooks
 
 ### Overview
 
@@ -2165,7 +2177,8 @@ Stripe sends `payment_intent.succeeded` to `https://merchant.com/webhooks/stripe
 
 ---
 
-## 7.18 Rate Limiting
+
+## 7.14 Rate Limiting & Throttling
 
 ### Overview
 
@@ -2303,9 +2316,10 @@ GitHub's REST API returns `X-RateLimit-Limit`, `X-RateLimit-Remaining`, and `X-R
 
 ---
 
-## 7.19 Throttling
 
-### Overview
+### Throttling
+
+#### Overview
 
 Rate limiting is a bouncer who turns away guests when the club is full. **Throttling** is the bartender who still serves everyone but pours slower when the line wraps around the block — the system stays open, just degraded.
 
@@ -2313,13 +2327,13 @@ Throttling controls **how fast** requests are processed when aggregate load is h
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 A spike from 100 req/s to 5,000 req/s without throttling crashes services, exhausts connection pools, and triggers cascading timeouts. Throttling absorbs the spike — processing 100/s while the rest waits, drops, or receives `503` — so databases and payment gateways survive.
 
 ---
 
-### What it does
+#### What it does
 
 | Technique | Behavior |
 |-----------|----------|
@@ -2333,7 +2347,7 @@ A spike from 100 req/s to 5,000 req/s without throttling crashes services, exhau
 
 ---
 
-### How it works
+#### How it works
 
 ```mermaid
 flowchart LR
@@ -2391,7 +2405,7 @@ Combine with autoscaling when delay alone masks capacity debt.
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **Unbounded queues** — cap queue depth; shed load with `503` rather than hour-long waits.
 - **Tail latency** — queued requests blow p99; monitor queue depth and age.
@@ -2401,13 +2415,14 @@ Combine with autoscaling when delay alone masks capacity debt.
 
 ---
 
-### Real-world example
+#### Real-world example
 
 AWS API Gateway usage plans combine rate limiting (steady requests/sec) with burst buckets. When a Lambda backend slows, API Gateway can return `429` or `503` while integrations queue briefly — protecting downstream DynamoDB from write throttle storms during a flash sale. Merchants see elevated latency in dashboards rather than a hard outage.
 
 ---
 
-## 7.20 Idempotency
+
+## 7.15 Idempotency & Idempotency Keys
 
 ### Overview
 
@@ -2509,9 +2524,10 @@ A mobile banking app times out on `POST /transfers`. Without idempotency, the us
 
 ---
 
-## 7.21 Idempotency Keys
 
-### Overview
+### Idempotency keys
+
+#### Overview
 
 A coat-check ticket lets the desk return your jacket without issuing a second one — even if you ask twice. An **idempotency key** is that ticket for `POST` requests: a client-generated unique token in a header so the server recognizes retries and replays the **first result** instead of running side effects again.
 
@@ -2519,13 +2535,13 @@ Industry pattern: `Idempotency-Key` header (Stripe, many payment APIs). One key 
 
 ---
 
-### What problem it fixes
+#### What problem it fixes
 
 Unsafe `POST` retries duplicate charges, orders, and inventory reservations. Idempotency keys turn at-least-once network delivery into **at-most-once side effects** for the business operation — the server stores the outcome keyed by the token.
 
 ---
 
-### What it does
+#### What it does
 
 ```http
 POST /payments
@@ -2579,7 +2595,7 @@ Sanity check: TTL too short → duplicate charges on late retries;
 
 ---
 
-### How it works
+#### How it works
 
 ```mermaid
 flowchart LR
@@ -2624,7 +2640,7 @@ flowchart LR
 
 ---
 
-### Pitfalls and design tips
+#### Pitfalls and design tips
 
 - **Concurrent duplicate race** — use `ON CONFLICT`, Redis `SETNX`, or serialize on key.
 - **Stuck `processing`** after crash — timeout + sweeper job to fail or complete orphaned records.
@@ -2635,7 +2651,7 @@ flowchart LR
 
 ---
 
-### Real-world example
+#### Real-world example
 
 Stripe requires `Idempotency-Key` on `POST /v1/payment_intents`. A checkout service generates `uuid4()` when the user clicks Pay and stores it in session state. The first request creates `pi_abc123` and charges the card. A timeout triggers retry with the same key — Stripe returns the original `pi_abc123` with HTTP `200`, not a second charge. A bug that changes `amount` on retry gets `409 Conflict`, surfacing the client error in logs before money moves twice.
 
