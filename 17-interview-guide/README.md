@@ -1,4 +1,4 @@
-# 16. System Design Interview Guide
+# 17. System Design Interview Guide
 
 [<- Back to master index](../README.md)
 
@@ -8,19 +8,19 @@
 
 | # | Sub-topic |
 |---|-----------|
-| 16.1 | [Interview Framework](#161-interview-framework) |
-| 16.2 | [Requirements Gathering](#162-requirements-gathering) |
-| 16.3 | [Back-of-Envelope Estimation](#163-backofenvelope-estimation) |
-| 16.4 | [High-Level Design](#164-highlevel-design) |
-| 16.5 | [Deep Dives](#165-deep-dives) |
-| 16.6 | [Trade-offs and Failure Modes](#166-tradeoffs-and-failure-modes) |
-| 16.7 | [Sample Walkthrough: URL Shortener](#167-sample-walkthrough-url-shortener) |
+| 17.1 | [Interview Framework](#171-interview-framework) |
+| 17.2 | [Requirements Gathering](#172-requirements-gathering) |
+| 17.3 | [Back-of-Envelope Estimation](#173-backofenvelope-estimation) |
+| 17.4 | [High-Level Design](#174-highlevel-design) |
+| 17.5 | [Deep Dives](#175-deep-dives) |
+| 17.6 | [Trade-offs and Failure Modes](#176-tradeoffs-and-failure-modes) |
+| 17.7 | [Sample Walkthrough: URL Shortener](#177-sample-walkthrough-url-shortener) |
 
 ---
 
-<a id="161-interview-framework"></a>
+<a id="171-interview-framework"></a>
 
-## 16.1 Interview Framework
+## 17.1 Interview Framework
 
 ### Overview
 
@@ -116,9 +116,9 @@ This is the same skeleton interviewers use internally when calibrating — struc
 
 ---
 
-<a id="162-requirements-gathering"></a>
+<a id="172-requirements-gathering"></a>
 
-## 16.2 Requirements Gathering
+## 17.2 Requirements Gathering
 
 ### Overview
 
@@ -218,9 +218,9 @@ You write four bullets on the board. When you later propose S3 + metadata DB, th
 
 ---
 
-<a id="163-backofenvelope-estimation"></a>
+<a id="173-backofenvelope-estimation"></a>
 
-## 16.3 Back-of-Envelope Estimation
+## 17.3 Back-of-Envelope Estimation
 
 ### Overview
 
@@ -323,9 +323,9 @@ You have not drawn a single box yet, but the interviewer knows you will not prop
 
 ---
 
-<a id="164-highlevel-design"></a>
+<a id="174-highlevel-design"></a>
 
-## 16.4 High-Level Design
+## 17.4 High-Level Design
 
 ### Overview
 
@@ -433,9 +433,9 @@ Interviewer: "Good — let's go deep on the read path." You have a clear box to 
 
 ---
 
-<a id="165-deep-dives"></a>
+<a id="175-deep-dives"></a>
 
-## 16.5 Deep Dives
+## 17.5 Deep Dives
 
 ### Overview
 
@@ -531,9 +531,9 @@ You stayed in one area, named trade-offs each step, and adapted — that is the 
 
 ---
 
-<a id="166-tradeoffs-and-failure-modes"></a>
+<a id="176-tradeoffs-and-failure-modes"></a>
 
-## 16.6 Trade-offs and Failure Modes
+## 17.6 Trade-offs and Failure Modes
 
 ### Overview
 
@@ -632,15 +632,15 @@ You answered operational questions without redrawing the whole system — trade-
 
 ---
 
-<a id="167-sample-walkthrough-url-shortener"></a>
+<a id="177-sample-walkthrough-url-shortener"></a>
 
-## 16.7 Sample Walkthrough: URL Shortener
+## 17.7 Sample Walkthrough: URL Shortener
 
 ### Overview
 
 Reading about system design is not the same as **performing** it aloud in 45 minutes. This section is a full dress rehearsal — requirements through failures — for a classic prompt: build a service like `bit.ly` that maps short codes to long URLs.
 
-Technically, it stitches together [16.1](#161-interview-framework) through [16.6](#166-trade-offs-and-failure-modes) into one timed narrative: clarify scope, estimate scale, draw HLD, deep-dive read and write paths, then close with trade-offs and monitoring. Practice it on a whiteboard until phase transitions feel automatic.
+Technically, it stitches together [17.1](#171-interview-framework) through [17.6](#176-trade-offs-and-failure-modes) into one timed narrative: clarify scope, estimate scale, draw HLD, deep-dive read and write paths, then close with trade-offs and monitoring. Practice it on a whiteboard until phase transitions feel automatic.
 
 ---
 
@@ -664,11 +664,11 @@ Use this as a script to practice; replace pieces for other prompts while keeping
 
 | Phase | Minutes | Section |
 |-------|---------|---------|
-| Requirements | 5 | [16.2](#162-requirements-gathering) |
-| Estimation | 3 | [16.3](#163-back-of-envelope-estimation) |
-| High-level design | 10 | [16.4](#164-high-level-design) |
-| Deep dives | 15 | [16.5](#165-deep-dives) |
-| Trade-offs & failures | 5 | [16.6](#166-trade-offs-and-failure-modes) |
+| Requirements | 5 | [17.2](#172-requirements-gathering) |
+| Estimation | 3 | [17.3](#173-back-of-envelope-estimation) |
+| High-level design | 10 | [17.4](#174-high-level-design) |
+| Deep dives | 15 | [17.5](#175-deep-dives) |
+| Trade-offs & failures | 5 | [17.6](#176-trade-offs-and-failure-modes) |
 
 ---
 
