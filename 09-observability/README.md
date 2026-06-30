@@ -559,7 +559,7 @@ Kubernetes clusters run **kube-state-metrics** and node exporters into Prometheu
 
 If logs are diary entries and metrics are daily step counts, a **trace** is a GPS route for one trip — every stop, how long you waited, and where you got stuck. **Distributed tracing** follows a single request as it hops through API gateways, microservices, queues, and databases.
 
-Technically, a **trace** is a tree of **spans**: each span is one unit of work (HTTP call, DB query) with start time, duration, status, and attributes. A shared **trace ID** links spans across processes via propagated headers (W3C `traceparent`). Tools like Jaeger, Zipkin, and Grafana Tempo store and visualize traces as waterfall timelines.
+Technically, a **trace** is a tree of **spans**: each span is one unit of work (HTTP call, DB query) with start time, duration, status, and attributes. A shared **trace ID** links spans across processes via propagated headers (W3C `traceparent`). Tools like Jaeger, Zipkin, and Grafana Tempo store and visualize traces as waterfall timelines. **See [9.8](#98-observability-stack--trace-id-to-grafana)** for how tracing fits with metrics, logs, and Grafana.
 
 ---
 
@@ -656,7 +656,6 @@ Embed `traceId` in log fields to jump from span to lines.
 - **100% sampling in prod** — budget for tail sampling and retention days, not months of every span.
 - **Do not trace health checks** — noise; exclude `/health` from instrumentation rules.
 - **Clock skew** — span durations rely on local clocks; NTP matters for cross-host waterfalls.
-- **Default stack** — OpenTelemetry SDK → Collector → Jaeger or Tempo.
 
 ---
 
@@ -672,7 +671,7 @@ Uber pioneered heavy tracing at scale (Jaeger originated there). A rider request
 
 Before USB-C, every phone needed a different charger. Observability had the same problem — one vendor SDK for metrics, another for traces, another for logs, and switching backends meant rewriting instrumentation. **OpenTelemetry (OTel)** is the USB-C of telemetry: instrument once, export anywhere.
 
-Technically, OpenTelemetry is a CNCF project providing APIs, SDKs, auto-instrumentation agents, the **OTLP** protocol, and the **OpenTelemetry Collector** — a vendor-neutral pipeline that receives, processes, samples, and routes logs, metrics, and traces to Prometheus, Jaeger, Datadog, or cloud backends without recompiling applications.
+Technically, OpenTelemetry is a CNCF project providing APIs, SDKs, auto-instrumentation agents, the **OTLP** protocol, and the **OpenTelemetry Collector** — a vendor-neutral pipeline that receives, processes, samples, and routes logs, metrics, and traces to Prometheus, Jaeger, Datadog, or cloud backends without recompiling applications. **See [9.8](#98-observability-stack--trace-id-to-grafana)** for how OTel relates to Micrometer, Prometheus, and Grafana.
 
 ---
 
@@ -750,7 +749,7 @@ Run the Collector as a **sidecar or DaemonSet** so apps only talk to localhost O
 
 #### Spring Boot stack
 
-Common production path: **OpenTelemetry Java agent** or Spring Boot 3 observability + **Micrometer Tracing** bridge → OTLP → Collector → Jaeger + Prometheus → Grafana.
+Common production path: **OpenTelemetry Java agent** or Spring Boot 3 observability + **Micrometer Tracing** bridge → OTLP → Collector → Jaeger + Prometheus → Grafana (wiring detail in **9.8**).
 
 #### Sampling example
 
@@ -784,7 +783,7 @@ Grafana Labs dogfoods **Grafana Alloy** (OTel Collector distribution) receiving 
 
 A package shipped through five warehouses needs the same tracking number on every manifest. A **correlation ID** (request ID) is that tracking number for software — one unique value assigned when a request enters your system and copied into every downstream call and log line.
 
-Technically, it is usually a UUID generated at the **edge** (API gateway, load balancer, or first service), passed via HTTP headers (`X-Correlation-ID`, `X-Request-ID`) or message metadata (Kafka headers), and included as a structured log field on every event for that request. It complements distributed tracing: trace IDs power spans; correlation IDs (often identical to trace ID in OTel stacks) power log search.
+Technically, it is usually a UUID generated at the **edge** (API gateway, load balancer, or first service), passed via HTTP headers (`X-Correlation-ID`, `X-Request-ID`) or message metadata (Kafka headers), and included as a structured log field on every event for that request. It complements distributed tracing: trace IDs power spans; correlation IDs (often identical to trace ID in OTel stacks) power log search. **See [9.8](#98-observability-stack--trace-id-to-grafana)** for how IDs tie logs, traces, and metrics together.
 
 ---
 
@@ -885,7 +884,7 @@ AWS API Gateway and many enterprises add `X-Amzn-RequestId` or `X-Request-ID` at
 
 Consider a hospital visit: the wristband ID ties your blood test, X-ray, and pharmacy records together; the wall monitor graphs your heart rate over time; the specialist's timeline shows each procedure and how long it took. **Trace ID**, **correlation ID**, **Micrometer**, **OpenTelemetry**, **Prometheus**, **Jaeger**, and **Grafana** play those same roles in software — but teams often wire all of them and still cannot say which piece answers which question.
 
-Technically, these terms span three **telemetry pillars** (metrics, logs, traces) and three **layers** (instrumentation in the app, transport/collection, storage and UI). **OpenTelemetry** and **Micrometer** live in the app and produce data. **Prometheus** stores metrics; **Jaeger** (or Grafana Tempo) stores traces. **Grafana** is the glass cockpit — it queries those backends and can link a slow graph panel to one trace and its log lines. **Trace ID** and **correlation ID** (often via `X-Request-ID`) are the glue that ties one user's request across services and signal types.
+Technically, these terms span three **telemetry pillars** (metrics, logs, traces) and three **layers** (instrumentation in the app, transport/collection, storage and UI). This section is the **integration map** — it assumes you already know traces ([9.5](#95-distributed-tracing)), OpenTelemetry ([9.6](#96-opentelemetry)), and correlation IDs ([9.7](#97-correlation-ids)); it shows how they land in Prometheus, Jaeger, and Grafana.
 
 ---
 
@@ -981,114 +980,20 @@ flowchart LR
     Jaeger --> Graf
 ```
 
-#### Step 1 — Request enters: IDs are born
+#### Where each piece fits (detail in earlier sections)
 
-At the **edge** (API gateway, load balancer, or first microservice):
+| Stage | Tool | Deep dive | What this hub adds |
+|-------|------|-----------|-------------------|
+| IDs at the edge | `X-Request-ID`, trace/correlation ID | [9.7](#97-correlation-ids) | One canonical ID in metrics, traces, and logs |
+| Per-request tree | Trace ID, spans | [9.5](#95-distributed-tracing) | Jaeger answers "where did this request spend time?" |
+| Instrumentation | OTel SDK/agent, Micrometer | [9.6](#96-opentelemetry) | Micrometer = JVM metrics; OTel = spans + OTLP export |
+| Metrics store | Prometheus | [9.3](#93-metrics) | Scrapes `/actuator/prometheus`; aggregates only |
+| Trace store | Jaeger / Tempo | [9.5](#95-distributed-tracing) | Indexed by trace ID; waterfall UI |
+| Human UI | Grafana | [9.4](#94-monitoring) | Queries Prometheus + Jaeger/Tempo + Loki — does not store telemetry |
 
-```http
-POST /orders HTTP/1.1
-X-Request-ID: 7f3a9c2e-...
-traceparent: 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01
-```
+**Production wiring (Spring Boot):** Actuator + `micrometer-registry-prometheus` → Prometheus scrape; `micrometer-tracing-bridge-otel` + OTLP → Collector → Jaeger; log pattern includes `%X{traceId}`; Grafana datasources for Prometheus, Tempo/Jaeger, and Loki.
 
-| ID | Where it lives | Purpose |
-|----|----------------|---------|
-| **`X-Request-ID`** | HTTP header (convention, not a W3C standard) | Human/support-friendly request handle; often copied into logs as `correlationId` |
-| **Correlation ID** | Log field + often same header value | Search all log lines for one checkout across 5 services |
-| **Trace ID** | Inside `traceparent` (W3C) or B3 headers; also `traceId` in JSON logs | Build span tree in Jaeger; 32-hex in OTel |
-
-In modern **OpenTelemetry + Spring Boot 3** stacks, teams often use **one value**: the OTel **trace ID** is logged as `traceId` and returned as `X-Request-ID` to support. Older stacks kept a separate business `correlationId` plus a tracing `traceId` — both propagated, both searchable.
-
-```text
-Same request:
-  X-Request-ID header     = 7f3a9c2e-...        (support / API contract)
-  log field correlationId = 7f3a9c2e-...        (log search)
-  log field traceId       = 4bf92f3577b34da6...  (Jaeger — may equal above if unified)
-```
-
----
-
-#### Step 2 — Micrometer: metrics inside the JVM
-
-**Micrometer** is not a dashboard and not a database. It is the **facade** your Spring Boot app uses to increment counters and record latency histograms:
-
-```text
-http.server.requests{uri="/orders", status="200", method="POST"}  → timer
-http.server.requests{status="500"}                                → counter for errors
-```
-
-- Spring Boot Actuator exposes `/actuator/prometheus` (Prometheus text format).
-- Micrometer also bridges to **OTel metrics** when configured — one instrumentation API, multiple exporters.
-- Micrometer does **not** create distributed traces by itself; use **Micrometer Tracing** (OTel bridge) for spans.
-
-**What you get:** aggregate numbers — RPS, error rate, P50/P99 latency — **not** the story of one request.
-
----
-
-#### Step 3 — OpenTelemetry: traces (and optional metrics/logs)
-
-**OpenTelemetry** is the **standard** for how spans are created, how context propagates, and how data is exported:
-
-```text
-Order service:
-  Span "POST /orders"           traceId=4bf92f...
-    Child "payment-service call" spanId=...
-    Child "INSERT orders"       spanId=...
-```
-
-- **Auto-instrumentation** (Java agent) or **Micrometer Tracing** creates spans around HTTP, JDBC, Kafka.
-- Context propagation forwards `traceparent` to Payment so **one trace ID** covers both services.
-- Export path: app → **OTLP** → **OpenTelemetry Collector** → **Jaeger** (traces) and/or **Prometheus** (metrics).
-
-OTel is **not** a UI. You still need Jaeger/Tempo to store traces and Grafana to chart metrics.
-
----
-
-#### Step 4 — Prometheus: metrics storage and query engine
-
-**Prometheus** **pulls** (scrapes) metrics from each pod's `/actuator/prometheus` every N seconds and stores time series.
-
-```promql
-histogram_quantile(0.99, rate(http_server_requests_seconds_bucket[5m]))
-sum(rate(http_server_requests_seconds_count{status=~"5.."}[5m]))
-  / sum(rate(http_server_requests_seconds_count[5m]))
-```
-
-- Answers: "What is P99 latency **right now**?" "Is error rate above 1%?"
-- Does **not** store individual request paths — only aggregates (unless **exemplars** link a metric point to a trace ID).
-
----
-
-#### Step 5 — Jaeger: trace storage and waterfall UI
-
-**Jaeger** receives spans from the OTel Collector and indexes them by **trace ID**.
-
-```text
-Trace 4bf92f...  total 3.4 s
-  order-service     100 ms
-  payment-service   3000 ms   ← bottleneck
-  inventory         200 ms
-```
-
-- Answers: "Where did those 3.4 seconds go **for this request**?"
-- Jaeger has its own UI; Grafana can also query Jaeger or **Grafana Tempo** as a data source.
-
-Jaeger is **not** for cluster CPU graphs — that is Prometheus → Grafana.
-
----
-
-#### Step 6 — Grafana: one place to visualize (and correlate)
-
-**Grafana** does not collect telemetry. It **queries backends** and renders panels:
-
-| Grafana panel source | Data from | Typical questions |
-|---------------------|-----------|-------------------|
-| Prometheus | Micrometer/OTel metrics | RPS, error %, P99, saturation |
-| Jaeger / Tempo | OTel traces | Per-request waterfall, dependency map |
-| Loki / Elasticsearch | JSON logs with `traceId` | Log lines for one request |
-| Alertmanager | Prometheus rules | Firing alerts on SLO burn |
-
-**Grafana Explore** workflow during an incident:
+#### Grafana Explore during an incident
 
 ```text
 1. Dashboard: error rate panel spikes (Prometheus)
@@ -1097,8 +1002,6 @@ Jaeger is **not** for cluster CPU graphs — that is Prometheus → Grafana.
 4. Explore → Logs: {traceId="4bf92f..."} (Loki)
 5. Full story: metric symptom → slow span → error log line
 ```
-
----
 
 #### Quick reference — the eight terms
 
@@ -1115,46 +1018,13 @@ Grafana          WHERE do humans look?                          → dashboards +
 
 ---
 
-#### Typical Spring Boot production wiring
-
-```text
-spring-boot-starter-actuator
-micrometer-registry-prometheus          → Prometheus scrapes metrics
-micrometer-tracing-bridge-otel          → traces via OTel
-opentelemetry-exporter-otlp             → Collector
-logging.pattern includes %X{traceId}    → logs correlate
-
-Prometheus Operator / scrape config
-OTel Collector receivers: otlp
-  exporters: prometheusremotewrite, jaeger
-Grafana datasources: Prometheus, Tempo/Jaeger, Loki
-```
-
----
-
 ### Pitfalls and design tips
 
-#### When to use (and when not to)
-
-- **Metrics (Micrometer → Prometheus → Grafana)** for paging, SLOs, capacity — always on, cheap at scale.
-- **Traces (OTel → Jaeger)** for latency debugging and dependency maps — sample in prod (e.g. 10%), keep errors/slow traces.
-- **Correlation / X-Request-ID** in every log line — minimum viable cross-service debugging even without Jaeger access.
-- **Grafana** for ops dashboards; do not ask Jaeger to replace Prometheus for "is the fleet healthy?"
-
-#### Common mistakes
-
-- **Three different IDs** for one request (gateway UUID, app correlationId, separate traceId) — pick one canonical ID and document it.
-- **Micrometer without tracing bridge** — metrics work, but no automatic spans; P99 spikes with no drill-down.
-- **OTel agent + duplicate manual tracing** — double spans; use one path.
-- **Expecting Grafana to show every request detail in one panel** — aggregates in Prometheus; per-request detail in traces/logs linked by ID.
-- **Broken header propagation** — Payment service gets a **new** trace ID; Jaeger shows two disconnected traces.
-
-#### Production notes
-
-- Return **`X-Request-ID`** (or trace ID) in API error responses for support.
-- Enable **histogram buckets** that match SLO thresholds (e.g. 100 ms, 500 ms, 1 s).
-- Use **exemplars** (Prometheus → Grafana) to jump from a latency spike to an example trace.
-- **Tail sampling** in the Collector keeps slow/error traces when head sampling drops 90% of traffic.
+- **Three different IDs** for one request — pick one canonical ID; see [9.7](#97-correlation-ids).
+- **Micrometer without tracing bridge** — metrics work, no automatic spans; see [9.6](#96-opentelemetry).
+- **Wrong tool for the question** — fleet health → Prometheus/Grafana; one slow request → Jaeger by trace ID; per-service logs → correlation/trace ID filter.
+- **Broken header propagation** — downstream service gets a new trace ID; Jaeger shows disconnected traces ([9.5](#95-distributed-tracing)).
+- **Production:** return `X-Request-ID` in error JSON; enable exemplars and tail sampling in the Collector for slow/error traces.
 
 ---
 

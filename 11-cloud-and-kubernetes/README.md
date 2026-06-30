@@ -2948,9 +2948,9 @@ flowchart LR
 
 ---
 
-#### ClusterIP (default)
+#### Service types — one object, different `spec`
 
-`type: ClusterIP` — **internal only**. The VIP is routable only inside the cluster. Use for **east-west** traffic: `orders-api` → `inventory-svc`.
+All types share the same `apiVersion`, `kind`, `metadata`, `selector`, and `ports` shape. Only **`spec.type`** and a few fields change:
 
 ```yaml
 apiVersion: v1
@@ -2958,7 +2958,7 @@ kind: Service
 metadata:
   name: inventory-svc
 spec:
-  type: ClusterIP          # default if omitted
+  type: ClusterIP          # change per table below
   selector:
     app: inventory
   ports:
@@ -2966,54 +2966,27 @@ spec:
       targetPort: 8080     # port on the pod
 ```
 
+| Type | `spec` change | Traffic path | When to use |
+|------|---------------|--------------|-------------|
+| **ClusterIP** (default) | `type: ClusterIP` or omit | In-cluster VIP → pods | East-west microservices (`orders-api` → `inventory-svc`) |
+| **NodePort** | `type: NodePort`, optional `nodePort: 30080` | `NodeIP:30000–32767` → Service → pods | Dev/demos, bare metal before Ingress |
+| **LoadBalancer** | `type: LoadBalancer` | Cloud LB → Service → pods | One public TCP/UDP service; not many HTTP APIs (use Ingress) |
+| **ExternalName** | `type: ExternalName`, `externalName: host.example.com` | DNS CNAME only — no Endpoints | In-cluster alias for external SaaS |
+| **Headless** | `clusterIP: None` | DNS A record per ready pod | StatefulSets, Kafka/Cassandra client discovery |
+
 ```text
-Caller uses:  http://inventory-svc.default.svc.cluster.local:8080
+Caller inside cluster:  http://inventory-svc.default.svc.cluster.local:8080
 ```
 
-**When to use:** microservices that must **not** be reached from the public internet.
+**ClusterIP** — internal only; do not expose public websites without NodePort, LoadBalancer, or Ingress.
 
-**When not to use alone:** exposing a public website — add NodePort, LoadBalancer, or Ingress.
-
----
-
-#### NodePort
-
-`type: NodePort` — opens the same **high port** (default **30000–32767**) on **every node's IP**. Traffic: `NodeIP:NodePort` → Service → pods.
-
-```yaml
-spec:
-  type: NodePort
-  ports:
-    - port: 80
-      targetPort: 8080
-      nodePort: 30080
-```
+**NodePort** — opens the same high port on every node; `LoadBalancer` often creates a NodePort under the hood.
 
 ```mermaid
 flowchart LR
     User[External client] --> NIP[Node IP :30080]
     NIP --> NP[NodePort Service]
     NP --> Pods[Backend pods]
-```
-
-**When to use:** local dev/demos, bare-metal without cloud LB, debugging before Ingress.
-
-**When not to use in production (usually):** many public HTTP services (use Ingress), or when cloud LoadBalancer is available.
-
-**Note:** `LoadBalancer` Services often create a NodePort automatically under the hood.
-
----
-
-#### LoadBalancer
-
-`type: LoadBalancer` — cloud controller (AWS, GCP, Azure, MetalLB) provisions an **external load balancer** forwarding to the Service.
-
-```yaml
-spec:
-  type: LoadBalancer
-  ports:
-    - port: 443
-      targetPort: 8443
 ```
 
 ```mermaid
@@ -3023,42 +2996,9 @@ flowchart LR
     Svc --> Pods[Pods]
 ```
 
-**When to use:** one **public TCP/UDP** service (game servers, MQTT, non-HTTP TLS), or a single simple public API.
+**ExternalName** — DNS only; no port remapping, TLS, or health checks.
 
-**When not to use:** many HTTP microservices — cost of one LB per Service; prefer **Ingress** + ClusterIP backends.
-
----
-
-#### ExternalName
-
-`type: ExternalName` — Kubernetes DNS returns a **CNAME** to an external hostname (no proxy, no Endpoints).
-
-```yaml
-spec:
-  type: ExternalName
-  externalName: payments.saas-provider.com
-```
-
-**When to use:** stable in-cluster DNS alias for external SaaS.
-
-**Limitations:** DNS only — no port remapping, no TLS, no health checks.
-
----
-
-#### Headless Service (`clusterIP: None`)
-
-No virtual IP. DNS returns **A records per ready pod** (StatefulSets: `pod-0.my-svc`).
-
-```yaml
-spec:
-  clusterIP: None
-  selector:
-    app: kafka
-```
-
-**When to use:** StatefulSets, Kafka/Cassandra client discovery, client-side load balancing.
-
-**When not to use:** standard stateless Deployments — ClusterIP is simpler.
+**Headless** — no virtual IP; DNS returns per-pod records (`pod-0.my-svc`). Prefer **ClusterIP** for stateless Deployments.
 
 ---
 
