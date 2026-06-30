@@ -27,7 +27,6 @@
 | 6.17 | [Event Sourcing](#617-event-sourcing) |
 | 6.18 | [CQRS](#618-cqrs) |
 | 6.19 | [Change Data Capture (CDC)](#619-change-data-capture-cdc) |
-| 6.20 | [Outbox Pattern](../08-microservices/README.md#87-distributed-transactions) |
 | 6.21 | [Event Replay](#621-event-replay) |
 | 6.22 | [Event Versioning](#622-event-versioning) |
 | 6.23 | [Schema Registry](#623-schema-registry) |
@@ -517,7 +516,7 @@ flowchart LR
 ### Pitfalls and design tips
 
 - **Choreography without tracing is opaque.** Propagate `correlationId` and `causationId` on every event; use OpenTelemetry across consumers.
-- **Do not publish before commit.** Use the [transaction outbox pattern](../08-microservices/README.md#87-distributed-transactions) so a DB rollback does not leave orphan events in the bus.
+- **Do not publish before commit.** Use the transaction outbox pattern so a DB rollback does not leave orphan events in the bus.
 - **Version events early.** Add optional fields; never rename or remove required fields without a migration plan.
 - **Orchestration vs choreography:** prefer choreography for simple fan-out; use orchestration (saga) when you need compensating transactions across many steps.
 - **Not everything should be async.** User-facing read paths that need immediate consistency still belong on synchronous APIs or read models fed by events.
@@ -1627,7 +1626,7 @@ EOS does **not** automatically cover SMTP, external HTTP APIs without idempotenc
 
 #### Outbox and inbox
 
-**Outbox (producer side):** same DB transaction writes business row + outbox event row; relay publishes later — full detail in [8.7 Transaction outbox](../08-microservices/README.md#87-distributed-transactions).
+**Outbox (producer side):** same DB transaction writes business row + outbox event row; relay publishes later.
 
 **Inbox (consumer side):** store processed message IDs; duplicates are ignored — exactly-once **behavior** on top of at-least-once delivery.
 
@@ -1657,7 +1656,7 @@ flowchart LR
 
 - **Pragmatic default:** at-least-once + `UNIQUE` idempotency key on the consumer — many teams over-engineer Kafka transactions when a dedup table suffices.
 - **EOS scope is bounded** — it covers Kafka producer → consumer within a transactional topology, not your payment gateway or email provider.
-- **2PC across DB + broker** — strong consistency but blocking; [transaction outbox](../08-microservices/README.md#87-distributed-transactions) is the modern replacement.
+- **2PC across DB + broker** — strong consistency but blocking; transaction outbox is the modern replacement.
 - **Cost:** transactions, dedup tables, outbox relay, and lower throughput — reserve full EOS for money, inventory, and ledgers.
 - **Interview angle:** distinguish **broker semantics** (Kafka EOS) from **business semantics** (idempotency key on `payment_id`).
 
@@ -2322,21 +2321,13 @@ CDC on a **business table** emits what changed in SQL. **Outbox** emits the even
 - **Wide tables** — large before/after payloads; use column filtering in connector config.
 - **Deletes and GDPR** — tombstone events and compaction policies for Kafka compacted topics.
 - **Long connector downtime** — log retention may expire; plan snapshot recovery.
-- **Do not use CDC as domain modeling** — row changes ≠ rich domain events; pair with [transaction outbox](../08-microservices/README.md#87-distributed-transactions) when semantics matter.
+- **Do not use CDC as domain modeling** — row changes ≠ rich domain events; pair with transaction outbox when semantics matter.
 
 ---
 
 ### Real-world example
 
 A product catalog lives in **PostgreSQL**. On each `INSERT`/`UPDATE` to `products`, Debezium streams changes to Kafka topic `db.products`. An Elasticsearch consumer indexes the `after` image — search results update within seconds of the DB commit. The application never calls Elasticsearch directly; one write path, many derived views.
-
----
-
-## 6.20 Outbox Pattern
-
-> **Canonical coverage:** [8.7 Distributed Transactions](../08-microservices/README.md#87-distributed-transactions) — see **Transaction outbox pattern** (dual-write problem, schema, relay, Debezium, lag alerts, inbox pairing).
-
-The outbox atomically persists a business row and a pending event row in one database transaction; a relay publishes to the message broker asynchronously. Use it whenever a microservice must emit domain events after a local commit without dual-write bugs.
 
 ---
 

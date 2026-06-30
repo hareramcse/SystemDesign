@@ -23,7 +23,6 @@
 | 5.13 | [Multi Leader Replication](#513-multi-leader-replication) |
 | 5.14 | [Quorum Reads](#514-quorum-reads) |
 | 5.15 | [Quorum Writes](#515-quorum-writes) |
-| 5.16 | [Distributed Transactions](../08-microservices/README.md#87-distributed-transactions) |
 | 5.19 | [Distributed Locking](#519-distributed-locking) |
 | 5.20 | [Split Brain](#520-split-brain) |
 | 5.21 | [Consensus](#521-consensus) |
@@ -323,7 +322,7 @@ Sanity check: one hot shard key can 10× one shard's QPS — monitor per-shard
 ### Pitfalls and design tips
 
 - **Bad shard keys** — low-cardinality keys (country, status) concentrate data; prefer high-cardinality, evenly distributed keys.
-- **Cross-shard transactions** — avoid designing workflows that need ACID across shards; use [sagas](../08-microservices/README.md#87-distributed-transactions) or per-shard consistency.
+- **Cross-shard transactions** — avoid designing workflows that need ACID across shards; use sagas or per-shard consistency.
 - **Operational overhead** — N shards means N backup jobs, N migration paths, and routing logic to maintain.
 - **Resharding** — adding shards with `hash % N` reshuffles most data; plan consistent hashing or a directory layer before you need it.
 - **Interview angle** — sharding is a scaling **architecture** choice, not a first-day optimization; exhaust vertical scaling, read replicas, and caching first unless requirements demand it.
@@ -1917,14 +1916,6 @@ R + 3 > 5  →  R ≥ 3
 ### Real-world example
 
 **Amazon DynamoDB** uses `W`/`R` style consistency via read/write capacity on replicated storage nodes. A strongly consistent read in DynamoDB fetches from a quorum of replicas that includes the leader for that partition, ensuring you do not read a pre-write stale value — quorum mechanics behind the "consistent read" API flag.
-
----
-
-## 5.16 Distributed Transactions
-
-> **Canonical coverage:** [8.7 Distributed Transactions](../08-microservices/README.md#87-distributed-transactions) — two-phase commit, three-phase commit, saga pattern, and transaction outbox for microservices.
-
-Cross-service atomicity (coordinator/participant protocols, sagas, outbox) is documented in the microservices chapter because the patterns apply to **service-owned databases and message buses**, not to single-database internals covered elsewhere in this chapter.
 
 ---
 
