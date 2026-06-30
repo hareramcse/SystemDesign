@@ -1,8 +1,0 @@
-{
-  "markdown-mermaid.controls.show": "never",
-  "markdown-mermaid.mouseNavigation.enabled": "never",
-  "markdownMermaidZoom.controls.show": "never",
-  "markdownMermaidZoom.mouseNavigation": "never",
-  "markdownMermaidZoom.fullscreen": false,
-  "markdownMermaidZoom.resizable": false
-}
