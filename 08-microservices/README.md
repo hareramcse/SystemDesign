@@ -22,6 +22,8 @@
 
 ---
 
+<a id="81-monolith-modular-monolith"></a>
+
 ## 8.1 Monolith & Modular Monolith
 
 ### Overview
@@ -209,6 +211,8 @@ One deployable; each module exposes a narrow public API. Transaction module call
 **Spring Modulith** (VMware/Spring team) formalizes modular monoliths in Spring Boot: each module is a Java package with an `ApplicationModule` descriptor, verified events for cross-module communication, and integration tests that assert no illegal dependencies. Teams ship one JAR to production while the build guarantees Order cannot import Payment internals. When Order needs independent scale, the module's event contracts and public API are already the extraction boundary — the Strangler router sends `/orders/*` to a new service with minimal rewrite.
 
 ---
+
+<a id="82-ddd-bounded-context"></a>
 
 ## 8.2 DDD & Bounded Context
 
@@ -454,6 +458,8 @@ flowchart LR
 
 ---
 
+<a id="83-microservices"></a>
+
 ## 8.3 Microservices
 
 ### Overview
@@ -565,6 +571,8 @@ flowchart LR
 **Netflix** runs hundreds of microservices behind a custom API gateway (Zuul, evolving to newer edge layers). The `Playback` service scales independently from `Billing`; an outage in recommendations does not block video streaming because services are isolated with circuit breakers (Hystrix, now resilience patterns in the mesh). Each team owns deployment, on-call, and SLOs for their service. The trade-off is a large platform organization (service mesh, chaos engineering, centralized tracing) that a 10-person startup cannot replicate — which is why Netflix's model is a destination, not a day-one architecture.
 
 ---
+
+<a id="84-hexagonal-architecture"></a>
 
 ## 8.4 Hexagonal Architecture
 
@@ -679,6 +687,8 @@ com.ecommerce
 **Allegro** (Polish e-commerce) adopted hexagonal architecture for payment processing: the `Payment` domain core defines `PaymentGateway` as an outbound port. Production uses a Przelewy24 adapter; integration tests use an in-memory fake. When Allegro added Apple Pay, engineers shipped a new adapter without modifying `ChargePaymentUseCase` or aggregate invariants. Domain unit tests run in milliseconds with no network — adapter tests run separately against sandbox APIs.
 
 ---
+
+<a id="85-distributed-transactions"></a>
 
 ## 8.5 Distributed Transactions
 
@@ -1130,6 +1140,8 @@ No 2PC — four independent databases, consistent business outcome after compens
 
 ---
 
+<a id="86-choreography-orchestration"></a>
+
 ## 8.6 Choreography & Orchestration
 
 ### Overview
@@ -1346,6 +1358,8 @@ sequenceDiagram
 
 ---
 
+<a id="87-strangler-pattern"></a>
+
 ## 8.7 Strangler Pattern
 
 ### Overview
@@ -1464,6 +1478,8 @@ Client → API Gateway
 
 ---
 
+<a id="88-bff-pattern"></a>
+
 ## 8.8 BFF Pattern
 
 ### Overview
@@ -1571,6 +1587,8 @@ Client → API Gateway → Web BFF / Mobile BFF → Microservices
 **Spotify** serves web, desktop, mobile, and embedded (cars, speakers) clients. Each client type has different screen densities and bandwidth: mobile home needs six data sources (recent plays, recommendations, podcasts, offline status) in under 200 ms. Spotify's client backends aggregate gRPC calls to playlist, user, and catalog services server-side, returning one tailored payload. The core `Playlist` service knows nothing about car UI vs phone UI — that shaping lives entirely in the BFF tier, letting mobile and web teams ship on independent release trains.
 
 ---
+
+<a id="89-service-registry"></a>
 
 ## 8.9 Service Registry
 
@@ -1692,6 +1710,8 @@ Control plane maintains Endpoints from ready pods — no separate Eureka cluster
 **Netflix Eureka** (with Spring Cloud) powered Netflix's microservices discovery for years: each service instance registers on startup, heartbeats every 30 seconds, and consumers like `OrderService` fetch the current `PAYMENT-SERVICE` instance list and round-robin with Ribbon. When Payment scales from 3 to 30 instances during a flash sale, Order services pick up new instances on the next registry fetch — zero config changes. Modern Netflix workloads increasingly use Envoy and platform discovery, but Eureka remains the reference implementation taught in Spring Cloud tutorials worldwide.
 
 ---
+
+<a id="810-sidecar-service-mesh"></a>
 
 ## 8.10 Sidecar & Service Mesh
 
@@ -1940,6 +1960,8 @@ Sanity check: 50-hop deep call graphs are an architecture smell — mesh overhea
 **Lyft** created **Envoy** as its service mesh data plane and open-sourced it; **Istio** adopted Envoy as its default proxy. At Lyft-scale ride matching, thousands of services communicate with mTLS enforced by mesh policy — no application code mentions certificates. When the routing service deploys v2, Istio VirtualService sends 5% of traffic to v2 pods while 95% stays on v1, watching error rates before full promotion. This canary pattern would require custom code in every service without a mesh.
 
 ---
+
+<a id="811-resilience-patterns-circuit-breaker-retry-bulkhead"></a>
 
 ## 8.11 Resilience Patterns: Circuit Breaker, Retry & Bulkhead
 

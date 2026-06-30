@@ -8,7 +8,7 @@
 
 | # | Sub-topic |
 |---|-----------|
-| 1.1 | [OSI Model & TCP/IP](#11-osi-model-tcp-ip) |
+| 1.1 | [OSI Model & TCP/IP](#11-osi-model-tcpip) |
 | 1.2 | [TCP Handshake](#12-tcp-handshake) |
 | 1.3 | [UDP](#13-udp) |
 | 1.4 | [MTU](#14-mtu) |
@@ -25,6 +25,8 @@
 
 ---
 
+
+<a id="11-osi-model-tcpip"></a>
 
 ## 1.1 OSI Model & TCP/IP
 
@@ -221,6 +223,8 @@ If the Service IP works but a pod IP fails, you suspect routing or network polic
 ---
 
 
+<a id="12-tcp-handshake"></a>
+
 ## 1.2 TCP Handshake
 
 ### Overview
@@ -316,6 +320,8 @@ A Java service using **HikariCP** to PostgreSQL opens a fixed pool (e.g. 20 TCP 
 ---
 
 
+<a id="13-udp"></a>
+
 ## 1.3 UDP
 
 ### Overview
@@ -391,6 +397,8 @@ flowchart LR
 
 ---
 
+
+<a id="14-mtu"></a>
 
 ## 1.4 MTU
 
@@ -493,6 +501,8 @@ Fix: set interface MTU to 1400 on the VPN client or MSS clamp at the gateway. `p
 
 ---
 
+
+<a id="15-ip-addressing-cidr"></a>
 
 ## 1.5 IP Addressing & CIDR
 
@@ -670,6 +680,8 @@ When connecting to on-prem via Cloud VPN, they advertise **`10.20.0.0/22` as one
 ---
 
 
+<a id="16-dns-dns-resolution"></a>
+
 ## 1.6 DNS & DNS Resolution
 
 ### Overview
@@ -824,6 +836,8 @@ Second tab within TTL: step 3 never leaves the machine — **~0 ms DNS**. `dig +
 
 ---
 
+
+<a id="17-http-tls-modern-http"></a>
 
 ## 1.7 HTTP, TLS & Modern HTTP
 
@@ -1405,6 +1419,8 @@ A Spring Boot service using **RestTemplate** or **WebClient** with a shared conn
 ---
 
 
+<a id="18-forward-reverse-proxy"></a>
+
 ## 1.8 Forward & Reverse Proxy
 
 ### Overview
@@ -1516,6 +1532,8 @@ A SaaS app points DNS for `app.example.com` to Cloudflare. User TLS terminates a
 
 ---
 
+
+<a id="19-nat"></a>
 
 ## 1.9 NAT
 
@@ -1646,6 +1664,8 @@ Three devices (`192.168.1.10–30`) browse simultaneously. The home router PATs 
 ---
 
 
+<a id="110-vpn"></a>
+
 ## 1.10 VPN
 
 ### Overview
@@ -1732,6 +1752,8 @@ A bank runs an internal HR portal at `https://hr.internal.corp` resolvable only 
 
 ---
 
+
+<a id="111-unicast-broadcast-multicast-anycast"></a>
 
 ## 1.11 Unicast, Broadcast, Multicast & Anycast
 
@@ -1838,6 +1860,8 @@ Google advertises the same anycast prefix from hundreds of POPs worldwide. A que
 
 ---
 
+
+<a id="112-cdn"></a>
 
 ## 1.12 CDN
 
@@ -1950,6 +1974,8 @@ Netflix ships the Open Connect appliance program — CDN caches inside ISP netwo
 
 ---
 
+
+<a id="113-load-balancer"></a>
 
 ## 1.13 Load Balancer
 
@@ -2095,6 +2121,8 @@ An e-commerce API runs three Fargate tasks behind an **Application Load Balancer
 
 ---
 
+
+<a id="114-sse-polling-websockets"></a>
 
 ## 1.14 SSE, Polling & WebSockets
 

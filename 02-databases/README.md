@@ -9,21 +9,23 @@
 | # | Sub-topic |
 |---|-----------|
 | 2.1 | [Normalization & Denormalization](#21-normalization-denormalization) |
-| 2.2 | [Indexing & B-Trees](#22-indexing-b-trees) |
+| 2.2 | [Indexing & B-Trees](#22-indexing-btrees) |
 | 2.3 | [Query Planner / Optimizer](#23-query-planner-optimizer) |
 | 2.4 | [Views/ Materialized View](#24-views-materialized-view) |
 | 2.5 | [Isolation Levels & MVCC](#25-isolation-levels-mvcc) |
-| 2.6 | [Redo/undo/bin Logs](#26-redo-undo-bin-logs) |
-| 2.7 | [LSM Tree/SSTables/WAL](#27-lsm-tree-sstables-wal) |
+| 2.6 | [Redo/undo/bin Logs](#26-redoundobin-logs) |
+| 2.7 | [LSM Tree/SSTables/WAL](#27-lsm-treesstableswal) |
 | 2.8 | [Page Cache](#28-page-cache) |
 | 2.9 | [Vacuum Process](#29-vacuum-process) |
 | 2.10 | [Database Families](#210-database-families) |
 | 2.11 | [Multi Model Databases](#211-multi-model-databases) |
-| 2.12 | [ACID/BASE Properties](#212-acid-base-properties) |
+| 2.12 | [ACID/BASE Properties](#212-acidbase-properties) |
 | 2.13 | [SQL Tuning](#213-sql-tuning) |
 
 ---
 
+
+<a id="21-normalization-denormalization"></a>
 
 ## 2.1 Normalization & Denormalization
 
@@ -162,6 +164,8 @@ flowchart LR
 
 ---
 
+
+<a id="22-indexing-btrees"></a>
 
 ## 2.2 Indexing & B-Trees
 
@@ -454,6 +458,8 @@ flowchart LR
 ---
 
 
+<a id="23-query-planner-optimizer"></a>
+
 ## 2.3 Query Planner / Optimizer
 
 ### Overview
@@ -602,6 +608,8 @@ Without the optimizer, a full scan touches millions of pages — seconds of I/O.
 ---
 
 
+<a id="24-views-materialized-view"></a>
+
 ## 2.4 Views/ Materialized View
 
 ### Overview
@@ -709,6 +717,8 @@ PostgreSQL concurrent refresh requires a unique index on the MV. Oracle and SQL 
 
 ---
 
+
+<a id="25-isolation-levels-mvcc"></a>
 
 ## 2.5 Isolation Levels & MVCC
 
@@ -893,6 +903,8 @@ Long-running open transactions hold back cleanup → table bloat and undo growth
 ---
 
 
+<a id="26-redoundobin-logs"></a>
+
 ## 2.6 Redo/undo/bin Logs
 
 ### Overview
@@ -1012,6 +1024,8 @@ PostgreSQL uses a unified WAL for both durability and logical decoding — diffe
 
 ---
 
+
+<a id="27-lsm-treesstableswal"></a>
 
 ## 2.7 LSM Tree/SSTables/WAL
 
@@ -1140,6 +1154,8 @@ flowchart LR
 ---
 
 
+<a id="28-page-cache"></a>
+
 ## 2.8 Page Cache
 
 ### Overview
@@ -1246,6 +1262,8 @@ B+ tree root and upper internal pages stay hot — index depth becomes pure RAM 
 ---
 
 
+<a id="29-vacuum-process"></a>
+
 ## 2.9 Vacuum Process
 
 ### Overview
@@ -1344,6 +1362,8 @@ Same problem — garbage versions — different mechanics.
 **High-update `sessions` table in PostgreSQL:** auth service updates `last_seen` every request. Millions of dead tuples accumulate daily. Autovacuum on `sessions` runs with lowered `autovacuum_vacuum_scale_factor = 0.02` so cleanup starts at 2% dead vs default 20%. Without tuning, `SELECT session WHERE token = ?` degrades as heap pages fill with dead rows; `pg_stat_user_tables.n_dead_tup` and `EXPLAIN` buffer reads guide ops before `VACUUM FULL` on a maintenance window.
 
 ---
+
+<a id="210-database-families"></a>
 
 ## 2.10 Database Families
 
@@ -2158,6 +2178,8 @@ Products: Pinecone, Weaviate, Milvus, Qdrant, Chroma; extensions in PostgreSQL (
 ---
 
 
+<a id="211-multi-model-databases"></a>
+
 ## 2.11 Multi Model Databases
 
 ### Overview
@@ -2257,6 +2279,8 @@ One backup, one replication topology, one security ACL layer.
 
 ---
 
+
+<a id="212-acidbase-properties"></a>
 
 ## 2.12 ACID/BASE Properties
 
@@ -2363,6 +2387,8 @@ Banking transfer → ACID. YouTube view count → BASE.
 
 ---
 
+
+<a id="213-sql-tuning"></a>
 
 ## 2.13 SQL Tuning
 

@@ -22,6 +22,8 @@
 ---
 
 
+<a id="61-messaging-paradigms"></a>
+
 ## 6.1 Messaging Paradigms
 
 ### Overview
@@ -530,6 +532,8 @@ No central trip orchestrator owns the entire workflow — each team owns its rea
 ---
 
 
+<a id="62-kafka"></a>
+
 ## 6.2 Kafka
 
 ### Overview
@@ -860,6 +864,8 @@ Same topic, two purposes, zero offset collision.
 
 ---
 
+
+<a id="63-message-brokers-rabbitmq-activemq-pulsar"></a>
 
 ## 6.3 Message Brokers: RabbitMQ, ActiveMQ & Pulsar
 
@@ -1194,6 +1200,8 @@ The split architecture let Yahoo scale broker pools for read-heavy fan-out witho
 ---
 
 
+<a id="64-ordering-guarantees"></a>
+
 ## 6.4 Ordering Guarantees
 
 ### Overview
@@ -1321,6 +1329,8 @@ The key is not optional decoration — it is the ordering contract.
 
 ---
 
+
+<a id="65-delivery-semantics"></a>
 
 ## 6.5 Delivery Semantics
 
@@ -1672,6 +1682,8 @@ A **payment service** uses Kafka EOS in a stream topology: read `PaymentRequeste
 ---
 
 
+<a id="66-dead-letter-queue-retry-queue"></a>
+
 ## 6.6 Dead Letter Queue & Retry Queue
 
 ### Overview
@@ -1955,6 +1967,8 @@ An order processor hits a **rate-limited inventory API** (HTTP 429). The handler
 ---
 
 
+<a id="67-event-sourcing-cqrs"></a>
+
 ## 6.7 Event Sourcing & CQRS
 
 ### Overview
@@ -2219,6 +2233,8 @@ An **e-commerce platform** uses a normalized write DB for `PlaceOrder` commands 
 ---
 
 
+<a id="68-change-data-capture-cdc"></a>
+
 ## 6.8 Change Data Capture (CDC)
 
 ### Overview
@@ -2339,6 +2355,8 @@ A product catalog lives in **PostgreSQL**. On each `INSERT`/`UPDATE` to `product
 
 ---
 
+
+<a id="69-event-replay"></a>
 
 ## 6.9 Event Replay
 
@@ -2471,6 +2489,8 @@ A **recommendation service** launches six months after the order platform. Engin
 
 ---
 
+
+<a id="610-event-versioning-schema-registry"></a>
 
 ## 6.10 Event Versioning & Schema Registry
 

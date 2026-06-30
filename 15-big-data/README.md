@@ -16,6 +16,8 @@
 ---
 
 
+<a id="151-batch-stream-processing"></a>
+
 ## 15.1 Batch & Stream Processing
 
 ### Overview
@@ -286,6 +288,8 @@ The pattern — durable log, keyed state, replay on failure — is the standard 
 
 ---
 
+
+<a id="152-processing-engines-hadoop-spark-flink"></a>
 
 ## 15.2 Processing Engines: Hadoop, Spark & Flink
 
@@ -642,6 +646,8 @@ Alibaba uses Flink at extreme scale for live transaction metrics during shopping
 ---
 
 
+<a id="153-etl-elt"></a>
+
 ## 15.3 ETL & ELT
 
 ### Overview
@@ -823,6 +829,8 @@ Airlines and travel companies widely adopted the modern data stack: SaaS and ope
 
 ---
 
+
+<a id="154-data-lake-warehouse-lakehouse"></a>
 
 ## 15.4 Data Lake, Warehouse & Lakehouse
 

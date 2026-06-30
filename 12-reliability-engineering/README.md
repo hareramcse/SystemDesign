@@ -10,11 +10,13 @@
 |---|-----------|
 | 12.1 | [High Availability](#121-high-availability) |
 | 12.2 | [Failure Detection](#122-failure-detection) |
-| 12.3 | [Active-Active & Active-Passive](#123-active-active-active-passive) |
+| 12.3 | [Active-Active & Active-Passive](#123-activeactive-activepassive) |
 | 12.4 | [Backup, Restore, RPO, RTO & Disaster Recovery](#124-backup-restore-rpo-rto-disaster-recovery) |
 | 12.5 | [Chaos Engineering & Fault Injection](#125-chaos-engineering-fault-injection) |
 
 ---
+
+<a id="121-high-availability"></a>
 
 ## 12.1 High Availability
 
@@ -159,6 +161,8 @@ flowchart LR
 
 ---
 
+<a id="122-failure-detection"></a>
+
 ## 12.2 Failure Detection
 
 ### Overview
@@ -298,6 +302,8 @@ Users see errors only during the gap between failure and ready replacement.
 **Outcome:** PagerDuty fires on sustained unhealthy count **before** customer SLO breach — detection is the first line, alerting is the safety net.
 
 ---
+
+<a id="123-activeactive-activepassive"></a>
 
 ## 12.3 Active-Active & Active-Passive
 
@@ -573,6 +579,8 @@ Replication lag at failover moment defines actual **RPO** ([12.4 â€” RPO](#
 **Outcome:** A documented disk-corruption incident on the primary promoted the standby in ~4 minutes with 12 seconds of WAL lag — actual RPO = 12 seconds, actual RTO = 4 minutes.
 
 ---
+
+<a id="124-backup-restore-rpo-rto-disaster-recovery"></a>
 
 ## 12.4 Backup, Restore, RPO, RTO & Disaster Recovery
 
@@ -1372,6 +1380,8 @@ RPO: 2 minutes replication lag at failure (target 5)
 **Outcome:** Last drill: RTO 8 minutes, RPO 0 with sync replication enabled — but found payment webhook URLs still pointed at `us-east-1` ALB; fixed before the next drill.
 
 ---
+
+<a id="125-chaos-engineering-fault-injection"></a>
 
 ## 12.5 Chaos Engineering & Fault Injection
 

@@ -9,7 +9,7 @@
 | # | Sub-topic |
 |---|-----------|
 | 11.1 | [Cloud Service Models](#111-cloud-service-models) |
-| 11.2 | [Regions, AZs & Multi-Region](#112-regions-azs-multi-region) |
+| 11.2 | [Regions, AZs & Multi-Region](#112-regions-azs-multiregion) |
 | 11.3 | [VPC](#113-vpc) |
 | 11.4 | [Cloud Networking](#114-cloud-networking) |
 | 11.5 | [Cloud Storage](#115-cloud-storage) |
@@ -31,6 +31,8 @@
 | 11.21 | [Operators](#1121-operators) |
 
 ---
+
+<a id="111-cloud-service-models"></a>
 
 ## 11.1 Cloud Service Models
 
@@ -467,6 +469,8 @@ A fintech startup handles payment webhooks from Stripe via API Gateway → Lambd
 
 ---
 
+<a id="112-regions-azs-multiregion"></a>
+
 ## 11.2 Regions, AZs & Multi-Region
 
 ### Overview
@@ -806,6 +810,8 @@ HSBC and similar global banks document **active-active or active-passive regions
 
 ---
 
+<a id="113-vpc"></a>
+
 ## 11.3 VPC
 
 ### Overview
@@ -945,6 +951,8 @@ A fintech runs Kubernetes worker nodes entirely in private subnets across three 
 
 ---
 
+<a id="114-cloud-networking"></a>
+
 ## 11.4 Cloud Networking
 
 ### Overview
@@ -1075,6 +1083,8 @@ During a flash sale, the team adds more web and API instances in the same subnet
 
 ---
 
+<a id="115-cloud-storage"></a>
+
 ## 11.5 Cloud Storage
 
 ### Overview
@@ -1193,6 +1203,8 @@ Each streaming edge server reads video segments via the object API. VM instances
 When one availability zone experiences an outage, replicated object copies in another zone keep playback running. The team never manages physical drives — they manage policies, keys, and access permissions.
 
 ---
+
+<a id="116-managed-databases"></a>
 
 ## 11.6 Managed Databases
 
@@ -1354,6 +1366,8 @@ During a product launch, read traffic triples. The team adds two read replicas a
 The team never SSHs into a database server. They spend engineering time on application features instead of `pg_dump` cron jobs and kernel patching.
 
 ---
+
+<a id="117-autoscaling-hpa-cluster-autoscaler"></a>
 
 ## 11.7 Autoscaling, HPA & Cluster Autoscaler
 
@@ -1744,6 +1758,8 @@ Google documents **GKE Cluster Autoscaler** resizing node pools when pods are un
 [<- Back to master index](../README.md)
 
 ---
+
+<a id="118-containers-images"></a>
 
 ## 11.8 Containers & Images
 
@@ -2291,6 +2307,8 @@ The platform team notices image bloat from a `RUN apt-get update && apt-get inst
 
 ---
 
+<a id="119-namespaces"></a>
+
 ## 11.9 Namespaces
 
 ### Overview
@@ -2428,6 +2446,8 @@ The app container's `ps` lists only its own processes — not the kubelet, not n
 A security audit confirms that user namespaces map container root (UID 0 inside) to UID 65534 (nobody) on the host, so even a container breakout yielding "root" inside does not yield host root privileges.
 
 ---
+
+<a id="1110-cgroups"></a>
 
 ## 11.10 cgroups
 
@@ -2588,6 +2608,8 @@ A post-mortem on a pre-cgroup bare-metal era outage noted one tenant's fork bomb
 
 ---
 
+<a id="1111-kubernetes"></a>
+
 ## 11.11 Kubernetes
 
 ### Overview
@@ -2712,6 +2734,8 @@ flowchart LR
 A fintech team runs three microservices on **Amazon EKS**. Each service is a **Deployment** with three replicas, a **ClusterIP Service** for internal calls, and an **Ingress** with TLS termination for public HTTPS. CI pushes images to ECR; Argo CD applies manifests to the cluster. When an instance fails, the Deployment recreates the pod within seconds. **HPA** scales the payment service from 3 to 12 pods during peak hours; **Cluster Autoscaler** adds worker nodes when pending pods cannot be placed. One Ingress and one cloud load balancer front all services instead of a load balancer per microservice.
 
 ---
+
+<a id="1112-pods-replicasets-deployments"></a>
 
 ## 11.12 Pods, ReplicaSets & Deployments
 
@@ -3081,6 +3105,8 @@ A SaaS company runs `user-api` as a Deployment with 6 replicas, CPU/memory reque
 
 ---
 
+<a id="1113-services"></a>
+
 ## 11.13 Services
 
 ### Overview
@@ -3319,6 +3345,8 @@ flowchart LR
 
 ---
 
+<a id="1114-ingress"></a>
+
 ## 11.14 Ingress
 
 ### Overview
@@ -3446,6 +3474,8 @@ A B2B platform gives each customer a subdomain: `acme.app.com`, `globex.app.com`
 
 ---
 
+<a id="1115-statefulsets"></a>
+
 ## 11.15 StatefulSets
 
 ### Overview
@@ -3570,6 +3600,8 @@ A streaming team runs Apache Kafka with a StatefulSet (or Strimzi operator, whic
 
 ---
 
+<a id="1116-daemonsets"></a>
+
 ## 11.16 DaemonSets
 
 ### Overview
@@ -3682,6 +3714,8 @@ flowchart LR
 An infrastructure team runs the Datadog agent as a DaemonSet in every cluster (EKS, GKE, on-prem). The agent collects host metrics, container stats, and APM traces from all pods on that node. `replicas: 100` Deployment would not cover nodes with zero scheduled app pods and might stack multiple agents on one busy node. DaemonSet guarantees uniform coverage; node labels restrict GPU nodes to a variant manifest with GPU monitoring enabled. A bad agent image caused CPU spike on **all** nodes — they added resource limits and a canary node pool before fleet-wide rollout.
 
 ---
+
+<a id="1117-jobs-cronjobs"></a>
 
 ## 11.17 Jobs & CronJobs
 
@@ -3921,6 +3955,8 @@ A multi-tenant SaaS platform runs a CronJob every six hours that deletes log par
 
 ---
 
+<a id="1118-configmaps-secrets"></a>
+
 ## 11.18 ConfigMaps & Secrets
 
 ### Overview
@@ -4128,6 +4164,8 @@ A B2B API platform stores each customer's webhook signing secret in a dedicated 
 
 ---
 
+<a id="1119-scheduler"></a>
+
 ## 11.19 Scheduler
 
 ### Overview
@@ -4244,6 +4282,8 @@ flowchart LR
 A machine-learning platform taints GPU nodes with `nvidia.com/gpu=true:NoSchedule`. Only pods carrying the matching toleration and requesting `nvidia.com/gpu: 1` pass the filter stage. The Scheduler scores GPU nodes with fewest running jobs to balance thermal and memory headroom. CPU-only microservices never land on expensive GPU hardware.
 
 ---
+
+<a id="1120-etcd"></a>
 
 ## 11.20 etcd
 
@@ -4368,6 +4408,8 @@ flowchart LR
 A production EKS cluster runs etcd as managed control plane (AWS operates the Raft cluster). The customer's responsibility is backing up application data and understanding that rebuilding the control plane without etcd snapshots means recreating all object definitions from Git (GitOps). Platform engineers store every manifest in a repo so etcd content is reproducible even though AWS handles etcd availability and encryption at rest.
 
 ---
+
+<a id="1121-operators"></a>
 
 ## 11.21 Operators
 

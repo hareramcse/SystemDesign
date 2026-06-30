@@ -8,7 +8,7 @@
 
 | # | Sub-topic |
 |---|-----------|
-| 14.1 | [Full-Text Search & Inverted Index](#141-full-text-search-inverted-index) |
+| 14.1 | [Full-Text Search & Inverted Index](#141-fulltext-search-inverted-index) |
 | 14.2 | [Lucene & Elasticsearch](#142-lucene-elasticsearch) |
 | 14.3 | [Ranking & Relevance Scoring](#143-ranking-relevance-scoring) |
 | 14.4 | [Faceted Search](#144-faceted-search) |
@@ -17,6 +17,8 @@
 
 ---
 
+
+<a id="141-fulltext-search-inverted-index"></a>
 
 ## 14.1 Full-Text Search & Inverted Index
 
@@ -369,6 +371,8 @@ Query: "function authenticate" language:Go
 ---
 
 
+<a id="142-lucene-elasticsearch"></a>
+
 ## 14.2 Lucene & Elasticsearch
 
 ### Overview
@@ -698,6 +702,8 @@ Engineer searches: service_name:payment AND level:ERROR AND "timeout"
 ---
 
 
+<a id="143-ranking-relevance-scoring"></a>
+
 ## 14.3 Ranking & Relevance Scoring
 
 ### Overview
@@ -987,6 +993,8 @@ Article B: title "History of spaceflight" — long article mentions Apollo once
 ---
 
 
+<a id="144-faceted-search"></a>
+
 ## 14.4 Faceted Search
 
 ### Overview
@@ -1120,6 +1128,8 @@ User searches "ceramic mug"
 ---
 
 
+<a id="145-autocomplete"></a>
+
 ## 14.5 Autocomplete
 
 ### Overview
@@ -1233,6 +1243,8 @@ User types "elasticsearch shar"
 
 ---
 
+
+<a id="146-fuzzy-search"></a>
 
 ## 14.6 Fuzzy Search
 

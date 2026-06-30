@@ -10,13 +10,15 @@
 |---|-----------|
 | 16.1 | [Interview Framework](#161-interview-framework) |
 | 16.2 | [Requirements Gathering](#162-requirements-gathering) |
-| 16.3 | [Back-of-Envelope Estimation](#163-back-of-envelope-estimation) |
-| 16.4 | [High-Level Design](#164-high-level-design) |
+| 16.3 | [Back-of-Envelope Estimation](#163-backofenvelope-estimation) |
+| 16.4 | [High-Level Design](#164-highlevel-design) |
 | 16.5 | [Deep Dives](#165-deep-dives) |
-| 16.6 | [Trade-offs and Failure Modes](#166-trade-offs-and-failure-modes) |
+| 16.6 | [Trade-offs and Failure Modes](#166-tradeoffs-and-failure-modes) |
 | 16.7 | [Sample Walkthrough: URL Shortener](#167-sample-walkthrough-url-shortener) |
 
 ---
+
+<a id="161-interview-framework"></a>
 
 ## 16.1 Interview Framework
 
@@ -113,6 +115,8 @@ flowchart LR
 This is the same skeleton interviewers use internally when calibrating — structured ambiguity, not a memorized diagram.
 
 ---
+
+<a id="162-requirements-gathering"></a>
 
 ## 16.2 Requirements Gathering
 
@@ -213,6 +217,8 @@ Interviewer: "Upload, download, list files. Sharing and versioning out of scope.
 You write four bullets on the board. When you later propose S3 + metadata DB, the interviewer nods because you already bounded the problem — you are not designing Dropbox Paper, sync conflict resolution, or block-level dedup unless they ask.
 
 ---
+
+<a id="163-backofenvelope-estimation"></a>
 
 ## 16.3 Back-of-Envelope Estimation
 
@@ -316,6 +322,8 @@ Interviewer: "What about writes — 500M posts/day globally?"
 You have not drawn a single box yet, but the interviewer knows you will not propose a single PostgreSQL primary for 150K feed reads/sec without a cache layer.
 
 ---
+
+<a id="164-highlevel-design"></a>
 
 ## 16.4 High-Level Design
 
@@ -425,6 +433,8 @@ Interviewer: "Good — let's go deep on the read path." You have a clear box to 
 
 ---
 
+<a id="165-deep-dives"></a>
+
 ## 16.5 Deep Dives
 
 ### Overview
@@ -520,6 +530,8 @@ Interviewer: "Hot celebrity link?"
 You stayed in one area, named trade-offs each step, and adapted — that is the deep-dive bar.
 
 ---
+
+<a id="166-tradeoffs-and-failure-modes"></a>
 
 ## 16.6 Trade-offs and Failure Modes
 
@@ -619,6 +631,8 @@ Interviewer: "Celebrity link melts one Redis key?"
 You answered operational questions without redrawing the whole system — trade-offs and failures close the loop.
 
 ---
+
+<a id="167-sample-walkthrough-url-shortener"></a>
 
 ## 16.7 Sample Walkthrough: URL Shortener
 

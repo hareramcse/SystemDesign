@@ -20,6 +20,8 @@
 ---
 
 
+<a id="131-bloom-filters"></a>
+
 ## 13.1 Bloom Filters
 
 ### Overview
@@ -371,6 +373,8 @@ flowchart LR
 ---
 
 
+<a id="132-hyperloglog"></a>
+
 ## 13.2 HyperLogLog
 
 ### Overview
@@ -697,6 +701,8 @@ Edge nodes can also maintain local HLL sketches and a nightly job runs `PFMERGE 
 ---
 
 
+<a id="133-count-min-sketch"></a>
+
 ## 13.3 Count Min Sketch
 
 ### Overview
@@ -1021,6 +1027,8 @@ flowchart LR
 ---
 
 
+<a id="134-trie"></a>
+
 ## 13.4 Trie
 
 ### Overview
@@ -1222,6 +1230,8 @@ Each keystroke touches only the path for characters typed plus the subtree under
 
 ---
 
+
+<a id="135-skip-lists"></a>
 
 ## 13.5 Skip Lists
 
@@ -1535,6 +1545,8 @@ ZRANK leaderboard "player42"        # rank by score — skip list traversal O(lo
 ---
 
 
+<a id="136-merkle-trees"></a>
+
 ## 13.6 Merkle Trees
 
 ### Overview
@@ -1824,6 +1836,8 @@ Comparing **roots alone** detects tampering without reading every block. To find
 
 ---
 
+
+<a id="137-distributed-hash-tables"></a>
 
 ## 13.7 Distributed Hash Tables
 
@@ -2165,6 +2179,8 @@ Only ~K/N keys move — not a full reshuffle (unlike hash % N)
 
 ---
 
+
+<a id="138-distributed-id-schemes"></a>
 
 ## 13.8 Distributed ID Schemes
 

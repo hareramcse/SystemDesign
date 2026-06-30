@@ -20,6 +20,8 @@
 
 ---
 
+<a id="91-logging-structured-logging"></a>
+
 ## 9.1 Logging & Structured Logging
 
 ### Overview
@@ -256,6 +258,8 @@ All three services log the same `correlationId`; one search returns the full sto
 Shopify-scale teams often standardize on JSON logs shipped to Elasticsearch or Datadog. A payment service defines `event` enums (`PaymentStarted`, `PaymentCompleted`, `PaymentFailed`). When error rate spikes in metrics, an engineer filters `event:PaymentFailed AND reason:card_declined` vs `reason:gateway_timeout` in under a minute — two different remediation paths. Unstructured logs would require manual grep across dozens of pods.
 
 ---
+
+<a id="92-metrics-monitoring"></a>
 
 ## 9.2 Metrics & Monitoring
 
@@ -546,6 +550,8 @@ Kubernetes clusters run **kube-state-metrics** and node exporters into Prometheu
 
 ---
 
+<a id="93-distributed-tracing"></a>
+
 ## 9.3 Distributed Tracing
 
 ### Overview
@@ -657,6 +663,8 @@ Embed `traceId` in log fields to jump from span to lines.
 Uber pioneered heavy tracing at scale (Jaeger originated there). A rider request trace might show map service, pricing, dispatch, and payment spans. When P99 latency regresses, SREs sort traces by duration and see pricing calling an external ML service with 4 s latency — metrics showed elevated P99 but not which dependency. A circuit breaker and cache on that call fix user-visible delay without guessing.
 
 ---
+
+<a id="94-opentelemetry"></a>
 
 ## 9.4 OpenTelemetry
 
@@ -770,6 +778,8 @@ Grafana Labs dogfoods **Grafana Alloy** (OTel Collector distribution) receiving 
 
 ---
 
+<a id="95-correlation-ids"></a>
+
 ## 9.5 Correlation IDs
 
 ### Overview
@@ -870,6 +880,8 @@ Pass as metadata key `correlation-id` or use W3C `traceparent` exclusively.
 AWS API Gateway and many enterprises add `X-Amzn-RequestId` or `X-Request-ID` at the edge. A retail platform's support portal lets agents search CloudWatch Logs Insights by that ID from a customer screenshot. Resolution drops from hours (grep guessing) to minutes — they see auth succeeded, inventory reserved, payment failed with `gateway_timeout`, all without distributed tracing access.
 
 ---
+
+<a id="96-observability-stack-trace-id-to-grafana"></a>
 
 ## 9.6 Observability stack — trace ID to Grafana
 
@@ -1037,6 +1049,8 @@ Grafana          WHERE do humans look?                          → dashboards +
 **Outcome:** Root cause is external acquirer latency, not the deploy. Team adds a circuit breaker; **Micrometer** counter `payment.circuit_open` feeds a **Grafana** panel so the next degradation is obvious without opening Jaeger.
 
 ---
+
+<a id="97-sli-slo-sla-error-budgets"></a>
 
 ## 9.7 SLI, SLO, SLA & Error Budgets
 
@@ -1471,6 +1485,8 @@ Google's SRE teams literally block launches when multi-window burn-rate alerts f
 
 ---
 
+<a id="98-alerting-dashboards"></a>
+
 ## 9.8 Alerting & Dashboards
 
 ### Overview
@@ -1686,6 +1702,8 @@ Loki and Tempo data sources add log and trace panels in the same UI (Grafana Exp
 Stripe's internal ops culture (and many fintechs) centers Grafana dashboards per critical API with RED metrics and SLO overlays. During elevated card decline rates, the on-call opens the payments dashboard: error rate panel up, latency flat, dependency panel shows issuer timeout spike — narrows to external network, not bad deploy. Without the pre-built board, engineers would rebuild queries while merchants still can't pay.
 
 ---
+
+<a id="99-health-checks-synthetic-monitoring"></a>
 
 ## 9.9 Health Checks & Synthetic Monitoring
 

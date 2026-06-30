@@ -9,7 +9,7 @@
 | # | Sub-topic |
 |---|-----------|
 | 3.1 | [Cache Fundamentals](#31-cache-fundamentals) |
-| 3.2 | [Cache Read/Write Patterns](#32-cache-read-write-patterns) |
+| 3.2 | [Cache Read/Write Patterns](#32-cache-readwrite-patterns) |
 | 3.3 | [Cache Topologies](#33-cache-topologies) |
 | 3.4 | [Cache Invalidation](#34-cache-invalidation) |
 | 3.5 | [Cache Warming](#35-cache-warming) |
@@ -17,6 +17,8 @@
 
 ---
 
+
+<a id="31-cache-fundamentals"></a>
 
 ## 3.1 Cache Fundamentals
 
@@ -160,6 +162,8 @@ flowchart LR
 
 ---
 
+
+<a id="32-cache-readwrite-patterns"></a>
 
 ## 3.2 Cache Read/Write Patterns
 
@@ -576,6 +580,8 @@ function read(key):
 ---
 
 
+<a id="33-cache-topologies"></a>
+
 ## 3.3 Cache Topologies
 
 ### Overview
@@ -843,6 +849,8 @@ function read(key):
 ---
 
 
+<a id="34-cache-invalidation"></a>
+
 ## 3.4 Cache Invalidation
 
 ### Overview
@@ -939,6 +947,8 @@ on_write:
 
 ---
 
+
+<a id="35-cache-warming"></a>
 
 ## 3.5 Cache Warming
 
@@ -1054,6 +1064,8 @@ Sanity check: network cross-AZ DB adds latency per batch; pipeline without batch
 
 ---
 
+
+<a id="36-cache-failure-modes"></a>
 
 ## 3.6 Cache Failure Modes
 

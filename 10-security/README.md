@@ -10,7 +10,7 @@
 |---|-----------|
 | 10.1 | [Authentication](#101-authentication) |
 | 10.2 | [Authorization](#102-authorization) |
-| 10.3 | [OAuth 2.0, OpenID Connect & JWT](#103-oauth-2-0-openid-connect-jwt) |
+| 10.3 | [OAuth 2.0, OpenID Connect & JWT](#103-oauth-20-openid-connect-jwt) |
 | 10.4 | [Session Management](#104-session-management) |
 | 10.5 | [RBAC & ABAC](#105-rbac-abac) |
 | 10.6 | [Encryption at Rest & in Transit](#106-encryption-at-rest-in-transit) |
@@ -23,6 +23,8 @@
 
 ---
 
+
+<a id="101-authentication"></a>
 
 ## 10.1 Authentication
 
@@ -195,6 +197,8 @@ This shows password hashing, optional MFA, and session-based proof of identity i
 ---
 
 
+<a id="102-authorization"></a>
+
 ## 10.2 Authorization
 
 ### Overview
@@ -352,6 +356,8 @@ This combines authentication, resource-level ACLs, and role-like share levels in
 
 ---
 
+
+<a id="103-oauth-20-openid-connect-jwt"></a>
 
 ## 10.3 OAuth 2.0, OpenID Connect & JWT
 
@@ -832,6 +838,8 @@ Auth0 documents this JWT validation flow with JWKS — a standard production pat
 ---
 
 
+<a id="104-session-management"></a>
+
 ## 10.4 Session Management
 
 ### Overview
@@ -997,6 +1005,8 @@ This is the documented Rails + Redis session pattern used by many production web
 
 ---
 
+
+<a id="105-rbac-abac"></a>
 
 ## 10.5 RBAC & ABAC
 
@@ -1280,6 +1290,8 @@ AWS documents this **attribute-based access control** pattern with principal and
 ---
 
 
+<a id="106-encryption-at-rest-in-transit"></a>
+
 ## 10.6 Encryption at Rest & in Transit
 
 ### Overview
@@ -1549,6 +1561,8 @@ Let's Encrypt and nginx document this free automated HTTPS path used by millions
 ---
 
 
+<a id="107-kms"></a>
+
 ## 10.7 KMS
 
 ### Overview
@@ -1726,6 +1740,8 @@ AWS KMS `GenerateDataKey` API documentation describes this exact envelope patter
 
 ---
 
+<a id="108-secret-management"></a>
+
 ## 10.8 Secret Management
 
 ### Overview
@@ -1834,6 +1850,8 @@ flowchart LR
 
 ---
 
+
+<a id="109-web-application-threats"></a>
 
 ## 10.9 Web Application Threats
 
@@ -2337,6 +2355,8 @@ flowchart LR
 ---
 
 
+<a id="1010-ddos-protection-waf"></a>
+
 ## 10.10 DDoS Protection & WAF
 
 ### Overview
@@ -2585,6 +2605,8 @@ flowchart LR
 ---
 
 
+<a id="1011-zero-trust-security"></a>
+
 ## 10.11 Zero Trust Security
 
 ### Overview
@@ -2683,6 +2705,8 @@ flowchart LR
 
 ---
 
+
+<a id="1012-audit-logging"></a>
 
 ## 10.12 Audit Logging
 

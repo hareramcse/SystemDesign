@@ -27,6 +27,8 @@
 ---
 
 
+<a id="71-rest"></a>
+
 ## 7.1 REST
 
 ### Overview
@@ -187,6 +189,8 @@ GitHub returns `200` with a JSON representation (name, stars, default branch, `h
 
 ---
 
+
+<a id="72-graphql"></a>
 
 ## 7.2 GraphQL
 
@@ -358,6 +362,8 @@ flowchart LR
 ---
 
 
+<a id="73-grpc"></a>
+
 ## 7.3 gRPC
 
 ### Overview
@@ -491,6 +497,8 @@ flowchart LR
 
 ---
 
+
+<a id="74-soap"></a>
 
 ## 7.4 SOAP
 
@@ -630,6 +638,8 @@ HTTPS alone encrypts the tunnel; WS-Security can encrypt **parts** of the messag
 ---
 
 
+<a id="75-api-gateway"></a>
+
 ## 7.5 API Gateway
 
 ### Overview
@@ -744,6 +754,8 @@ flowchart LR
 
 ---
 
+
+<a id="76-api-aggregation-composition"></a>
 
 ## 7.6 API Aggregation & Composition
 
@@ -1035,6 +1047,8 @@ Sequential chains **fail fast** on the blocking step — no order id means payme
 ---
 
 
+<a id="77-api-versioning"></a>
+
 ## 7.7 API Versioning
 
 ### Overview
@@ -1147,6 +1161,8 @@ Ship v2 → mark v1 deprecated (headers + docs)
 
 ---
 
+
+<a id="78-pagination-filtering-sorting"></a>
 
 ## 7.8 Pagination, Filtering & Sorting
 
@@ -1582,6 +1598,8 @@ For `WHERE status = 'ACTIVE' ORDER BY createdDate DESC`, a composite index `(sta
 
 ---
 
+<a id="79-openapi-swagger"></a>
+
 ## 7.9 OpenAPI & Swagger
 
 ### Overview
@@ -1766,6 +1784,8 @@ A fintech startup publishes `https://api.staging.example.com/swagger-ui/index.ht
 ---
 
 
+<a id="710-request-validation"></a>
+
 ## 7.10 Request Validation
 
 ### Overview
@@ -1874,6 +1894,8 @@ Stripe's API validates `amount` as a positive integer in smallest currency unit 
 ---
 
 
+<a id="711-contract-testing"></a>
+
 ## 7.11 Contract Testing
 
 ### Overview
@@ -1975,6 +1997,8 @@ Pactflow hosts pact files from a React frontend (consumer) and a Node User Servi
 ---
 
 
+<a id="712-api-security"></a>
+
 ## 7.12 API Security
 
 ### Overview
@@ -2060,6 +2084,8 @@ AWS API Gateway terminates TLS, validates SigV4-signed requests, and applies usa
 
 ---
 
+
+<a id="713-webhooks"></a>
 
 ## 7.13 Webhooks
 
@@ -2177,6 +2203,8 @@ Stripe sends `payment_intent.succeeded` to `https://merchant.com/webhooks/stripe
 
 ---
 
+
+<a id="714-rate-limiting-throttling"></a>
 
 ## 7.14 Rate Limiting & Throttling
 
@@ -2421,6 +2449,8 @@ AWS API Gateway usage plans combine rate limiting (steady requests/sec) with bur
 
 ---
 
+
+<a id="715-idempotency-idempotency-keys"></a>
 
 ## 7.15 Idempotency & Idempotency Keys
 

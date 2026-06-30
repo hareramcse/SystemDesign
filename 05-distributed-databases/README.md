@@ -28,6 +28,8 @@
 ---
 
 
+<a id="51-partitioning-sharding"></a>
+
 ## 5.1 Partitioning & Sharding
 
 ### Overview
@@ -584,6 +586,8 @@ Sanity check: query 50–2,500,000 would hit all 3 partitions — wide ranges
 ---
 
 
+<a id="52-geo-partitioning"></a>
+
 ## 5.2 Geo Partitioning
 
 ### Overview
@@ -673,6 +677,8 @@ flowchart LR
 
 ---
 
+
+<a id="53-hot-partitions"></a>
 
 ## 5.3 Hot Partitions
 
@@ -796,6 +802,8 @@ Sanity check: adding a 4th partition without fixing skew does not help if
 
 ---
 
+
+<a id="54-rebalancing"></a>
 
 ## 5.4 Rebalancing
 
@@ -927,6 +935,8 @@ Sanity check: rebalance during peak doubles I/O on source and target —
 
 ---
 
+
+<a id="55-consistent-hashing-placement"></a>
 
 ## 5.5 Consistent Hashing & Placement
 
@@ -1306,6 +1316,8 @@ Sanity check: same ~1/(N+1) migration order as consistent hashing, but
 ---
 
 
+<a id="56-replication"></a>
+
 ## 5.6 Replication
 
 ### Overview
@@ -1441,6 +1453,8 @@ Sanity check: sync replication adds RTT to every commit — RF=3 with sync
 ---
 
 
+<a id="57-leader-follower-replication"></a>
+
 ## 5.7 Leader Follower Replication
 
 ### Overview
@@ -1557,6 +1571,8 @@ Sanity check: sync replica cuts RPO to ~0 but adds one RTT per commit;
 
 ---
 
+
+<a id="58-multi-leader-replication"></a>
 
 ## 5.8 Multi Leader Replication
 
@@ -1678,6 +1694,8 @@ Sanity check: 400 ms write RTT is why global apps use regional leaders;
 
 ---
 
+
+<a id="59-quorum-reads-writes"></a>
 
 ## 5.9 Quorum Reads & Writes
 
@@ -1911,6 +1929,8 @@ R + 3 > 5  →  R ≥ 3
 ---
 
 
+<a id="510-distributed-locking"></a>
+
 ## 5.10 Distributed Locking
 
 ### Overview
@@ -2032,6 +2052,8 @@ Sanity check: TTL = 5 min after crash means 5 min before failover —
 ---
 
 
+<a id="511-split-brain"></a>
+
 ## 5.11 Split Brain
 
 ### Overview
@@ -2144,6 +2166,8 @@ Leader-A returns → storage rejects A's writes (epoch 1 < 2)
 
 ---
 
+
+<a id="512-consensus-paxos-raft"></a>
 
 ## 5.12 Consensus: Paxos & Raft
 
@@ -2470,6 +2494,8 @@ Maximum simultaneous failures tolerated: floor((N-1)/2)
 ---
 
 
+<a id="513-leader-election"></a>
+
 ## 5.13 Leader Election
 
 ### Overview
@@ -2575,6 +2601,8 @@ Election timeout guidance (implementation):
 
 ---
 
+
+<a id="514-logical-clocks"></a>
 
 ## 5.14 Logical Clocks
 
@@ -2780,6 +2808,8 @@ Vector size = N nodes
 
 ---
 
+
+<a id="515-gossip-membership-protocols"></a>
 
 ## 5.15 Gossip & Membership Protocols
 
@@ -3011,6 +3041,8 @@ Sanity check: phi accrual adapts to network jitter; fixed "3 misses"
 
 ---
 
+
+<a id="516-sharding-bucketing-partitioning"></a>
 
 ## 5.16 Sharding, Bucketing & Partitioning
 

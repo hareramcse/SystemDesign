@@ -20,6 +20,8 @@
 ---
 
 
+<a id="41-scalability-throughput-latency"></a>
+
 ## 4.1 Scalability, Throughput & Latency
 
 ### Overview
@@ -376,6 +378,8 @@ A search cluster reported 80 ms average latency. P99 was 900 ms, P99.9 was 5 s â
 
 ---
 
+
+<a id="42-availability-reliability-fault-tolerance"></a>
 
 ## 4.2 Availability, Reliability & Fault Tolerance
 
@@ -946,6 +950,8 @@ Patroni-managed PostgreSQL cluster: etcd quorum holds leader lock. Primary stops
 ---
 
 
+<a id="43-consistency-models-cap"></a>
+
 ## 4.3 Consistency Models & CAP
 
 ### Overview
@@ -1509,6 +1515,8 @@ etcd backs Kubernetes leader election and config storage. When a controller writ
 ---
 
 
+<a id="44-concurrency"></a>
+
 ## 4.4 Concurrency
 
 ### Overview
@@ -1610,6 +1618,8 @@ Netflix's API tier handles millions of concurrent playback and browse sessions. 
 
 ---
 
+
+<a id="45-backpressure"></a>
 
 ## 4.5 Backpressure
 
@@ -1740,6 +1750,8 @@ Apache Flink applies credit-based flow control between operators: a downstream t
 ---
 
 
+<a id="46-graceful-degradation"></a>
+
 ## 4.6 Graceful Degradation
 
 ### Overview
@@ -1856,6 +1868,8 @@ When Amazon's product recommendation service latency spikes, product detail and 
 ---
 
 
+<a id="47-capacity-planning"></a>
+
 ## 4.7 Capacity Planning
 
 ### Overview
@@ -1942,6 +1956,8 @@ Meta capacity teams forecast major events (New Year's, election night) by combin
 
 ---
 
+
+<a id="48-bottleneck-analysis"></a>
 
 ## 4.8 Bottleneck Analysis
 
