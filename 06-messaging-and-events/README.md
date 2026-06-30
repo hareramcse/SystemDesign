@@ -27,7 +27,7 @@
 | 6.17 | [Event Sourcing](#617-event-sourcing) |
 | 6.18 | [CQRS](#618-cqrs) |
 | 6.19 | [Change Data Capture (CDC)](#619-change-data-capture-cdc) |
-| 6.20 | [Outbox Pattern](#620-outbox-pattern) |
+| 6.20 | [Outbox Pattern](../08-microservices/README.md#89-distributed-transactions) |
 | 6.21 | [Event Replay](#621-event-replay) |
 | 6.22 | [Event Versioning](#622-event-versioning) |
 | 6.23 | [Schema Registry](#623-schema-registry) |
@@ -517,7 +517,7 @@ flowchart LR
 ### Pitfalls and design tips
 
 - **Choreography without tracing is opaque.** Propagate `correlationId` and `causationId` on every event; use OpenTelemetry across consumers.
-- **Do not publish before commit.** Use the outbox pattern or transactional messaging so a DB rollback does not leave orphan events in the bus.
+- **Do not publish before commit.** Use the [transaction outbox pattern](../08-microservices/README.md#89-distributed-transactions) so a DB rollback does not leave orphan events in the bus.
 - **Version events early.** Add optional fields; never rename or remove required fields without a migration plan.
 - **Orchestration vs choreography:** prefer choreography for simple fan-out; use orchestration (saga) when you need compensating transactions across many steps.
 - **Not everything should be async.** User-facing read paths that need immediate consistency still belong on synchronous APIs or read models fed by events.
@@ -1627,7 +1627,7 @@ EOS does **not** automatically cover SMTP, external HTTP APIs without idempotenc
 
 #### Outbox and inbox
 
-**Outbox (producer side):** same DB transaction writes business row + outbox event row; relay publishes later — guarantees no event loss from the write path.
+**Outbox (producer side):** same DB transaction writes business row + outbox event row; relay publishes later — full detail in [8.9 Transaction outbox](../08-microservices/README.md#89-distributed-transactions).
 
 **Inbox (consumer side):** store processed message IDs; duplicates are ignored — exactly-once **behavior** on top of at-least-once delivery.
 
@@ -1657,7 +1657,7 @@ flowchart LR
 
 - **Pragmatic default:** at-least-once + `UNIQUE` idempotency key on the consumer — many teams over-engineer Kafka transactions when a dedup table suffices.
 - **EOS scope is bounded** — it covers Kafka producer → consumer within a transactional topology, not your payment gateway or email provider.
-- **2PC across DB + broker** — strong consistency but blocking, slow, and fragile; outbox is the modern replacement.
+- **2PC across DB + broker** — strong consistency but blocking; [transaction outbox](../08-microservices/README.md#89-distributed-transactions) is the modern replacement.
 - **Cost:** transactions, dedup tables, outbox relay, and lower throughput — reserve full EOS for money, inventory, and ledgers.
 - **Interview angle:** distinguish **broker semantics** (Kafka EOS) from **business semantics** (idempotency key on `payment_id`).
 
@@ -2322,7 +2322,7 @@ CDC on a **business table** emits what changed in SQL. **Outbox** emits the even
 - **Wide tables** — large before/after payloads; use column filtering in connector config.
 - **Deletes and GDPR** — tombstone events and compaction policies for Kafka compacted topics.
 - **Long connector downtime** — log retention may expire; plan snapshot recovery.
-- **Do not use CDC as domain modeling** — row changes ≠ rich domain events; pair with outbox when semantics matter.
+- **Do not use CDC as domain modeling** — row changes ≠ rich domain events; pair with [transaction outbox](../08-microservices/README.md#89-distributed-transactions) when semantics matter.
 
 ---
 
@@ -2334,135 +2334,9 @@ A product catalog lives in **PostgreSQL**. On each `INSERT`/`UPDATE` to `product
 
 ## 6.20 Outbox Pattern
 
-### Overview
+> **Canonical coverage:** [8.9 Distributed Transactions](../08-microservices/README.md#89-distributed-transactions) — see **Transaction outbox pattern** (dual-write problem, schema, relay, Debezium, lag alerts, inbox pairing).
 
-You would not mail a wedding invitation and update the guest spreadsheet in two separate buildings hoping both succeed. The **outbox pattern** writes the guest row and the "send invitation" note in the **same ledger transaction**; a clerk mails invitations later from the outbox tray. Database and "intent to publish" commit together — no half-done state.
-
-Technically, the **outbox pattern** stores a pending event row in an **outbox table** inside the same database transaction as the business write. A **relay** (polling process or CDC connector) reads unpublished outbox rows and publishes to the message broker asynchronously — eliminating dual-write inconsistency without two-phase commit across DB and Kafka. In microservices, outbox is the standard companion to **saga** choreography — see [8.9 Distributed Transactions](../08-microservices/README.md#89-distributed-transactions).
-
----
-
-### What problem it fixes
-
-```text
-Step 1: Save order to database     ✓ success
-Step 2: Publish OrderCreated event ✗ failure
-
-Result: order exists; inventory, payment, shipping never notified → inconsistent system
-```
-
-Or the reverse: event published, DB rolls back → phantom event.
-
-The root cause: **no atomic transaction spans PostgreSQL and Kafka**. Naive `save()` then `kafka.send()` is unsafe.
-
----
-
-### What it does
-
-The outbox pattern:
-
-- **Atomically persists** business data + outbox event row in one DB transaction
-- **Defers publishing** to a background relay — at-least-once to the broker
-- **Guarantees no event loss** from the write path (once txn commits, event row exists)
-- **Requires idempotent consumers** — relay may publish duplicates
-
-| Guaranteed | Not guaranteed |
-|------------|----------------|
-| No event loss after DB commit | No duplicate publishes on broker |
-
----
-
-### How it works — the architecture inside
-
-```mermaid
-flowchart LR
-    subgraph Txn[Single DB transaction]
-        BR[Business row INSERT/UPDATE]
-        OB[Outbox row INSERT]
-    end
-    Txn --> Commit[COMMIT]
-    Commit --> Relay[Outbox publisher / Debezium]
-    Relay --> Broker[Kafka / RabbitMQ]
-    Broker --> Consumers[Downstream consumers]
-```
-
-#### Transactional write example
-
-```sql
-BEGIN;
-  UPDATE orders SET status = 'PAID' WHERE id = 'ord_123';
-  INSERT INTO outbox (id, aggregate_type, aggregate_id, event_type, payload, created_at)
-  VALUES ('evt_uuid_1', 'Order', 'ord_123', 'OrderPaid', '{"orderId":"ord_123"}', NOW());
-COMMIT;
-```
-
-Both succeed or both roll back — never partial.
-
-#### Outbox table schema
-
-| Column | Purpose |
-|--------|---------|
-| `id` | Unique event ID — idempotency key |
-| `aggregate_type` / `aggregate_id` | Routing, partition key |
-| `event_type` | `OrderPaid` — topic routing |
-| `payload` | JSON / Avro |
-| `created_at` | Ordering, lag monitoring |
-| `published_at` | NULL until relay succeeds |
-
-#### Relay implementations
-
-| Method | Mechanism | Latency | Scale |
-|--------|-----------|---------|-------|
-| **Polling** | `SELECT … WHERE published_at IS NULL FOR UPDATE SKIP LOCKED` | 100 ms–1 s | Simple; DB load at volume |
-| **CDC (Debezium)** | Read outbox from WAL/binlog | Near real-time | Preferred at scale |
-
-**Debezium Outbox Event Router** transforms outbox rows → Kafka topics by `aggregate_type`, key by `aggregate_id` — minimal custom relay code.
-
-#### Failure scenarios
-
-| Scenario | Result | Recovery |
-|----------|--------|----------|
-| Crash before COMMIT | Rollback — nothing saved | Client retries command |
-| Order + outbox saved; relay crashes | Event not yet on broker | Relay retries on restart |
-| Published; crash before mark sent | Duplicate on broker | Idempotent consumers |
-
-**How to calculate — outbox lag alert:**
-
-Given: `published_at IS NULL` rows with `created_at` timestamps.
-
-- `lag_p99 = percentile(now() − created_at)` for unpublished rows
-- Alert when `lag_p99 > 30 s` (tune to SLA)
-
-Example: 500 unpublished rows, oldest `created_at` = 45 s ago → relay stalled or under-provisioned.
-
-**Sanity check:** steady-state lag should be sub-second with CDC; seconds with polling at moderate volume.
-
-#### Outbox vs 2PC
-
-| | Outbox | 2PC |
-|---|--------|-----|
-| **Complexity** | Low | High |
-| **Performance** | High | Lower (blocking) |
-| **Availability** | High | Coordinator failure blocks |
-
-Modern systems prefer outbox over 2PC across DB and broker.
-
----
-
-### Pitfalls and design tips
-
-- **Default for microservices emitting domain events** — replaces unsafe dual-write.
-- **Monitor outbox lag** — growing unpublished count means relay failure or overload.
-- **Cleanup policy** — delete or archive published rows; do not let the outbox table grow forever.
-- **Symmetric inbound: transactional inbox** — dedup on consume for end-to-end correctness.
-- **Prefer Debezium on outbox table at scale** — polling hammers DB under high write TPS.
-- **Not for monoliths with no messaging** — added table and relay for no benefit.
-
----
-
-### Real-world example
-
-An **Order Service** on PostgreSQL creates an order and inserts `OrderCreated` into `outbox` in one transaction. Debezium tails the outbox table and publishes to Kafka topic `orders`. Inventory, shipping, and payment services consume the event. When the relay restarts after a crash, it republishes an event that was committed but not yet marked sent — consumers dedupe on `outbox.id`.
+The outbox atomically persists a business row and a pending event row in one database transaction; a relay publishes to the message broker asynchronously. Use it whenever a microservice must emit domain events after a local commit without dual-write bugs.
 
 ---
 

@@ -23,7 +23,7 @@
 | 8.16 | [Circuit Breaker](#816-circuit-breaker) |
 | 8.17 | [Retry Pattern](#817-retry-pattern) |
 | 8.18 | [Bulkhead Pattern](#818-bulkhead-pattern) |
-| 8.19 | [Saga Pattern](#819-saga-pattern) |
+| 8.19 | [Saga Pattern](#819-saga-pattern) → see [8.9](#89-distributed-transactions) |
 | 8.20 | [Choreography](#820-choreography) |
 | 8.21 | [Orchestration](#821-orchestration) |
 
@@ -221,7 +221,7 @@ One deployable; each module exposes a narrow public API. Transaction module call
 
 Imagine a hospital where cardiology, radiology, pharmacy, and billing are separate departments — each with its own staff, budget, and records room, coordinating over phone and forms instead of sharing one desk. A **microservices** architecture splits software the same way: small, independently deployable services, each owning a business capability and usually its own database.
 
-Technically, **microservices** decompose an application into **autonomous services** that communicate over the network (REST, gRPC, message queues). Each service encapsulates one bounded context (8.7), deploys on its own cadence, scales independently, and persists data in a **service-owned database** — no shared mutable schema across services. Distributed concerns — discovery (8.12), resilience (8.16–8.18), distributed transactions (8.9), sagas (8.19), observability — become first-class platform requirements.
+Technically, **microservices** decompose an application into **autonomous services** that communicate over the network (REST, gRPC, message queues). Each service encapsulates one bounded context (8.7), deploys on its own cadence, scales independently, and persists data in a **service-owned database** — no shared mutable schema across services. Distributed concerns — discovery (8.12), resilience (8.16–8.18), distributed transactions and sagas (8.9), observability — become first-class platform requirements.
 
 ---
 
@@ -910,7 +910,7 @@ com.ecommerce
 
 Imagine splitting a bank transfer across three branches that each keep their own ledger — you cannot walk to one counter and ask them to lock all three books at once. **Distributed transactions** in microservices face the same constraint: each service owns its database, yet business workflows (checkout, booking, payout) must stay coherent when steps fail halfway through.
 
-Technically, microservices abandon a single global `BEGIN … COMMIT` across services. Instead you choose among **coordination protocols** (two-phase commit, three-phase commit), **workflow patterns** (saga with compensating actions), and **reliability patterns** (transaction outbox) depending on how strong consistency must be, how long the workflow runs, and whether a message broker sits between steps. This section is the **microservices hub** for those choices; protocol depth for 2PC/3PC lives in [5.17](../05-distributed-databases/README.md#517-two-phase-commit) and [5.18](../05-distributed-databases/README.md#518-three-phase-commit), outbox relay mechanics in [6.20](../06-messaging-and-events/README.md#620-outbox-pattern), and saga execution styles in [8.19](#819-saga-pattern), [8.20](#820-choreography), and [8.21](#821-orchestration).
+Technically, microservices abandon a single global `BEGIN … COMMIT` across services. Instead you choose among **coordination protocols** (two-phase commit, three-phase commit), **workflow patterns** (saga with compensating actions), and **reliability patterns** (transaction outbox) depending on how strong consistency must be, how long the workflow runs, and whether a message broker sits between steps. **This section is the canonical reference** for all four patterns. Saga **execution styles** (choreography vs orchestration) are detailed in [8.20](#820-choreography) and [8.21](#821-orchestration).
 
 ---
 
@@ -999,12 +999,19 @@ Each box commits **locally**. The patterns below decide how those local commits 
 
 #### Two-phase commit (2PC)
 
-A **coordinator** (transaction manager, app server, or workflow engine) runs two rounds:
+Two-phase commit (2PC) is like a group dinner where everyone confirms they can pay their share before anyone's card is charged. A **coordinator** (transaction manager, app server, or workflow engine) runs two rounds:
 
 ```text
 Phase 1 — Prepare:  "Can you commit?"  → each participant votes YES/NO, holds locks
 Phase 2 — Commit:   all YES → COMMIT everyone; any NO → ROLLBACK everyone
 ```
+
+| Phase | Coordinator | Participant |
+|-------|-------------|-------------|
+| **Prepare** | Send `PREPARE` | Validate, acquire locks, vote YES/NO |
+| **Commit** | `COMMIT` if all YES; else `ROLLBACK` | Apply or undo; release locks |
+
+Participants **do not commit independently** — they wait for phase 2.
 
 ```mermaid
 flowchart LR
@@ -1015,24 +1022,73 @@ flowchart LR
     P1 --> P2[Commit or Rollback]
 ```
 
+**Success flow:**
+
+```text
+Prepare:  Payment YES · Inventory YES · Order YES
+Commit:   all three commit → success
+```
+
+**Failure flow:**
+
+```text
+Prepare:  Payment YES · Inventory NO (out of stock) · Order YES
+Decision: ROLLBACK all — no partial state
+```
+
+**The blocking problem:**
+
+```text
+All participants vote YES
+Coordinator crashes before sending COMMIT
+→ Payment, Inventory, Order wait indefinitely in prepared state
+```
+
+Participants cannot safely decide alone until the coordinator recovers. Three-phase commit (below) and consensus-backed transaction managers (Spanner, Raft) address this in different ways.
+
+**How to calculate — votes and messages:**
+
+```text
+Given: N participants (excluding coordinator)
+
+To commit: Required YES votes = N (unanimous)
+
+Round trips (approximate):
+  Phase 1: N + 1 messages
+  Phase 2: N + 1 messages
+  Total: 2N + 2 minimum
+
+For N = 3: 2×3 + 2 = 8 messages per transaction
+
+Given: 3 participants, RTT = 20 ms per hop
+  Coordination overhead ≈ 80 ms (excluding local DB work)
+  Locks held from prepare until commit/abort arrives
+```
+
 **When to use in microservices:**
 
-- **Inside** a platform: Java **JTA/XA** across two JDBC datasources, some message brokers with XA, Spanner-style globally consistent stores.
-- **Avoid** classic 2PC across arbitrary REST/gRPC microservices — blocking, tight coupling, coordinator failure leaves participants stuck in **prepared** state.
+- **Inside** a platform: Java **JTA/XA** across two JDBC datasources, some message brokers with XA.
+- **Avoid** classic 2PC across arbitrary REST/gRPC microservices — blocking, tight coupling, coordinator SPOF.
 
 **When not to use:** user-facing checkout over WAN; many participants; long-running steps.
 
-See [5.17 Two Phase Commit](../05-distributed-databases/README.md#517-two-phase-commit) for message counts, blocking diagram, and XA example.
+**Production example:** Java EE **JTA** across two JDBC datasources — `@Transactional` logic touches `DataSource-A` (orders) and `DataSource-B` (billing). The transaction manager sends XA prepare to both; only on dual `XA_OK` does it commit both.
 
 ---
 
 #### Three-phase commit (3PC)
 
-Adds a **pre-commit** phase so participants learn the coordinator intends to commit before the final commit:
+3PC adds a **pre-commit** phase between prepare and commit:
 
 ```text
 Prepare → Pre-commit → Commit
 ```
+
+| Phase | Purpose |
+|-------|---------|
+| **Prepare** | Same as 2PC — participants vote YES/NO |
+| **Pre-commit** | Coordinator signals commit intent; participants acknowledge |
+| **Commit** | Final commit (or abort if earlier phase failed) |
 
 ```mermaid
 flowchart LR
@@ -1040,19 +1096,44 @@ flowchart LR
     PC --> C[Commit]
 ```
 
-**Intent:** if the coordinator dies after pre-commit, participants can sometimes complete or abort on timeout instead of blocking forever (requires **bounded network delay** assumptions).
+**Intent:** if the coordinator dies after pre-commit, participants that received pre-commit can sometimes complete or abort on timeout instead of blocking forever — requires **bounded network delay** assumptions.
+
+**How to calculate — message count vs 2PC:**
+
+```text
+Given: N participants
+
+2PC messages ≈ 2N + 2
+3PC messages ≈ 3N + 3   (+50% coordination overhead)
+
+For N = 5:  2PC ≈ 12 messages · 3PC ≈ 18 messages
+```
 
 **When to use in microservices:** practically **never** as a hand-rolled protocol between services. Production uses **Raft/Paxos**, Spanner, or **sagas** instead.
 
-**When to know it:** interviews — explain 2PC blocking, how pre-commit helps in theory, why real systems moved to consensus or sagas.
-
-See [5.18 Three Phase Commit](../05-distributed-databases/README.md#518-three-phase-commit) for phase detail and overhead math.
+**Pitfalls:** 3PC assumes bounded delay — WAN and GC pauses can cause incorrect aborts without careful design. Know it for interviews (2PC blocking → pre-commit helps in theory → Raft/saga won in practice).
 
 ---
 
 #### Saga pattern
 
 A **saga** is an ordered sequence of **local transactions**, one per service. If step *n* fails, run **compensating transactions** for steps *1 … n−1* (semantic undo: `releaseInventory`, `cancelOrder`).
+
+| Concept | Meaning |
+|---------|---------|
+| **Local transaction** | Commit within one service and its DB |
+| **Compensating transaction** | Semantic undo of a completed step |
+| **Saga** | Ordered sequence with defined compensations |
+| **Eventual consistency** | Temporary inconsistency; converges on completion or compensation |
+
+**Forward and compensate pairs:**
+
+| Forward | Compensate |
+|---------|------------|
+| Reserve inventory | Release inventory |
+| Create order | Cancel order |
+| Create shipment | Cancel shipment |
+| Charge payment | Refund payment (may be async) |
 
 ```text
 Happy:  create order → reserve stock → charge card → ship
@@ -1073,12 +1154,34 @@ sequenceDiagram
     O->>O: Compensate cancel
 ```
 
+**State transitions:**
+
+```text
+Success: STARTED → ORDER_CREATED → INVENTORY_RESERVED → PAYMENT_COMPLETED → COMPLETED
+Failure: … → PAYMENT_FAILED → RELEASE_INVENTORY → CANCEL_ORDER → FAILED
+```
+
+**Correlation:** every event and log line carries `saga_id` for tracing.
+
+**How to calculate — saga timeout budget:**
+
+```text
+Given: Order 5 s, Inventory 10 s, Payment 30 s, Shipping 15 s
+       Compensations: Release 5 s, Cancel 5 s
+
+Happy path:  T_happy = 5 + 10 + 30 + 15 = 60 s
+Fail at Payment: forward 45 s + compensate 10 s = 55 s
+Orchestrator TTL: ≥ 55 + margin ≈ 90 s
+
+If UX requires < 30 s → shrink Payment budget or run charge async after hold
+```
+
 | | 2PC | Saga |
 |---|-----|------|
 | Global consistency | Immediate | Eventual |
 | Rollback | Automatic DB rollback | Compensation (business logic) |
 | Cross-service fit | Poor | Good |
-| Irreversible steps | N/A | Need manual fix (email sent, package shipped) |
+| Irreversible steps | N/A | Manual intervention (email sent, package shipped) |
 
 **Execution styles:**
 
@@ -1087,7 +1190,12 @@ sequenceDiagram
 | **Choreography** | Services react to events on a bus | [8.20](#820-choreography) |
 | **Orchestration** | Central workflow engine drives steps | [8.21](#821-orchestration) |
 
-Deep dive: [8.19 Saga Pattern](#819-saga-pattern).
+| Style | Platforms |
+|-------|-----------|
+| Choreography | Kafka, RabbitMQ, AWS SNS/SQS |
+| Orchestration | Temporal, Camunda/Zeebe, Netflix Conductor |
+
+**Saga pitfalls:** compensation is not free; idempotent handlers (`saga_id` + step); stuck `PENDING` sagas need alerts and ops tooling.
 
 ---
 
@@ -1099,6 +1207,8 @@ The **outbox** solves **dual-write**: you cannot atomically commit PostgreSQL an
 Wrong:  save order → kafka.send()     (either step can fail alone)
 Right:  BEGIN → INSERT order + INSERT outbox row → COMMIT → relay publishes async
 ```
+
+Or the reverse failure: event published, DB rolls back → phantom event.
 
 ```mermaid
 flowchart LR
@@ -1112,13 +1222,65 @@ flowchart LR
     Bus --> Saga[Saga consumers]
 ```
 
+**Transactional write example:**
+
+```sql
+BEGIN;
+  UPDATE orders SET status = 'PAID' WHERE id = 'ord_123';
+  INSERT INTO outbox (id, aggregate_type, aggregate_id, event_type, payload, created_at)
+  VALUES ('evt_uuid_1', 'Order', 'ord_123', 'OrderPaid', '{"orderId":"ord_123"}', NOW());
+COMMIT;
+```
+
+**Outbox table schema:**
+
+| Column | Purpose |
+|--------|---------|
+| `id` | Unique event ID — idempotency key |
+| `aggregate_type` / `aggregate_id` | Routing, partition key |
+| `event_type` | `OrderPaid` — topic routing |
+| `payload` | JSON / Avro |
+| `created_at` | Ordering, lag monitoring |
+| `published_at` | NULL until relay succeeds |
+
+**Relay implementations:**
+
+| Method | Mechanism | Latency | Scale |
+|--------|-----------|---------|-------|
+| **Polling** | `SELECT … WHERE published_at IS NULL FOR UPDATE SKIP LOCKED` | 100 ms–1 s | Simple; DB load at volume |
+| **CDC (Debezium)** | Read outbox from WAL/binlog | Near real-time | Preferred at scale |
+
+**Debezium Outbox Event Router** maps `aggregate_type` → Kafka topic, `aggregate_id` → partition key.
+
+**Failure scenarios:**
+
+| Scenario | Recovery |
+|----------|----------|
+| Crash before COMMIT | Rollback — client retries |
+| Committed; relay crashes | Relay retries on restart |
+| Published; crash before mark sent | Duplicate on broker — idempotent consumers |
+
+**How to calculate — outbox lag alert:**
+
+```text
+lag_p99 = percentile(now() − created_at) for rows where published_at IS NULL
+Alert when lag_p99 > 30 s (tune to SLA)
+Steady state: sub-second with CDC; seconds with polling
+```
+
+| | Outbox | 2PC |
+|---|--------|-----|
+| Complexity | Low | High |
+| Performance | High | Lower (blocking) |
+| Availability | High | Coordinator failure blocks |
+
 **Role in microservices:**
 
-- **Choreography sagas** — each step commits locally and publishes the next event via outbox (no ghost events, no lost events).
-- **Not a global transaction** — outbox guarantees **this service's** write and publish intent are atomic; downstream sagas still use eventual consistency.
-- **Preferred over 2PC** for DB + broker — higher availability, no blocking coordinator.
+- **Choreography sagas** — each step commits locally and publishes via outbox.
+- **Not global atomicity** — fixes **one service's** dual-write; downstream sagas remain eventual.
+- **Transactional inbox** (receiver side) — dedup on consume for end-to-end correctness.
 
-Relay detail, schema, and lag alerts: [6.20 Outbox Pattern](../06-messaging-and-events/README.md#620-outbox-pattern).
+**Outbox pitfalls:** monitor lag; archive published rows; prefer Debezium at scale; version outbox payloads.
 
 ---
 
@@ -1186,7 +1348,7 @@ No 2PC — four independent databases, consistent business outcome after compens
 
 - Persist **saga state** (`PENDING`, `COMPENSATING`, `FAILED`) for stuck-saga alerts and manual recovery.
 - Use **orchestration** (8.21) when branching/timeouts dominate; **choreography** (8.20) for simple linear pipelines.
-- **Inbox pattern** (6.20) pairs with outbox for idempotent consumption on the receiver side.
+- **Inbox pattern** (transactional inbox on consumer) pairs with outbox for idempotent consumption.
 - **Interview:** monolith = one ACID; microservices = saga + eventual consistency + outbox for reliable events.
 
 ---
@@ -1205,6 +1367,8 @@ No 2PC — four independent databases, consistent business outcome after compens
 - **3PC:** not used — team chose saga explicitly after a prior JTA experiment blocked during coordinator maintenance.
 
 **Outcome:** Temporary inconsistency during the saga (flight held for 30 s) is acceptable; business rules converge to either fully booked or fully cancelled. Ops dashboard shows `saga_id` across all three services for support.
+
+**Uber Eats** uses a similar pattern: Order → menu reserve → payment authorize → driver dispatch; timeout triggers compensation (void payment, release items, cancel order) as local transactions per service, often orchestrated when branching exceeds simple event chains.
 
 ---
 
@@ -2003,153 +2167,14 @@ public PaymentResponse processPayment() { /* remote call */ }
 
 ## 8.19 Saga Pattern
 
-### Overview
+> **Canonical coverage:** [8.9 Distributed Transactions](#89-distributed-transactions) — see **Saga pattern** (forward/compensate pairs, timeout budget, technologies, pitfalls).
 
-Booking a vacation involves flight, hotel, and car — if payment fails after the flight is held, you need to cancel the flight and release the hotel, not pretend nothing happened. A **saga** coordinates a multi-step business process across independent services using **local transactions** and **compensating actions** instead of one giant database transaction.
+**Execution styles** (how to run a saga in production):
 
-Technically, the **saga pattern** replaces distributed two-phase commit (2PC) with a sequence of **local ACID transactions**, each in one service's database. If a later step fails, earlier steps run **compensating transactions** (semantic undo: `releaseInventory`, `cancelOrder`). Consistency is **eventual** — there is no global lock, and the system converges to a valid state after forward or compensate steps complete. For how sagas compare to 2PC, 3PC, and the transaction outbox, see [8.9 Distributed Transactions](#89-distributed-transactions).
-
----
-
-### What problem it fixes
-
-**Monolith** — one database:
-
-```text
-BEGIN → update orders, payment, inventory → COMMIT or ROLLBACK
-```
-
-**Microservices** — separate databases:
-
-```text
-Order DB · Payment DB · Inventory DB
-```
-
-2PC across three databases is slow, blocks on failure, and does not scale. A network partition during 2PC leaves participants in ambiguous states. Sagas provide a **practical alternative** for long-running, cross-service workflows. See [8.9](#89-distributed-transactions) for the full comparison with 2PC, 3PC, and transaction outbox.
-
-**Failure without saga:**
-
-```text
-Order created ✓ → Inventory reserved ✓ → Payment failed ✗
-→ Inventory stuck reserved, order stuck PENDING — manual cleanup
-```
-
----
-
-### What it does
-
-| Concept | Meaning |
-|---------|---------|
-| **Local transaction** | Commit within one service and its DB |
-| **Compensating transaction** | Semantic undo of a completed step |
-| **Saga** | Ordered sequence of local transactions with defined compensations |
-| **Eventual consistency** | Temporary inconsistency during execution; converges on completion or compensation |
-
-**Forward and compensate pairs:**
-
-| Forward | Compensate |
-|---------|------------|
-| Reserve inventory | Release inventory |
-| Create order | Cancel order |
-| Create shipment | Cancel shipment |
-| Charge payment | Refund payment (may be async) |
-
-**Execution styles:**
-
-| | Choreography (8.20) | Orchestration (8.21) |
-|---|---------------------|----------------------|
-| **Coordinator** | None — event reactions | Central orchestrator |
-| **Best for** | Simple linear pipelines | Complex branching, visibility |
-
----
-
-### How it works — the architecture inside
-
-**Happy path:**
-
-```text
-Create order → reserve inventory → process payment → create shipment → COMPLETED
-```
-
-**Failure path (payment fails):**
-
-```text
-Release inventory → cancel order → FAILED
-```
-
-```mermaid
-sequenceDiagram
-    participant O as Order service
-    participant I as Inventory service
-    participant P as Payment service
-    O->>O: Create order (PENDING)
-    O->>I: Reserve stock
-    I-->>O: OK
-    O->>P: Charge card
-    P-->>O: FAIL
-    O->>I: Compensate: release
-    O->>O: Compensate: cancel
-```
-
-**State transitions:**
-
-```text
-Success: STARTED → ORDER_CREATED → INVENTORY_RESERVED → PAYMENT_COMPLETED → COMPLETED
-Failure: … → PAYMENT_FAILED → RELEASE_INVENTORY → CANCEL_ORDER → FAILED
-```
-
-**Correlation:** every event and log line carries `saga_id` for tracing.
-
-**How to calculate — saga timeout budget:**
-
-```text
-Given: 4 saga steps with per-step timeouts — Order 5 s, Inventory 10 s, Payment 30 s, Shipping 15 s;
-       compensation steps: Release 5 s, Cancel 5 s
-
-Step 1 — happy-path budget (sequential orchestration):
-  T_happy = 5 + 10 + 30 + 15 = 60 s
-
-Step 2 — failure at Payment (worst common case):
-  forward = 5 + 10 + 30 = 45 s (payment times out)
-  compensate = 5 (release) + 5 (cancel) = 10 s
-  T_fail = 45 + 10 = 55 s
-
-Step 3 — orchestrator workflow timeout:
-  saga_timeout ≥ T_fail + margin ≈ 55 + 15 = 70 s (set workflow TTL to 90 s)
-
-Step 4 — client-facing SLA:
-  if UX requires < 30 s, Payment step budget must shrink or run async after hold
-
-Result: orchestrator timeout ≈ 90 s; payment is the dominant step (30 s)
-
-Sanity check: sum of step timeouts > user patience → return 202 + poll;
-             choreography needs the same budget on consumer processing deadlines.
-```
-
-**Saga vs 2PC:** see comparison table in [8.9](#89-distributed-transactions).
-
-**Technologies:**
-
-| Style | Platforms |
-|-------|-----------|
-| Choreography | Kafka, RabbitMQ, AWS SNS/SQS |
-| Orchestration | Temporal, Camunda/Zeebe, Netflix Conductor |
-
----
-
-### Pitfalls and design tips
-
-- **Compensation is not free** — "email sent" or "package shipped" cannot be fully undone; design compensations upfront, accept manual intervention for irreversible steps.
-- **Idempotent handlers** — at-least-once delivery means duplicate events; dedup by `saga_id` + step.
-- **Outbox pattern** — publish events only after local DB commit to avoid ghost sagas; see [8.9](#89-distributed-transactions) and [6.20](../06-messaging-and-events/README.md#620-outbox-pattern).
-- **Interview angle:** saga = eventual consistency; name choreography vs orchestration trade-offs.
-- **Stuck sagas** — alert on `PENDING` past SLA; support manual compensation in ops tooling.
-
----
-
-### Real-world example
-
-**Uber Eats order flow** spans Restaurant, Order, Payment, and Delivery services. When a customer places an order, the Order service creates a local record and publishes `OrderCreated`. Inventory (menu availability) reserves items; Payment authorizes the card. If no driver accepts within the timeout, a compensation saga runs: void payment authorization, release menu items, mark order cancelled — each step a local transaction in its owning service. Uber uses orchestrated workflows (internal engines similar to Temporal concepts) because branching (driver reassignment, partial refunds) exceeds simple event chains.
+| Style | Section |
+|-------|---------|
+| Event-driven, no central coordinator | [8.20 Choreography](#820-choreography) |
+| Central workflow engine (Temporal, Camunda) | [8.21 Orchestration](#821-orchestration) |
 
 ---
 

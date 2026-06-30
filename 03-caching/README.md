@@ -390,7 +390,7 @@ function read(key):
 - **Cache first, then DB** — faster reads of the new value immediately, but risk cache ahead of DB if DB write fails (must rollback cache).
 - **DB first, then cache** — safer durability; brief window where cache is stale until update completes.
 
-Production systems often use **DB first, then cache update** with retry, or a transactional outbox if both must be atomic across nodes.
+Production systems often use **DB first, then cache update** with retry, or a [transaction outbox](../08-microservices/README.md#89-distributed-transactions) if both must be atomic across nodes.
 
 | Pattern | Write latency | Read freshness | Data loss risk |
 |---------|---------------|----------------|----------------|
