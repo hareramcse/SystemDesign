@@ -9,7 +9,7 @@
 | 5 | [Distributed Databases](./05-distributed-databases/README.md) | 29 | Documented |
 | 6 | [Messaging & Events](./06-messaging-and-events/README.md) | 23 | Documented |
 | 7 | [API Design](./07-api-design/README.md) | 21 | Documented |
-| 8 | [MicroServices](./08-microservices/README.md) | 21 | Documented |
+| 8 | [MicroServices](./08-microservices/README.md) | 17 | Documented |
 | 9 | [Observability](./09-observability/README.md) | 15 | Documented |
 | 10 | [Security](./10-security/README.md) | 21 | Documented |
 | 11 | [Cloud & Kubernetes](./11-cloud-and-kubernetes/README.md) | 35 | Documented |

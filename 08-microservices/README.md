@@ -10,22 +10,21 @@
 |---|-----------|
 | 8.1 | [Monolith](#81-monolith) |
 | 8.2 | [Modular Monolith](#82-modular-monolith) |
-| 8.3 | [Microservices](#83-microservices) |
-| 8.4 | [Strangler Pattern](#84-strangler-pattern) |
-| 8.5 | [BFF Pattern](#85-bff-pattern) |
-| 8.6 | [DDD](#86-ddd) |
-| 8.7 | [Bounded Context](#87-bounded-context) |
-| 8.8 | [Hexagonal Architecture](#88-hexagonal-architecture) |
-| 8.9 | [Distributed Transactions](#89-distributed-transactions) |
+| 8.3 | [DDD](#83-ddd) |
+| 8.4 | [Bounded Context](#84-bounded-context) |
+| 8.5 | [Microservices](#85-microservices) |
+| 8.6 | [Hexagonal Architecture](#86-hexagonal-architecture) |
+| 8.7 | [Distributed Transactions](#87-distributed-transactions) |
+| 8.8 | [Choreography](#88-choreography) |
+| 8.9 | [Orchestration](#89-orchestration) |
+| 8.10 | [Strangler Pattern](#810-strangler-pattern) |
+| 8.11 | [BFF Pattern](#811-bff-pattern) |
 | 8.12 | [Service Registry](#812-service-registry) |
+| 8.13 | [Sidecar Pattern](#813-sidecar-pattern) |
 | 8.14 | [Service Mesh](#814-service-mesh) |
-| 8.15 | [Sidecar Pattern](#815-sidecar-pattern) |
-| 8.16 | [Circuit Breaker](#816-circuit-breaker) |
-| 8.17 | [Retry Pattern](#817-retry-pattern) |
-| 8.18 | [Bulkhead Pattern](#818-bulkhead-pattern) |
-| 8.19 | [Saga Pattern](#819-saga-pattern) → see [8.9](#89-distributed-transactions) |
-| 8.20 | [Choreography](#820-choreography) |
-| 8.21 | [Orchestration](#821-orchestration) |
+| 8.15 | [Circuit Breaker](#815-circuit-breaker) |
+| 8.16 | [Retry Pattern](#816-retry-pattern) |
+| 8.17 | [Bulkhead Pattern](#817-bulkhead-pattern) |
 
 ---
 
@@ -36,6 +35,8 @@
 Picture a small restaurant where one chef handles everything — taking orders, cooking, plating, and washing dishes. Everyone works in the same kitchen, shares the same pantry, and ships one combined meal ticket at the end. That is a **monolith**: one deployable unit where UI, business logic, and data access live together and talk through in-process method calls.
 
 Technically, a **monolith** packages all application components into a **single codebase and deployment artifact**. Components share one runtime, one process (or tightly coupled process group), and typically one database. Communication is synchronous and local — no network hops between modules. Scaling means scaling the whole application; technology choices apply uniformly across the system.
+
+**Prerequisites:** None — start here.
 
 ---
 
@@ -94,7 +95,7 @@ User management · Product catalog · Order processing · Payment · Notificatio
 
 All packaged into one deployable; a single release updates every module simultaneously.
 
-| Dimension | Monolith | Modular monolith (8.2) | Microservices (8.3) |
+| Dimension | Monolith | Modular monolith (8.2) | Microservices (8.5) |
 |-----------|----------|--------------------------|----------------------|
 | **Deployment unit** | Single | Single | Multiple |
 | **Code organization** | Low | High | Very high |
@@ -131,6 +132,8 @@ Think of a large warehouse divided into clearly marked zones — receiving, stor
 
 Technically, a **modular monolith** is a monolithic application decomposed into **well-defined modules** with explicit interfaces, each owning a slice of domain logic. It still ships as one artifact and often shares one database, but cross-module access goes through published APIs or domain events — never direct reach into another module's internals. Tools like Spring Modulith, ArchUnit, or package-level access rules enforce boundaries at build time.
 
+**Prerequisites:** [8.1 Monolith](#81-monolith).
+
 ---
 
 ### What problem it fixes
@@ -156,7 +159,7 @@ A modular monolith:
 - Organizes code into **domain-aligned modules** (User, Order, Payment, Inventory).
 - Communicates across modules via **interfaces, facades, or domain events** — not direct database access across module tables.
 - Often assigns **table ownership** per module (Order module owns `orders`; Payment owns `payments`) even within a shared database instance.
-- Can evolve into microservices via the Strangler pattern (8.4) when a module is ready for independent deployment.
+- Can evolve into microservices via the Strangler pattern (8.10) when a module is ready for independent deployment.
 
 ---
 
@@ -203,8 +206,8 @@ One deployable; each module exposes a narrow public API. Transaction module call
 
 - **Shared database is still shared failure domain** — a bad migration or runaway query affects all modules; monitor per-module query patterns even in one DB.
 - **Spring Modulith / ArchUnit** are production tools learners should name — they turn boundary rules into CI failures, not code-review nagging.
-- **Do not confuse "module" with "bounded context"** — a bounded context (8.7) is a business boundary; a module is a technical package. They often align but are not identical.
-- **Interview angle:** modular monolith is the recommended stepping stone before microservices; mention Strangler (8.4) as the extraction path.
+- **Do not confuse "module" with "bounded context"** — a bounded context (8.4) is a business boundary; a module is a technical package. They often align but are not identical.
+- **Interview angle:** modular monolith is the recommended stepping stone before microservices; mention Strangler (8.10) as the extraction path.
 - **Common mistake:** creating modules by technical layer (`validation-module`, `dao-module`) instead of business capability — mirrors the microservices anti-pattern.
 
 ---
@@ -215,13 +218,261 @@ One deployable; each module exposes a narrow public API. Transaction module call
 
 ---
 
-## 8.3 Microservices
+## 8.3 DDD
+
+### Overview
+
+Building software without talking to the business is like a translator who never meets the author — you guess at meaning and ship the wrong book. **Domain-Driven Design (DDD)** puts the **business domain** at the center: developers, analysts, and domain experts share one vocabulary, and code structure mirrors how the business actually works.
+
+Technically, **DDD** (Eric Evans, 2003) is a design approach combining **strategic patterns** (ubiquitous language, bounded contexts, context mapping) with **tactical building blocks** (entities, value objects, aggregates, repositories, domain events). The goal is a model that reflects business rules faithfully, scales along domain boundaries, and maps naturally to modular monoliths (8.2) or microservices (8.5).
+
+**Prerequisites:** [8.1 Monolith](#81-monolith), [8.2 Modular Monolith](#82-modular-monolith).
+
+---
+
+### What problem it fixes
+
+Technical-first design scatters business rules and creates communication gaps:
+
+| Without DDD | With DDD |
+|-------------|----------|
+| `DataObject`, `EntityRecord` in code | `Order`, `Customer`, `Payment` match business terms |
+| Rules duplicated across layers | Invariants enforced in aggregates |
+| One giant `Product` model for all teams | Bounded contexts (8.4) with focused models |
+| Hard to split for microservices | Context boundaries become service boundaries |
+
+DDD fixes the **modeling and language** problem that makes large systems unmaintainable regardless of deployment style.
+
+---
+
+### What it does
+
+**Strategic design** — divide and relate domains:
+
+| Concept | Role |
+|---------|------|
+| **Ubiquitous language** | Shared vocabulary in conversation and code |
+| **Bounded context** | Boundary where one model is valid (see 8.4) |
+| **Context mapping** | How contexts integrate (events, ACL, partnerships) |
+
+**Tactical design** — building blocks inside a context:
+
+| Block | Role |
+|-------|------|
+| **Entity** | Identity + lifecycle (`Order` with `id`) |
+| **Value object** | Immutable, compared by value (`Money`, `Address`) |
+| **Aggregate** | Consistency cluster; root controls access |
+| **Repository** | Load/save aggregates; hide persistence |
+| **Domain service** | Logic spanning entities (`TransferMoney`) |
+| **Domain event** | `OrderPlaced`, `PaymentCompleted` |
+| **Factory** | Complex aggregate creation |
+
+**Layered architecture (dependency inward):**
+
+```text
+Presentation → Application (use cases) → Domain → Infrastructure
+```
+
+Hexagonal architecture (8.6) formalizes the same dependency rule with ports and adapters.
+
+---
+
+### How it works — the architecture inside
+
+**Aggregate example — Order:**
+
+```text
+Order (aggregate root)
+ ├── OrderItem (value object / entity)
+ └── ShippingAddress (value object)
+```
+
+Only the root is referenced from outside:
+
+```text
+order.addItem(productId, qty)   ✓
+orderItem.updateQuantity(5)     ✗  (direct access prohibited)
+```
+
+**Entity vs value object:**
+
+| | Entity | Value object |
+|---|--------|--------------|
+| **Identity** | Yes (ID) | No |
+| **Mutable** | Yes | Usually immutable |
+| **Compared by** | ID | All attribute values |
+| **Example** | `Customer { id: 101 }` | `Money { amount: 50, currency: USD }` |
+
+**DDD in microservices:**
+
+```mermaid
+flowchart LR
+    subgraph OrderBC["Order bounded context"]
+        OS[Order service]
+        ODB[(Order DB)]
+    end
+    subgraph PaymentBC["Payment bounded context"]
+        PS[Payment service]
+        PDB[(Payment DB)]
+    end
+    OS -->|OrderPlaced event| PS
+```
+
+One bounded context often maps to one microservice — but a context can also live inside a modular monolith.
+
+**Repository port:**
+
+```java
+interface OrderRepository {
+    Order findById(OrderId id);
+    void save(Order order);
+}
+```
+
+Domain depends on the interface; JPA adapter implements it in infrastructure (hexagonal, 8.6).
+
+---
+
+### Pitfalls and design tips
+
+- **Overkill for simple CRUD** — admin panels with no business rules do not need full tactical DDD.
+- **Aggregates too large** — one aggregate per transaction boundary; do not model entire `Customer` history as one aggregate.
+- **Anemic domain model** — logic pushed to "service" classes with dumb entities defeats the purpose; put rules on aggregates.
+- **Interview angle:** distinguish strategic (bounded context) from tactical (aggregate); explain how contexts guide microservice splits.
+- **Production:** event-driven integration via Kafka domain events; outbox pattern for reliable publish-after-commit.
+
+---
+
+### Real-world example
+
+**Uber's marketplace domain** uses bounded contexts for `Trip`, `Pricing`, `Driver`, and `Rider` — each with its own ubiquitous language. A "trip" in the Rider context means ETA and fare estimate; in the Driver context it means route and payout. Services communicate via domain events (`TripRequested`, `TripCompleted`) rather than shared trip tables. When Pricing changes surge algorithms, the Trip service does not redeploy — it consumes updated fare events. DDD boundaries made this independent evolution possible.
+
+---
+
+## 8.4 Bounded Context
+
+### Overview
+
+The word "account" at a bank means something different to the teller (balance, withdrawals), the loan officer (collateral, interest rate), and marketing (login frequency, product offers). A **bounded context** draws a line around each meaning: inside the line, terms and rules are consistent; outside, another context may use the same word differently.
+
+Technically, a **bounded context** is a logical boundary in DDD where a specific **domain model**, **ubiquitous language**, and **business rules** apply consistently. It defines data ownership, integration contracts, and team responsibility. It is a **design** boundary — deployable as a monolith module, modular monolith package, or microservice (8.5).
+
+**Prerequisites:** [8.3 DDD](#83-ddd).
+
+---
+
+### What problem it fixes
+
+Large systems collapse when one model tries to represent every department's view:
+
+**Without bounded contexts — overloaded `Product`:**
+
+```text
+Product: id, name, stockQuantity, warehouseLocation, price, discount,
+         campaign, advertisement, rating
+```
+
+Inventory, sales, and marketing teams fight over one schema; changes break unrelated features.
+
+**With bounded contexts:**
+
+| Context | Product model |
+|---------|---------------|
+| **Inventory** | `id, stockQuantity, warehouseLocation, reorderLevel` |
+| **Sales** | `id, price, discount, promotion` |
+| **Marketing** | `id, campaign, advertisement, rating` |
+
+Each context owns its slice; integration happens via APIs or events, not shared mutable tables.
+
+---
+
+### What it does
+
+A bounded context:
+
+- Defines **where a model is valid** and where it is not.
+- Owns **business rules** for its domain slice.
+- Owns **data** — other contexts reference by ID, not foreign keys across databases.
+- Integrates via **published contracts** (REST, gRPC, domain events).
+- Often maps to **one team's ownership** (Conway's Law).
+
+**E-commerce context chain:**
+
+```text
+Customer → Order → Payment → Shipping
+```
+
+Each publishes events (`OrderPlaced`, `PaymentCompleted`) consumed by downstream contexts.
+
+---
+
+### How it works — the architecture inside
+
+**Same term, different shape — Customer:**
+
+| Context | Customer representation |
+|---------|-------------------------|
+| **Customer** | Name, email, phone, address |
+| **Order** | `customerId`, shipping address snapshot |
+| **Marketing** | Preferences, campaign history |
+
+**Context communication:**
+
+```mermaid
+flowchart LR
+    CU[Customer context] -->|customerId| OR[Order context]
+    OR -->|OrderPlaced| PA[Payment context]
+    PA -->|PaymentCompleted| SH[Shipping context]
+```
+
+**Anti-corruption layer (ACL):** at legacy boundaries (Strangler, 8.10), translate monolith's `UserRecord` into the new context's `Customer` aggregate — never import legacy schema directly.
+
+**Bounded context vs microservice:**
+
+| | Bounded context | Microservice |
+|---|-----------------|--------------|
+| **Type** | Logical (DDD) | Deployment (runtime) |
+| **Relationship** | Often implemented as one service | May contain one context — not required |
+
+```text
+1 bounded context ≈ 1 microservice   (common, not mandatory)
+```
+
+**When to create a new context:**
+
+- Business rules differ materially
+- Terminology differs across teams
+- Different teams own the capability
+- Data ownership differs
+- Independent deployment is needed
+
+---
+
+### Pitfalls and design tips
+
+- **Do not force one enterprise data model** — "single source of truth" tables across contexts recreate monolith coupling.
+- **Context mapping document** — draw upstream/downstream relationships and integration style per pair (events vs sync API).
+- **Interview angle:** bounded context is the **primary input** for microservice boundaries; wrong boundaries are expensive to fix.
+- **Common mistake:** confusing Java package modules with bounded contexts — a context is a business boundary, not a folder name.
+- **Integration:** prefer events for loose coupling; sync API when immediate read-your-writes consistency is required.
+
+---
+
+### Real-world example
+
+**Walmart's e-commerce platform** separates `Catalog`, `Cart`, `Checkout`, and `Fulfillment` contexts. The Cart context stores `lineItems` with product ID and price **snapshot** at add-to-cart time — it does not join Catalog tables at read time. When Catalog reprices a product, existing carts keep their snapshot until checkout refreshes. This explicit boundary prevents a pricing bug in Catalog from corrupting in-flight carts and lets each context scale and deploy independently on Kubernetes.
+
+---
+
+## 8.5 Microservices
 
 ### Overview
 
 Imagine a hospital where cardiology, radiology, pharmacy, and billing are separate departments — each with its own staff, budget, and records room, coordinating over phone and forms instead of sharing one desk. A **microservices** architecture splits software the same way: small, independently deployable services, each owning a business capability and usually its own database.
 
-Technically, **microservices** decompose an application into **autonomous services** that communicate over the network (REST, gRPC, message queues). Each service encapsulates one bounded context (8.7), deploys on its own cadence, scales independently, and persists data in a **service-owned database** — no shared mutable schema across services. Distributed concerns — discovery (8.12), resilience (8.16–8.18), distributed transactions and sagas (8.9), observability — become first-class platform requirements.
+Technically, **microservices** decompose an application into **autonomous services** that communicate over the network (REST, gRPC, message queues). Each service encapsulates one **bounded context** (8.4), deploys on its own cadence, scales independently, and persists data in a **service-owned database** — no shared mutable schema across services. Later sections cover distributed transactions (8.7), discovery (8.12), mesh (8.14), and resilience (8.15–8.17).
+
+**Prerequisites:** [8.2 Modular Monolith](#82-modular-monolith), [8.4 Bounded Context](#84-bounded-context).
 
 ---
 
@@ -291,20 +542,21 @@ flowchart LR
 5. Each service commits its own local transaction — no global 2PC
 ```
 
-**Operational prerequisites** before splitting:
+**Operational prerequisites** before splitting (see learning path for order):
 
 - CI/CD per service, containers / Kubernetes
-- Service discovery (8.12) and API gateway
-- Distributed tracing (OpenTelemetry) and structured logging
-- Resilience stack: bulkhead (8.18) → retry (8.17) → circuit breaker (8.16)
-- Contract testing and API versioning
+- Bounded contexts defined (8.4) and service boundaries agreed
+- Distributed transactions strategy (8.7) for cross-service workflows
+- Service discovery (8.12) and API gateway / BFF (8.11)
+- Resilience stack: bulkhead (8.17) → retry (8.16) → circuit breaker (8.15)
+- Distributed tracing and structured logging
 
 | Dimension | Monolith | Modular monolith | Microservices |
 |-----------|----------|------------------|---------------|
 | **Independent deploy** | No | No | Yes |
 | **Independent scale** | No | No | Yes |
 | **Network latency** | None | None | Every cross-service call |
-| **Distributed transactions** | N/A | N/A | Sagas + outbox (8.9), not 2PC across services |
+| **Distributed transactions** | N/A | N/A | Sagas + outbox (8.7), not 2PC across services |
 | **Operational cost** | Low | Low | High |
 
 ---
@@ -312,9 +564,9 @@ flowchart LR
 ### Pitfalls and design tips
 
 - **When not to use:** small team, no scaling pain, no deploy conflicts — stay on monolith or modular monolith (8.1, 8.2).
-- **Anti-pattern:** splitting by technical layer (`validation-service`, `dao-service`) — split by **business capability** aligned to bounded contexts (8.7).
+- **Anti-pattern:** splitting by technical layer (`validation-service`, `dao-service`) — split by **business capability** aligned to bounded contexts (8.4).
 - **Data ownership:** never share a database between services; shared DB reintroduces monolith coupling with network overhead.
-- **Production stack:** Kubernetes Services for discovery, Istio/Linkerd for mesh (8.14), Temporal for sagas (8.21), Resilience4j for breakers.
+- **Production stack:** Kubernetes Services for discovery, Istio/Linkerd for mesh (8.14), Temporal for sagas (8.9), Resilience4j for breakers.
 - **Interview angle:** name the **distributed systems tax** — latency, partial failure, eventual consistency — and what platform pieces you add before splitting.
 
 ---
@@ -325,479 +577,15 @@ flowchart LR
 
 ---
 
-## 8.4 Strangler Pattern
-
-### Overview
-
-Picture renovating a busy train station while trains keep running: you build a new platform beside the old one, redirect one track at a time, and eventually retire the original structure. The **Strangler pattern** does the same for software — gradually replacing a monolith with microservices without a risky big-bang rewrite.
-
-Technically, the Strangler pattern is an **incremental migration strategy**: new capabilities (or extracted modules) run as independent services; an **API gateway or router** sends traffic to the new service or the legacy monolith based on route rules. Data is synchronized or cut over per module. The monolith **shrinks** until it can be decommissioned. Named after the strangler fig tree that grows around and replaces its host.
-
----
-
-### What problem it fixes
-
-Big-bang rewrites fail often:
-
-| Big-bang risk | Strangler mitigation |
-|---------------|---------------------|
-| Years of no business value | Each extraction delivers incremental value |
-| High downtime | Legacy keeps serving unmigrated routes |
-| Hard rollback | Roll back one route at the gateway |
-| Requirements drift during rewrite | Continuous delivery on both old and new |
-| All-or-nothing testing | Contract-test each extracted service independently |
-
-Teams with a running monolith that has grown too large need a **safe path** to microservices without stopping the business.
-
----
-
-### What it does
-
-The Strangler pattern:
-
-1. **Identifies** a module to extract (e.g. user management).
-2. **Builds** a new microservice with equivalent (or improved) API.
-3. **Routes** matching requests at the gateway to the new service; everything else stays on the monolith.
-4. **Migrates data** (CDC, dual-write, or one-time backfill) while both systems run.
-5. **Removes** the old code from the monolith once validated.
-6. **Repeats** until the monolith is empty and retired.
-
-**Key components:**
-
-| Component | Role |
-|-----------|------|
-| **Legacy monolith** | Serves unmigrated functionality |
-| **New services** | Handle extracted capabilities |
-| **Router / API gateway** | Path-based routing to old or new |
-| **Anti-corruption layer** | Translates legacy models at the boundary |
-| **Data sync** | Keeps old and new stores consistent during transition |
-
----
-
-### How it works — the architecture inside
-
-```mermaid
-flowchart LR
-    subgraph Phase1["Phase 1 — monolith only"]
-        direction LR
-        C1[Client] --> M1[Monolith]
-    end
-    subgraph Phase3["Phase 3 — partial extraction"]
-        direction LR
-        C2[Client] --> GW[API Gateway]
-        GW --> US[User service]
-        GW --> M2[Monolith — shrinking]
-    end
-    subgraph Phase4["Phase 4 — monolith retired"]
-        direction LR
-        C3[Client] --> GW2[API Gateway]
-        GW2 --> US2[User service]
-        GW2 --> OS[Order service]
-        GW2 --> PS[Payment service]
-    end
-    Phase1 ~~~ Phase3 ~~~ Phase4
-```
-
-**Request routing after extracting users:**
-
-```text
-Client → API Gateway
-           ├─→ /users/*     → User service (new)
-           └─→ /orders/*, /payments/*, … → Monolith (legacy)
-```
-
-**E-commerce extraction phases:**
-
-| Phase | Extract | Monolith still handles |
-|-------|---------|------------------------|
-| 1 | User service | Products, orders, payments, notifications |
-| 2 | Product service | Orders, payments, notifications |
-| 3 | Order service | Payments, notifications |
-| 4 | Payment service | Notifications |
-| 5 | Retire monolith | — |
-
-**Data migration strategies:**
-
-| Strategy | Trade-off |
-|----------|-----------|
-| **CDC (Change Data Capture)** | Near-real-time sync; Debezium → Kafka common |
-| **Dual-write** | Write to both during transition; risk of inconsistency |
-| **One-time backfill + cutover** | Simpler; brief read-only window may be needed |
-
----
-
-### Pitfalls and design tips
-
-- **Data sync is the hardest part** — budget more time for migration than for writing the new service.
-- **Anti-corruption layer** at the boundary prevents legacy table shapes from leaking into new domain models.
-- **When not to use:** tiny app, legacy near retirement, or rewrite genuinely cheaper — do not Strangler for sport.
-- **Gateway routing rules grow** with each extraction — automate route config and test in CI.
-- **Interview angle:** contrast with big-bang on risk, rollback, and business continuity; mention contract testing (Ch.7) at each cutover.
-
----
-
-### Real-world example
-
-**Amazon's early evolution** from a single C++ monolith to service-oriented architecture followed strangler-like extraction: the bookstore core remained while checkout, recommendations, and fulfillment peeled off behind internal APIs. Modern teams use the same pattern with **AWS API Gateway** or **Kong** routing `/catalog/*` to a new ECS service while `/legacy-reports/*` still hits the monolith. Each phase ships to production in weeks, not years — product owners see catalog improvements while orders still run on proven legacy code until Order service passes shadow traffic tests.
-
----
-
-## 8.5 BFF Pattern
-
-### Overview
-
-A hotel concierge speaks your language, knows what you care about, and handles five phone calls behind the scenes so you make one request. A **Backend for Frontend (BFF)** does that for apps: a dedicated backend tailored to each client type (web, mobile, TV), aggregating and shaping data from core microservices into exactly what that screen needs.
-
-Technically, a **BFF** is a **thin orchestration layer** per frontend. It calls multiple domain services, combines responses, transforms to UI-friendly DTOs, and exposes client-specific endpoints — e.g. `GET /mobile/home` returning name, wallet balance, and recent orders in one payload. Core domain services stay **client-agnostic**; presentation logic lives in the BFF, not scattered as `if (mobile)` branches in shared APIs.
-
----
-
-### What problem it fixes
-
-One shared API for web, mobile, and TV creates friction:
-
-| Problem | Without BFF | With BFF |
-|---------|-------------|----------|
-| **Over-fetching** | Mobile downloads web-sized payloads | Mobile BFF returns minimal fields |
-| **Under-fetching** | Mobile makes 5 round trips per screen | BFF aggregates in one server-side call |
-| **Coupled evolution** | Mobile change risks breaking web | Each BFF evolves with its frontend |
-| **Backend clutter** | Domain services full of presentation logic | Domain stays pure; BFF owns shaping |
-
-Network round trips on mobile are expensive (latency, battery); server-side aggregation in a BFF cuts client complexity and improves perceived performance.
-
----
-
-### What it does
-
-Each BFF:
-
-| Responsibility | Notes |
-|----------------|-------|
-| **API aggregation** | Fan-out to User + Order + Wallet; merge responses |
-| **Data transformation** | Domain models → screen-specific DTOs |
-| **Auth at client edge** | Token validation before fan-out (policy also at gateway) |
-| **Client-specific logic** | Pagination size, image URLs, feature flags per platform |
-| **Response optimization** | Only fields the current screen needs |
-
-**Rule:** thin orchestration — **no domain ownership**. Business rules stay in microservices; BFF does not own order state or payment logic.
-
----
-
-### How it works — the architecture inside
-
-```mermaid
-flowchart LR
-    W[Web] --> GW[API Gateway]
-    M[Mobile] --> GW
-    T[TV] --> GW
-    GW --> WB[Web BFF]
-    GW --> MB[Mobile BFF]
-    GW --> TB[TV BFF]
-    WB --> SVC[Domain microservices]
-    MB --> SVC
-    TB --> SVC
-```
-
-**Mobile home screen — without vs with BFF:**
-
-```text
-Without BFF:
-  Mobile → User service
-        → Order service
-        → Wallet service     (3 network hops from device)
-
-With BFF:
-  Mobile → Mobile BFF → User + Order + Wallet   (1 hop from device)
-```
-
-**Response from Mobile BFF:**
-
-```json
-{
-  "name": "John",
-  "walletBalance": 500,
-  "recentOrders": [{ "id": "ord_1", "total": 42.00 }]
-}
-```
-
-**BFF vs API Gateway:**
-
-| Layer | Handles | Placement |
-|-------|---------|-----------|
-| **API Gateway** | Auth, rate limiting, TLS, routing | Edge — all clients |
-| **BFF** | Aggregation, transformation, client APIs | Behind gateway, per client type |
-
-```text
-Client → API Gateway → Web BFF / Mobile BFF → Microservices
-```
-
----
-
-### Pitfalls and design tips
-
-- **When not to use:** single frontend, identical API needs across clients — a shared API is simpler.
-- **God-service risk:** BFF that accumulates business logic becomes an undeployable monolith — keep it thin.
-- **Duplication across BFFs:** share client libraries and DTO mappers, not domain logic.
-- **Interview angle:** BFF sits **behind** the gateway; gateway = cross-cutting policy, BFF = client shaping.
-- **Production pattern:** Netflix and Spotify use client-specific GraphQL or REST BFF layers; mention parallel fan-out with timeouts per dependency.
-
----
-
-### Real-world example
-
-**Spotify** serves web, desktop, mobile, and embedded (cars, speakers) clients. Each client type has different screen densities and bandwidth: mobile home needs six data sources (recent plays, recommendations, podcasts, offline status) in under 200 ms. Spotify's client backends aggregate gRPC calls to playlist, user, and catalog services server-side, returning one tailored payload. The core `Playlist` service knows nothing about car UI vs phone UI — that shaping lives entirely in the BFF tier, letting mobile and web teams ship on independent release trains.
-
----
-
-## 8.6 DDD
-
-### Overview
-
-Building software without talking to the business is like a translator who never meets the author — you guess at meaning and ship the wrong book. **Domain-Driven Design (DDD)** puts the **business domain** at the center: developers, analysts, and domain experts share one vocabulary, and code structure mirrors how the business actually works.
-
-Technically, **DDD** (Eric Evans, 2003) is a design approach combining **strategic patterns** (ubiquitous language, bounded contexts, context mapping) with **tactical building blocks** (entities, value objects, aggregates, repositories, domain events). The goal is a model that reflects business rules faithfully, scales along domain boundaries, and maps naturally to modular monoliths (8.2) or microservices (8.3).
-
----
-
-### What problem it fixes
-
-Technical-first design scatters business rules and creates communication gaps:
-
-| Without DDD | With DDD |
-|-------------|----------|
-| `DataObject`, `EntityRecord` in code | `Order`, `Customer`, `Payment` match business terms |
-| Rules duplicated across layers | Invariants enforced in aggregates |
-| One giant `Product` model for all teams | Bounded contexts (8.7) with focused models |
-| Hard to split for microservices | Context boundaries become service boundaries |
-
-DDD fixes the **modeling and language** problem that makes large systems unmaintainable regardless of deployment style.
-
----
-
-### What it does
-
-**Strategic design** — divide and relate domains:
-
-| Concept | Role |
-|---------|------|
-| **Ubiquitous language** | Shared vocabulary in conversation and code |
-| **Bounded context** | Boundary where one model is valid (see 8.7) |
-| **Context mapping** | How contexts integrate (events, ACL, partnerships) |
-
-**Tactical design** — building blocks inside a context:
-
-| Block | Role |
-|-------|------|
-| **Entity** | Identity + lifecycle (`Order` with `id`) |
-| **Value object** | Immutable, compared by value (`Money`, `Address`) |
-| **Aggregate** | Consistency cluster; root controls access |
-| **Repository** | Load/save aggregates; hide persistence |
-| **Domain service** | Logic spanning entities (`TransferMoney`) |
-| **Domain event** | `OrderPlaced`, `PaymentCompleted` |
-| **Factory** | Complex aggregate creation |
-
-**Layered architecture (dependency inward):**
-
-```text
-Presentation → Application (use cases) → Domain → Infrastructure
-```
-
-Hexagonal architecture (8.8) formalizes the same dependency rule with ports and adapters.
-
----
-
-### How it works — the architecture inside
-
-**Aggregate example — Order:**
-
-```text
-Order (aggregate root)
- ├── OrderItem (value object / entity)
- └── ShippingAddress (value object)
-```
-
-Only the root is referenced from outside:
-
-```text
-order.addItem(productId, qty)   ✓
-orderItem.updateQuantity(5)     ✗  (direct access prohibited)
-```
-
-**Entity vs value object:**
-
-| | Entity | Value object |
-|---|--------|--------------|
-| **Identity** | Yes (ID) | No |
-| **Mutable** | Yes | Usually immutable |
-| **Compared by** | ID | All attribute values |
-| **Example** | `Customer { id: 101 }` | `Money { amount: 50, currency: USD }` |
-
-**DDD in microservices:**
-
-```mermaid
-flowchart LR
-    subgraph OrderBC["Order bounded context"]
-        OS[Order service]
-        ODB[(Order DB)]
-    end
-    subgraph PaymentBC["Payment bounded context"]
-        PS[Payment service]
-        PDB[(Payment DB)]
-    end
-    OS -->|OrderPlaced event| PS
-```
-
-One bounded context often maps to one microservice — but a context can also live inside a modular monolith.
-
-**Repository port:**
-
-```java
-interface OrderRepository {
-    Order findById(OrderId id);
-    void save(Order order);
-}
-```
-
-Domain depends on the interface; JPA adapter implements it in infrastructure (hexagonal, 8.8).
-
----
-
-### Pitfalls and design tips
-
-- **Overkill for simple CRUD** — admin panels with no business rules do not need full tactical DDD.
-- **Aggregates too large** — one aggregate per transaction boundary; do not model entire `Customer` history as one aggregate.
-- **Anemic domain model** — logic pushed to "service" classes with dumb entities defeats the purpose; put rules on aggregates.
-- **Interview angle:** distinguish strategic (bounded context) from tactical (aggregate); explain how contexts guide microservice splits.
-- **Production:** event-driven integration via Kafka domain events; outbox pattern for reliable publish-after-commit.
-
----
-
-### Real-world example
-
-**Uber's marketplace domain** uses bounded contexts for `Trip`, `Pricing`, `Driver`, and `Rider` — each with its own ubiquitous language. A "trip" in the Rider context means ETA and fare estimate; in the Driver context it means route and payout. Services communicate via domain events (`TripRequested`, `TripCompleted`) rather than shared trip tables. When Pricing changes surge algorithms, the Trip service does not redeploy — it consumes updated fare events. DDD boundaries made this independent evolution possible.
-
----
-
-## 8.7 Bounded Context
-
-### Overview
-
-The word "account" at a bank means something different to the teller (balance, withdrawals), the loan officer (collateral, interest rate), and marketing (login frequency, product offers). A **bounded context** draws a line around each meaning: inside the line, terms and rules are consistent; outside, another context may use the same word differently.
-
-Technically, a **bounded context** is a logical boundary in DDD where a specific **domain model**, **ubiquitous language**, and **business rules** apply consistently. It defines data ownership, integration contracts, and team responsibility. It is a **design** boundary — deployable as a monolith module, modular monolith package, or microservice (8.3).
-
----
-
-### What problem it fixes
-
-Large systems collapse when one model tries to represent every department's view:
-
-**Without bounded contexts — overloaded `Product`:**
-
-```text
-Product: id, name, stockQuantity, warehouseLocation, price, discount,
-         campaign, advertisement, rating
-```
-
-Inventory, sales, and marketing teams fight over one schema; changes break unrelated features.
-
-**With bounded contexts:**
-
-| Context | Product model |
-|---------|---------------|
-| **Inventory** | `id, stockQuantity, warehouseLocation, reorderLevel` |
-| **Sales** | `id, price, discount, promotion` |
-| **Marketing** | `id, campaign, advertisement, rating` |
-
-Each context owns its slice; integration happens via APIs or events, not shared mutable tables.
-
----
-
-### What it does
-
-A bounded context:
-
-- Defines **where a model is valid** and where it is not.
-- Owns **business rules** for its domain slice.
-- Owns **data** — other contexts reference by ID, not foreign keys across databases.
-- Integrates via **published contracts** (REST, gRPC, domain events).
-- Often maps to **one team's ownership** (Conway's Law).
-
-**E-commerce context chain:**
-
-```text
-Customer → Order → Payment → Shipping
-```
-
-Each publishes events (`OrderPlaced`, `PaymentCompleted`) consumed by downstream contexts.
-
----
-
-### How it works — the architecture inside
-
-**Same term, different shape — Customer:**
-
-| Context | Customer representation |
-|---------|-------------------------|
-| **Customer** | Name, email, phone, address |
-| **Order** | `customerId`, shipping address snapshot |
-| **Marketing** | Preferences, campaign history |
-
-**Context communication:**
-
-```mermaid
-flowchart LR
-    CU[Customer context] -->|customerId| OR[Order context]
-    OR -->|OrderPlaced| PA[Payment context]
-    PA -->|PaymentCompleted| SH[Shipping context]
-```
-
-**Anti-corruption layer (ACL):** at legacy boundaries (Strangler, 8.4), translate monolith's `UserRecord` into the new context's `Customer` aggregate — never import legacy schema directly.
-
-**Bounded context vs microservice:**
-
-| | Bounded context | Microservice |
-|---|-----------------|--------------|
-| **Type** | Logical (DDD) | Deployment (runtime) |
-| **Relationship** | Often implemented as one service | May contain one context — not required |
-
-```text
-1 bounded context ≈ 1 microservice   (common, not mandatory)
-```
-
-**When to create a new context:**
-
-- Business rules differ materially
-- Terminology differs across teams
-- Different teams own the capability
-- Data ownership differs
-- Independent deployment is needed
-
----
-
-### Pitfalls and design tips
-
-- **Do not force one enterprise data model** — "single source of truth" tables across contexts recreate monolith coupling.
-- **Context mapping document** — draw upstream/downstream relationships and integration style per pair (events vs sync API).
-- **Interview angle:** bounded context is the **primary input** for microservice boundaries; wrong boundaries are expensive to fix.
-- **Common mistake:** confusing Java package modules with bounded contexts — a context is a business boundary, not a folder name.
-- **Integration:** prefer events for loose coupling; sync API when immediate read-your-writes consistency is required.
-
----
-
-### Real-world example
-
-**Walmart's e-commerce platform** separates `Catalog`, `Cart`, `Checkout`, and `Fulfillment` contexts. The Cart context stores `lineItems` with product ID and price **snapshot** at add-to-cart time — it does not join Catalog tables at read time. When Catalog reprices a product, existing carts keep their snapshot until checkout refreshes. This explicit boundary prevents a pricing bug in Catalog from corrupting in-flight carts and lets each context scale and deploy independently on Kubernetes.
-
----
-
-## 8.8 Hexagonal Architecture
+## 8.6 Hexagonal Architecture
 
 ### Overview
 
 A power strip lets you plug in any device — lamp, charger, fan — without rewiring the house. The wall socket is the **port**; each plug is an **adapter**. **Hexagonal architecture** (ports and adapters) puts your business logic at the center with stable interfaces outward, so you swap databases, APIs, or message brokers without touching domain rules.
 
 Technically, hexagonal architecture (Alistair Cockburn) isolates the **domain core** from infrastructure. **Inbound ports** define what the application offers (use cases); **outbound ports** define what it needs (repositories, event publishers). **Adapters** implement those ports — REST controllers, JPA repositories, Kafka producers. Dependencies point **inward**: infrastructure depends on domain, never the reverse.
+
+**Prerequisites:** [8.5 Microservices](#85-microservices), [8.4 Bounded Context](#84-bounded-context).
 
 ---
 
@@ -884,7 +672,7 @@ com.ecommerce
 | **Testability** | Needs DB for most tests | Domain tests with mock ports |
 | **Swapping tech** | Touches service layer | New adapter only |
 
-**With DDD:** aggregate root + repository port + JPA adapter is the standard combination inside a bounded context (8.7).
+**With DDD:** aggregate root + repository port + JPA adapter is the standard combination inside a bounded context (8.4).
 
 ---
 
@@ -904,13 +692,15 @@ com.ecommerce
 
 ---
 
-## 8.9 Distributed Transactions
+## 8.7 Distributed Transactions
 
 ### Overview
 
 Imagine splitting a bank transfer across three branches that each keep their own ledger — you cannot walk to one counter and ask them to lock all three books at once. **Distributed transactions** in microservices face the same constraint: each service owns its database, yet business workflows (checkout, booking, payout) must stay coherent when steps fail halfway through.
 
-Technically, microservices abandon a single global `BEGIN … COMMIT` across services. Instead you choose among **coordination protocols** (two-phase commit, three-phase commit), **workflow patterns** (saga with compensating actions), and **reliability patterns** (transaction outbox) depending on how strong consistency must be, how long the workflow runs, and whether a message broker sits between steps. **This section is the canonical reference** for all four patterns. Saga **execution styles** (choreography vs orchestration) are detailed in [8.20](#820-choreography) and [8.21](#821-orchestration).
+Technically, microservices abandon a single global `BEGIN … COMMIT` across services. Instead you choose among **coordination protocols** (two-phase commit, three-phase commit), **workflow patterns** (saga with compensating actions), and **reliability patterns** (transaction outbox). **This section is the canonical reference** for all four. **Next:** how to *run* sagas — [8.8 Choreography](#88-choreography) and [8.9 Orchestration](#89-orchestration).
+
+**Prerequisites:** [8.5 Microservices](#85-microservices).
 
 ---
 
@@ -1140,20 +930,6 @@ Happy:  create order → reserve stock → charge card → ship
 Fail:   charge fails → release stock → cancel order
 ```
 
-```mermaid
-sequenceDiagram
-    participant O as Order
-    participant I as Inventory
-    participant P as Payment
-    O->>O: Create order
-    O->>I: Reserve
-    I-->>O: OK
-    O->>P: Charge
-    P-->>O: FAIL
-    O->>I: Compensate release
-    O->>O: Compensate cancel
-```
-
 **State transitions:**
 
 ```text
@@ -1183,17 +959,12 @@ If UX requires < 30 s → shrink Payment budget or run charge async after hold
 | Cross-service fit | Poor | Good |
 | Irreversible steps | N/A | Manual intervention (email sent, package shipped) |
 
-**Execution styles:**
+**Execution styles** (covered in the next two sections):
 
-| Style | How | Section |
-|-------|-----|---------|
-| **Choreography** | Services react to events on a bus | [8.20](#820-choreography) |
-| **Orchestration** | Central workflow engine drives steps | [8.21](#821-orchestration) |
-
-| Style | Platforms |
-|-------|-----------|
-| Choreography | Kafka, RabbitMQ, AWS SNS/SQS |
-| Orchestration | Temporal, Camunda/Zeebe, Netflix Conductor |
+| Style | Section |
+|-------|---------|
+| **Choreography** | [8.8](#88-choreography) — event-driven, no central coordinator |
+| **Orchestration** | [8.9](#89-orchestration) — Temporal, Camunda, central workflow engine |
 
 **Saga pitfalls:** compensation is not free; idempotent handlers (`saga_id` + step); stuck `PENDING` sagas need alerts and ops tooling.
 
@@ -1347,7 +1118,7 @@ No 2PC — four independent databases, consistent business outcome after compens
 #### Production notes
 
 - Persist **saga state** (`PENDING`, `COMPENSATING`, `FAILED`) for stuck-saga alerts and manual recovery.
-- Use **orchestration** (8.21) when branching/timeouts dominate; **choreography** (8.20) for simple linear pipelines.
+- Use **orchestration** (8.9) when branching/timeouts dominate; **choreography** (8.8) for simple linear pipelines.
 - **Inbox pattern** (transactional inbox on consumer) pairs with outbox for idempotent consumption.
 - **Interview:** monolith = one ACID; microservices = saga + eventual consistency + outbox for reliable events.
 
@@ -1372,6 +1143,452 @@ No 2PC — four independent databases, consistent business outcome after compens
 
 ---
 
+## 8.8 Choreography
+
+### Overview
+
+A flash mob has no conductor — each dancer watches the others and reacts when the music shifts. **Choreography-based saga** works the same way: each service completes its local step and publishes an event; downstream services react without a central boss telling them what to do next.
+
+Technically, **choreography** implements sagas (8.7) through **domain events** on a message bus (Kafka, RabbitMQ). There is no central orchestrator — services subscribe, run local transactions + outbox, and publish result or failure events. Compensation propagates as events (`PaymentFailed` → Inventory releases, Order cancels).
+
+**Prerequisites:** [8.7 Distributed Transactions](#87-distributed-transactions) — saga concepts, outbox, compensations.
+
+---
+
+### What problem it fixes
+
+Central orchestrators (8.9) add a single point of failure, deployment bottleneck, and coupling surface. For **simple linear pipelines** where teams want full autonomy and already run event-driven architecture, choreography avoids:
+
+- Building and operating a workflow engine
+- Orchestrator becoming a god-service with business logic
+- Tight API coupling between every service and a coordinator
+
+Choreography fits **loosely coupled, high-throughput async** flows.
+
+---
+
+### What it does
+
+Each service:
+
+1. Listens for relevant events (`OrderCreated`, `InventoryReserved`).
+2. Runs a **local transaction** and commits to its DB.
+3. Publishes the next event (`InventoryReserved` or `ReservationFailed`).
+4. On failure events, runs **compensating** local transactions and publishes compensate events.
+
+**No central state machine** — global saga state is inferred from the event log and distributed traces.
+
+---
+
+### How it works — the architecture inside
+
+```mermaid
+flowchart LR
+    O[Order service] -->|OrderCreated| Bus[Event bus]
+    Bus --> I[Inventory service]
+    I -->|InventoryReserved| Bus
+    Bus --> P[Payment service]
+    P -->|PaymentCompleted| Bus
+    Bus --> S[Shipping service]
+```
+
+**Success flow:**
+
+```text
+OrderCreated → InventoryReserved → PaymentCompleted → ShipmentCreated
+```
+
+**Failure flow:**
+
+```mermaid
+flowchart LR
+    P[Payment service] -->|PaymentFailed| Bus[Event bus]
+    Bus --> I[Inventory: release stock]
+    Bus --> O[Order: cancel]
+    I -->|InventoryReleased| Bus
+    O -->|OrderCancelled| Bus
+```
+
+**Step by step:**
+
+1. Order commits locally → publishes `OrderCreated` with `saga_id`.
+2. Inventory consumes → reserves → publishes `InventoryReserved` or `ReservationFailed`.
+3. Payment consumes success → charges → publishes `PaymentCompleted` or `PaymentFailed`.
+4. On `PaymentFailed`, Inventory and Order subscribers run compensations independently.
+
+**Event contract table:**
+
+| Event | Publisher |
+|-------|-----------|
+| `OrderCreated` | Order |
+| `InventoryReserved` / `InventoryReleased` | Inventory |
+| `PaymentCompleted` / `PaymentFailed` | Payment |
+| `OrderCancelled` | Order |
+
+**Requirements:** idempotent consumers, versioned schemas, outbox for publish-after-commit, `saga_id` on every message.
+
+---
+
+### Pitfalls and design tips
+
+- **"Where is order 123?"** — hard without distributed trace + event log; choreography trades visibility for decoupling.
+- **Adding a step** often requires updating **multiple** subscribers — strict event contracts and schema registry (Confluent) mitigate breakage.
+- **When not to use:** branching logic, timers, human approval — use orchestration (8.9).
+- **Interview angle:** no coordinator SPOF; compensation logic scattered — operational complexity moves to observability.
+- **Cyclic events** — without discipline, services can ping-pong; document allowed event chains.
+
+---
+
+### Real-world example
+
+**Debezium + Kafka choreography** at companies like Zalando: Order service writes to its PostgreSQL outbox table; Debezium CDC streams `OrderCreated` to Kafka. Inventory and Payment services consume from dedicated topics with consumer groups, each committing locally before publishing the next event. No workflow engine runs — saga progress is reconstructed from Kafka topic offsets and Jaeger traces tagged with `saga_id`. This works for linear checkout flows at high throughput but required investment in schema registry and idempotent consumer libraries shared across teams.
+
+---
+
+## 8.9 Orchestration
+
+### Overview
+
+An orchestra conductor cues each section — strings, then brass, then percussion — and signals a rewind if someone misses an entrance. **Orchestration-based saga** uses a **central coordinator** that commands each service step-by-step, tracks workflow state, and drives explicit compensation on failure.
+
+Technically, an **orchestrator** (workflow engine or custom service) drives sagas (8.7) with explicit commands (`reserveInventory`, `processPayment`), durable state, and ordered compensation. Frameworks: **Temporal**, **Camunda/Zeebe**, **Netflix Conductor**.
+
+**Prerequisites:** [8.7 Distributed Transactions](#87-distributed-transactions), [8.8 Choreography](#88-choreography) (contrast).
+
+---
+
+### What problem it fixes
+
+Choreography (8.8) scatters workflow logic and makes these hard:
+
+- **Complex branching** — parallel steps, conditional paths, timeouts
+- **Human approval** — wait 48 hours for manager sign-off
+- **Visibility** — "stuck on step 3 of 7" for support teams
+- **Explicit compensation order** — guarantee inventory releases before order cancels
+
+Orchestration centralizes **workflow control** at the cost of an additional component.
+
+---
+
+### What it does
+
+The orchestrator:
+
+1. Receives saga start request (from API or trigger).
+2. Sends command to service A → waits for success/failure reply.
+3. On success, sends command to service B; on failure, runs compensation sequence.
+4. **Persists state** after each step (durable execution).
+5. Exposes status API or dashboard for in-flight sagas.
+
+Services expose **idempotent command handlers** — orchestrator will retry on timeout.
+
+---
+
+### How it works — the architecture inside
+
+```mermaid
+sequenceDiagram
+    participant Orch as Saga orchestrator
+    participant O as Order service
+    participant I as Inventory service
+    participant P as Payment service
+    participant S as Shipping service
+    Orch->>O: createOrder
+    O-->>Orch: OK
+    Orch->>I: reserveInventory
+    I-->>Orch: OK
+    Orch->>P: processPayment
+    P-->>Orch: OK
+    Orch->>S: createShipment
+    S-->>Orch: OK
+    Note over Orch: COMPLETED
+```
+
+**Failure and compensation:**
+
+```mermaid
+sequenceDiagram
+    participant Orch as Saga orchestrator
+    participant O as Order service
+    participant I as Inventory service
+    participant P as Payment service
+    Orch->>O: createOrder
+    O-->>Orch: OK
+    Orch->>I: reserveInventory
+    I-->>Orch: OK
+    Orch->>P: processPayment
+    P-->>Orch: FAIL
+    Orch->>I: releaseInventory
+    I-->>Orch: OK
+    Orch->>O: cancelOrder
+    O-->>Orch: OK
+    Note over Orch: FAILED
+```
+
+**Orchestration frameworks:**
+
+| Framework | Strengths |
+|-----------|-----------|
+| **Temporal** | Durable workflows, timers, retries, polyglot SDKs |
+| **Camunda / Zeebe** | BPMN, human tasks, visual models |
+| **Netflix Conductor** | JSON workflow definitions |
+
+**Choreography vs orchestration:**
+
+| | Choreography (8.8) | Orchestration |
+|---|---------------------|---------------|
+| **Coordinator** | None | Central orchestrator |
+| **Visibility** | Low (event log) | High (workflow state) |
+| **Coupling** | Loose | Services expose orchestrator APIs |
+| **Complex flows** | Poor fit | Strong fit |
+| **SPOF risk** | None | Orchestrator must run HA |
+
+---
+
+### Pitfalls and design tips
+
+- **Fat orchestrator anti-pattern** — business rules belong in domain services; orchestrator only coordinates steps.
+- **Orchestrator HA** — single-instance orchestrator is a SPOF; Temporal and Camunda cluster by design.
+- **Idempotent service endpoints** — orchestrator retries on timeout; `reserveInventory` called twice must not double-reserve.
+- **When not to use:** simple linear event pipeline with mature Kafka ops — choreography may be simpler.
+- **Interview angle:** trade decoupling for visibility; name Temporal as modern default for new orchestration.
+
+---
+
+### Real-world example
+
+**Temporal at Datadog and Snap** runs payment and onboarding sagas: a `ProcessCheckoutWorkflow` function (Go or Java SDK) calls activities `CreateOrder`, `ReserveInventory`, `ChargePayment` sequentially. Temporal persists workflow state after each activity — if the worker crashes mid-saga, another worker resumes from the last completed step without duplicate charges (activities are idempotent). Operations teams inspect stuck workflows in Temporal Web UI ("order 8821 waiting on payment activity since 14:32") and can signal manual compensation — visibility choreography cannot match without building custom tooling.
+
+---
+
+## 8.10 Strangler Pattern
+
+### Overview
+
+Picture renovating a busy train station while trains keep running: you build a new platform beside the old one, redirect one track at a time, and eventually retire the original structure. The **Strangler pattern** does the same for software — gradually replacing a monolith with microservices without a risky big-bang rewrite.
+
+Technically, the Strangler pattern is an **incremental migration strategy**: new capabilities (or extracted modules) run as independent services; an **API gateway or router** sends traffic to the new service or the legacy monolith based on route rules. Data is synchronized or cut over per module. The monolith **shrinks** until it can be decommissioned. Named after the strangler fig tree that grows around and replaces its host.
+
+**Prerequisites:** [8.1 Monolith](#81-monolith), [8.5 Microservices](#85-microservices).
+
+---
+
+### What problem it fixes
+
+Big-bang rewrites fail often:
+
+| Big-bang risk | Strangler mitigation |
+|---------------|---------------------|
+| Years of no business value | Each extraction delivers incremental value |
+| High downtime | Legacy keeps serving unmigrated routes |
+| Hard rollback | Roll back one route at the gateway |
+| Requirements drift during rewrite | Continuous delivery on both old and new |
+| All-or-nothing testing | Contract-test each extracted service independently |
+
+Teams with a running monolith that has grown too large need a **safe path** to microservices without stopping the business.
+
+---
+
+### What it does
+
+The Strangler pattern:
+
+1. **Identifies** a module to extract (e.g. user management).
+2. **Builds** a new microservice with equivalent (or improved) API.
+3. **Routes** matching requests at the gateway to the new service; everything else stays on the monolith.
+4. **Migrates data** (CDC, dual-write, or one-time backfill) while both systems run.
+5. **Removes** the old code from the monolith once validated.
+6. **Repeats** until the monolith is empty and retired.
+
+**Key components:**
+
+| Component | Role |
+|-----------|------|
+| **Legacy monolith** | Serves unmigrated functionality |
+| **New services** | Handle extracted capabilities |
+| **Router / API gateway** | Path-based routing to old or new |
+| **Anti-corruption layer** | Translates legacy models at the boundary |
+| **Data sync** | Keeps old and new stores consistent during transition |
+
+---
+
+### How it works — the architecture inside
+
+```mermaid
+flowchart LR
+    subgraph Phase1["Phase 1 — monolith only"]
+        direction LR
+        C1[Client] --> M1[Monolith]
+    end
+    subgraph Phase3["Phase 3 — partial extraction"]
+        direction LR
+        C2[Client] --> GW[API Gateway]
+        GW --> US[User service]
+        GW --> M2[Monolith — shrinking]
+    end
+    subgraph Phase4["Phase 4 — monolith retired"]
+        direction LR
+        C3[Client] --> GW2[API Gateway]
+        GW2 --> US2[User service]
+        GW2 --> OS[Order service]
+        GW2 --> PS[Payment service]
+    end
+    Phase1 ~~~ Phase3 ~~~ Phase4
+```
+
+**Request routing after extracting users:**
+
+```text
+Client → API Gateway
+           ├─→ /users/*     → User service (new)
+           └─→ /orders/*, /payments/*, … → Monolith (legacy)
+```
+
+**E-commerce extraction phases:**
+
+| Phase | Extract | Monolith still handles |
+|-------|---------|------------------------|
+| 1 | User service | Products, orders, payments, notifications |
+| 2 | Product service | Orders, payments, notifications |
+| 3 | Order service | Payments, notifications |
+| 4 | Payment service | Notifications |
+| 5 | Retire monolith | — |
+
+**Data migration strategies:**
+
+| Strategy | Trade-off |
+|----------|-----------|
+| **CDC (Change Data Capture)** | Near-real-time sync; Debezium → Kafka common |
+| **Dual-write** | Write to both during transition; risk of inconsistency |
+| **One-time backfill + cutover** | Simpler; brief read-only window may be needed |
+
+---
+
+### Pitfalls and design tips
+
+- **Data sync is the hardest part** — budget more time for migration than for writing the new service.
+- **Anti-corruption layer** at the boundary prevents legacy table shapes from leaking into new domain models.
+- **When not to use:** tiny app, legacy near retirement, or rewrite genuinely cheaper — do not Strangler for sport.
+- **Gateway routing rules grow** with each extraction — automate route config and test in CI.
+- **Interview angle:** contrast with big-bang on risk, rollback, and business continuity; mention contract testing (Ch.7) at each cutover.
+
+---
+
+### Real-world example
+
+**Amazon's early evolution** from a single C++ monolith to service-oriented architecture followed strangler-like extraction: the bookstore core remained while checkout, recommendations, and fulfillment peeled off behind internal APIs. Modern teams use the same pattern with **AWS API Gateway** or **Kong** routing `/catalog/*` to a new ECS service while `/legacy-reports/*` still hits the monolith. Each phase ships to production in weeks, not years — product owners see catalog improvements while orders still run on proven legacy code until Order service passes shadow traffic tests.
+
+---
+
+## 8.11 BFF Pattern
+
+### Overview
+
+A hotel concierge speaks your language, knows what you care about, and handles five phone calls behind the scenes so you make one request. A **Backend for Frontend (BFF)** does that for apps: a dedicated backend tailored to each client type (web, mobile, TV), aggregating and shaping data from core microservices into exactly what that screen needs.
+
+Technically, a **BFF** is a **thin orchestration layer** per frontend. It calls multiple domain services, combines responses, transforms to UI-friendly DTOs, and exposes client-specific endpoints — e.g. `GET /mobile/home` returning name, wallet balance, and recent orders in one payload. Core domain services stay **client-agnostic**; presentation logic lives in the BFF, not scattered as `if (mobile)` branches in shared APIs.
+
+**Prerequisites:** [8.5 Microservices](#85-microservices).
+
+---
+
+### What problem it fixes
+
+One shared API for web, mobile, and TV creates friction:
+
+| Problem | Without BFF | With BFF |
+|---------|-------------|----------|
+| **Over-fetching** | Mobile downloads web-sized payloads | Mobile BFF returns minimal fields |
+| **Under-fetching** | Mobile makes 5 round trips per screen | BFF aggregates in one server-side call |
+| **Coupled evolution** | Mobile change risks breaking web | Each BFF evolves with its frontend |
+| **Backend clutter** | Domain services full of presentation logic | Domain stays pure; BFF owns shaping |
+
+Network round trips on mobile are expensive (latency, battery); server-side aggregation in a BFF cuts client complexity and improves perceived performance.
+
+---
+
+### What it does
+
+Each BFF:
+
+| Responsibility | Notes |
+|----------------|-------|
+| **API aggregation** | Fan-out to User + Order + Wallet; merge responses |
+| **Data transformation** | Domain models → screen-specific DTOs |
+| **Auth at client edge** | Token validation before fan-out (policy also at gateway) |
+| **Client-specific logic** | Pagination size, image URLs, feature flags per platform |
+| **Response optimization** | Only fields the current screen needs |
+
+**Rule:** thin orchestration — **no domain ownership**. Business rules stay in microservices; BFF does not own order state or payment logic.
+
+---
+
+### How it works — the architecture inside
+
+```mermaid
+flowchart LR
+    W[Web] --> GW[API Gateway]
+    M[Mobile] --> GW
+    T[TV] --> GW
+    GW --> WB[Web BFF]
+    GW --> MB[Mobile BFF]
+    GW --> TB[TV BFF]
+    WB --> SVC[Domain microservices]
+    MB --> SVC
+    TB --> SVC
+```
+
+**Mobile home screen — without vs with BFF:**
+
+```text
+Without BFF:
+  Mobile → User service
+        → Order service
+        → Wallet service     (3 network hops from device)
+
+With BFF:
+  Mobile → Mobile BFF → User + Order + Wallet   (1 hop from device)
+```
+
+**Response from Mobile BFF:**
+
+```json
+{
+  "name": "John",
+  "walletBalance": 500,
+  "recentOrders": [{ "id": "ord_1", "total": 42.00 }]
+}
+```
+
+**BFF vs API Gateway:**
+
+| Layer | Handles | Placement |
+|-------|---------|-----------|
+| **API Gateway** | Auth, rate limiting, TLS, routing | Edge — all clients |
+| **BFF** | Aggregation, transformation, client APIs | Behind gateway, per client type |
+
+```text
+Client → API Gateway → Web BFF / Mobile BFF → Microservices
+```
+
+---
+
+### Pitfalls and design tips
+
+- **When not to use:** single frontend, identical API needs across clients — a shared API is simpler.
+- **God-service risk:** BFF that accumulates business logic becomes an undeployable monolith — keep it thin.
+- **Duplication across BFFs:** share client libraries and DTO mappers, not domain logic.
+- **Interview angle:** BFF sits **behind** the gateway; gateway = cross-cutting policy, BFF = client shaping.
+- **Production pattern:** Netflix and Spotify use client-specific GraphQL or REST BFF layers; mention parallel fan-out with timeouts per dependency.
+
+---
+
+### Real-world example
+
+**Spotify** serves web, desktop, mobile, and embedded (cars, speakers) clients. Each client type has different screen densities and bandwidth: mobile home needs six data sources (recent plays, recommendations, podcasts, offline status) in under 200 ms. Spotify's client backends aggregate gRPC calls to playlist, user, and catalog services server-side, returning one tailored payload. The core `Playlist` service knows nothing about car UI vs phone UI — that shaping lives entirely in the BFF tier, letting mobile and web teams ship on independent release trains.
+
+---
+
 ## 8.12 Service Registry
 
 ### Overview
@@ -1379,6 +1596,8 @@ No 2PC — four independent databases, consistent business outcome after compens
 Calling a friend's landline only works if someone updates the phone book when they move. In microservices, instances start, stop, and change IP addresses constantly — a **service registry** is the live phone book where each instance registers and callers look up who is available right now.
 
 Technically, a **service registry** is a directory of service instances: name, host, port, health status, and metadata. Services **register** on startup and send **heartbeats**; consumers **discover** instances by logical name (`PAYMENT-SERVICE`) instead of hardcoded URLs. Registries may be standalone (Eureka, Consul) or platform-native (Kubernetes Services + Endpoints).
+
+**Prerequisites:** [8.5 Microservices](#85-microservices).
 
 ---
 
@@ -1492,13 +1711,119 @@ Control plane maintains Endpoints from ready pods — no separate Eureka cluster
 
 ---
 
+## 8.13 Sidecar Pattern
+
+### Overview
+
+A motorcycle sidecar carries luggage so the rider focuses on driving. In software, a **sidecar** is a helper process deployed **alongside** the main application in the same pod, handling infrastructure chores — proxying traffic, shipping logs, pulling config — so the app stays pure business logic.
+
+Technically, the **sidecar pattern** colocates a companion container with the application container in a Kubernetes pod. They share a network namespace (communicate on `localhost`). The sidecar lifecycle is tied to the app — start and stop together. Service meshes (8.14) use Envoy sidecars as their data plane; logging (Fluent Bit) and secrets (Vault agent) are other common sidecar roles.
+
+**Prerequisites:** [8.12 Service Registry](#812-service-registry).
+
+---
+
+### What problem it fixes
+
+Without sidecars, every microservice embeds:
+
+- HTTP proxy / TLS termination logic
+- Metrics scraping endpoints and exporters
+- Log forwarding SDKs
+- Config and secret refresh clients
+
+Implemented separately in Java, Go, Python, and Node — inconsistent behavior, duplicated bugs, and slow policy rollouts (redeploy every service to change retry rules).
+
+---
+
+### What it does
+
+A sidecar:
+
+- Runs **beside** the application in the same pod
+- Shares **network namespace** — app talks to sidecar on localhost
+- Provides **auxiliary capabilities** transparent to business code
+- Can be updated **independently** of the app image (mesh proxy version bump)
+- Supports **polyglot** apps — same Envoy image for all languages
+
+**Common roles:**
+
+| Use case | Sidecar | Example |
+|----------|---------|---------|
+| **Service mesh proxy** | Envoy, Linkerd-proxy | mTLS, retry, routing |
+| **Log shipping** | Fluent Bit | Tail files → Elasticsearch |
+| **Metrics** | Prometheus exporter | Scrape → Grafana |
+| **Secrets** | Vault agent | Inject rotated credentials |
+| **Config sync** | Config puller | Hot-reload local files |
+
+---
+
+### How it works — the architecture inside
+
+```mermaid
+flowchart LR
+    subgraph Pod
+        direction LR
+        APP[Application] -->|localhost| SC[Sidecar proxy]
+    end
+    SC --> EXT[Other services / network]
+```
+
+**Mesh traffic flow:**
+
+```text
+Order app → localhost:15001 → Envoy sidecar → Payment sidecar → localhost → Payment app
+```
+
+**Sidecar vs library:**
+
+| | In-process library | Sidecar |
+|---|-------------------|---------|
+| **Languages** | Per-language SDK | Language-independent |
+| **Updates** | Redeploy every service | Update sidecar / control plane |
+| **Example** | Resilience4j (Java only) | Envoy for Java, Go, Python |
+
+**Sidecar vs API Gateway:**
+
+| | Sidecar | API Gateway |
+|---|---------|-------------|
+| **Placement** | Beside each service | Single edge entry |
+| **Traffic** | East-west | North-south |
+
+**Sidecar vs service mesh:**
+
+```text
+Sidecar = deployment pattern (helper process)
+Mesh    = full solution that uses sidecar proxies (Istio → Envoy)
+```
+
+---
+
+### Pitfalls and design tips
+
+- **Resource overhead:** each pod runs N+1 containers — account for CPU/memory in capacity planning.
+- **localhost assumption:** app must route outbound traffic through sidecar (iptables redirect or explicit proxy config).
+- **When not to use:** monolith or 2–3 services — in-process libraries are simpler.
+- **Interview angle:** sidecar enables polyglot resilience; mesh is built on sidecars.
+- **Ambient mesh (Istio):** reduces per-pod sidecars by moving some functions to node — know the trade-off.
+
+---
+
+### Real-world example
+
+**Istio on Kubernetes** injects an Envoy sidecar into every pod in a labeled namespace. A Java Order service with no mesh-aware code sends HTTP to `payment-service:8080`; iptables redirect that traffic through the local Envoy on port 15001. Envoy adds mTLS, retry (3 attempts), and emits Prometheus metrics. When platform engineering updates the cluster-wide retry policy, they push new config to Istiod — all Envoys reload without redeploying Order or Payment application images.
+
+---
+
 ## 8.14 Service Mesh
 
 ### Overview
 
 In a large office building, you could ask every employee to handle their own mail sorting, security badges, and inter-office courier rules — or hire a facilities team that manages all of it consistently. A **service mesh** is that facilities team for microservices: a dedicated infrastructure layer handling service-to-service networking so application code stays focused on business logic.
 
-Technically, a **service mesh** provides **data plane** proxies (usually Envoy sidecars, 8.15) attached to each service instance and a **control plane** (Istiod, Linkerd controller) that pushes policies centrally. It handles discovery, load balancing, mTLS, retries, circuit breaking, traffic splitting, and observability — without embedding those concerns in every language's codebase.
+Technically, a **service mesh** provides **data plane** proxies (Envoy sidecars, 8.13) and a **control plane** (Istiod, Linkerd) that pushes policies centrally: discovery, mTLS, traffic splitting, and observability. Mesh proxies can enforce retries and circuit breaking — for application-level semantics and when to use each pattern, see [8.15](#815-circuit-breaker)–[8.17](#817-bulkhead-pattern).
+
+**Prerequisites:** [8.12 Service Registry](#812-service-registry), [8.13 Sidecar Pattern](#813-sidecar-pattern).
 
 ---
 
@@ -1636,115 +1961,15 @@ Sanity check: 50-hop deep call graphs are an architecture smell — mesh overhea
 
 ---
 
-## 8.15 Sidecar Pattern
-
-### Overview
-
-A motorcycle sidecar carries luggage so the rider focuses on driving. In software, a **sidecar** is a helper process deployed **alongside** the main application in the same pod, handling infrastructure chores — proxying traffic, shipping logs, pulling config — so the app stays pure business logic.
-
-Technically, the **sidecar pattern** colocates a companion container with the application container in a Kubernetes pod. They share a network namespace (communicate on `localhost`). The sidecar lifecycle is tied to the app — start and stop together. Service meshes (8.14) use Envoy sidecars as their data plane; logging (Fluent Bit) and secrets (Vault agent) are other common sidecar roles.
-
----
-
-### What problem it fixes
-
-Without sidecars, every microservice embeds:
-
-- HTTP proxy / TLS termination logic
-- Metrics scraping endpoints and exporters
-- Log forwarding SDKs
-- Config and secret refresh clients
-
-Implemented separately in Java, Go, Python, and Node — inconsistent behavior, duplicated bugs, and slow policy rollouts (redeploy every service to change retry rules).
-
----
-
-### What it does
-
-A sidecar:
-
-- Runs **beside** the application in the same pod
-- Shares **network namespace** — app talks to sidecar on localhost
-- Provides **auxiliary capabilities** transparent to business code
-- Can be updated **independently** of the app image (mesh proxy version bump)
-- Supports **polyglot** apps — same Envoy image for all languages
-
-**Common roles:**
-
-| Use case | Sidecar | Example |
-|----------|---------|---------|
-| **Service mesh proxy** | Envoy, Linkerd-proxy | mTLS, retry, routing |
-| **Log shipping** | Fluent Bit | Tail files → Elasticsearch |
-| **Metrics** | Prometheus exporter | Scrape → Grafana |
-| **Secrets** | Vault agent | Inject rotated credentials |
-| **Config sync** | Config puller | Hot-reload local files |
-
----
-
-### How it works — the architecture inside
-
-```mermaid
-flowchart LR
-    subgraph Pod
-        direction LR
-        APP[Application] -->|localhost| SC[Sidecar proxy]
-    end
-    SC --> EXT[Other services / network]
-```
-
-**Mesh traffic flow:**
-
-```text
-Order app → localhost:15001 → Envoy sidecar → Payment sidecar → localhost → Payment app
-```
-
-**Sidecar vs library:**
-
-| | In-process library | Sidecar |
-|---|-------------------|---------|
-| **Languages** | Per-language SDK | Language-independent |
-| **Updates** | Redeploy every service | Update sidecar / control plane |
-| **Example** | Resilience4j (Java only) | Envoy for Java, Go, Python |
-
-**Sidecar vs API Gateway:**
-
-| | Sidecar | API Gateway |
-|---|---------|-------------|
-| **Placement** | Beside each service | Single edge entry |
-| **Traffic** | East-west | North-south |
-
-**Sidecar vs service mesh:**
-
-```text
-Sidecar = deployment pattern (helper process)
-Mesh    = full solution that uses sidecar proxies (Istio → Envoy)
-```
-
----
-
-### Pitfalls and design tips
-
-- **Resource overhead:** each pod runs N+1 containers — account for CPU/memory in capacity planning.
-- **localhost assumption:** app must route outbound traffic through sidecar (iptables redirect or explicit proxy config).
-- **When not to use:** monolith or 2–3 services — in-process libraries are simpler.
-- **Interview angle:** sidecar enables polyglot resilience; mesh is built on sidecars.
-- **Ambient mesh (Istio):** reduces per-pod sidecars by moving some functions to node — know the trade-off.
-
----
-
-### Real-world example
-
-**Istio on Kubernetes** injects an Envoy sidecar into every pod in a labeled namespace. A Java Order service with no mesh-aware code sends HTTP to `payment-service:8080`; iptables redirect that traffic through the local Envoy on port 15001. Envoy adds mTLS, retry (3 attempts), and emits Prometheus metrics. When platform engineering updates the cluster-wide retry policy, they push new config to Istiod — all Envoys reload without redeploying Order or Payment application images.
-
----
-
-## 8.16 Circuit Breaker
+## 8.15 Circuit Breaker
 
 ### Overview
 
 Your home circuit breaker trips when wiring overheats — cutting power before the whole house burns. In software, a **circuit breaker** stops sending requests to a failing dependency, failing fast instead of piling up blocked threads and timeouts that crash the caller.
 
 Technically, a **circuit breaker** wraps outbound calls and tracks failure rates. In the **closed** state, calls pass normally. When failures exceed a threshold, the circuit **opens** — subsequent calls reject immediately without waiting for timeouts. After a cooldown, **half-open** probes test recovery; success closes the circuit, failure reopens it.
+
+**Prerequisites:** [8.5 Microservices](#85-microservices). Mesh-level breakers (8.14) complement but do not replace app-level policies.
 
 ---
 
@@ -1843,7 +2068,7 @@ Order → [OPEN breaker] → immediate reject + fallback
 **Resilience stack (outer → inner on outbound calls):**
 
 ```text
-Caller → bulkhead (8.18) → retry (8.17) → circuit breaker → dependency
+Caller → bulkhead (8.17) → retry (8.16) → circuit breaker → dependency
 ```
 
 Always pair with **timeouts** — each failed call should fail quickly, not hang.
@@ -1879,7 +2104,7 @@ public PaymentResponse fallback() {
 - **Wrong thresholds cause flapping** — too sensitive opens on noise; too lax allows exhaustion before tripping.
 - **Fallback design matters** — "error" fallback is worse than no breaker if UX requires payment; design degraded paths explicitly.
 - **Half-open probe storms** — limit probe count; all instances probing simultaneously can DDoS a recovering service.
-- **Interview angle:** breaker stops **persistent** failures; retry (8.17) handles **transient** failures — use together.
+- **Interview angle:** breaker stops **persistent** failures; retry (8.16) handles **transient** failures — use together.
 - **Mesh vs library:** Envoy outlier detection needs no app code but offers less business-specific fallback logic.
 
 ---
@@ -1890,13 +2115,15 @@ public PaymentResponse fallback() {
 
 ---
 
-## 8.17 Retry Pattern
+## 8.16 Retry Pattern
 
 ### Overview
 
 Redialing a busy phone line once or twice often gets through; hanging up forever on the first busy signal is wasteful. The **retry pattern** automatically re-attempts failed operations that might succeed on a second try — network blips, brief overload, momentary DNS failure.
 
 Technically, retry wraps outbound calls with a policy: maximum attempts, backoff strategy, and classification of which errors are **transient** (retry) vs **permanent** (fail immediately). **Exponential backoff with jitter** is the production default — delays grow (1 s → 2 s → 4 s) with randomization to prevent synchronized retry storms across thousands of clients.
+
+**Prerequisites:** [8.15 Circuit Breaker](#815-circuit-breaker).
 
 ---
 
@@ -1954,7 +2181,7 @@ flowchart LR
     OK -->|No| Type{Transient?}
     Type -->|No| Fail[Fail immediately]
     Type -->|Yes| CB{Circuit open?}
-    CB -->|Yes| Fast[Fail fast — 8.16]
+    CB -->|Yes| Fast[Fail fast — 8.15]
     CB -->|No| Left{Attempts left?}
     Left -->|No| Fail
     Left -->|Yes| Wait[Backoff + jitter]
@@ -1978,7 +2205,7 @@ POST /payments — attempt 1 succeeds, response lost
 
 Safe retries: GET, idempotent PUT/DELETE, operations with idempotency keys (Ch.7).
 
-**With circuit breaker (8.16):**
+**With circuit breaker (8.15):**
 
 ```text
 Retry only when breaker is CLOSED
@@ -1988,7 +2215,7 @@ When OPEN → fail fast, do not retry
 **Resilience stack:**
 
 ```text
-bulkhead (8.18) → retry (8.17) → circuit breaker (8.16) → dependency
+bulkhead (8.17) → retry (8.16) → circuit breaker (8.15) → dependency
 ```
 
 **Message consumers:**
@@ -2015,13 +2242,15 @@ Kafka consumer → process → fail → retry N times → dead letter queue (DLQ
 
 ---
 
-## 8.18 Bulkhead Pattern
+## 8.17 Bulkhead Pattern
 
 ### Overview
 
 Ships divide hulls into watertight compartments — if one floods, others stay dry and the vessel stays afloat. The **bulkhead pattern** isolates thread pools, connection pools, or semaphores per dependency so one slow or failing service cannot exhaust all resources in the caller.
 
-Technically, bulkheads partition **local resources** into independent pools. Payment calls use 20 threads; inventory uses 40; notifications use 40. When payment is slow and saturates its 20-thread pool, inventory and notification calls continue on their own pools. Combined with retry (8.17) and circuit breaker (8.16), bulkhead is the **outermost** layer of the resilience stack.
+Technically, bulkheads partition **local resources** into independent pools. Payment calls use 20 threads; inventory uses 40; notifications use 40. When payment is slow and saturates its 20-thread pool, inventory and notification calls continue on their own pools. Combined with [8.16 Retry](#816-retry-pattern) and [8.15 Circuit Breaker](#815-circuit-breaker), bulkhead is the **outermost** layer of the resilience stack.
+
+**Prerequisites:** [8.15 Circuit Breaker](#815-circuit-breaker), [8.16 Retry Pattern](#816-retry-pattern).
 
 ---
 
@@ -2162,235 +2391,6 @@ public PaymentResponse processPayment() { /* remote call */ }
 ### Real-world example
 
 **Twitter's Finagle** RPC library popularized bulkheading in JVM services: each downstream destination gets a bounded connection and request queue. During a 2018 partial outage, timeline services that bulkheaded calls to a degraded social-graph service continued serving home timelines from cache while graph-enrichment features degraded. Services without bulkheads saw cascading thread exhaustion and full outages. The pattern is now standard in Resilience4j and Envoy max-connection policies.
-
----
-
-## 8.19 Saga Pattern
-
-> **Canonical coverage:** [8.9 Distributed Transactions](#89-distributed-transactions) — see **Saga pattern** (forward/compensate pairs, timeout budget, technologies, pitfalls).
-
-**Execution styles** (how to run a saga in production):
-
-| Style | Section |
-|-------|---------|
-| Event-driven, no central coordinator | [8.20 Choreography](#820-choreography) |
-| Central workflow engine (Temporal, Camunda) | [8.21 Orchestration](#821-orchestration) |
-
----
-
-## 8.20 Choreography
-
-### Overview
-
-A flash mob has no conductor — each dancer watches the others and reacts when the music shifts. **Choreography-based saga** works the same way: each service completes its local step and publishes an event; downstream services react without a central boss telling them what to do next.
-
-Technically, **choreography** implements distributed workflows through **domain events** on a message bus (Kafka, RabbitMQ). There is no saga orchestrator — services subscribe to events they care about, execute local transactions, and publish result events. Compensation propagates as failure events (`PaymentFailed` → Inventory releases stock, Order cancels).
-
----
-
-### What problem it fixes
-
-Central orchestrators (8.21) add a single point of failure, deployment bottleneck, and coupling surface. For **simple linear pipelines** where teams want full autonomy and already run event-driven architecture, choreography avoids:
-
-- Building and operating a workflow engine
-- Orchestrator becoming a god-service with business logic
-- Tight API coupling between every service and a coordinator
-
-Choreography fits **loosely coupled, high-throughput async** flows.
-
----
-
-### What it does
-
-Each service:
-
-1. Listens for relevant events (`OrderCreated`, `InventoryReserved`).
-2. Runs a **local transaction** and commits to its DB.
-3. Publishes the next event (`InventoryReserved` or `ReservationFailed`).
-4. On failure events, runs **compensating** local transactions and publishes compensate events.
-
-**No central state machine** — global saga state is inferred from the event log and distributed traces.
-
----
-
-### How it works — the architecture inside
-
-```mermaid
-flowchart LR
-    O[Order service] -->|OrderCreated| Bus[Event bus]
-    Bus --> I[Inventory service]
-    I -->|InventoryReserved| Bus
-    Bus --> P[Payment service]
-    P -->|PaymentCompleted| Bus
-    Bus --> S[Shipping service]
-```
-
-**Success flow:**
-
-```text
-OrderCreated → InventoryReserved → PaymentCompleted → ShipmentCreated
-```
-
-**Failure flow:**
-
-```mermaid
-flowchart LR
-    P[Payment service] -->|PaymentFailed| Bus[Event bus]
-    Bus --> I[Inventory: release stock]
-    Bus --> O[Order: cancel]
-    I -->|InventoryReleased| Bus
-    O -->|OrderCancelled| Bus
-```
-
-**Step by step:**
-
-1. Order commits locally → publishes `OrderCreated` with `saga_id`.
-2. Inventory consumes → reserves → publishes `InventoryReserved` or `ReservationFailed`.
-3. Payment consumes success → charges → publishes `PaymentCompleted` or `PaymentFailed`.
-4. On `PaymentFailed`, Inventory and Order subscribers run compensations independently.
-
-**Event contract table:**
-
-| Event | Publisher |
-|-------|-----------|
-| `OrderCreated` | Order |
-| `InventoryReserved` / `InventoryReleased` | Inventory |
-| `PaymentCompleted` / `PaymentFailed` | Payment |
-| `OrderCancelled` | Order |
-
-**Requirements:** idempotent consumers, versioned schemas, outbox for publish-after-commit, `saga_id` on every message.
-
----
-
-### Pitfalls and design tips
-
-- **"Where is order 123?"** — hard without distributed trace + event log; choreography trades visibility for decoupling.
-- **Adding a step** often requires updating **multiple** subscribers — strict event contracts and schema registry (Confluent) mitigate breakage.
-- **When not to use:** branching logic, timers, human approval — use orchestration (8.21).
-- **Interview angle:** no coordinator SPOF; compensation logic scattered — operational complexity moves to observability.
-- **Cyclic events** — without discipline, services can ping-pong; document allowed event chains.
-
----
-
-### Real-world example
-
-**Debezium + Kafka choreography** at companies like Zalando: Order service writes to its PostgreSQL outbox table; Debezium CDC streams `OrderCreated` to Kafka. Inventory and Payment services consume from dedicated topics with consumer groups, each committing locally before publishing the next event. No workflow engine runs — saga progress is reconstructed from Kafka topic offsets and Jaeger traces tagged with `saga_id`. This works for linear checkout flows at high throughput but required investment in schema registry and idempotent consumer libraries shared across teams.
-
----
-
-## 8.21 Orchestration
-
-### Overview
-
-An orchestra conductor cues each section — strings, then brass, then percussion — and signals a rewind if someone misses an entrance. **Orchestration-based saga** uses a **central coordinator** that commands each service step-by-step, tracks workflow state, and drives explicit compensation on failure.
-
-Technically, an **orchestrator** (workflow engine or custom service) sends commands (`reserveInventory`, `processPayment`) and waits for replies. It persists saga state between steps — durable workflows survive restarts. On failure, it runs compensate commands in reverse order (`releaseInventory`, `cancelOrder`). Frameworks like **Temporal**, **Camunda/Zeebe**, and **Netflix Conductor** provide HA orchestration with timers, retries, and visibility dashboards.
-
----
-
-### What problem it fixes
-
-Choreography (8.20) scatters workflow logic and makes these hard:
-
-- **Complex branching** — parallel steps, conditional paths, timeouts
-- **Human approval** — wait 48 hours for manager sign-off
-- **Visibility** — "stuck on step 3 of 7" for support teams
-- **Explicit compensation order** — guarantee inventory releases before order cancels
-
-Orchestration centralizes **workflow control** at the cost of an additional component.
-
----
-
-### What it does
-
-The orchestrator:
-
-1. Receives saga start request (from API or trigger).
-2. Sends command to service A → waits for success/failure reply.
-3. On success, sends command to service B; on failure, runs compensation sequence.
-4. **Persists state** after each step (durable execution).
-5. Exposes status API or dashboard for in-flight sagas.
-
-Services expose **idempotent command handlers** — orchestrator will retry on timeout.
-
----
-
-### How it works — the architecture inside
-
-```mermaid
-sequenceDiagram
-    participant Orch as Saga orchestrator
-    participant O as Order service
-    participant I as Inventory service
-    participant P as Payment service
-    participant S as Shipping service
-    Orch->>O: createOrder
-    O-->>Orch: OK
-    Orch->>I: reserveInventory
-    I-->>Orch: OK
-    Orch->>P: processPayment
-    P-->>Orch: OK
-    Orch->>S: createShipment
-    S-->>Orch: OK
-    Note over Orch: COMPLETED
-```
-
-**Failure and compensation:**
-
-```mermaid
-sequenceDiagram
-    participant Orch as Saga orchestrator
-    participant O as Order service
-    participant I as Inventory service
-    participant P as Payment service
-    Orch->>O: createOrder
-    O-->>Orch: OK
-    Orch->>I: reserveInventory
-    I-->>Orch: OK
-    Orch->>P: processPayment
-    P-->>Orch: FAIL
-    Orch->>I: releaseInventory
-    I-->>Orch: OK
-    Orch->>O: cancelOrder
-    O-->>Orch: OK
-    Note over Orch: FAILED
-```
-
-**Orchestration frameworks:**
-
-| Framework | Strengths |
-|-----------|-----------|
-| **Temporal** | Durable workflows, timers, retries, polyglot SDKs |
-| **Camunda / Zeebe** | BPMN, human tasks, visual models |
-| **Netflix Conductor** | JSON workflow definitions |
-
-**Choreography vs orchestration:**
-
-| | Choreography (8.20) | Orchestration |
-|---|---------------------|---------------|
-| **Coordinator** | None | Central orchestrator |
-| **Visibility** | Low (event log) | High (workflow state) |
-| **Coupling** | Loose | Services expose orchestrator APIs |
-| **Complex flows** | Poor fit | Strong fit |
-| **SPOF risk** | None | Orchestrator must run HA |
-
----
-
-### Pitfalls and design tips
-
-- **Fat orchestrator anti-pattern** — business rules belong in domain services; orchestrator only coordinates steps.
-- **Orchestrator HA** — single-instance orchestrator is a SPOF; Temporal and Camunda cluster by design.
-- **Idempotent service endpoints** — orchestrator retries on timeout; `reserveInventory` called twice must not double-reserve.
-- **When not to use:** simple linear event pipeline with mature Kafka ops — choreography may be simpler.
-- **Interview angle:** trade decoupling for visibility; name Temporal as modern default for new orchestration.
-
----
-
-### Real-world example
-
-**Temporal at Datadog and Snap** runs payment and onboarding sagas: a `ProcessCheckoutWorkflow` function (Go or Java SDK) calls activities `CreateOrder`, `ReserveInventory`, `ChargePayment` sequentially. Temporal persists workflow state after each activity — if the worker crashes mid-saga, another worker resumes from the last completed step without duplicate charges (activities are idempotent). Operations teams inspect stuck workflows in Temporal Web UI ("order 8821 waiting on payment activity since 14:32") and can signal manual compensation — visibility choreography cannot match without building custom tooling.
-
----
 
 ---
 
