@@ -36,7 +36,6 @@ Picture a small restaurant where one chef handles everything — taking orders, 
 
 Technically, a **monolith** packages all application components into a **single codebase and deployment artifact**. Components share one runtime, one process (or tightly coupled process group), and typically one database. Communication is synchronous and local — no network hops between modules. Scaling means scaling the whole application; technology choices apply uniformly across the system.
 
-**Prerequisites:** None — start here.
 
 ---
 
@@ -132,7 +131,6 @@ Think of a large warehouse divided into clearly marked zones — receiving, stor
 
 Technically, a **modular monolith** is a monolithic application decomposed into **well-defined modules** with explicit interfaces, each owning a slice of domain logic. It still ships as one artifact and often shares one database, but cross-module access goes through published APIs or domain events — never direct reach into another module's internals. Tools like Spring Modulith, ArchUnit, or package-level access rules enforce boundaries at build time.
 
-**Prerequisites:** [8.1 Monolith](#81-monolith).
 
 ---
 
@@ -226,7 +224,6 @@ Building software without talking to the business is like a translator who never
 
 Technically, **DDD** (Eric Evans, 2003) is a design approach combining **strategic patterns** (ubiquitous language, bounded contexts, context mapping) with **tactical building blocks** (entities, value objects, aggregates, repositories, domain events). The goal is a model that reflects business rules faithfully, scales along domain boundaries, and maps naturally to modular monoliths (8.2) or microservices (8.5).
 
-**Prerequisites:** [8.1 Monolith](#81-monolith), [8.2 Modular Monolith](#82-modular-monolith).
 
 ---
 
@@ -357,7 +354,6 @@ The word "account" at a bank means something different to the teller (balance, w
 
 Technically, a **bounded context** is a logical boundary in DDD where a specific **domain model**, **ubiquitous language**, and **business rules** apply consistently. It defines data ownership, integration contracts, and team responsibility. It is a **design** boundary — deployable as a monolith module, modular monolith package, or microservice (8.5).
 
-**Prerequisites:** [8.3 DDD](#83-ddd).
 
 ---
 
@@ -472,7 +468,6 @@ Imagine a hospital where cardiology, radiology, pharmacy, and billing are separa
 
 Technically, **microservices** decompose an application into **autonomous services** that communicate over the network (REST, gRPC, message queues). Each service encapsulates one **bounded context** (8.4), deploys on its own cadence, scales independently, and persists data in a **service-owned database** — no shared mutable schema across services. Later sections cover distributed transactions (8.7), discovery (8.12), mesh (8.14), and resilience (8.15–8.17).
 
-**Prerequisites:** [8.2 Modular Monolith](#82-modular-monolith), [8.4 Bounded Context](#84-bounded-context).
 
 ---
 
@@ -585,7 +580,6 @@ A power strip lets you plug in any device — lamp, charger, fan — without rew
 
 Technically, hexagonal architecture (Alistair Cockburn) isolates the **domain core** from infrastructure. **Inbound ports** define what the application offers (use cases); **outbound ports** define what it needs (repositories, event publishers). **Adapters** implement those ports — REST controllers, JPA repositories, Kafka producers. Dependencies point **inward**: infrastructure depends on domain, never the reverse.
 
-**Prerequisites:** [8.5 Microservices](#85-microservices), [8.4 Bounded Context](#84-bounded-context).
 
 ---
 
@@ -700,7 +694,6 @@ Imagine splitting a bank transfer across three branches that each keep their own
 
 Technically, microservices abandon a single global `BEGIN … COMMIT` across services. Instead you choose among **coordination protocols** (two-phase commit, three-phase commit), **workflow patterns** (saga with compensating actions), and **reliability patterns** (transaction outbox). **This section is the canonical reference** for all four. **Next:** how to *run* sagas — [8.8 Choreography](#88-choreography) and [8.9 Orchestration](#89-orchestration).
 
-**Prerequisites:** [8.5 Microservices](#85-microservices).
 
 ---
 
@@ -1151,7 +1144,6 @@ A flash mob has no conductor — each dancer watches the others and reacts when 
 
 Technically, **choreography** implements sagas (8.7) through **domain events** on a message bus (Kafka, RabbitMQ). There is no central orchestrator — services subscribe, run local transactions + outbox, and publish result or failure events. Compensation propagates as events (`PaymentFailed` → Inventory releases, Order cancels).
 
-**Prerequisites:** [8.7 Distributed Transactions](#87-distributed-transactions) — saga concepts, outbox, compensations.
 
 ---
 
@@ -1253,7 +1245,6 @@ An orchestra conductor cues each section — strings, then brass, then percussio
 
 Technically, an **orchestrator** (workflow engine or custom service) drives sagas (8.7) with explicit commands (`reserveInventory`, `processPayment`), durable state, and ordered compensation. Frameworks: **Temporal**, **Camunda/Zeebe**, **Netflix Conductor**.
 
-**Prerequisites:** [8.7 Distributed Transactions](#87-distributed-transactions), [8.8 Choreography](#88-choreography) (contrast).
 
 ---
 
@@ -1369,7 +1360,6 @@ Picture renovating a busy train station while trains keep running: you build a n
 
 Technically, the Strangler pattern is an **incremental migration strategy**: new capabilities (or extracted modules) run as independent services; an **API gateway or router** sends traffic to the new service or the legacy monolith based on route rules. Data is synchronized or cut over per module. The monolith **shrinks** until it can be decommissioned. Named after the strangler fig tree that grows around and replaces its host.
 
-**Prerequisites:** [8.1 Monolith](#81-monolith), [8.5 Microservices](#85-microservices).
 
 ---
 
@@ -1488,7 +1478,6 @@ A hotel concierge speaks your language, knows what you care about, and handles f
 
 Technically, a **BFF** is a **thin orchestration layer** per frontend. It calls multiple domain services, combines responses, transforms to UI-friendly DTOs, and exposes client-specific endpoints — e.g. `GET /mobile/home` returning name, wallet balance, and recent orders in one payload. Core domain services stay **client-agnostic**; presentation logic lives in the BFF, not scattered as `if (mobile)` branches in shared APIs.
 
-**Prerequisites:** [8.5 Microservices](#85-microservices).
 
 ---
 
@@ -1597,7 +1586,6 @@ Calling a friend's landline only works if someone updates the phone book when th
 
 Technically, a **service registry** is a directory of service instances: name, host, port, health status, and metadata. Services **register** on startup and send **heartbeats**; consumers **discover** instances by logical name (`PAYMENT-SERVICE`) instead of hardcoded URLs. Registries may be standalone (Eureka, Consul) or platform-native (Kubernetes Services + Endpoints).
 
-**Prerequisites:** [8.5 Microservices](#85-microservices).
 
 ---
 
@@ -1719,7 +1707,6 @@ A motorcycle sidecar carries luggage so the rider focuses on driving. In softwar
 
 Technically, the **sidecar pattern** colocates a companion container with the application container in a Kubernetes pod. They share a network namespace (communicate on `localhost`). The sidecar lifecycle is tied to the app — start and stop together. Service meshes (8.14) use Envoy sidecars as their data plane; logging (Fluent Bit) and secrets (Vault agent) are other common sidecar roles.
 
-**Prerequisites:** [8.12 Service Registry](#812-service-registry).
 
 ---
 
@@ -1823,7 +1810,6 @@ In a large office building, you could ask every employee to handle their own mai
 
 Technically, a **service mesh** provides **data plane** proxies (Envoy sidecars, 8.13) and a **control plane** (Istiod, Linkerd) that pushes policies centrally: discovery, mTLS, traffic splitting, and observability. Mesh proxies can enforce retries and circuit breaking — for application-level semantics and when to use each pattern, see [8.15](#815-circuit-breaker)–[8.17](#817-bulkhead-pattern).
 
-**Prerequisites:** [8.12 Service Registry](#812-service-registry), [8.13 Sidecar Pattern](#813-sidecar-pattern).
 
 ---
 
@@ -1969,7 +1955,6 @@ Your home circuit breaker trips when wiring overheats — cutting power before t
 
 Technically, a **circuit breaker** wraps outbound calls and tracks failure rates. In the **closed** state, calls pass normally. When failures exceed a threshold, the circuit **opens** — subsequent calls reject immediately without waiting for timeouts. After a cooldown, **half-open** probes test recovery; success closes the circuit, failure reopens it.
 
-**Prerequisites:** [8.5 Microservices](#85-microservices). Mesh-level breakers (8.14) complement but do not replace app-level policies.
 
 ---
 
@@ -2123,7 +2108,6 @@ Redialing a busy phone line once or twice often gets through; hanging up forever
 
 Technically, retry wraps outbound calls with a policy: maximum attempts, backoff strategy, and classification of which errors are **transient** (retry) vs **permanent** (fail immediately). **Exponential backoff with jitter** is the production default — delays grow (1 s → 2 s → 4 s) with randomization to prevent synchronized retry storms across thousands of clients.
 
-**Prerequisites:** [8.15 Circuit Breaker](#815-circuit-breaker).
 
 ---
 
@@ -2250,7 +2234,6 @@ Ships divide hulls into watertight compartments — if one floods, others stay d
 
 Technically, bulkheads partition **local resources** into independent pools. Payment calls use 20 threads; inventory uses 40; notifications use 40. When payment is slow and saturates its 20-thread pool, inventory and notification calls continue on their own pools. Combined with [8.16 Retry](#816-retry-pattern) and [8.15 Circuit Breaker](#815-circuit-breaker), bulkhead is the **outermost** layer of the resilience stack.
 
-**Prerequisites:** [8.15 Circuit Breaker](#815-circuit-breaker), [8.16 Retry Pattern](#816-retry-pattern).
 
 ---
 

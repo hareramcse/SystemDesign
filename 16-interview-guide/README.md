@@ -1,22 +1,20 @@
 # 16. System Design Interview Guide
 
-> Status: **Documented** — practical framework for structured interview answers.
-
 [<- Back to master index](../README.md)
 
 ---
 
 ## Sub-topics
 
-| # | Sub-topic | Status |
-|---|-----------|--------|
-| 16.1 | [Interview Framework](#161-interview-framework) | Done |
-| 16.2 | [Requirements Gathering](#162-requirements-gathering) | Done |
-| 16.3 | [Back-of-Envelope Estimation](#163-back-of-envelope-estimation) | Done |
-| 16.4 | [High-Level Design](#164-high-level-design) | Done |
-| 16.5 | [Deep Dives](#165-deep-dives) | Done |
-| 16.6 | [Trade-offs and Failure Modes](#166-trade-offs-and-failure-modes) | Done |
-| 16.7 | [Sample Walkthrough: URL Shortener](#167-sample-walkthrough-url-shortener) | Done |
+| # | Sub-topic |
+|---|-----------|
+| 16.1 | [Interview Framework](#161-interview-framework) |
+| 16.2 | [Requirements Gathering](#162-requirements-gathering) |
+| 16.3 | [Back-of-Envelope Estimation](#163-back-of-envelope-estimation) |
+| 16.4 | [High-Level Design](#164-high-level-design) |
+| 16.5 | [Deep Dives](#165-deep-dives) |
+| 16.6 | [Trade-offs and Failure Modes](#166-trade-offs-and-failure-modes) |
+| 16.7 | [Sample Walkthrough: URL Shortener](#167-sample-walkthrough-url-shortener) |
 
 ---
 
@@ -491,7 +489,7 @@ Pick **1–2 areas thoroughly**; do not spread thin across every row in the tabl
 
 **Hot link:** single Redis key gets huge QPS — replicate key to local in-process cache (short TTL) or use read replicas on the cache layer.
 
-Mention: cache-aside pattern in [Ch. 3](../03-caching/README.md); connection pooling and read replicas in [Ch. 5](../05-database/README.md) if challenged on DB load.
+Mention: cache-aside pattern in [Ch. 3](../03-caching/README.md); connection pooling and read replicas in [Ch. 5](../05-distributed-databases/README.md) if challenged on DB load.
 
 ---
 

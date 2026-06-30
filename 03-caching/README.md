@@ -1115,7 +1115,7 @@ function get_user(id):
     // possibly present — continue normal cache + DB path
 ```
 
-See chapter 13.1 for Bloom filter sizing. False positives still hit DB occasionally; false negatives must not occur for inserted IDs.
+See [Bloom filters](../13-advanced-topics/README.md#131-bloom-filters) for sizing. False positives still hit DB occasionally; false negatives must not occur for inserted IDs.
 
 #### Defense 3: Input validation
 

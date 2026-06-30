@@ -23,17 +23,17 @@
 | 5.13 | [Multi Leader Replication](#513-multi-leader-replication) |
 | 5.14 | [Quorum Reads](#514-quorum-reads) |
 | 5.15 | [Quorum Writes](#515-quorum-writes) |
-| 5.19 | [Distributed Locking](#519-distributed-locking) |
-| 5.20 | [Split Brain](#520-split-brain) |
-| 5.21 | [Consensus](#521-consensus) |
-| 5.22 | [Paxos](#522-paxos) |
-| 5.23 | [Raft](#523-raft) |
-| 5.24 | [Leader Election](#524-leader-election) |
-| 5.25 | [Lamport Clocks](#525-lamport-clocks) |
-| 5.26 | [Vector Clocks](#526-vector-clocks) |
-| 5.27 | [Gossip Protocol](#527-gossip-protocol) |
-| 5.28 | [Membership Protocols](#528-membership-protocols) |
-| 5.29 | [Sharding, Bucketing & Partitioning](#529-sharding-bucketing--partitioning) |
+| 5.16 | [Distributed Locking](#516-distributed-locking) |
+| 5.17 | [Split Brain](#517-split-brain) |
+| 5.18 | [Consensus](#518-consensus) |
+| 5.19 | [Paxos](#519-paxos) |
+| 5.20 | [Raft](#520-raft) |
+| 5.21 | [Leader Election](#521-leader-election) |
+| 5.22 | [Lamport Clocks](#522-lamport-clocks) |
+| 5.23 | [Vector Clocks](#523-vector-clocks) |
+| 5.24 | [Gossip Protocol](#524-gossip-protocol) |
+| 5.25 | [Membership Protocols](#525-membership-protocols) |
+| 5.26 | [Sharding, Bucketing & Partitioning](#526-sharding-bucketing--partitioning) |
 
 ---
 
@@ -1919,7 +1919,7 @@ R + 3 > 5  →  R ≥ 3
 
 ---
 
-## 5.19 Distributed Locking
+## 5.16 Distributed Locking
 
 ### Overview
 
@@ -1991,7 +1991,7 @@ Owner must renew (heartbeat) to keep working
 Crash → lease expires → another server can acquire
 ```
 
-**Fencing tokens:** when an old leader's lease expires and a new leader acquires the lock, the storage layer rejects writes from the stale holder using monotonically increasing tokens — critical for split-brain scenarios (5.20).
+**Fencing tokens:** when an old leader's lease expires and a new leader acquires the lock, the storage layer rejects writes from the stale holder using monotonically increasing tokens — critical for split-brain scenarios (5.17).
 
 **How to calculate:**
 
@@ -2039,7 +2039,7 @@ Sanity check: TTL = 5 min after crash means 5 min before failover —
 
 ---
 
-## 5.20 Split Brain
+## 5.17 Split Brain
 
 ### Overview
 
@@ -2151,7 +2151,7 @@ Leader-A returns → storage rejects A's writes (epoch 1 < 2)
 
 ---
 
-## 5.21 Consensus
+## 5.18 Consensus
 
 ### Overview
 
@@ -2256,7 +2256,7 @@ For N = 5, Q = 3:
 
 ---
 
-## 5.22 Paxos
+## 5.19 Paxos
 
 ### Overview
 
@@ -2359,7 +2359,7 @@ Prepare and Accept each need M responses:
 
 ---
 
-## 5.23 Raft
+## 5.20 Raft
 
 ### Overview
 
@@ -2473,7 +2473,7 @@ Maximum simultaneous failures tolerated: floor((N-1)/2)
 
 ---
 
-## 5.24 Leader Election
+## 5.21 Leader Election
 
 ### Overview
 
@@ -2578,7 +2578,7 @@ Election timeout guidance (implementation):
 
 ---
 
-## 5.25 Lamport Clocks
+## 5.22 Lamport Clocks
 
 ### Overview
 
@@ -2642,7 +2642,7 @@ B: event timestamp 8
 10 > 8 does NOT imply A → B — events may be independent
 ```
 
-Lamport clocks **cannot detect concurrency** — use vector clocks (5.26) when that matters.
+Lamport clocks **cannot detect concurrency** — use vector clocks (5.23) when that matters.
 
 **How to calculate — receive rule:**
 
@@ -2674,7 +2674,7 @@ Example 2: L = 5,  R = 12 → max(5,12)+1  = 13
 
 ---
 
-## 5.26 Vector Clocks
+## 5.23 Vector Clocks
 
 ### Overview
 
@@ -2781,7 +2781,7 @@ Vector size = N nodes
 
 ---
 
-## 5.27 Gossip Protocol
+## 5.24 Gossip Protocol
 
 ### Overview
 
@@ -2883,7 +2883,7 @@ Real systems add redundancy (multiple gossip targets per interval) for faster co
 
 ---
 
-## 5.28 Membership Protocols
+## 5.25 Membership Protocols
 
 ### Overview
 
@@ -2997,7 +2997,7 @@ Sanity check: phi accrual adapts to network jitter; fixed "3 misses"
 ### Pitfalls and design tips
 
 - **False positives** during GC pauses or network blips — use suspect state and phi accrual before marking failed.
-- **Network partition** can create competing membership views — pair with quorum for decisions (5.20).
+- **Network partition** can create competing membership views — pair with quorum for decisions (5.17).
 - **Symmetric partition:** both sides may mark the other failed — design merge rules on heal.
 - **SWIM, Consul gossip, Cassandra, Kubernetes Endpoints** — real mechanisms to name.
 - **Graceful leave** (`decommission`) avoids false failure storms during deploys.
@@ -3010,13 +3010,13 @@ Sanity check: phi accrual adapts to network jitter; fixed "3 misses"
 
 ---
 
-## 5.29 Sharding, Bucketing & Partitioning
+## 5.26 Sharding, Bucketing & Partitioning
 
 ### Overview
 
 Imagine a national library system: branches in different cities (sharding), separate reading rooms per neighborhood inside each branch (bucketing), and dated shelf sections replaced wholesale when archives rotate (partitioning). Together they keep any single shelf from holding a hundred million books.
 
-Technically, this **three-layer pattern** combines **sharding** (spread across physical DB instances), **bucketing** (schema-per-tenant-group isolation inside a logical database), and **range partitioning** (sub-tables inside each bucket for fast retention). A **control plane** routes each customer to exactly one bucket on one physical instance.
+Technically, this **three-layer pattern** combines **sharding** (spread across physical DB instances), **bucketing** (schema-per-tenant-group isolation inside a logical database), and **range partitioning** (sub-tables inside each bucket for fast retention). A **control plane** routes each customer to exactly one bucket on one physical instance. Read **5.1–5.4** first for partitioning fundamentals; this section shows how the layers stack in multi-tenant PostgreSQL.
 
 ---
 

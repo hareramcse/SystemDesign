@@ -27,9 +27,9 @@
 | 6.17 | [Event Sourcing](#617-event-sourcing) |
 | 6.18 | [CQRS](#618-cqrs) |
 | 6.19 | [Change Data Capture (CDC)](#619-change-data-capture-cdc) |
-| 6.21 | [Event Replay](#621-event-replay) |
-| 6.22 | [Event Versioning](#622-event-versioning) |
-| 6.23 | [Schema Registry](#623-schema-registry) |
+| 6.20 | [Event Replay](#620-event-replay) |
+| 6.21 | [Event Versioning](#621-event-versioning) |
+| 6.22 | [Schema Registry](#622-schema-registry) |
 
 ---
 
@@ -2073,7 +2073,7 @@ Event sourcing answers *what happened?* Event streaming answers *who should rece
 ### Pitfalls and design tips
 
 - **Not for simple CRUD** — small internal tools without audit needs add complexity for little gain.
-- **Event versioning is mandatory** — schemas evolve; old events live forever in the log (see 6.22).
+- **Event versioning is mandatory** — schemas evolve; old events live forever in the log (see 6.21).
 - **Querying raw events is hard** — build projections (often paired with CQRS).
 - **Storage grows monotonically** — plan retention, compaction policies, and snapshots.
 - **Eventual consistency on read models** — write path is canonical; reads may lag.
@@ -2317,7 +2317,7 @@ CDC on a **business table** emits what changed in SQL. **Outbox** emits the even
 ### Pitfalls and design tips
 
 - **Prefer log-based CDC** — timestamp polling does not scale and misses subtle failures.
-- **Schema evolution** — captured table DDL changes need a strategy (see 6.22, 6.23).
+- **Schema evolution** — captured table DDL changes need a strategy (see 6.21, 6.22).
 - **Wide tables** — large before/after payloads; use column filtering in connector config.
 - **Deletes and GDPR** — tombstone events and compaction policies for Kafka compacted topics.
 - **Long connector downtime** — log retention may expire; plan snapshot recovery.
@@ -2331,7 +2331,7 @@ A product catalog lives in **PostgreSQL**. On each `INSERT`/`UPDATE` to `product
 
 ---
 
-## 6.21 Event Replay
+## 6.20 Event Replay
 
 ### Overview
 
@@ -2449,7 +2449,7 @@ Kafka retention must cover the replay window — expired segments cannot be repl
 ### Pitfalls and design tips
 
 - **Never replay side effects blindly** — duplicate emails and charges are the classic disaster.
-- **Event versioning** — old V1 events must still deserialize during replay (see 6.22).
+- **Event versioning** — old V1 events must still deserialize during replay (see 6.21).
 - **Isolate replay load** — separate consumer group, clone topic, or off-peak window.
 - **Idempotent projectors** — replays and at-least-once delivery both duplicate.
 - **Not possible without durable logs** — CRUD-only systems have nothing to replay.
@@ -2462,7 +2462,7 @@ A **recommendation service** launches six months after the order platform. Engin
 
 ---
 
-## 6.22 Event Versioning
+## 6.21 Event Versioning
 
 ### Overview
 
@@ -2548,7 +2548,7 @@ Consumer branches on `version`.
 
 **3. Schema registry**
 
-Central store validates compatibility on register (see 6.23).
+Central store validates compatibility on register (see 6.22).
 
 **4. Upcasting (event sourcing)**
 
@@ -2596,7 +2596,7 @@ A shared Kafka topic `users` carries `UserCreated` events. Team adds optional `m
 
 ---
 
-## 6.23 Schema Registry
+## 6.22 Schema Registry
 
 ### Overview
 

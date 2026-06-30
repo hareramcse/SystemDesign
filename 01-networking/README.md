@@ -28,7 +28,7 @@
 | 1.18 | [Unicast, Broadcast, Multicast & Anycast](#118-unicast-broadcast-multicast--anycast) |
 | 1.19 | [CDN](#119-cdn) |
 | 1.20 | [Load Balancer](#120-load-balancer) |
-| 1.22 | [SSE, Polling & WebSockets](#122-sse-polling--websockets) |
+| 1.21 | [SSE, Polling & WebSockets](#121-sse-polling--websockets) |
 
 ---
 
@@ -2081,7 +2081,7 @@ An e-commerce API runs three Fargate tasks behind an **Application Load Balancer
 
 ---
 
-## 1.22 SSE, Polling & WebSockets
+## 1.21 SSE, Polling & WebSockets
 
 ### Overview
 
