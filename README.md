@@ -17,7 +17,7 @@
 | 13 | [Advanced Topics](./13-advanced-topics/README.md) | 8 | Documented |
 | 14 | [Search Systems](./14-search-systems/README.md) | 6 | Documented |
 | 15 | [Big Data](./15-big-data/README.md) | 4 | Documented |
-| 16 | [How to Design](./16-how-to-design/README.md) | 50 | Placeholder |
+| 16 | [How to Design](./16-how-to-design/README.md) | 56 | Placeholder |
 | 17 | [System Design Interview Guide](./17-interview-guide/README.md) | 7 | Documented |
 
 ---
